@@ -1,0 +1,13 @@
+# Generation of the TypeScript wire types from arthome-core's proto/.
+#
+# `import_extension=.js` is not cosmetic: this repository is ESM under
+# `moduleResolution: nodenext`, where a relative import must carry the extension
+# it will have AT RUNTIME. Without it the generated files import './x' and
+# nothing resolves.
+version: v2
+plugins:
+  - local: protoc-gen-es
+    out: libs/events/src/gen
+    opt:
+      - target=ts
+      - import_extension=.js

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@arthome/tooling/tsconfig/app.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    // NestJS and TypeORM are both decorator-driven, and both read the metadata
+    // TypeScript emits rather than being told the types a second time in
+    // strings. Without these two, `@Column()` cannot infer `string` and
+    // `@Injectable()` cannot resolve a constructor parameter.
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

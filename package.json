@@ -27,10 +27,13 @@
     "check:prettier-conflict": "arthome-check-prettier-conflict",
     "verify:offline": "pnpm run check:vendor && pnpm run check:versions && pnpm run check:tsconfig && pnpm run check:enums && pnpm run check:language",
     "verify": "pnpm run verify:offline && pnpm run check:prettier-conflict && pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
-    "check:vendor": "node tools/check-vendor-specs.mjs"
+    "check:vendor": "node tools/check-vendor-specs.mjs",
+    "gen:events": "node tools/generate-events.mjs"
   },
   "devDependencies": {
-    "@arthome/tooling": "file:./vendor/arthome-tooling-d7300a04921f.tgz",
+    "@arthome/tooling": "file:./vendor/arthome-tooling-9a0c46efc35f.tgz",
+    "@bufbuild/buf": "1.73.0",
+    "@bufbuild/protoc-gen-es": "2.15.0",
     "@eslint/js": "10.0.1",
     "@types/node": "^24",
     "eslint": "10.11.0",

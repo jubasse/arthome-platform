@@ -1,0 +1,24 @@
+{
+  "name": "@arthome-platform/notifications",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The notifications service. In wave 1: the consumer that proves the path.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "migration:run": "pnpm run build && typeorm migration:run -d dist/data-source.js"
+  },
+  "dependencies": {
+    "@arthome-platform/config": "workspace:*",
+    "@arthome-platform/events": "workspace:*",
+    "@arthome/core": "file:../../vendor/arthome-core-41a7a1edfeb9.tgz",
+    "@bufbuild/protobuf": "2.15.0",
+    "kafkajs": "2.2.4",
+    "pg": "8.23.0",
+    "reflect-metadata": "0.2.2",
+    "typeorm": "1.1.1"
+  }
+}

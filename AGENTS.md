@@ -36,6 +36,44 @@ overwrites them without warning.
 | `pnpm run check:enums` | string literals that duplicate a domain vocabulary |
 | `pnpm run fix` | Prettier, then ESLint `--fix`, then Prettier again |
 
+## Running the event path
+
+The stack is three containers: Postgres 18 with `wal_level=logical`, Kafka in KRaft mode, and Kafka
+Connect carrying Debezium. **Postgres publishes on 55432, not 5432** — the conventional port was
+taken by another project, and a development stack that fights for well-known ports is one you
+cannot run beside anything else.
+
+```bash
+docker compose up -d
+pnpm --filter @arthome-platform/identity      run migration:run
+pnpm --filter @arthome-platform/notifications run migration:run
+curl -s -X POST -H 'Content-Type: application/json' \
+  --data @infra/debezium/identity-outbox.json http://localhost:8083/connectors
+```
+
+Then start `identity` (port 3001) and `notifications`, and register an account:
+
+```bash
+curl -X POST http://localhost:3001/accounts \
+  -H 'content-type: application/json' \
+  -H 'traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01' \
+  -d '{"publicHandle":"@marie.j","email":"marie@example.test","locale":"fr","country":"FR"}'
+```
+
+What should then be true, and what is worth checking because each step can fail quietly:
+
+| Where | What you should see |
+| --- | --- |
+| `identity.outbox_event` | one row, `aggregatetype = identity.account`, `aggregateid` = the account id |
+| topic `arthome.identity.account` | one message, **key = the account id**, so one account stays ordered |
+| its headers | `message-id`, `type`, `traceparent` — the same traceparent the request carried |
+| `notifications.welcome_email` | one row, holding that same traceparent |
+| replaying the message | the consumer says `duplicate` and the row count does **not** move |
+
+⚠ **A replication slot nobody consumes retains the write-ahead log.** Stopping the connector and
+leaving it registered makes the disk grow until it is full (`data-model.md` §7.4). `docker compose
+down -v` removes everything, slot included.
+
 ## What this repository is
 
 The seven NestJS microservices and their infrastructure. Two services first — `identity` and

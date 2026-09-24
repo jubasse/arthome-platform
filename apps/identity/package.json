@@ -1,0 +1,30 @@
+{
+  "name": "@arthome-platform/identity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The identity service: the person, the device, and the right to act.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.build.json",
+    "migration:run": "pnpm run build && typeorm migration:run -d dist/data-source.js",
+    "migration:revert": "pnpm run build && typeorm migration:revert -d dist/data-source.js"
+  },
+  "dependencies": {
+    "@arthome-platform/config": "workspace:*",
+    "@arthome-platform/events": "workspace:*",
+    "@arthome/core": "file:../../vendor/arthome-core-41a7a1edfeb9.tgz",
+    "@bufbuild/protobuf": "2.15.0",
+    "@nestjs/common": "12.0.3",
+    "@nestjs/core": "12.0.3",
+    "@nestjs/platform-fastify": "12.0.3",
+    "@nestjs/typeorm": "12.0.1",
+    "kafkajs": "2.2.4",
+    "pg": "8.23.0",
+    "reflect-metadata": "0.2.2",
+    "typeorm": "1.1.1",
+    "uuid": "14.0.2"
+  }
+}

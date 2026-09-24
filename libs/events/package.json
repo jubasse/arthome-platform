@@ -1,9 +1,9 @@
 {
-  "name": "@arthome-platform/config",
+  "name": "@arthome-platform/events",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Environment reading, validated once at startup.",
+  "description": "The Protobuf wire types, generated from arthome-core's proto/.",
   "license": "UNLICENSED",
   "exports": {
     ".": {
@@ -14,12 +14,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-41a7a1edfeb9.tgz",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-247f798e95dc.tgz",
-    "zod": "4.6.5"
+    "@bufbuild/protobuf": "2.15.0"
   }
 }

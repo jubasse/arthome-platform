@@ -8,7 +8,15 @@
     // Core forbids itself any platform dependency, so pulling Node's globals
     // into the program that checks it would let a Node API in unnoticed. This
     // repository is nothing but Node: services, configuration and tools.
-    "types": ["node"]
+    "types": ["node"],
+    // ⚠ THE ROOT PROGRAM CHECKS THE SAME FILES THE SERVICES DO, so it needs the
+    //   same two switches. Setting them only in apps/*/tsconfig.json made
+    //   `pnpm run typecheck` fail with TS1240 on every entity — "unable to
+    //   resolve signature of property decorator" — while each service's own
+    //   typecheck passed. Two programs over one set of files must agree about
+    //   the language, or the one nobody runs locally is the one CI runs.
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
   },
   "include": ["apps/*/src", "libs/*/src", "tools/**/*.ts"],
   "exclude": ["node_modules", "apps/*/dist", "libs/*/dist", "vendor", "docs"]

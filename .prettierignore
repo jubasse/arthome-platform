@@ -19,6 +19,9 @@ docs/arthome/
 vendor/
 
 # ── Generated or machine-owned ────────────────────────────────────────────────
+# protobuf-es output. Reformatting it would produce a diff at every generation
+# and say nothing about the wire.
+libs/events/src/gen/
 pnpm-lock.yaml
 **/dist/
 **/coverage/

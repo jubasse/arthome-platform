@@ -77,3 +77,11 @@ allowBuilds:
   # finds nothing, and passes — a green gate that checks nothing, which is the
   # worse of the two failure modes and the reason D-071 exists.
   unrs-resolver: true
+
+  # @bufbuild/buf — the Protobuf compiler. Its install script links the
+  # platform's native binary, exactly like unrs-resolver. Approved because the
+  # wire types are GENERATED from arthome-core's proto/: without the binary
+  # there is no generation step at all, and the alternative is hand-written
+  # message classes, which is the parallel table this project spends its gates
+  # preventing — applied to the contract between seven services.
+  "@bufbuild/buf": true

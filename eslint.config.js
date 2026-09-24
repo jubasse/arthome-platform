@@ -20,6 +20,7 @@ export default defineConfig([
     'apps/*/dist/**',
     'libs/*/dist/**',
     'vendor/**', // tarballs: build output of another repository
+    'libs/events/src/gen/**', // protobuf-es output; typechecked, not linted
     'docs/**', // copied in on install; the originals live in arthome-core
   ]),
 
@@ -31,6 +32,18 @@ export default defineConfig([
     // The repository's own tools are standalone Node scripts: no TypeScript
     // project, and writing to standard output is their job.
     files: ['tools/**/*.mjs'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+
+  {
+    // A process entry point writing to stdout IS its log in a container: there
+    // is no file to tail and no transport to configure, and a consumer that
+    // reports nothing about what it applied is operationally blind. Scoped to
+    // the entry points alone — anywhere else, a console call is a debug
+    // statement somebody forgot.
+    files: ['apps/*/src/main.ts'],
     rules: {
       'no-console': 'off',
     },
