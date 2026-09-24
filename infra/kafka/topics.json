@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "The topics this repository owns, with the partition counts events.md §3 fixes.",
+    "",
+    "⚠ NEVER RELY ON AUTO-CREATION. A topic created by a producer takes the broker's",
+    "  default partition count — one — and events.md's numbers are not decoration:",
+    "  they are the headroom that lets replicas be added without repartitioning.",
+    "  Partitions cannot be reduced afterwards, and raising them re-hashes every",
+    "  key, which breaks the per-aggregate ordering the key exists to guarantee.",
+    "",
+    "  It is also what a consumer needs in order to start at all: KafkaJS refuses",
+    "  to subscribe to a topic that does not exist yet, with 'This server does not",
+    "  host this topic-partition'."
+  ],
+  "topics": [
+    { "name": "arthome.identity.account", "partitions": 3 },
+    { "name": "arthome.identity.device", "partitions": 3 },
+    { "name": "arthome.identity.channel", "partitions": 3 },
+    { "name": "arthome.identity.retry", "partitions": 3 },
+    { "name": "arthome.identity.dlq", "partitions": 3 },
+    { "name": "arthome.notifications.delivery", "partitions": 3 },
+    { "name": "arthome.notifications.retry", "partitions": 3 },
+    { "name": "arthome.notifications.dlq", "partitions": 3 }
+  ]
+}

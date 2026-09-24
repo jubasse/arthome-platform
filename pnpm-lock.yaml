@@ -205,6 +205,9 @@ importers:
       '@arthome-platform/events':
         specifier: workspace:*
         version: link:../../libs/events
+      '@arthome-platform/messaging':
+        specifier: workspace:*
+        version: link:../../libs/messaging
       '@arthome/core':
         specifier: file:../../vendor/arthome-core-41a7a1edfeb9.tgz
         version: file:vendor/arthome-core-41a7a1edfeb9.tgz(zod@4.6.5)
@@ -292,6 +295,15 @@ importers:
       '@arthome/core':
         specifier: file:../../vendor/arthome-core-41a7a1edfeb9.tgz
         version: file:vendor/arthome-core-41a7a1edfeb9.tgz(zod@4.6.5)
+      kafkajs:
+        specifier: 2.2.4
+        version: 2.2.4
+      typeorm:
+        specifier: 1.1.1
+        version: 1.1.1(pg@8.23.0)
+      uuid:
+        specifier: 14.0.2
+        version: 14.0.2
 
 packages:
 

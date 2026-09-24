@@ -1,10 +1,10 @@
 import { AccountRegisteredSchema } from '@arthome-platform/events';
+import { OutboxEvent } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import type { DataSource, EntityManager } from 'typeorm';
 import { describe, expect, it } from 'vitest';
 
 import { Account } from './account.entity.js';
-import { OutboxEvent } from './outbox-event.entity.js';
 import { RegisterAccountService } from './register-account.service.js';
 
 interface Insert {

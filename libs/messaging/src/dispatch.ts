@@ -1,14 +1,32 @@
-import { deadLetterTopic, retryTopic, routeFailure } from '@arthome-platform/messaging';
 import type { EachMessagePayload, IHeaders, Producer } from 'kafkajs';
-import type { DataSource } from 'typeorm';
 
-import { applyMessage, type Outcome } from './account-consumer.js';
+import { deadLetterTopic, retryTopic, routeFailure } from './failure.js';
 
-/** Headers this service adds when it re-publishes a message it could not apply. */
+/** Headers a service adds when it re-publishes a message it could not apply. */
 export const ATTEMPT_HEADER = 'arthome-attempt';
 export const NOT_BEFORE_HEADER = 'arthome-not-before';
 export const ORIGIN_HEADER = 'arthome-origin-topic';
 export const ERROR_HEADER = 'arthome-error';
+export const DLQ_REASON_HEADER = 'arthome-dlq-reason';
+
+/** What a handler did with a message it was given. */
+export type Outcome = 'applied' | 'duplicate' | 'ignored';
+
+/** What happened to a message overall, the failure paths included. */
+export type Disposition = Outcome | 'retried' | 'dead-lettered';
+
+/** Applies one message. Throws `PermanentError` for what a retry cannot fix. */
+export type MessageHandler = (payload: EachMessagePayload) => Promise<Outcome>;
+
+/** Read one header as a string, treating Debezium's literal `null` as absence. */
+export function header(payload: EachMessagePayload, name: string): string | null {
+  const raw = payload.message.headers?.[name];
+  if (raw === undefined || raw === null) return null;
+  const value = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw);
+  // ⚠ Debezium renders a NULL column as the four characters `null`, not as an
+  //   absent header. Storing that is how a trace id becomes the word "null".
+  return value === 'null' ? null : value;
+}
 
 export function attemptsSoFar(headers: IHeaders | undefined): number {
   const raw = headers?.[ATTEMPT_HEADER];
@@ -17,7 +35,6 @@ export function attemptsSoFar(headers: IHeaders | undefined): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
-/** Everything the original message carried, kept so a replay is possible at all. */
 function forwarded(payload: EachMessagePayload): IHeaders {
   const kept: IHeaders = {};
   for (const [name, value] of Object.entries(payload.message.headers ?? {})) {
@@ -26,33 +43,35 @@ function forwarded(payload: EachMessagePayload): IHeaders {
   return kept;
 }
 
-export type Disposition = Outcome | 'retried' | 'dead-lettered';
-
 /**
  * Apply a message, and put it where it belongs when that fails.
  *
  * ⚠ THE FAILURE PATH PUBLISHES BEFORE IT RETURNS, and returning normally is what
  *   lets the offset advance. A consumer that rethrows here would make KafkaJS
- *   redeliver the same message immediately and for ever — a hot loop that looks
- *   like a working retry until you read the broker's traffic.
+ *   redeliver the same message immediately and for ever — a hot loop that reads
+ *   like a working retry until you look at the broker's traffic.
  *
- * ⚠ THE ORIGINAL TOPIC IS CARRIED. Without it, a message in the retry topic has
- *   no way back: the handler is chosen by `type`, but the operator looking at a
- *   dead letter needs to know where it came from.
+ * ⚠ IF THE REPUBLISH ITSELF FAILS, THE ERROR ESCAPES ON PURPOSE. No commit, so
+ *   the message is redelivered rather than lost. That makes republish-then-commit
+ *   a dual write, and a crash between them duplicates — which is exactly what
+ *   the handler's deduplication absorbs.
  */
 export async function dispatch(
-  dataSource: DataSource,
+  handler: MessageHandler,
   producer: Producer,
   service: string,
   payload: EachMessagePayload,
   now: Date = new Date(),
 ): Promise<Disposition> {
   try {
-    return await applyMessage(dataSource, payload);
+    return await handler(payload);
   } catch (error) {
     const attempts = attemptsSoFar(payload.message.headers);
     const route = routeFailure(error, attempts, now);
     const headers = forwarded(payload);
+
+    // The origin is kept from the FIRST publication: a message on its second
+    // retry must still say where it came from, not say "the retry topic".
     headers[ORIGIN_HEADER] = String(headers[ORIGIN_HEADER] ?? payload.topic);
     headers[ERROR_HEADER] =
       error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -68,7 +87,7 @@ export async function dispatch(
     }
 
     headers[ATTEMPT_HEADER] = String(attempts);
-    headers['arthome-dlq-reason'] = route.reason;
+    headers[DLQ_REASON_HEADER] = route.reason;
     await producer.send({
       topic: deadLetterTopic(service),
       messages: [{ key: payload.message.key, value: payload.message.value, headers }],

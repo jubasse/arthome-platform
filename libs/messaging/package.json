@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Failure classification, retry scheduling and dead-lettering, shared by every consumer.",
+  "description": "The messaging contract every service shares: the outbox, failure classification, retry and dead-lettering.",
   "license": "UNLICENSED",
   "exports": {
     ".": {
@@ -18,6 +18,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-41a7a1edfeb9.tgz"
+    "@arthome/core": "file:../../vendor/arthome-core-41a7a1edfeb9.tgz",
+    "kafkajs": "2.2.4",
+    "typeorm": "1.1.1",
+    "uuid": "14.0.2"
   }
 }

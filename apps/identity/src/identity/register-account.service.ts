@@ -1,4 +1,5 @@
 import { AccountRegisteredSchema } from '@arthome-platform/events';
+import { writeOutboxEvent } from '@arthome-platform/messaging';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Injectable } from '@nestjs/common';
@@ -7,7 +8,6 @@ import { DataSource } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { Account } from './account.entity.js';
-import { OutboxEvent } from './outbox-event.entity.js';
 
 export interface RegisterAccountCommand {
   readonly publicHandle: string;
@@ -43,7 +43,6 @@ export class RegisterAccountService {
    */
   async register(command: RegisterAccountCommand): Promise<RegisteredAccount> {
     const accountId = uuidv7();
-    const messageId = uuidv7();
     const occurredAt = new Date();
 
     const event = create(AccountRegisteredSchema, {
@@ -53,6 +52,7 @@ export class RegisterAccountService {
       country: command.country,
     });
 
+    let messageId = '';
     await this.dataSource.transaction(async (manager) => {
       await manager.insert(Account, {
         id: accountId,
@@ -62,25 +62,27 @@ export class RegisterAccountService {
         country: command.country,
       });
 
-      await manager.insert(OutboxEvent, {
-        id: messageId,
-        // `identity.account` → topic `arthome.identity.account` (events.md §3).
-        aggregatetype: 'identity.account',
-        // The partition key. One account's events stay in order because of it.
-        aggregateid: accountId,
-        type: 'identity.account.registered.v1',
-        // ⚠ Serialised HERE, by the producer. Debezium transports the bytes and
-        //   reads none of them (binary.handling.mode=bytes). The registry
-        //   framing — magic byte, schema id, message indexes — belongs in front
-        //   of these bytes and arrives with the schema registry; the path,
-        //   the key, the headers and the ordering do not depend on it.
-        payload: Buffer.from(toBinary(AccountRegisteredSchema, event)),
-        tracecontext: command.traceparent,
-        // No human actor: a registration is caused by the person being created,
-        // who has no account id until this transaction commits.
-        actor_id: null,
-        created_at: occurredAt,
-      });
+      messageId = await writeOutboxEvent(
+        manager,
+        {
+          // `identity.account` → topic `arthome.identity.account` (events.md §3).
+          aggregateType: 'identity.account',
+          // The partition key. One account's events stay in order because of it.
+          aggregateId: accountId,
+          type: 'identity.account.registered.v1',
+          // ⚠ Serialised HERE, by the producer. Debezium transports the bytes and
+          //   reads none of them. The registry framing — magic byte, schema id,
+          //   message indexes — belongs in front of these bytes and arrives with
+          //   the schema registry; the path, key, headers and ordering do not
+          //   depend on it.
+          payload: toBinary(AccountRegisteredSchema, event),
+          traceparent: command.traceparent,
+          // No human actor: a registration is caused by the person being created,
+          // who has no account id until this transaction commits.
+          actorId: null,
+        },
+        occurredAt,
+      );
     });
 
     return { accountId, messageId };

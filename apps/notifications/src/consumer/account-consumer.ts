@@ -1,23 +1,11 @@
 import { AccountRegisteredSchema } from '@arthome-platform/events';
-import { PermanentError } from '@arthome-platform/messaging';
+import { PermanentError, header, type Outcome } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource } from 'typeorm';
 
 import { ProcessedMessage } from './processed-message.entity.js';
 import { WelcomeEmail } from './welcome-email.entity.js';
-
-/** What the consumer did with a message, so a caller can assert on it. */
-export type Outcome = 'applied' | 'duplicate' | 'ignored';
-
-function header(payload: EachMessagePayload, name: string): string | null {
-  const raw = payload.message.headers?.[name];
-  if (raw === undefined || raw === null) return null;
-  const value = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw);
-  // Debezium renders a NULL column as the four characters "null", not as an
-  // absent header. Treating that as a value would store the string.
-  return value === 'null' ? null : value;
-}
 
 /**
  * Apply one message, exactly once, whatever the delivery does.

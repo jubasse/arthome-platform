@@ -28,7 +28,8 @@
     "verify:offline": "pnpm run check:vendor && pnpm run check:versions && pnpm run check:tsconfig && pnpm run check:enums && pnpm run check:language",
     "verify": "pnpm run verify:offline && pnpm run check:prettier-conflict && pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
     "check:vendor": "node tools/check-vendor-specs.mjs",
-    "gen:events": "node tools/generate-events.mjs"
+    "gen:events": "node tools/generate-events.mjs",
+    "provision:topics": "node tools/provision-topics.mjs"
   },
   "devDependencies": {
     "@arthome/tooling": "file:./vendor/arthome-tooling-9a0c46efc35f.tgz",
