@@ -70,6 +70,41 @@ What should then be true, and what is worth checking because each step can fail 
 | `notifications.welcome_email` | one row, holding that same traceparent |
 | replaying the message | the consumer says `duplicate` and the row count does **not** move |
 
+### When a message cannot be applied
+
+Two reject paths, and they answer different questions.
+
+| Failure | Example | What happens |
+| --- | --- | --- |
+| **permanent** | no `message-id` header, bytes that are not this schema | **dead-lettered at once**, `attempt: 0`, no replay |
+| **transient** | database unavailable, lock, dependency down | retried after 5 s, 30 s, 5 min — each with jitter — then dead-lettered |
+
+Anything unrecognised is treated as **transient**, deliberately: retrying a permanent failure costs
+three attempts, while discarding a transient one loses the fact for good.
+
+```bash
+# the retry and dead-letter topics are per service, and are not auto-created
+for t in arthome.notifications.retry arthome.notifications.dlq; do
+  docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
+    --bootstrap-server localhost:9092 --create --topic "$t" --partitions 3 --replication-factor 1
+done
+```
+
+⚠ **Retry at ONE layer.** A client retry, the broker's own redelivery and this budget multiply:
+three of each is twenty-seven attempts for one message, and an outage becomes an overload caused by
+the retries. `@arthome-platform/messaging` is the single owner for business failures.
+
+⚠ **A retry topic reorders one key's events.** Kafka's ordering holds per partition, and a message
+that waits five minutes comes back behind later events for the same aggregate. Nothing guards this
+yet — the guard is an aggregate version on the consumer's side, and it is owed the day a consumer
+applies two events whose order matters.
+
+⚠ **There is no dead-letter queue on the connector, and the logs will suggest otherwise.** Kafka
+Connect implements `errors.deadletterqueue.*` for sink connectors only; the outbox router is a
+source connector. It accepts the properties and Debezium echoes them back at startup, so the output
+reads as though one were configured — the topic is never created. See
+[`infra/debezium/README.md`](infra/debezium/README.md).
+
 ⚠ **A replication slot nobody consumes retains the write-ahead log.** Stopping the connector and
 leaving it registered makes the disk grow until it is full (`data-model.md` §7.4). `docker compose
 down -v` removes everything, slot included.

@@ -1,0 +1,23 @@
+{
+  "name": "@arthome-platform/messaging",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Failure classification, retry scheduling and dead-lettering, shared by every consumer.",
+  "license": "UNLICENSED",
+  "exports": {
+    ".": {
+      "@arthome/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@arthome/core": "file:../../vendor/arthome-core-41a7a1edfeb9.tgz"
+  }
+}

@@ -247,6 +247,9 @@ importers:
       '@arthome-platform/events':
         specifier: workspace:*
         version: link:../../libs/events
+      '@arthome-platform/messaging':
+        specifier: workspace:*
+        version: link:../../libs/messaging
       '@arthome/core':
         specifier: file:../../vendor/arthome-core-41a7a1edfeb9.tgz
         version: file:vendor/arthome-core-41a7a1edfeb9.tgz(zod@4.6.5)
@@ -283,6 +286,12 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.15.0
         version: 2.15.0
+
+  libs/messaging:
+    dependencies:
+      '@arthome/core':
+        specifier: file:../../vendor/arthome-core-41a7a1edfeb9.tgz
+        version: file:vendor/arthome-core-41a7a1edfeb9.tgz(zod@4.6.5)
 
 packages:
 

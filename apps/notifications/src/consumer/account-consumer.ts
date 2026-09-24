@@ -1,4 +1,5 @@
 import { AccountRegisteredSchema } from '@arthome-platform/events';
+import { PermanentError } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource } from 'typeorm';
@@ -36,8 +37,11 @@ export async function applyMessage(
 ): Promise<Outcome> {
   const messageId = header(payload, 'message-id');
   if (messageId === null) {
-    throw new Error(
-      `message on ${payload.topic} has no message-id header — permanent error, not a default`,
+    // PERMANENT: no amount of waiting grows a header. And it cannot be given a
+    // generated one — that would make the message undeduplicable and silently
+    // reprocessable for ever (events.md §1.3).
+    throw new PermanentError(
+      `message on ${payload.topic} has no message-id header — permanent, not a default`,
     );
   }
 
@@ -45,8 +49,17 @@ export async function applyMessage(
   if (type !== 'identity.account.registered.v1') return 'ignored';
 
   const value = payload.message.value;
-  if (value === null) throw new Error(`message ${messageId} has no value`);
-  const event = fromBinary(AccountRegisteredSchema, new Uint8Array(value));
+  if (value === null) throw new PermanentError(`message ${messageId} has no value`);
+
+  let event;
+  try {
+    event = fromBinary(AccountRegisteredSchema, new Uint8Array(value));
+  } catch (cause) {
+    // PERMANENT: bytes that are not this schema will not become this schema.
+    throw new PermanentError(
+      `message ${messageId} does not decode as AccountRegistered: ${String(cause)}`,
+    );
+  }
 
   return dataSource.transaction(async (manager) => {
     const claimed = await manager
