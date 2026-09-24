@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@arthome/tooling/tsconfig/app.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    // Unlike arthome-core, `types: ["node"]` IS correct here and has to be.
+    // Core forbids itself any platform dependency, so pulling Node's globals
+    // into the program that checks it would let a Node API in unnoticed. This
+    // repository is nothing but Node: services, configuration and tools.
+    "types": ["node"]
+  },
+  "include": ["apps/*/src", "libs/*/src", "tools/**/*.ts"],
+  "exclude": ["node_modules", "apps/*/dist", "libs/*/dist", "vendor", "docs"]
+}

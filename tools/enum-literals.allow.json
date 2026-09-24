@@ -1,0 +1,20 @@
+{
+  "_comment": [
+    "The exceptions to arthome-check-enums, EACH WITH ITS REASON.",
+    "",
+    "This file stays short or the rule is a bad one. Past twenty lines, that is",
+    "the sign that a value is missing from @arthome/core — not that the gate is",
+    "too severe.",
+    "",
+    "A legitimate exception has a recognisable shape: the value belongs to a",
+    "SPACE SHARED by two distinct vocabularies, and importing the constant would",
+    "be SEMANTICALLY WRONG. Any other justification is suspect."
+  ],
+  "allow": [
+    {
+      "file": "libs/config/src/env.ts",
+      "value": "production",
+      "reason": "NODE_ENV's deployment mode, not a role on a show. MEMBER_ROLES has a `production` member because somebody works IN production — the crew sense — and the two share the English word without sharing anything else. Importing MEMBER_ROLES.PRODUCTION to describe how a process was started would carve the confusion in rather than correct it. This is the exact shape the gate has produced a bad fix for before: an agent once reached for NavigationEntry.JOURNAL to name an accounting export format, the same string and the wrong concept."
+    }
+  ]
+}

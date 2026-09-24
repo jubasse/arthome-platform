@@ -1,0 +1,20 @@
+{
+  "name": "@arthome-platform/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Environment reading, validated once at startup.",
+  "license": "UNLICENSED",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@arthome/core": "file:../../vendor/arthome-core-41a7a1edfeb9.tgz",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-247f798e95dc.tgz",
+    "zod": "4.6.5"
+  }
+}

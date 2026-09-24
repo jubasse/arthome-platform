@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# The sibling packages, packed into tarballs by `pnpm run pack:siblings`.
+# Build output of another repository: reproducible from it, never committed.
+vendor/
+
+# NOT IGNORED, deliberately: docs/arthome/. Those three documents are copied in
+# by `arthome-sync-agent-docs` on every install AND committed, which is what
+# makes them trustworthy — a stale copy shows up in `git status` the first time
+# anybody installs after a pull. The freshness check is the diff, and the diff
+# already exists.

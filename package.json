@@ -1,0 +1,42 @@
+{
+  "name": "arthome-platform",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Arthome microservices and their infrastructure.",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@12.4.2",
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26"
+  },
+  "prettier": "@arthome/tooling/prettier",
+  "scripts": {
+    "postinstall": "arthome-sync-agent-docs",
+    "pack:siblings": "node tools/pack-siblings.mjs",
+    "bootstrap": "node tools/pack-siblings.mjs && pnpm install",
+    "format": "prettier --write .",
+    "fix": "prettier --write . && eslint . --fix && prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings 0 --report-unused-disable-directives",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check:versions": "arthome-check-versions",
+    "check:tsconfig": "arthome-check-tsconfig",
+    "check:enums": "arthome-check-enums",
+    "check:language": "arthome-check-language",
+    "check:prettier-conflict": "arthome-check-prettier-conflict",
+    "verify:offline": "pnpm run check:vendor && pnpm run check:versions && pnpm run check:tsconfig && pnpm run check:enums && pnpm run check:language",
+    "verify": "pnpm run verify:offline && pnpm run check:prettier-conflict && pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
+    "check:vendor": "node tools/check-vendor-specs.mjs"
+  },
+  "devDependencies": {
+    "@arthome/tooling": "file:./vendor/arthome-tooling-d7300a04921f.tgz",
+    "@eslint/js": "10.0.1",
+    "@types/node": "^24",
+    "eslint": "10.11.0",
+    "eslint-config-prettier": "10.1.8",
+    "prettier": "3.9.8",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  }
+}

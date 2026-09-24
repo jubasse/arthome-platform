@@ -1,0 +1,26 @@
+# Prettier owns CODE formatting. It does not own PROSE.
+#
+# ── Markdown ──────────────────────────────────────────────────────────────────
+# The same boundary arthome-core draws, for the same measured reason: Prettier
+# pads every Markdown table cell to the column width, so a table whose cells hold
+# sentences becomes source lines of several hundred characters — unreadable in an
+# editor, and every later edit to one cell reflows the whole table so the diff no
+# longer shows what changed. See code-conventions.md 5.1.
+**/*.md
+
+# ── Not ours to reformat ──────────────────────────────────────────────────────
+# ⚠ docs/arthome/ is a PROJECTION of arthome-core, rewritten by
+#   `arthome-sync-agent-docs` on every install. Reformatting it here would put a
+#   diff into `git status` at every install and destroy the one freshness signal
+#   this design has: that a stale copy is the only thing that shows up there.
+docs/arthome/
+
+# The sibling packages, packed. Build output of another repository.
+vendor/
+
+# ── Generated or machine-owned ────────────────────────────────────────────────
+pnpm-lock.yaml
+**/dist/
+**/coverage/
+**/generated/
+node_modules/
