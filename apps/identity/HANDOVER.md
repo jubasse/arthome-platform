@@ -31,10 +31,17 @@ The shared HTTP edge — the exception filter, the production guard, the refusal
 traceparent parser — is **`@arthome-platform/http-edge`** (`libs/http-edge`), not a file in this
 service. §3.
 
-Tests: 3 files, 22 tests here — `register-account.service.spec.ts` (6),
-`identity.controller.spec.ts` (6, new), `register-account.schema.spec.ts` (10, new) — plus 26 in
-`libs/http-edge` (`error-envelope.filter.spec.ts` 16, `traceparent.spec.ts` 7,
+Tests: 4 files, 24 tests here — `register-account.service.spec.ts` (6),
+`identity.controller.spec.ts` (6, new), `register-account.schema.spec.ts` (10, new),
+`unique-violations.spec.ts` (2, new) — plus 31 in `libs/http-edge`
+(`error-envelope.filter.spec.ts` 21, `traceparent.spec.ts` 7,
 `deny-in-production.guard.spec.ts` 3).
+
+⚠ **`unique-violations.spec.ts` EXISTS BECAUSE THE FILTER'S OWN SUITE CANNOT CATCH WHAT IT CHECKS,
+AND DID NOT.** That suite tests the mechanism against a fixture that copies this service's table, so
+it stayed green while the service passed **no** table at all and every duplicate email answered 500.
+The mechanism being right is not the same fact as the service using it. This test reads the
+migrations and fails if a column they constrain has no code bound to it.
 
 Routing, from `events.md` §3: `aggregatetype = identity.account` → topic
 `arthome.identity.account`, `aggregateid` = the account id, `type =
@@ -44,7 +51,7 @@ identity.account.registered.v1`.
 
 ```
 pnpm --filter @arthome-platform/identity exec tsc --noEmit -p tsconfig.json   # clean
-pnpm --filter @arthome-platform/identity exec vitest run                      # 3 files, 22 tests
+pnpm --filter @arthome-platform/identity exec vitest run                      # 4 files, 24 tests
 pnpm --filter @arthome-platform/identity exec prettier --write "src/**/*.ts"  # clean
 pnpm --filter @arthome-platform/identity exec eslint src --max-warnings 0     # clean
 ```
@@ -158,40 +165,67 @@ not deferred by anything, and critical-rules #5 forbids the argument that would 
 
 Two things to know about it:
 
-- **It asks "is this one of the two reachable environments" rather than "is this production",** and
-  the two reasons agree. It is fail-closed, so a `staging` added to `EnvSchema` is refused rather
-  than opened. And the literal `'production'` cannot be written in a service's `src/`:
-  `arthome-check-enums` reports it, correctly by its own rules, because `production` is a member of
-  `MEMBER_ROLES` — somebody works *in* production, the crew sense — and the one allow-list entry for
-  that collision is scoped to `libs/config/src/env.ts`. **The clean fix is
-  `@arthome-platform/config` exporting an `isProduction`**, which would remove the literal, the
-  comment and the double negative. `libs/**` was outside this pass.
+- **The predicate is `isProductionEnvironment` in `@arthome-platform/config`, not a comparison in
+  either service.** It asks "is this one of the two reachable environments" rather than "is this
+  production", and the two reasons for that agree. It is fail-closed: a `staging` added to
+  `EnvSchema` is production-like until someone says otherwise, so widening the schema cannot quietly
+  open a guarded route. And the literal `'production'` cannot be written in a service's `src/` at
+  all — `arthome-check-enums` reports it, correctly by its own rules, because `production` is a
+  member of `MEMBER_ROLES` (somebody works *in* production, the crew sense), and the single
+  allow-list entry for that collision is scoped to `libs/config/src/env.ts`. Both services briefly
+  carried a double-negative predicate and a paragraph explaining it; the export in `config` replaced
+  both, which is where the fact belongs — `env.ts` is the one file that already reads the
+  environment, once, at startup.
 - **It refuses EVERY route in production, so the liveness probe this service does not yet have will
   need an exemption** — `Reflector.createDecorator` metadata read with `getAllAndOverride`. Not
   built: a decorator with no route to exempt is shape invented ahead of its use.
 
-### (g) What could not be reconciled with `transport.md` §5.5 — three codes it names that the vocabulary does not carry
+### (g) `transport.md` §5.5 was missing three codes — all three now exist, and no substitute ships
 
-§5.5's status table is **pre-D-067**: it is written in SCREAMING_SNAKE throughout, and D-067
-converted every code to dotted lowercase. Three entries have no surviving member in `@arthome/core`:
+§5.5's status table is **pre-D-067**: written in SCREAMING_SNAKE throughout, while D-067 converted
+every code to dotted lowercase. Measuring that table against the arrays `@arthome/core` actually
+exports, it **promises 28 code names and 12 were emittable by nobody**. Three of the twelve blocked
+this edge, and all three were published during this pass (arthome-core `63ca16a` and `60ec163`):
 
-| §5.5 says | Status | Reality |
+| §5.5 says | Status | Now |
 | --- | --- | --- |
-| `STATE_CONFLICT` | 409 | no member. The only "already in use" code is `identity.email_taken`, which names a column |
-| `INTERNAL` | 500 | no member |
-| `SERVICE_UNAVAILABLE` | 503 | no member |
+| `STATE_CONFLICT` | 409 | **no generic member, by design.** A 409 carries the code that names the specific refusal |
+| `INTERNAL` | 500 | `ApiErrorCode.INTERNAL` = `api.internal` |
+| `SERVICE_UNAVAILABLE` | 503 | `ApiErrorCode.SERVICE_UNAVAILABLE` = `api.service_unavailable` |
 
-The filter serves `ApiErrorCode.SCHEMA_INVALID` at 409 and `ApiErrorCode.UPSTREAM_UNAVAILABLE` at
-500/503, each behind a single named constant in `@arthome-platform/http-edge`'s `refusal.ts`
-(`CONFLICT_CODE`, `INTERNAL_CODE`) with
-the full reasoning at the declaration. **Both are substitutes and both are wrong in a stated way**:
-the 409's code collides with the 400's, so a client tells them apart by status alone, and a genuine
-defect in this service wears "upstream unavailable". Inventing members was rejected — a code no
-contract publishes is one no surface can translate, and `account.entity.ts` records that exact
-mistake against itself with `ACCOUNT_STATUSES`.
+**Nothing substitutes for anything any more.** Two named constants existed briefly to hold
+knowingly-wrong stand-ins (`ApiErrorCode.SCHEMA_INVALID` at 409, `ApiErrorCode.UPSTREAM_UNAVAILABLE`
+at 500 and 503); both are deleted rather than repointed, because a constant whose only content is
+`= ApiErrorCode.INTERNAL` is indirection naming nothing.
 
-**The fix is two members in `API_ERROR_CODES`** — `api.conflict` and something for the internal case
-— in `@arthome/core`. Until then those two constants are the only lines to change.
+⚠ **`api.upstream_unavailable` MUST NOT BE EMITTED BY THIS SERVICE, and there is a test asserting no
+path does.** It means "a service behind the BFF failed". Said about ourselves it is false, and it
+destroyed the one distinction a caller acts on — **503 is retryable and 500 is not** — because one
+substitute answered 500, 502 and 503 alike. It stays reserved for the BFF relaying a failed service.
+
+**The 409 is per-column, and that is the contract's design rather than a preference.** The published
+`Conflict` response description reads *"Definitive business refusal. The `code` says which one"*, and
+18 responses share it. `account` has two `citext unique` columns, so the filter reads the constraint
+name and answers `IdentityErrorCode.EMAIL_TAKEN` or `IdentityErrorCode.HANDLE_TAKEN` —
+`identity.handle_taken` having been added to the domain for exactly this, rather than collapsing both
+into one code that would be false half the time.
+
+⚠ **AND THE STANDING VAGUENESS EXCEPTION DOES NOT REACH THIS.** `error-codes.ts` says an
+*authentication* refusal that names which check failed is an oracle. A registration conflict is not
+an authentication refusal, and the proof is internal to the vocabulary: `identity.email_taken` is
+published, so if the exception covered sign-up the member would contradict the rule beside it.
+
+⚠ **WHAT THE ORACLE ACTUALLY IS, because this was mis-sited at first — mine.** It was never the code;
+it is the **status**. A 409 where a 201 would otherwise be returned tells the caller the address is
+registered before any code is read, and a vaguer code cannot un-leak that. Reading the constraint to
+serve the right code therefore discloses nothing the status had not already given away.
+
+⚠ **THE OPEN QUESTION, ABOVE THIS SERVICE AND NOT DECIDED HERE: should sign-up disclose a taken
+email at all?** The standard mitigation is to answer as though it had succeeded and disambiguate out
+of band, by email. That is a registration-flow design decision, far larger than an error code, and
+the published vocabulary is the project's current answer — so `EMAIL_TAKEN` is served today. Raised
+and carried upward during this pass; **not implemented, deliberately.** If it is ever decided the
+other way, this filter's per-column mapping and `identity.email_taken` itself are what change.
 
 Also unreconciled, and smaller:
 
@@ -230,6 +264,28 @@ for it, and a list written here would be a parallel table going stale inside one
 never considered it" — which is why D-069's per-case boundary left no trace at this edge. The point
 of those comments is that the next reader can tell a decision from an omission.
 
+### (i) Where a schema belongs, and why "DTOs live in contracts" is the wrong move here
+
+**The line is who consumes the shape, not which repository it sits in.**
+
+- **frontend ↔ BFF** → `@arthome/contracts` in arthome-core. Those schemas exist so the storefront
+  and the studio share them instead of doing the same work twice; a browser has to have them. That is
+  why the package has 15 subpaths, and why `check:emit-diff` compares all 111 of their schemas
+  against the two OpenAPI documents — which are, in the README's own words, "the contracts of the two
+  BFFs".
+- **BFF → service** → stays in arthome-platform, permanently. `POST /accounts` and `POST /shows`
+  appear in no OpenAPI document and no frontend will ever call them.
+
+So `register-account.schema.ts` lives beside its controller and **stays there**. It is not waiting
+for a BFF to be extracted into a shared package: when a BFF is written, the shape that belongs in
+`@arthome/contracts` is the BFF's own **client-facing** request and response schema, because the
+frontends consume that one. This service's inbound shape is not the same shape and never becomes it.
+
+⚠ **THE MOVE THAT LOOKS OBVIOUS IS THE HARMFUL ONE.** "These are DTOs, DTOs live in contracts" would
+put a service's internal input shape on a package every browser installs, and would then have
+`check:emit-diff` compare it against an OpenAPI document that does not describe it. Recorded because
+the reasoning is not visible from either file.
+
 ## 3. The HTTP edge is `@arthome-platform/http-edge`, and it was briefly duplicated
 
 The filter, the guard, the refusal shape and the traceparent parser were written into
@@ -243,10 +299,14 @@ copies were **byte-identical**. They were kept that way deliberately while they 
 was empty and the move could not silently drop a branch. Verified by comparing them with comments
 removed before deleting either.
 
-The library exports `Refusal`, `RefusalException`, `CONFLICT_CODE`, `INTERNAL_CODE`,
-`conflictRefusal`, `refusalForStatus`, `schemaInvalidRefusal`, `schemaInvalidException`,
-`ErrorEnvelopeFilter`, `DenyInProductionGuard`, `parseTraceparent` and `TraceContext`, and holds 26
-tests.
+The library exports `Refusal`, `UniqueViolationCode`, `RefusalException`, `isMappedStatus`,
+`refusalForStatus`, `schemaInvalidRefusal`, `schemaInvalidException`, `ErrorEnvelopeFilter`,
+`DenyInProductionGuard`, `parseTraceparent` and `TraceContext`, and holds 31 tests.
+
+⚠ **WHAT STAYS IN THE SERVICE, AND WHY IT IS NOT AN EXCEPTION TO THE RULE**: the two endpoint
+schemas, and `unique-violations.ts` — the table binding each uniquely-constrained column to its code.
+The library knows how to *match* a constraint; only the service knows what its columns mean. Passing
+an empty table is legitimate: `catalog`'s `show` has no unique constraint at all.
 
 ⚠ **BUILD THE LIBRARY ONCE OR A PER-SERVICE `vitest` RUN WILL NOT RESOLVE IT, and the error names
 the wrong thing.** `pnpm --filter @arthome-platform/identity exec vitest run` invoked from the
@@ -262,11 +322,12 @@ invocation. `dist/` is gitignored and every other library has a locally built on
 pnpm --filter @arthome-platform/http-edge run build
 ```
 
-⚠ **Two dependencies in `libs/http-edge/package.json` are unused**, and that file was outside the
-pass's trees: `typeorm` (the filter recognises a pg unique violation by duck-typing `code` and
-`driverError.code` rather than importing `QueryFailedError` — deliberately, so the transport layer
-does not depend on the ORM) and `zod` (the pipe's `exceptionFactory` lives there but types its
-issues structurally rather than importing zod).
+⚠ **THE LIBRARY DEPENDS ON NEITHER `typeorm` NOR `zod`, AND MUST NOT START.** It recognises a pg
+unique violation by duck-typing `code` and `driverError.code` rather than `instanceof
+QueryFailedError`, so the transport layer does not depend on the ORM; and the pipe's
+`exceptionFactory` types its issues structurally rather than importing zod. Both were in the first
+scaffold and were removed. The next reader's instinct will be to import `QueryFailedError` for one
+`instanceof` — the comment at that function says why not.
 
 ## 4. What remains
 
@@ -279,18 +340,28 @@ renders as the four characters `null`, as the walkthrough's own table notes.
 
 Owed, in rough order of consequence:
 
-1. **`api.conflict` and an internal code in `@arthome/core`.** §2(g). Two lines, and they retire two
-   knowingly-wrong substitutes. **The largest single item now that `libs/http-edge` exists.**
-2. **The success envelope.** `servedAt`, `validUntil` where applicable, and §5.5's `data` wrapper.
-   Both services answer a bare object today.
-3. **Authentication and authorisation.** critical-rules #4 and #5. `DenyInProductionGuard` is a
-   stop-gap that makes the absence loud, not a substitute.
-4. **Idempotency.** critical-rules #12: a replayed `POST /accounts` does not return the original
-   response — it hits the unique constraint and now answers 409 rather than 500, which is better and
-   is still not what #12 asks for.
-5. **`@arthome-platform/config` should export `isProduction`.** §2(f).
-6. **A liveness probe, and the metadata exemption the global guard will need for it.** §2(f).
-7. **Rate limiting and a body-size limit.** Neither service has either; a body with a million
-   `genreIds` is accepted by the schema. `nestjs-web-security` owns both.
-8. **`ACCOUNT_STATUSES` is missing from the domain.** Recorded by `account.entity.ts` itself, not by
+1. **The success envelope.** §5.5 wants `servedAt`, `validUntil` where applicable, and a `data`
+   wrapper; both routes answer a bare object. Errors carry `servedAt` now, through `@arthome/core`'s
+   `Clock` port. **The largest remaining §5.5 gap.**
+2. **Authentication and authorisation.** critical-rules #4 and #5. `DenyInProductionGuard` is a
+   stop-gap that makes the absence loud, not a substitute for either.
+3. **Idempotency.** critical-rules #12: a replayed `POST /accounts` does not return the original
+   response. It now answers 409 with `identity.email_taken` rather than 500, which is better and is
+   still not what #12 asks for.
+4. **A liveness probe, and the metadata exemption the global guard will need for it.** §2(f).
+5. **Rate limiting and a body-size limit.** Neither service has either, and `z.array()` carries no
+   maximum — a body with a million `genreIds` is accepted. `nestjs-web-security` owns both.
+6. **`ACCOUNT_STATUSES` is missing from the domain.** Recorded by `account.entity.ts` itself, not by
    this pass, and still true.
+7. **The nine other code names `transport.md` §5.5 promises and nobody can emit.** `TOKEN_EXPIRED`,
+   `STATE_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, `IDEMPOTENCY_IN_FLIGHT`, `CAPACITY_SHRINK_FORBIDDEN`,
+   `PAIRING_EXPIRED`, `UPSTREAM_ERROR`, `DEADLINE_EXCEEDED`, `UPSTREAM_TIMEOUT`,
+   `GATEWAY_UNAVAILABLE`. All belong to surfaces that do not exist yet — the BFF, pairing,
+   idempotency, Traefik — so **no member should be added for them here**, and none is referenced.
+   Listed because the count is the finding: that table promises 28 names and 12 were unemittable
+   before this pass.
+
+**Done during this pass and no longer owed:** `libs/http-edge` (§3); `api.internal` and
+`api.service_unavailable` in `@arthome/core`; `identity.handle_taken`; and
+`@arthome-platform/config` exporting `isProductionEnvironment`, which removed the double-negative
+predicate both `app.module.ts` files carried.

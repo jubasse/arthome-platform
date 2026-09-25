@@ -44,7 +44,7 @@ pnpm run check:enums                                                         # P
 pnpm run check:language                                                      # PASS (read-only)
 ```
 
-> Counts re-run 2026-09-25 after §2(l) and the §2(m) extraction: 3 files, 25 tests here, plus 26 in
+> Counts re-run 2026-09-25 after §2(l) and the §2(m) extraction: 3 files, 25 tests here, plus 31 in
 > `libs/http-edge`. `check:enums` and `check:language` were
 > **not** re-run in that pass — only the four per-service commands were in scope — but no new string
 > literal duplicating a vocabulary was introduced, and the one that would have (`'production'`, a
@@ -337,24 +337,33 @@ guarded is unchanged and still the sharpest case on this endpoint.
   considered it". Every field above that is shape-only rather than member-strict says so in the
   schema with the reason, so the next reader can tell a decision from an omission.
 
-**What I could not reconcile with `transport.md` §5.5 — three codes it names that the vocabulary
-does not carry.** §5.5's status table is **pre-D-067**: it is written in SCREAMING_SNAKE
-throughout, and D-067 converted every code to dotted lowercase. Three of its entries have no
-surviving member anywhere in `@arthome/core`:
+**`transport.md` §5.5 was missing three codes this edge needed — all three now exist.** §5.5's
+status table is **pre-D-067**: written in SCREAMING_SNAKE throughout, while D-067 converted every
+code to dotted lowercase. Measured against the arrays `@arthome/core` actually exports, that table
+**promises 28 code names and 12 were emittable by nobody.** Three of the twelve blocked this edge,
+and all three were published during the pass (arthome-core `63ca16a`, `60ec163`):
 
-| §5.5 says | Status | Reality |
+| §5.5 says | Status | Now |
 | --- | --- | --- |
-| `STATE_CONFLICT` | 409 | no member. The only "already in use" code is `identity.email_taken`, which names a column |
-| `INTERNAL` | 500 | no member |
-| `SERVICE_UNAVAILABLE` | 503 | no member |
+| `STATE_CONFLICT` | 409 | **no generic member, by design** — a 409 carries the code naming the specific refusal |
+| `INTERNAL` | 500 | `ApiErrorCode.INTERNAL` |
+| `SERVICE_UNAVAILABLE` | 503 | `ApiErrorCode.SERVICE_UNAVAILABLE` |
 
-The filter serves `ApiErrorCode.SCHEMA_INVALID` at 409 and `ApiErrorCode.UPSTREAM_UNAVAILABLE` at
-500/503, each behind a single named constant in `@arthome-platform/http-edge`'s `refusal.ts`
-with the full reasoning at the
-declaration. **Both are substitutes and both are wrong in a stated way** — the 409's code collides
-with the 400's, so a client tells them apart by status only. The fix is one member in
-`API_ERROR_CODES`, `api.conflict`, plus one for the internal case, and it belongs in
-`@arthome/core`. Those are the two lines to change here.
+Two named constants held knowingly-wrong stand-ins for a few hours; **both are deleted rather than
+repointed**, because a constant whose only content is `= ApiErrorCode.INTERNAL` names nothing.
+
+⚠ **`api.upstream_unavailable` IS NOT EMITTED BY EITHER SERVICE, and a test asserts no path does.**
+It means "a service behind the BFF failed" — false said about ourselves, and it destroyed the one
+distinction a caller acts on, since one substitute answered 500, 502 and 503 alike while **503 is
+retryable and 500 is not.**
+
+⚠ **THIS SERVICE STILL EMITS NO 409, AND THAT IS CORRECT RATHER THAN MISSING.** `show` has no unique
+constraint, so it passes the filter an **empty** `UniqueViolationCode` table. A generic conflict code
+was ruled out — the published `Conflict` description reads "Definitive business refusal. The `code`
+says which one" — so an unmapped violation answers 500 and logs the gap by name. The day the
+per-language slugs arrive, the column and its code go in that table and the test in
+`apps/identity/src/unique-violations.spec.ts` is the pattern to copy: it reads the migrations and
+fails if a constrained column has no code.
 
 Two smaller unreconciled points:
 
@@ -383,10 +392,14 @@ copies were **byte-identical**. They were kept that way deliberately while they 
 diff was empty and the move could not silently drop a branch. Verified by comparing them with
 comments removed before deleting either.
 
-`@arthome-platform/http-edge` exports `Refusal`, `RefusalException`, `CONFLICT_CODE`,
-`INTERNAL_CODE`, `conflictRefusal`, `refusalForStatus`, `schemaInvalidRefusal`,
-`schemaInvalidException`, `ErrorEnvelopeFilter`, `DenyInProductionGuard`, `parseTraceparent` and
-`TraceContext`. Its three spec files hold 26 tests.
+`@arthome-platform/http-edge` exports `Refusal`, `UniqueViolationCode`, `RefusalException`,
+`isMappedStatus`, `refusalForStatus`, `schemaInvalidRefusal`, `schemaInvalidException`,
+`ErrorEnvelopeFilter`, `DenyInProductionGuard`, `parseTraceparent` and `TraceContext`. Its three spec
+files hold 31 tests.
+
+⚠ **WHAT STAYS IN A SERVICE**: its endpoint schema, and the table binding each uniquely-constrained
+column to its code. The library knows how to *match* a constraint name; only the service knows what
+its columns mean. This service's table is empty, legitimately.
 
 ⚠ **THE LIBRARY MUST BE BUILT ONCE BEFORE A PER-SERVICE `vitest` RUN WILL RESOLVE IT**, and the
 failure names the wrong thing. `pnpm --filter @arthome-platform/catalog exec vitest run` invoked from
@@ -399,11 +412,32 @@ own header comment describes exactly this trap for `@arthome-platform/messaging`
 not. `dist/` is gitignored and every other library has a locally built one, so:
 `pnpm --filter @arthome-platform/http-edge run build`.
 
-⚠ **Two dependencies in `libs/http-edge/package.json` are not used**, and I could not edit that
-file: `typeorm` (the filter recognises a pg unique violation by duck-typing `code` and
-`driverError.code` rather than importing `QueryFailedError` — deliberately, so the transport layer
-does not depend on the ORM) and `zod` (the pipe's `exceptionFactory` lives there but types its
-issues structurally rather than importing zod).
+⚠ **THE LIBRARY DEPENDS ON NEITHER `typeorm` NOR `zod`, AND MUST NOT START.** It duck-types the pg
+error's `code` and `driverError.code` rather than `instanceof QueryFailedError`, so the transport
+layer does not depend on the ORM; and the pipe's `exceptionFactory` types its issues structurally.
+Both were in the first scaffold and were removed.
+
+### (n) Where a schema belongs, and why "DTOs live in contracts" is the wrong move here
+
+**The line is who consumes the shape, not which repository it sits in.**
+
+- **frontend ↔ BFF** → `@arthome/contracts` in arthome-core. Those schemas exist so the storefront
+  and the studio share them instead of doing the same work twice; a browser has to have them. That is
+  why the package has 15 subpaths, and why `check:emit-diff` compares all 111 of their schemas
+  against the two OpenAPI documents — which are, in the README's own words, "the contracts of the two
+  BFFs".
+- **BFF → service** → stays in arthome-platform, permanently. `POST /accounts` and `POST /shows`
+  appear in no OpenAPI document and no frontend will ever call them.
+
+So `publish-show.schema.ts` lives beside its controller and **stays there**. It is not waiting
+for a BFF to be extracted into a shared package: when a BFF is written, the shape that belongs in
+`@arthome/contracts` is the BFF's own **client-facing** request and response schema, because the
+frontends consume that one. This service's inbound shape is not the same shape and never becomes it.
+
+⚠ **THE MOVE THAT LOOKS OBVIOUS IS THE HARMFUL ONE.** "These are DTOs, DTOs live in contracts" would
+put a service's internal input shape on a package every browser installs, and would then have
+`check:emit-diff` compare it against an OpenAPI document that does not describe it. Recorded because
+the reasoning is not visible from either file.
 
 ## 3. Blockers
 

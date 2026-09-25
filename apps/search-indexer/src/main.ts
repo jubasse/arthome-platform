@@ -78,7 +78,15 @@ async function main(): Promise<void> {
   //   supposed to avoid. `stop()` leaves the group cleanly, which also matters:
   //   a consumer killed without disconnecting stays a member until its session
   //   times out, and its REPLACEMENT consumes nothing for that whole time.
+  // ⚠ An orchestrator sends SIGTERM and then, past its grace period, again — and a
+  //   person pressing ctrl-c twice does the same. Without this the second signal
+  //   re-enters and calls stop() and disconnect() on clients already closing, which
+  //   is how a clean shutdown ends in a rejection nobody reads.
+  let shuttingDown = false;
   const shutdown = async (): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
     await stop();
     await producer.disconnect();
     await opensearch.close();
