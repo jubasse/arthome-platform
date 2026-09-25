@@ -41,6 +41,19 @@ export interface KafkaEndpoint {
   readonly brokers: readonly string[];
 }
 
+/** Where a running index can be reached. */
+export interface OpenSearchEndpoint {
+  readonly host: string;
+  readonly port: number;
+  /** What the OpenSearch client's `node` option takes. */
+  readonly url: string;
+}
+
+export interface StartedOpenSearch {
+  readonly endpoint: OpenSearchEndpoint;
+  stop(): Promise<void>;
+}
+
 export interface StartedPostgres {
   readonly endpoint: PostgresEndpoint;
   stop(): Promise<void>;
@@ -55,6 +68,7 @@ export interface StartedKafka {
 export interface StackRequest {
   readonly postgres?: boolean;
   readonly kafka?: boolean;
+  readonly opensearch?: boolean;
   /**
    * Milliseconds allowed per container before startup is called a failure.
    * Generous by default: a first run pulls the image.
@@ -67,6 +81,8 @@ export interface StartedStack {
   readonly postgres: PostgresEndpoint;
   /** ⚠ Throws if `kafka` was not requested — never returns a dead endpoint. */
   readonly kafka: KafkaEndpoint;
+  /** ⚠ Throws if `opensearch` was not requested — never returns a dead endpoint. */
+  readonly opensearch: OpenSearchEndpoint;
   stop(): Promise<void>;
 }
 
@@ -80,6 +96,7 @@ const DEFAULT_STARTUP_MS = 180_000;
 /** The compose service names this harness reproduces. */
 const POSTGRES_SERVICE = 'postgres';
 const KAFKA_SERVICE = 'kafka';
+const OPENSEARCH_SERVICE = 'opensearch';
 
 /**
  * Throwaway credentials, and deliberately the same words the development stack
@@ -117,6 +134,27 @@ const REQUIRED_WAL_LEVEL = 'logical';
  * The broker's three listeners, mirroring `compose.yaml`: one for inter-broker
  * traffic, one for the KRaft controller, one for clients outside the container.
  */
+const OPENSEARCH_PORT = 9200;
+
+/**
+ * ⚠ THESE MUST MATCH `compose.yaml`'s opensearch block, and they are NOT read
+ *   out of it. `composeImage` reads the image tag because a version can drift;
+ *   these three settings cannot drift into being *wrong*, they can only be
+ *   absent — and absent, the container does not start at all, which a test
+ *   discovers immediately rather than subtly.
+ *
+ *   `DISABLE_SECURITY_PLUGIN` is what makes `http://` work without credentials,
+ *   and the heap cap is not tuning: OpenSearch sizes its default heap from the
+ *   host's memory and refuses to start on a small machine without it.
+ */
+const OPENSEARCH_ENVIRONMENT = {
+  'discovery.type': 'single-node',
+  DISABLE_SECURITY_PLUGIN: 'true',
+  DISABLE_INSTALL_DEMO_CONFIG: 'true',
+  OPENSEARCH_JAVA_OPTS: '-Xms512m -Xmx512m',
+  'bootstrap.memory_lock': 'false',
+} as const;
+
 const KAFKA_INTERNAL_PORT = 9092;
 const KAFKA_CONTROLLER_PORT = 9093;
 const KAFKA_CLIENT_PORT = 29092;
@@ -248,6 +286,40 @@ export async function startPostgres(
       database: MAINTENANCE_DATABASE,
       url: `postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${MAINTENANCE_DATABASE}`,
     },
+    stop: async (): Promise<void> => {
+      await container.stop();
+    },
+  };
+}
+
+/**
+ * A single-node OpenSearch, for tests that assert on a projection.
+ *
+ * ⚠ IT WAITS ON `/_cluster/health`, NOT ON THE LISTENING PORT. OpenSearch binds
+ *   9200 well before the cluster can serve a write: an index request in that
+ *   window fails with a master-not-discovered error that reads like a bug in the
+ *   test. A single-node cluster reports `yellow`, never `green` — it has no
+ *   replica to place — so waiting for green would wait for ever.
+ */
+export async function startOpenSearch(
+  startupTimeoutMs: number = DEFAULT_STARTUP_MS,
+): Promise<StartedOpenSearch> {
+  const container = await new GenericContainer(composeImage(OPENSEARCH_SERVICE))
+    .withEnvironment({ ...OPENSEARCH_ENVIRONMENT })
+    .withExposedPorts(OPENSEARCH_PORT)
+    .withWaitStrategy(
+      Wait.forHttp('/_cluster/health', OPENSEARCH_PORT).forStatusCodeMatching(
+        (code) => code === 200,
+      ),
+    )
+    .withStartupTimeout(startupTimeoutMs)
+    .start();
+
+  const host = container.getHost();
+  const port = container.getMappedPort(OPENSEARCH_PORT);
+
+  return {
+    endpoint: { host, port, url: `http://${host}:${port}` },
     stop: async (): Promise<void> => {
       await container.stop();
     },
@@ -437,15 +509,17 @@ async function waitForBroker(broker: string, timeoutMs: number): Promise<void> {
 export async function startStack(request: StackRequest): Promise<StartedStack> {
   const timeout = request.startupTimeoutMs ?? DEFAULT_STARTUP_MS;
 
-  const [postgres, kafka] = await Promise.allSettled([
+  const [postgres, kafka, opensearch] = await Promise.allSettled([
     request.postgres === true ? startPostgres(timeout) : null,
     request.kafka === true ? startKafka(timeout) : null,
+    request.opensearch === true ? startOpenSearch(timeout) : null,
   ]);
 
-  const started = [postgres, kafka].flatMap((outcome) =>
+  const outcomes = [postgres, kafka, opensearch];
+  const started = outcomes.flatMap((outcome) =>
     outcome.status === 'fulfilled' && outcome.value !== null ? [outcome.value] : [],
   );
-  const failed: string[] = [postgres, kafka].flatMap((outcome) =>
+  const failed: string[] = outcomes.flatMap((outcome) =>
     outcome.status === 'rejected' ? [String(outcome.reason)] : [],
   );
 
@@ -460,6 +534,8 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
 
   const postgresEndpoint = postgres.status === 'fulfilled' ? postgres.value?.endpoint : undefined;
   const kafkaEndpoint = kafka.status === 'fulfilled' ? kafka.value?.endpoint : undefined;
+  const openSearchEndpoint =
+    opensearch.status === 'fulfilled' ? opensearch.value?.endpoint : undefined;
 
   return {
     // Getters rather than nullable fields: a test that forgot to ask for a
@@ -470,6 +546,12 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
         throw new Error('startStack was not asked for postgres: pass { postgres: true }.');
       }
       return postgresEndpoint;
+    },
+    get opensearch(): OpenSearchEndpoint {
+      if (openSearchEndpoint === undefined) {
+        throw new Error('startStack was not asked for opensearch: pass { opensearch: true }.');
+      }
+      return openSearchEndpoint;
     },
     get kafka(): KafkaEndpoint {
       if (kafkaEndpoint === undefined) {

@@ -9,12 +9,14 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "migration:run": "pnpm run build && typeorm migration:run -d dist/data-source.js"
+    "migration:run": "pnpm run build && typeorm migration:run -d dist/data-source.js",
+    "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/events": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
+    "@arthome-platform/testing": "workspace:*",
     "@arthome/core": "file:../../vendor/arthome-core-41a7a1edfeb9.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "@opensearch-project/opensearch": "3.6.0",

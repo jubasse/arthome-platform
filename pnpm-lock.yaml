@@ -325,6 +325,9 @@ importers:
       '@arthome-platform/messaging':
         specifier: workspace:*
         version: link:../../libs/messaging
+      '@arthome-platform/testing':
+        specifier: workspace:*
+        version: link:../../libs/testing
       '@arthome/core':
         specifier: file:../../vendor/arthome-core-41a7a1edfeb9.tgz
         version: file:vendor/arthome-core-41a7a1edfeb9.tgz(zod@4.6.5)
