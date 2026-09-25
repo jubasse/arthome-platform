@@ -15,9 +15,8 @@ export class IdentityController {
     @Body({ schema: RegisterAccountSchema }) body: RegisterAccountBody,
     @Headers('traceparent') traceparent?: string,
   ): Promise<{ publicHandle: string }> {
-    // ⚠ Validated by hand because it cannot be validated otherwise: `@Headers` takes no
-    //   options object, so no pipe ever sees it. A malformed value is dropped rather than
-    //   refused — a broken trace is an observability fault, never a business one.
+    // ⚠ By hand because no pipe reaches a header (see `traceparent.ts`). A malformed one is
+    //   dropped rather than refused — a broken trace is not a business fault.
     const trace = parseTraceparent(traceparent);
 
     await this.registerAccount.register({

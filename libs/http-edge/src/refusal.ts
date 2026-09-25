@@ -88,7 +88,6 @@ export function refusalForStatus(status: number): Refusal {
     : { code: known.code, params: {}, nature: known.nature };
 }
 
-/** True when this status has a designed code, so the filter can log the gap when it does not. */
 export function isMappedStatus(status: number): boolean {
   return Object.hasOwn(REFUSAL_BY_STATUS, status);
 }

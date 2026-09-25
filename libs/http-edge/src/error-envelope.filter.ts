@@ -135,19 +135,14 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
   }
 
   /**
-   * ⚠ The constraint name is read, logged, and never served. It must be read because the 409
-   *   design is that the code names the SPECIFIC refusal — `identity.email_taken` for one
-   *   column, `identity.handle_taken` for the other. What must not travel is the rest:
-   *   `QueryFailedError` copies the driver error's properties onto itself, so its `detail` is
-   *   "Key (email)=(someone@example.test) already exists" — the column AND the value. Only
-   *   the code leaves; only the constraint name is logged, never `detail`.
-   * ⚠ It matches the column INSIDE the name rather than the whole name: Postgres names inline
-   *   `UNIQUE`s `{table}_{column}_key`, and a later hand-named or ORM-generated
-   *   `UQ_account_email` would break an exact match while meaning the same thing.
-   *   `public_handle` and `email` do not overlap. Not verified against a running Postgres —
-   *   check this first when the event-path walkthrough is next run.
-   * ⚠ `detail` would also name the column and is deliberately not used for it: pg translates
-   *   `detail` under `lc_messages`, while constraint names are never translated.
+   * ⚠ The constraint name is read, logged, never served: `QueryFailedError` copies the driver
+   *   error's properties, so `detail` reads "Key (email)=(someone@example.test) already
+   *   exists" — the column and the value. Only the code leaves.
+   * ⚠ It matches the column INSIDE the name, not the whole name: Postgres names inline
+   *   `UNIQUE`s `{table}_{column}_key`, so a hand-named `UQ_account_email` would break an
+   *   exact match while meaning the same thing. Not verified against a running Postgres.
+   * ⚠ `detail` names the column too and is not used for it: pg translates it under
+   *   `lc_messages`, while constraint names are never translated.
    */
   private resolveUniqueViolation(constraint: string | null): { status: number; refusal: Refusal } {
     const matched = this.uniqueViolationCodes.find(

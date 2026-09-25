@@ -9,16 +9,14 @@ export const ORIGIN_HEADER = 'arthome-origin-topic';
 export const ERROR_HEADER = 'arthome-error';
 export const DLQ_REASON_HEADER = 'arthome-dlq-reason';
 
-/** What a handler did with a message it was given. */
+/** `applied` wrote the effect, `duplicate` found it already written, `ignored` was not ours. */
 export type Outcome = 'applied' | 'duplicate' | 'ignored';
 
-/** What happened to a message overall, the failure paths included. */
 export type Disposition = Outcome | 'retried' | 'dead-lettered';
 
-/** Applies one message. Throws `PermanentError` for what a retry cannot fix. */
+/** Throws `PermanentError` for what a retry cannot fix; any other throw is treated as transient. */
 export type MessageHandler = (payload: EachMessagePayload) => Promise<Outcome>;
 
-/** Read one header as a string, treating Debezium's literal `null` as absence. */
 export function header(payload: EachMessagePayload, name: string): string | null {
   const raw = payload.message.headers?.[name];
   if (raw === undefined || raw === null) return null;
