@@ -1,0 +1,39 @@
+#!/bin/sh
+# Two jobs, in this order: format what is staged, then refuse a red commit.
+#
+# §8.4 of code-conventions.md prescribes the first. The second is an addition,
+# and it is here because of a fault that recurred THREE times: a compound shell
+# command of the shape
+#
+#     pnpm run verify > log 2>&1; echo "EXIT=$?" && git commit …
+#
+# reads as though the commit were gated, and is not — `;` discards verify's
+# status and `echo` always succeeds. Twice that pushed a red tree; the third time
+# it committed one. Writing "chain with && never ;" in AGENTS.md did not prevent
+# the third. A hook does, whatever the shell line happens to say.
+
+set -e
+
+# 1. Prettier on STAGED FILES ONLY, never the whole repository: a hook that
+#    reformatted everything on every commit is what §8.4 exists to avoid, and
+#    `md` is deliberately absent from the pattern (§3.7 — Prettier does not own
+#    prose here).
+files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|js|mjs|json|html|css|scss)$' || true)
+if [ -n "$files" ]; then
+  echo "$files" | xargs pnpm exec prettier --write
+  echo "$files" | xargs git add
+fi
+
+# 2. The gate. It runs in about a second and a half and needs no Docker — that
+#    is a property worth protecting, and the reason the integration tests are
+#    named `*.itest.ts` and live behind their own command.
+#
+#    ⚠ `git commit --no-verify` skips this. That is git's design and not a hole
+#      to plug: a hook is a reflex, not an authority. What it removes is the
+#      accident.
+if ! pnpm run verify; then
+  echo ''
+  echo 'pre-commit: `pnpm run verify` failed — nothing was committed.'
+  echo '  Fix it, or state why and use `git commit --no-verify` deliberately.'
+  exit 1
+fi
