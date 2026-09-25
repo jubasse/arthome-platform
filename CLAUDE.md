@@ -57,5 +57,17 @@ expensive, shorten the prose and keep the fact. Never delete a recorded reason t
 **Apply it opportunistically**: any file you read or modify is one you may shrink. It costs a moment
 while the context is already loaded, and it is the only way this reaches code written before it.
 
+⚠ **THE FAILURE MODE THAT CAUSES ALL OF THIS: PAYING YOURSELF IN COMMENT LINES FOR WHAT THE DISCOVERY
+COST.** A line you just fought for feels load-bearing, so it gets a paragraph defending it — and a
+twelve-line configuration object ends up under forty lines of prose. **The effort of finding something
+out is not the reader's problem.** The commit message is where it belongs, at any length; the code
+carries only what will bite the next person at that line.
+
+Three shapes give it away: a **default written out with a paragraph defending it** (delete both — a
+default nobody overrides is not a decision); a **comment on a self-documenting option** (`applicationName`
+did not need four lines saying what `applicationName` is for); and a **comment explaining an absence**,
+which is the worst because nothing fails when it stops being true — prose about what a file does *not*
+do belongs beside the thing that *is* done.
+
 The full rule is `code-conventions.md` §5.10 — in `docs/arthome/` here, and the original in
 arthome-core.
