@@ -7,9 +7,51 @@ Kafka with Kafka Connect and Debezium, Redis, OpenSearch, MinIO.
 
 ## Status
 
-**Not started.** Tier 2 — the distributed foundation. Two services first (`identity`, `catalog`),
-but the whole event path end to end: the outbox inside the transaction, a versioned Protobuf
-schema, CDC into the index, `traceparent` carried through.
+**The event path is built and proven end to end.** An account is registered over HTTP, the fact
+reaches a second service's database through logical decoding, and replaying it changes nothing.
+Every step below was run against the real stack, not reasoned about.
+
+```
+POST /accounts  ->  account + outbox_event in ONE transaction, same manager
+                ->  Postgres WAL  ->  Debezium outbox router
+                ->  arthome.identity.account, key = account_id
+                ->  notifications: dedup + effect in ONE transaction
+```
+
+| Built | What it is |
+| --- | --- |
+| `apps/identity` | `POST /accounts`, the outbox producer |
+| `apps/catalog` | `POST /shows`, the same shape — the first service written by someone other than the messaging library's author |
+| `apps/notifications` | the idempotent consumer, with retries and dead-lettering |
+| `apps/search-indexer` | the catalog projection into OpenSearch |
+| `libs/messaging` | the outbox, failure classification, retry, dead-lettering — shared by every service |
+| `libs/events` | the Protobuf wire types, generated from arthome-core's `proto/` |
+| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers |
+
+**What is NOT built, said plainly.** `ticketing`, `streaming`, `chat` and `payouts` do not exist.
+`notifications` is only its consumer half. `catalog` has no Debezium connector yet, so its outbox
+rows accumulate unpublished. There is no Redis and no MinIO. There is no authentication:
+`adr-auth.md` gives it to better-auth in its own schema, and that is deliberately deferred.
+
+`apps/search-indexer` is an **eighth** component and not one of the seven services — a projection
+onto the index, owned by the search side rather than by a bounded context.
+
+**Resilience, exercised rather than assumed.** Kafka and Connect fully stopped with traffic still
+arriving; the consumer stopped and restarted; Debezium alone stopped; Postgres restarted under load.
+Nothing lost, nothing doubled, in any of them — because the services never speak to the broker. A
+permanent failure dead-letters at once; a transient one retries at 5 s, 30 s and 5 min with jitter.
+
+**Infrastructure, at the versions that actually run.** PostgreSQL 18.6 with `wal_level=logical`,
+Kafka 4.0 in KRaft mode, Debezium 3.0, OpenSearch 2.18. ⚠ Postgres publishes on **55432**, not
+5432: a development stack that fights for well-known ports is one you cannot run beside anything
+else.
+
+**Nine gates and 65 tests run in under two seconds** (`pnpm run verify`), and need no Docker. The
+integration tests that do need it are `*.itest.ts`, behind their own command — a gate that costs
+half a minute stops being run, and then stops being true.
+
+See **[AGENTS.md](AGENTS.md)** for the commands, how to replay the event path, and what happens when
+a message cannot be applied.
 
 ## Where the design lives
 

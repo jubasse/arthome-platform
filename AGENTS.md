@@ -16,6 +16,28 @@ overwrites them without warning.
    independently wrote the same `instant()` and four wrote the same local-vocabulary helper. None of
    their authors was careless — nothing told them the export existed. This file is that telling.
 
+## Required NestJS skills
+
+This project uses the jubasse/agent-skills NestJS skills (NestJS 12). **Before writing, reviewing or
+debugging NestJS code, load `nestjs-how-to` and the skills it routes to.** Always relevant here:
+
+- `nestjs-architecture`, `nestjs-request-pipeline`, `nestjs-validation`, `nestjs-config`,
+  `nestjs-testing`, `nestjs-http`
+- `nestjs-typeorm` (typeorm, @nestjs/typeorm) · `nestjs-kafka` (kafkajs) · `nestjs-event-driven`
+  (the outbox and the idempotent consumers) · `nestjs-performance` (@nestjs/platform-fastify) ·
+  `nestjs-monorepo` (pnpm workspace)
+
+Project decisions — the ADRs and `DECISIONS.md` in arthome-core — take precedence over these
+community defaults, and a recorded decision is never reopened.
+
+⚠ **THIS BLOCK EXISTS BECAUSE THE SKILLS WERE NOT LOADED.** `identity`, `notifications` and
+`catalog` were all written without them; only `nestjs-event-driven` was opened, and late, at which
+point it corrected two real defects that were already in the code — no jitter on retries, and no
+guard against a retry topic reordering one aggregate's events. The rule the router states is
+`MUST load skills before writing NestJS code`, and v12 changed ESM, Express 5, validation and the
+error model. Skills trigger on their descriptions, and an agent that believes it already knows
+NestJS skips them; this block is what makes loading systematic rather than remembered.
+
 ## Before you write anything
 
 - **The domain is not defined here.** Entities, vocabularies, error codes and boundary DTOs come
