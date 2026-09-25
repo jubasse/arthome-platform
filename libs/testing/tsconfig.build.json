@@ -8,5 +8,10 @@
     "declaration": true,
     "sourceMap": true
   },
-  "exclude": ["node_modules", "dist", "src/**/*.spec.ts"]
+  // `*.itest.ts` is excluded for the same reason `*.spec.ts` is, plus one of its
+  // own: those files import `vitest`, which is a devDependency of the repository
+  // and not of this package. Emitted into dist/, the built harness would carry
+  // two modules that cannot resolve their own imports — and nothing would say so
+  // until something consumed the build.
+  "exclude": ["node_modules", "dist", "src/**/*.spec.ts", "src/**/*.itest.ts"]
 }
