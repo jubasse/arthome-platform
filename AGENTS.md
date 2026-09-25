@@ -57,6 +57,13 @@ NestJS skips them; this block is what makes loading systematic rather than remem
   both times the code was already correct. One command settles it:
   `pnpm exec eslint <the exact file> --max-warnings 0`.
 
+- **Install the hooks once, after cloning:** `git config core.hooksPath .githooks`. Git config is
+  per-clone and is never carried by a checkout, so nothing installs them for you. `pre-commit`
+  formats the staged files and then **refuses a commit whose `verify` is red** — which is the only
+  thing that reliably stops the fault recorded in `code-conventions.md` §8.4, a shell line whose
+  `;` discards verify's status. Without this one command the hook file sits inert and protects
+  nobody.
+
 - **`pnpm run verify` is the gate.** Run it before every commit — and chain with `&&`, never `;`:
   this project has twice pushed with a red `verify` because a `;` let the commit run anyway.
 
