@@ -1,83 +1,62 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Header,
-  Headers,
-  HttpCode,
-  Post,
-} from '@nestjs/common';
+import { parseTraceparent } from '@arthome-platform/http-edge';
+import { Body, Controller, Header, HttpCode, Headers, Post } from '@nestjs/common';
 
-import { ApiErrorCode, FailureNature, LANGUAGE_DEPENDENCIES, isMember } from '@arthome/core';
+import { rendition, type MediaSet, type Rendition } from '@arthome/core';
 
+import { PublishShowSchema, type PublishShowBody } from './publish-show.schema.js';
 import { PublishShowService } from './publish-show.service.js';
 
-interface RenditionBody {
-  url: string;
-  widthPx: number;
-  heightPx: number;
-}
+/**
+ * The declared media, through the domain's own constructor.
+ *
+ * ⚠ THE SCHEMA CHECKED THE SHAPE, THIS CHECKS THE RULE, AND THE SPLIT IS
+ *   critical-rules #2. `rendition()` already refuses an empty url and a non-integer
+ *   or non-positive dimension, with `media.url_empty` and `media.size_invalid`.
+ *   Writing `.url()` and `.positive()` into the schema too would be a second
+ *   implementation of a rule the domain owns, and the two would drift the first time
+ *   one was relaxed.
+ *
+ * ⚠ IT THROWS A `DomainError`, NOT AN `HttpException`, deliberately (rule 1).
+ *   `ErrorEnvelopeFilter` maps it with no translation table, because a `DomainError`
+ *   already carries `code`, `params` and `nature`.
+ *
+ * ⚠ IT STOPS AT THE FIRST BAD RENDITION, so a body with two bad images is told about
+ *   one. Collecting would mean reimplementing its checks here — the duplication this
+ *   function exists to avoid.
+ */
+function mediaSetOf(media: PublishShowBody['media']): MediaSet {
+  const toRendition = (declared: { url: string; widthPx: number; heightPx: number }): Rendition =>
+    rendition(declared.url, declared.widthPx, declared.heightPx);
 
-interface PublishShowBody {
-  channelId: string;
-  artistId: string;
-  categoryId: string;
-  genreIds: string[];
-  tagIds: string[];
-  runtimeMin: number;
-  /** Raw, and narrowed below — a request can be wrong. */
-  languageDependency: string;
-  spokenLanguages: string[];
-  subtitleLanguages: string[];
-  surtitleLanguages: string[];
-  media: { wide: RenditionBody[]; poster: RenditionBody[] };
+  return {
+    wide: media.wide.map(toRendition),
+    poster: media.poster.map(toRendition),
+  };
 }
 
 @Controller('shows')
 export class CatalogController {
-  constructor(private readonly publishShow: PublishShowService) {}
+  public constructor(private readonly publishShow: PublishShowService) {}
 
   @Post()
   @HttpCode(201)
   @Header('cache-control', 'no-store')
-  async publish(
-    @Body() body: PublishShowBody,
+  public async publish(
+    @Body({ schema: PublishShowSchema }) body: PublishShowBody,
     @Headers('traceparent') traceparent?: string,
   ): Promise<{ showId: string }> {
-    // ⚠ ONE FIELD IS CHECKED HERE AND THE OTHERS ARE NOT, AND THAT ASYMMETRY IS
-    //   THE POINT. Identity lets `locale` and `country` through untouched, and it
-    //   can afford to: they are text on the wire, so a wrong value arrives wrong
-    //   and stays visible. `languageDependency` is a Protobuf ENUM. An unknown
-    //   member has no number, so the silent outcome is
-    //   `LANGUAGE_DEPENDENCY_UNSPECIFIED` — a published fact that says nothing
-    //   about the one field a surface's most visible language rule reads, and
-    //   nothing anywhere fails. That is the same class of fault the outbox's
-    //   `payload_not_empty` CHECK exists to stop one level down, so it is stopped
-    //   here, where a request is still waiting to be told.
+    // ⚠ THE `isMember` CHECK THAT WAS HERE IS GONE, NOT BECAUSE THE FIELD STOPPED
+    //   MATTERING: it moved into `PublishShowSchema` as
+    //   `vocabularyIn(LANGUAGE_DEPENDENCIES)`, the form this file's own comment named
+    //   while saying zod was not a dependency. Every other field is checked for the
+    //   first time — the asymmetry this controller used to defend was the Blocker.
     //
-    // ⚠ STRICT, NOT TOLERANT, AND THE DIRECTION IS WHAT DECIDES. critical-rules
-    //   #10 keeps an unknown member raw and neutral — that is the `Out` rule, for
-    //   a client a year old reading a value it has never seen. This is `In`: a
-    //   request can be wrong and is refused. `isMember` is the tool available
-    //   here; `vocabularyIn` from `@arthome/core/schema` is the proper `In`
-    //   strictness and needs zod, which this service does not depend on. The
-    //   boundary DTO that would do this once for every caller belongs in
-    //   `@arthome/contracts/catalog` — see HANDOVER.md.
-    if (!isMember(LANGUAGE_DEPENDENCIES, body.languageDependency)) {
-      // A code and its params, never a sentence (critical-rules #8). `traceId`
-      // and the single error envelope shape are owed and are NOT built here:
-      // identity has no error path to mirror, and the envelope belongs to
-      // `@arthome/contracts/envelope`.
-      throw new BadRequestException({
-        code: ApiErrorCode.SCHEMA_INVALID,
-        params: { field: 'languageDependency' },
-        nature: FailureNature.REFUSED,
-      });
-    }
+    // ⚠ THE HEADER IS STILL CHECKED BY HAND, because it cannot be otherwise:
+    //   `@Headers` is `(property?: string) => ParameterDecorator` in the installed
+    //   `@nestjs/common` 12.0.3, so it carries no `schema` and no pipe reaches it. A
+    //   malformed one is dropped and the publication proceeds — decided.
+    const trace = parseTraceparent(traceparent);
 
-    // ⚠ The incoming traceparent is taken as given and carried through. It is
-    //   not validated here because a malformed one must not fail a publication:
-    //   a broken trace is an observability fault, never a business one.
     const result = await this.publishShow.publish({
       channelId: body.channelId,
       artistId: body.artistId,
@@ -89,9 +68,14 @@ export class CatalogController {
       spokenLanguages: body.spokenLanguages,
       subtitleLanguages: body.subtitleLanguages,
       surtitleLanguages: body.surtitleLanguages,
-      media: body.media,
-      traceparent: traceparent ?? null,
+      media: mediaSetOf(body.media),
+      traceparent: trace === null ? null : trace.traceparent,
     });
+
+    // The show id IS returned, unlike identity's account id: `ShowPublished.show_id`
+    // is published on `arthome.catalog.show` and is its partition key, so it is
+    // already on the wire. `data-model.md` §7.1's opaque handles are for an account,
+    // a profile and a person.
     return { showId: result.showId };
   }
 }

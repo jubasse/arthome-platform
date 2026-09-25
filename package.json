@@ -32,7 +32,7 @@
     "provision:topics": "node tools/provision-topics.mjs"
   },
   "devDependencies": {
-    "@arthome/tooling": "file:./vendor/arthome-tooling-9a0c46efc35f.tgz",
+    "@arthome/tooling": "file:./vendor/arthome-tooling-454ab8535c57.tgz",
     "@bufbuild/buf": "1.73.0",
     "@bufbuild/protoc-gen-es": "2.15.0",
     "@eslint/js": "10.0.1",

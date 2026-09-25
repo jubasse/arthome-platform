@@ -14,7 +14,17 @@ running it, not by reading it.
 | `src/catalog/catalog.controller.ts` | `POST /shows`, 201, `cache-control: no-store` |
 | `src/catalog/catalog.module.ts`, `src/app.module.ts`, `src/main.ts`, `src/data-source.ts` | the wiring, copied from identity |
 | `src/catalog/publish-show.service.spec.ts` | 8 tests |
-| `src/catalog/catalog.controller.spec.ts` | 4 tests — not on the deliverable list; see §2(f) |
+| `src/catalog/catalog.controller.spec.ts` | 7 tests — not on the deliverable list; see §2(f). **Rewritten 2026-09-25**: the two `languageDependency` cases moved to `publish-show.schema.spec.ts` with the guard, and cases for the domain media rule and the malformed traceparent were added |
+
+**Added 2026-09-25 (the HTTP edge — §2(l)):**
+
+| File | What it is |
+| --- | --- |
+| `src/catalog/publish-show.schema.ts` | the zod schema for the body: every field |
+| `src/catalog/publish-show.schema.spec.ts` | 10 tests |
+
+The shared edge — the filter, the guard, the refusal shape, the traceparent parser and their 26
+tests — lives in **`libs/http-edge`** (`@arthome-platform/http-edge`), not here. §2(m).
 | `.env.example` | `PORT=3002`, database `catalog` |
 | `package.json` | added `migration:run` / `migration:revert`, identical to identity's |
 | `src/index.ts` | **deleted** — the placeholder; nothing needed it |
@@ -27,12 +37,18 @@ Routing, from `events.md` §3: `aggregatetype = catalog.show` → topic `arthome
 
 ```
 pnpm --filter @arthome-platform/catalog exec tsc --noEmit -p tsconfig.json   # clean
-pnpm --filter @arthome-platform/catalog exec vitest run                      # 2 files, 12 tests, all pass
+pnpm --filter @arthome-platform/catalog exec vitest run                      # 3 files, 25 tests, all pass
 pnpm --filter @arthome-platform/catalog exec prettier --check "src/**/*.ts"  # clean
 pnpm --filter @arthome-platform/catalog exec eslint src --max-warnings 0     # clean
 pnpm run check:enums                                                         # PASS (read-only; see §2(a))
 pnpm run check:language                                                      # PASS (read-only)
 ```
+
+> Counts re-run 2026-09-25 after §2(l) and the §2(m) extraction: 3 files, 25 tests here, plus 26 in
+> `libs/http-edge`. `check:enums` and `check:language` were
+> **not** re-run in that pass — only the four per-service commands were in scope — but no new string
+> literal duplicating a vocabulary was introduced, and the one that would have (`'production'`, a
+> member of `MEMBER_ROLES`) was deliberately avoided; `app.module.ts` says how and why.
 
 Nothing outside `apps/catalog/**` was written. No `git`, no `docker`, no install, no
 repo-wide format or lint.
@@ -102,6 +118,22 @@ null, so the day an actor exists it is clear the column was deliberate and not f
 
 ### (e) Where I diverged from identity: one validated field
 
+> ⚠ **CORRECTED 2026-09-25 — the premise of this section was wrong, and it was wrong in the
+> direction that hides a defect.** The paragraph below said identity "can afford" unvalidated
+> `locale` and `country` because "they are text on the wire, so a wrong value arrives wrong and
+> stays visible". That is true of a wrong **value** and it **inverts** for a wrong **type**.
+> `@bufbuild/protobuf` 2.15.0's writer does
+> `if (typeof value !== "string") { value = String(value); }` (`binary-encoding.js:241-245`), so
+> `{"a":1}` is published as the four plausible characters `[object Object]`; `pg` 8.23.0's
+> `prepareValue` (`utils.js:45-70`) sends the same object through `JSON.stringify`, so the column
+> holds `{"a":1}`. The aggregate and the fact it published then disagree **permanently**, and
+> `notifications.welcome_email.locale` received the second of the two. Being text on the wire is
+> what made it invisible, not what made it safe. Both services now validate every inbound field;
+> see §2(l).
+
+The original text, kept because the reasoning it contains about `languageDependency` is still
+right and is why that field was guarded first:
+
 Identity lets `locale` and `country` through unvalidated, and can afford to — they are text
 on the wire, so a wrong value arrives wrong and stays visible. I added **one** guard, on
 `languageDependency`, in the controller:
@@ -132,6 +164,15 @@ Judgement calls inside that:
   lives in `@arthome/contracts/envelope`, also not a dependency here. Identity has no error
   path at all, so there was nothing to mirror. **This is the one place my slice emits a
   shape that critical-rules #8 would not fully accept.**
+
+  > **Built 2026-09-25 — §2(l).** `@arthome-platform/http-edge`'s `ErrorEnvelopeFilter` now serves
+  > `transport.md` §5.5's `{ error: { code, nature, params, traceId }, servedAt }` for **every**
+  > error, so the 400 and the 500 are one shape. `traceId` turned out to be buildable after all:
+  > §5.5 defines it as the `trace-id` field of the `traceparent`, and the parse that item 2 added
+  > for the header yields it. `StorefrontErrorEnvelopeSchema` is still not used, and still for the
+  > reason given here — it is a BFF contract shape and this service does not depend on that
+  > package. What §5.5 asks for that is still missing is the **success** envelope, and three codes
+  > the vocabulary does not carry; both are set out in §2(l).
 
 ### (f) The `languageDependency` encoding, and why it is not a parallel literal table
 
@@ -226,6 +267,144 @@ importing from `@arthome-platform/events` exactly as it does now. Do not pre-emp
 deep import, a local alias module or a second entry point — three agents on three import
 conventions costs more than the one import that will have to change later.
 
+### (l) The HTTP edge, added 2026-09-25 — validation, the error envelope, and the guard
+
+Added in a later pass, against `nestjs-validation`, `nestjs-request-pipeline`, `nestjs-http` and
+`nestjs-auth` — the skills that were not loaded when this service was first written, which is why
+§2(e) got identity's validation boundary wrong and why the "do this next" in §4 was false.
+
+| File | What it is |
+| --- | --- |
+| `src/catalog/publish-show.schema.ts` | the zod schema for the `POST /shows` body — **every** field, not one |
+| `libs/http-edge/**` | the shared edge, extracted in the same pass — §2(m) |
+| `src/app.module.ts` | `APP_PIPE`, `APP_FILTER`, `APP_GUARD` — there was no global enhancer of any kind in this repository before |
+
+The filter, the guard, the refusal shape and the traceparent parser were written here first, then
+**extracted to `@arthome-platform/http-edge`** in the same pass — see §2(m). This service imports
+them; it holds no copy.
+
+**The pipe mechanism.** `StandardSchemaValidationPipe` **does** exist in the installed
+`@nestjs/common` 12.0.3 (`pipes/standard-schema-validation.pipe.d.ts`, re-exported from
+`pipes/index.d.ts`). It reads `metadata.schema`, defaults `transform: true`, and takes
+`exceptionFactory(issues)`. It is bound as `{ provide: APP_PIPE, useValue: … }`.
+`@Body({ schema })` is real too — `Body(options: ParameterDecoratorOptions)` with
+`schema?: StandardSchemaV1`. **A schema alone validates nothing**: it is metadata, and the pipe is
+what reads it, so the two halves are useless apart.
+
+**`@Headers` genuinely cannot be validated by a pipe**, confirmed in the same package: it is
+declared `Headers: (property?: string) => ParameterDecorator` — no options object, therefore no
+`schema`. The `traceparent` is parsed by hand in the controller, and a malformed one is dropped to
+`null` rather than refused, which is the decision `catalog.controller.ts` recorded and this keeps.
+
+**The `languageDependency` guard moved rather than disappeared.** §2(e) said the right form was
+`vocabularyIn` from `@arthome/core/schema` and that zod was not a dependency. zod 4.6.5 is a
+dependency of this service now, so the schema carries `vocabularyIn(LANGUAGE_DEPENDENCIES)` and
+the controller's `isMember` check is gone. The reasoning in §2(e) about *why* that field is
+guarded is unchanged and still the sharpest case on this endpoint.
+
+**Judgement calls, each of which could have gone the other way:**
+
+- **`z.strictObject`, so an unknown field is refused rather than stripped.** This is an internal
+  service endpoint with no tolerant public client, and `nestjs-validation`'s Decide table puts
+  strictness there. A stripping schema would accept `genreids` silently.
+- **`channelId` and `artistId` are `z.string().min(1)`, NOT `ChannelIdSchema`/`ArtistIdSchema`.**
+  Both are published and both are UUIDv7 — but the columns are `text`, nothing in this repository
+  fixes the format for this endpoint, and the fixtures in use are `channel-1`/`artist-1`. Pinning
+  UUIDv7 would refuse, on a guess, bodies that work today. **This is the line to change if channel
+  ids really are UUIDv7 on this route** — it is a one-word edit and a fixture update.
+- **`categoryId`, `genreIds` and `tagIds` are `SlugSchema`.** Checked against core's own taxonomy
+  data rather than assumed: `music`, `stage`, `jazz`, `theatre`, `contemporary`,
+  `ballet-classique`, `open-air` all match it. This is **shape** strictness; membership in the
+  taxonomy is deliberately NOT checked, because the taxonomy is data that gains and loses members
+  and a list of them here would be a parallel table going stale (critical-rules #10).
+- **`spokenLanguages` is `z.string().min(1)`, NOT `LocaleIn`.** `show.entity.ts` separates the two
+  in as many words — this is what is PERFORMED, "unrelated to the display locale (`LOCALES`)" —
+  and `LOCALES` has two members, so `LocaleIn` would refuse a show performed in German.
+  `@arthome/core` publishes no BCP 47 primitive and inventing a language-tag regex in a service is
+  what `available-surface.md` opens by asking nobody to do.
+- **`media` is checked for shape here and for its RULE by `@arthome/core`'s `rendition()`.** That
+  function already refuses an empty url (`media.url_empty`) and a non-integer or non-positive
+  dimension (`media.size_invalid`), both published codes. Putting `.url()` and `.positive()` in the
+  schema as well would be a second implementation of a rule the domain owns — critical-rules #2
+  allows two calls and never two implementations. The cost, accepted: `rendition()` throws on the
+  first bad image, so a body with two is told about one. Before this, `body.media` was passed
+  straight through as a `MediaSet` with nothing having checked it.
+- **`runtimeMin` is bounded by `2 ** 32 - 1`, written as arithmetic.** A wire limit, not a domain
+  constant, so it is declared locally rather than referenced from an owning document
+  (critical-rules #15). It turns the rollback-and-500 described in the §4 correction into a 400.
+- **Deliberately permissive fields are marked as such.** An audit noted that `@Body() body:
+  RegisterBody` is byte-identical between "I decided this field is free-form" and "I never
+  considered it". Every field above that is shape-only rather than member-strict says so in the
+  schema with the reason, so the next reader can tell a decision from an omission.
+
+**What I could not reconcile with `transport.md` §5.5 — three codes it names that the vocabulary
+does not carry.** §5.5's status table is **pre-D-067**: it is written in SCREAMING_SNAKE
+throughout, and D-067 converted every code to dotted lowercase. Three of its entries have no
+surviving member anywhere in `@arthome/core`:
+
+| §5.5 says | Status | Reality |
+| --- | --- | --- |
+| `STATE_CONFLICT` | 409 | no member. The only "already in use" code is `identity.email_taken`, which names a column |
+| `INTERNAL` | 500 | no member |
+| `SERVICE_UNAVAILABLE` | 503 | no member |
+
+The filter serves `ApiErrorCode.SCHEMA_INVALID` at 409 and `ApiErrorCode.UPSTREAM_UNAVAILABLE` at
+500/503, each behind a single named constant in `@arthome-platform/http-edge`'s `refusal.ts`
+with the full reasoning at the
+declaration. **Both are substitutes and both are wrong in a stated way** — the 409's code collides
+with the 400's, so a client tells them apart by status only. The fix is one member in
+`API_ERROR_CODES`, `api.conflict`, plus one for the internal case, and it belongs in
+`@arthome/core`. Those are the two lines to change here.
+
+Two smaller unreconciled points:
+
+- **Success responses still carry no `servedAt`.** critical-rules #9 and §5.5 both require it, and
+  §5.5 also wraps the payload in `data`. Errors now carry it; `POST /shows` still answers
+  `{ showId }` bare. Not changed, because restructuring a success body is a contract change to an
+  endpoint no document describes, and it was outside this task. It is owed.
+- **An unrecognised key is refused without being named.** Measured: zod's issue for that case is
+  `{ code: 'unrecognized_keys', keys: ['…'], path: [] }` — the key is in `keys` and `path` is
+  **empty**, so `params.fields` has nothing to report. `keys` is not reachable, because
+  `exceptionFactory` is typed against Standard Schema's `Issue`, which declares only `message` and
+  `path`. The refusal is correct; only "which key" is missing, and it is missing for every
+  Standard Schema validator.
+
+### (m) The HTTP edge is a library, `@arthome-platform/http-edge` — and it was briefly duplicated
+
+The filter, the guard, the refusal shape and the traceparent parser were written into
+`apps/identity/src/http/` and `apps/catalog/src/http/` first, because `libs/**` was outside the
+pass's trees. That is two implementations of one thing, which critical-rules #2 forbids in as many
+words — "two calls are allowed, two implementations never" — so it was reported rather than left,
+and the lead scaffolded `libs/http-edge` in response. The extraction was then completed in the same
+pass.
+
+**Why the move was safe, measured rather than hoped:** with comments stripped, the two service
+copies were **byte-identical**. They were kept that way deliberately while they existed, so the
+diff was empty and the move could not silently drop a branch. Verified by comparing them with
+comments removed before deleting either.
+
+`@arthome-platform/http-edge` exports `Refusal`, `RefusalException`, `CONFLICT_CODE`,
+`INTERNAL_CODE`, `conflictRefusal`, `refusalForStatus`, `schemaInvalidRefusal`,
+`schemaInvalidException`, `ErrorEnvelopeFilter`, `DenyInProductionGuard`, `parseTraceparent` and
+`TraceContext`. Its three spec files hold 26 tests.
+
+⚠ **THE LIBRARY MUST BE BUILT ONCE BEFORE A PER-SERVICE `vitest` RUN WILL RESOLVE IT**, and the
+failure names the wrong thing. `pnpm --filter @arthome-platform/catalog exec vitest run` invoked from
+the service directory does **not** read the root `vitest.config.mjs`, so it resolves the workspace
+dependency through the `default` export condition — `dist/index.js` — and reports "Failed to resolve
+entry for package @arthome-platform/http-edge. The package may have incorrect main/module/exports
+specified in its package.json", which sends the reader to a manifest that is fine. The root config's
+own header comment describes exactly this trap for `@arthome-platform/messaging`; the fix there is
+`resolve.conditions: ['@arthome/source']`, which the root suite has and a per-service invocation does
+not. `dist/` is gitignored and every other library has a locally built one, so:
+`pnpm --filter @arthome-platform/http-edge run build`.
+
+⚠ **Two dependencies in `libs/http-edge/package.json` are not used**, and I could not edit that
+file: `typeorm` (the filter recognises a pg unique violation by duck-typing `code` and
+`driverError.code` rather than importing `QueryFailedError` — deliberately, so the transport layer
+does not depend on the ORM) and `zod` (the pipe's `exceptionFactory` lives there but types its
+issues structurally rather than importing zod).
+
 ## 3. Blockers
 
 **One, and it was resolved during the work.** `ShowPublishedSchema` was unreachable:
@@ -267,17 +446,46 @@ still owed for `catalog`.
 
 **Owed inside this service, and deliberately not built:**
 
-- **No `ValidationPipe`, no DTO, no `@arthome/contracts` schema.** Only
-  `languageDependency` is checked (§2(e)). `runtimeMin` is the one I would do next: it is
-  `uint32` on the wire, so a negative value does not fail — it encodes as a large positive
-  number. Less silent than the enum, which is why I left it, but still wrong. The right fix
-  is a `ShowPublishIn` schema in `@arthome/contracts/catalog`, not more guards here.
+- ~~**No `ValidationPipe`, no DTO, no `@arthome/contracts` schema.**~~ **DONE — see §2(l).**
+
+  > ⚠ **CORRECTED 2026-09-25 — the "do this next" in this bullet was false, and a wrong
+  > instruction costs more than a silence because it gets carried out.** It read: "`runtimeMin`
+  > is the one I would do next: it is `uint32` on the wire, so a negative value does not fail —
+  > it encodes as a large positive number."
+  >
+  > It does fail. On the installed `@bufbuild/protobuf` 2.15.0, `assertUInt32`
+  > (`binary-encoding.js:692-702`) throws on a negative, on a non-integer **and** on a
+  > non-number, and `toBinary` runs **inside** the transaction (`publish-show.service.ts:154`),
+  > so `runtimeMin: -1` rolls back and publishes nothing — a 500 for a bad request, which is the
+  > wrong status but not a corrupt record.
+  >
+  > **The numeric fields were accidentally guarded; the STRING fields were the unguarded ones**
+  > — the exact inverse of what this bullet directed attention to. `genreIds: "abc"` was the real
+  > defect: the service spreads that value twice, once into the event and once into the row, and
+  > spreading a string yields its characters, so three genre ids nobody sent were committed,
+  > published in `ShowPublished.genre_ids`, and indexed.
+  >
+  > The bullet's closing sentence was also reopened and decided the other way: the project owner
+  > ruled that the schema is **zod** and lives **in the service, beside its controller** — not in
+  > `@arthome/contracts/catalog`. Those documents are the two BFFs' contracts, and `POST /shows`
+  > appears in no OpenAPI document, so a schema there would be contract for a consumer that does
+  > not exist (`nestjs-monorepo` rule 6). When a BFF exists, both it and this service live in this
+  > repository and the shared shape can be extracted then.
 - **No authentication and no authorisation.** critical-rules #4 and #5 both apply to
   `POST /shows` and neither is implemented — as in identity. Anyone who can reach the port
   can publish a show for any channel.
+
+  **Partly addressed, and only the part that was not deferred.** `adr-auth.md` defers
+  authentication and that is untouched. What was fixed is that the route no longer ships
+  *reachable*: `DenyInProductionGuard` is bound globally and refuses every request when
+  `NODE_ENV` is neither `development` nor `test`. critical-rules #5 forbids the "only the BFF
+  calls me" argument, and this is what forces the question to be answered rather than assumed.
+  See §2(l).
 - **No idempotency key.** critical-rules #12. A retried `POST /shows` publishes a second
   show with a second id.
-- **No error envelope.** See §2(e).
+- ~~**No error envelope.**~~ **DONE — `@arthome-platform/http-edge`, §2(l) and §2(m).** It now
+  carries `traceId` too, which §2(e) recorded as owed: the same parse that validates the inbound
+  `traceparent` yields the 32-hex trace-id `transport.md` §5.5 defines it as.
 - **No consumer.** `catalog` produces only. The retry and DLQ topics
   `arthome.catalog.retry` / `arthome.catalog.dlq` exist in `topics.json` and nothing uses
   them yet.

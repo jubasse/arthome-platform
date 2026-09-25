@@ -30,3 +30,15 @@ export type Env = z.infer<typeof EnvSchema>;
 export function readEnv(source: Record<string, string | undefined> = process.env): Env {
   return EnvSchema.parse(source);
 }
+
+/**
+ * ⚠ An allow-list of the two non-production environments, not `=== 'production'`:
+ *   a `staging` added to `EnvSchema` is then production-like until someone says
+ *   otherwise, so widening the schema cannot quietly open a guarded route.
+ */
+export function isProductionEnvironment(
+  source: Record<string, string | undefined> = process.env,
+): boolean {
+  const { NODE_ENV } = readEnv(source);
+  return NODE_ENV !== 'development' && NODE_ENV !== 'test';
+}

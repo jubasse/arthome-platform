@@ -1,9 +1,9 @@
 {
-  "name": "@arthome-platform/messaging",
+  "name": "@arthome-platform/http-edge",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The messaging contract every service shares: the outbox, failure classification, retry and dead-lettering.",
+  "description": "The HTTP edge every service shares: the exception filter, the production guard, the traceparent parser.",
   "license": "UNLICENSED",
   "exports": {
     ".": {
@@ -15,14 +15,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.config.mjs"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@arthome-platform/testing": "workspace:*",
     "@arthome/core": "file:../../vendor/arthome-core-b54e86f359c4.tgz",
-    "kafkajs": "2.2.4",
-    "typeorm": "1.1.1",
-    "uuid": "14.0.2"
+    "@nestjs/common": "12.0.3",
+    "@nestjs/core": "12.0.3",
+    "@nestjs/platform-fastify": "12.0.3"
   }
 }
