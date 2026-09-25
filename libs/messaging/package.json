@@ -19,10 +19,12 @@
     "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
-    "@arthome-platform/testing": "workspace:*",
     "@arthome/core": "file:../../vendor/arthome-core-b54e86f359c4.tgz",
     "kafkajs": "2.2.4",
     "typeorm": "1.1.1",
     "uuid": "14.0.2"
+  },
+  "devDependencies": {
+    "@arthome-platform/testing": "workspace:*"
   }
 }

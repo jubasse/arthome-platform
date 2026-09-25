@@ -105,3 +105,11 @@ allowBuilds:
   # transitive dependency, and a transitive install script is precisely the one
   # worth refusing by default.
   protobufjs: false
+
+# ⚠ `libs/messaging` and `libs/testing` import each other, so pnpm refuses to order
+#   their builds. The cycle is test-only — messaging reaches testing from
+#   `consume.itest.ts` alone, which `tsconfig.build.json` excludes — and the order is
+#   genuinely arbitrary: both tsconfigs resolve a workspace dependency through
+#   `customConditions: ['@arthome/source']`, so each reads the other's SOURCE and
+#   needs no `dist`. Proven by hiding both dists and building `testing` first.
+ignoreWorkspaceCycles: true
