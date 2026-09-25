@@ -23,6 +23,18 @@ overwrites them without warning.
   is caught by `pnpm run check:enums`, and the fix is always the import, never the literal.
 - **`vendor/` is build output of another repository.** Do not edit anything inside it. To pick up a
   change made in arthome-core, run `pnpm run bootstrap`.
+- **After `pnpm run bootstrap`, restart your editor's ESLint server.** Bootstrap re-packs
+  `@arthome/tooling`, so the shared ESLint configuration changes *inside `node_modules`* — and the
+  extension only watches the root `eslint.config.js`, which did not move. The server keeps the flat
+  config it loaded at startup and goes on reporting rules that no longer exist. In VS Code:
+  **`ESLint: Restart ESLint Server`**.
+
+  ⚠ **When the editor and the CLI disagree, believe the CLI and check before editing code.** It
+  recomputes everything on each run; the editor holds state. This has now bitten twice here for two
+  different reasons — a stale ESLint server, and the editor resolving types through `dist` — and
+  both times the code was already correct. One command settles it:
+  `pnpm exec eslint <the exact file> --max-warnings 0`.
+
 - **`pnpm run verify` is the gate.** Run it before every commit — and chain with `&&`, never `;`:
   this project has twice pushed with a red `verify` because a `;` let the commit run anyway.
 
