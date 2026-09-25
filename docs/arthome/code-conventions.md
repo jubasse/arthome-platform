@@ -2254,92 +2254,52 @@ tested exhaustively on their **boundaries**, because those are what compose the 
 `corrections-handoff.md` found diverging everywhere. `definition-of-done.md` has the last word on what
 makes a batch finished.
 
-### 5.10 Comments — the why and the failure, never the what
+### 5.10 Comments — delete by default
 
-**[floor] The first instrument is the NAME, not the comment.** A function named for exactly what it
-does, and a variable named for exactly what it holds, remove the need for the paragraph above them —
-and a long name is the cheap side of that trade. `waitUntilDue` needs no gloss;
-`handleRetryTiming` needs one. Prefer `refuseCommitWhenVerifyIsRed` to `check` plus three lines of
-explanation. See §5.2 for the naming rules themselves; what matters here is the order: **name first,
-and comment only what a name cannot carry.**
+**[floor] The default is no comment.** The first instrument is the NAME: `waitUntilDue` needs no
+gloss, `handleRetryTiming` needs one. Name it, then comment only what a name cannot carry (§5.2).
 
-**[floor] JSDoc is not owed to every export.** Write it when the code is non-trivial, or when a
-reader needs context the signature cannot give — where the function sits in a flow, what must be true
-before calling it, what it costs. A one-line function whose name says what it does gets nothing; a
-`@param` that restates the parameter's name is noise. And when a comment is warranted, **it is
-concise**: the shortest form that carries the fact.
+**[floor] A comment survives only if it answers what the code cannot.** The test: *would a reader
+with this code in front of them learn something they could not derive from it?*
 
-**[floor] A comment earns its place by saying something the code cannot.** The test is one question:
-*would a reader with this code in front of them learn something they could not derive from it?*
+**Keep** — a measured failure, with what it cost · a constraint invisible at that line · a decision
+and its reason, where the code shows only the outcome · a `⚠` where the obvious change is wrong.
 
-Keep:
+**Delete** — a comment on trivial code (a delegate, a getter, a `findAll` calling `Model.findAll`) ·
+any block above a name that already carries it · JSDoc restating the signature · narration of a
+readable sequence · history ("before this there was no…") · a default or a library behaviour
+explained · **prose about what the file does *not* do**, which rots first because nothing fails when
+it stops being true · a second copy of `DECISIONS.md` — link instead.
 
-- **a measured failure** — what went wrong, and what it cost. These are the most valuable lines in
-  the repository and several of them have already stopped a defect being reintroduced;
-- **a constraint that is not visible locally** — a column name a router owns, an ordering a library
-  imposes, a version that behaves differently from its documentation;
-- **a decision and its reason**, where the code shows only the outcome;
-- **a trap**, marked `⚠`, where the obvious change is the wrong one.
+**Where one line does, use one line.** A surviving `⚠` is two to four lines, never ten.
 
-Cut:
+⚠ **NEVER DELETE A RECORDED MEASUREMENT.** Shorten its prose to one sentence; keep the fact. The
+failure mode this rule replaces is verbosity, and the one it could create is losing the paragraph
+that stopped a defect coming back.
 
-- anything that restates the code. `// increment the counter` above `counter += 1`;
-- an explanation of a well-named function. Naming it well is the comment;
-- narration of a sequence a reader can simply read;
-- a second copy of something already written in `DECISIONS.md` or an ADR — **link, do not restate**.
+**Two exceptions, narrow.** A gate's header block, which records the defect it was built against and
+the scope it does **not** cover. And one line on an exported name saying what it *is* — including
+when that restates the code, because `REPOSITORY_MAP.md` is generated from it and a reader of 543
+names has no code in front of them. That line names the export and never opens on `⚠`.
 
-**A rough ceiling, and it is a smell rather than a limit: past a quarter of a file, ask whether the
-code is unclear instead.** Measured on 2026-09-25, `libs/messaging` in arthome-platform stood at
-**59 %, 55 % and 40 %** comment lines in its three main files. Those files carry real findings —
-the offset-resolution rule among them — buried in paragraphs that explain code which explains
-itself. The findings were worth keeping; their length was not.
+**Apply it opportunistically**: any file you read is one you may shrink.
 
-⚠ **THIS IS NOT A LICENCE TO DELETE REASONS.** The failure mode this rule replaces is verbosity; the
-failure mode it could create is losing the one paragraph that stopped somebody re-introducing a
-defect. When a comment is long **because** it records something expensive, shorten the prose and keep
-the fact. When in doubt, keep it and make it tighter — never delete a recorded reason to satisfy a
-ratio.
+#### Four shapes, each measured on this repository
 
-**Apply it opportunistically.** Any file you read or modify is one you may shrink: it costs a moment
-while the context is loaded, and it is the only way a convention reaches code written before it.
+1. **Paying yourself in comment lines for what the discovery cost** — the mechanism behind the other
+   three. A line just fought for feels load-bearing, so each gets a paragraph. The effort of finding
+   something out is **not the reader's problem**: it belongs in the commit message.
+2. **A default written out with a paragraph defending it.** `migrationsTransactionMode: 'all'` is
+   TypeORM's default and had ten lines arguing for it. Delete both, the option included.
+3. **A comment on a self-documenting option.** `applicationName` had four lines saying what
+   `applicationName` is for.
+4. **JSDoc attached to nothing**, which defeats every ratio: TypeScript associates only the **last**
+   of consecutive `/** */` blocks. Eighty lines in `packages/core/src/schema/vocabulary.ts` held two
+   real findings above a private constant while the function they described seventy-five lines below
+   had none. An export with a blank `REPOSITORY_MAP.md` description is how you find them.
 
-⚠ **AND THE SHAPE THAT DEFEATS EVERY RATIO: JSDOC ATTACHED TO NOTHING.** TypeScript associates only
-the **last** of several consecutive `/** */` blocks, so two in a row before one declaration leaves the
-first documenting nothing, anywhere — while the file looks thoroughly documented. Measured on
-2026-09-25: **eighty lines in `packages/core/src/schema/vocabulary.ts`**, holding two real findings,
-parked above a private constant while the function they described 75 lines below had no doc at all.
-`REPOSITORY_MAP.md` is the instrument that finds them, because an export with a blank description in
-a file full of prose is an orphaned block. This is not verbosity; it is prose that is already dead.
-
-⚠ **THE FAILURE MODE THAT PRODUCES ALL OF THIS: PAYING YOURSELF IN COMMENT LINES FOR WHAT THE
-DISCOVERY COST.** Every line you just fought for feels load-bearing, so each one gets a paragraph
-defending it — and the result is a twelve-line configuration object under forty lines of prose. The
-effort of finding something out is **not the reader's problem**. The commit message is where it
-belongs, at whatever length it deserves; the code carries only what will bite the next person at
-that line.
-
-Two shapes give it away, both measured on this repository the day the rule was written:
-
-- **A default, written out, with a paragraph defending it.** `migrationsTransactionMode: 'all'` is
-  TypeORM's default; ten lines argued for it. Delete both — the option and its defence. A default
-  nobody overrides is not a decision, and the named error someone eventually hits
-  (`ForbiddenTransactionModeOverrideError`) explains itself better than the comment did.
-- **A comment on a self-documenting option.** `applicationName: Service.IDENTITY` had four lines
-  explaining what `applicationName` is for. Anyone reading a Postgres data source knows. Cut it
-  whole.
-
-⚠ **AND ONE CARVE-OUT, FOUND BY CUTTING IT AND WATCHING WHAT BROKE: a one-line gloss on a published
-export is not a restatement, even when it restates the code.** `REPOSITORY_MAP.md` is generated from
-JSDoc, so deleting `SlugSchema`'s "Lowercase, hyphenated, no leading or trailing hyphen" left its map
-entry **blank** — and a reader scanning 543 names has no code in front of them. The test above names
-"a reader with this code in front of them", and for a generated index that is the wrong reader. So in
-`packages/core` and `packages/contracts`, every export keeps one line saying what it **is**, however
-obvious it looks beside the declaration.
-
-And a third shape, which is worse because it is invisible: **a comment explaining an absence.** Three lines
-saying `statement_timeout` is deliberately *not* set here belong beside the setting that *is* set,
-not beside the gap where it isn't. Prose about what a file does not do rots first, because nothing
-fails when it stops being true.
+⚠ **This rule was itself 989 words and produced dissertations in the code it governed.** A long rule
+about concision teaches the register it forbids.
 
 ### 5.9 Commit messages
 

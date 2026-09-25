@@ -29,45 +29,27 @@ at the start of a session.** Whether a tool picks it up by itself varies, so the
 rather than assumed. It holds the three documents to read first, the commands, how to run the event
 path, and what happens when a message cannot be applied.
 
-## Comments — the why and the failure, never the what
+## Comments — delete by default
 
-**Name it, then comment what the name cannot carry.** A function named for exactly what it does and a
-variable named for exactly what it holds remove the paragraph above them — and a long name is the
-cheap side of that trade. `waitUntilDue` needs no gloss; `handleRetryTiming` needs one.
+**The default is no comment.** Name it first: `waitUntilDue` needs no gloss, `handleRetryTiming`
+needs one. Then comment only what a name cannot carry.
 
-**JSDoc is not owed to every export.** Write it when the code is non-trivial, or when the reader needs
-context the signature cannot give. A one-line function whose name says what it does gets nothing, and
-a `@param` restating the parameter's name is noise. When a comment is warranted, it is **concise**.
+**The test**: would a reader with this code in front of them learn something they could not derive
+from it?
 
-A comment earns its place by saying something the code cannot. The test: *would a reader with this
-code in front of them learn something they could not derive from it?*
+**Keep** — a measured failure with what it cost · a constraint invisible at that line · a decision
+and its reason · a `⚠` where the obvious change is wrong.
 
-**Keep** a measured failure, a constraint that is not visible locally, a decision and its reason, and
-a `⚠` on a trap where the obvious change is the wrong one. **Cut** anything that restates the code,
-explains a well-named function, narrates a readable sequence, or copies what `DECISIONS.md` already
-says — link instead.
+**Delete** — a comment on trivial code (a delegate, a getter, a `findAll` calling `Model.findAll`) ·
+a block above a name that already carries it · JSDoc restating the signature · narration of a
+readable sequence · history · a default explained · prose about what the file does *not* do.
 
-Past roughly a quarter of a file, ask whether the code is unclear rather than under-explained.
-Measured on 2026-09-25, three files in arthome-platform's `libs/messaging` stood at 59 %, 55 % and
-40 %.
+**Where one line does, use one line.** A surviving `⚠` is two to four lines, never ten.
 
-⚠ **This is not a licence to delete reasons.** Where a comment is long *because* it records something
-expensive, shorten the prose and keep the fact. Never delete a recorded reason to satisfy a ratio.
+⚠ **Never delete a recorded measurement** — shorten its prose to one sentence, keep the fact. And
+**never a one-line gloss on an exported name**: `REPOSITORY_MAP.md` is generated from it.
 
-**Apply it opportunistically**: any file you read or modify is one you may shrink. It costs a moment
-while the context is already loaded, and it is the only way this reaches code written before it.
+⚠ **The mechanism that produces the problem**: paying yourself in comment lines for what the
+discovery cost. That belongs in the commit message, not at the line.
 
-⚠ **THE FAILURE MODE THAT CAUSES ALL OF THIS: PAYING YOURSELF IN COMMENT LINES FOR WHAT THE DISCOVERY
-COST.** A line you just fought for feels load-bearing, so it gets a paragraph defending it — and a
-twelve-line configuration object ends up under forty lines of prose. **The effort of finding something
-out is not the reader's problem.** The commit message is where it belongs, at any length; the code
-carries only what will bite the next person at that line.
-
-Three shapes give it away: a **default written out with a paragraph defending it** (delete both — a
-default nobody overrides is not a decision); a **comment on a self-documenting option** (`applicationName`
-did not need four lines saying what `applicationName` is for); and a **comment explaining an absence**,
-which is the worst because nothing fails when it stops being true — prose about what a file does *not*
-do belongs beside the thing that *is* done.
-
-The full rule is `code-conventions.md` §5.10 — in `docs/arthome/` here, and the original in
-arthome-core.
+Full rule, with four measured shapes: `code-conventions.md` §5.10.
