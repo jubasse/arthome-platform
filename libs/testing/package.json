@@ -1,0 +1,27 @@
+{
+  "name": "@arthome-platform/testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The integration harness: real Postgres, Kafka and OpenSearch in containers.",
+  "license": "UNLICENSED",
+  "exports": {
+    ".": {
+      "@arthome/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@arthome-platform/messaging": "workspace:*",
+    "kafkajs": "2.2.4",
+    "pg": "8.23.0",
+    "testcontainers": "12.1.0",
+    "typeorm": "1.1.1"
+  }
+}

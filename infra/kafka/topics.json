@@ -13,13 +13,65 @@
     "  host this topic-partition'."
   ],
   "topics": [
-    { "name": "arthome.identity.account", "partitions": 3 },
-    { "name": "arthome.identity.device", "partitions": 3 },
-    { "name": "arthome.identity.channel", "partitions": 3 },
-    { "name": "arthome.identity.retry", "partitions": 3 },
-    { "name": "arthome.identity.dlq", "partitions": 3 },
-    { "name": "arthome.notifications.delivery", "partitions": 3 },
-    { "name": "arthome.notifications.retry", "partitions": 3 },
-    { "name": "arthome.notifications.dlq", "partitions": 3 }
+    {
+      "name": "arthome.identity.account",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.identity.device",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.identity.channel",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.identity.retry",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.identity.dlq",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.notifications.delivery",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.notifications.retry",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.notifications.dlq",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.catalog.show",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.catalog.artist",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.catalog.date",
+      "partitions": 12
+    },
+    {
+      "name": "arthome.catalog.retry",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.catalog.dlq",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.search.retry",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.search.dlq",
+      "partitions": 3
+    }
   ]
 }

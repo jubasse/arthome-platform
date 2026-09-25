@@ -5,3 +5,5 @@
 --   `arthome_<service>_outbox`. A slot nobody consumes RETAINS THE WAL, so a
 --   stopped connector makes the disk grow until it is full (data-model.md §7.4).
 CREATE DATABASE notifications OWNER arthome;
+CREATE DATABASE catalog OWNER arthome;
+CREATE DATABASE search OWNER arthome;
