@@ -18,3 +18,6 @@ export { DenyInProductionGuard } from './deny-in-production.guard.js';
 
 export { parseTraceparent } from './traceparent.js';
 export type { TraceContext } from './traceparent.js';
+
+export { SuccessEnvelopeInterceptor } from './success-envelope.interceptor.js';
+export type { SuccessEnvelope } from './success-envelope.interceptor.js';
