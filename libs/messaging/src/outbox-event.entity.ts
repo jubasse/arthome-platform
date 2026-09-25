@@ -42,7 +42,7 @@ export class OutboxEvent {
   @Column('text', { nullable: true })
   actor_id!: string | null;
 
-  @Index()
+  @Index('idx_outbox_event_created_at')
   @Column('timestamptz', { default: () => 'now()' })
   created_at!: Date;
 }

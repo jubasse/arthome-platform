@@ -126,6 +126,20 @@ No service reads `process.env` any more. `libs/config` parses once, at module lo
 protocol asserted — `postgres:` for the database, `http:`/`https:` for the index — because a bare
 URL check accepts `localhost:29092` as a URL whose scheme is `localhost:`.
 
+⚠ **`migration:generate` OUTPUT IS NOT TRUSTWORTHY ON `outbox_event`, AND THE DAMAGE IT PROPOSES IS
+REAL.** Run against a migrated identity or catalog database it emits a migration that DROPS and
+re-adds all four outbox CHECK constraints with identical definitions — `payload_not_empty`,
+`type_is_versioned`, `aggregateid_present`, `aggregatetype_is_topic_safe`. They live as SQL strings in
+`libs/messaging/src/outbox.ts` and are applied by each service's migration; the entity does not
+declare them, so the generator treats them as drift. Each `ALTER TABLE … ADD CONSTRAINT` takes ACCESS
+EXCLUSIVE and scans the whole table — on the table every write inserts into.
+
+  Verified 2026-09-25 against the running stack. **Read anything `migration:generate` emits before
+  keeping it**, and delete the constraint churn. Declaring the checks on the entity would silence it
+  and would put the expressions in two places, which is the fault class this repository spends its
+  gates preventing — so the generator stays untrustworthy here by choice, and this note is the
+  mitigation.
+
 ⚠ **`provision:topics` is not a convenience.** A topic auto-created by the first producer takes the
 broker's default partition count — **one** — while `events.md` §3 fixes 3 or 12 depending on the
 topic. Those numbers are the headroom that lets replicas be added without repartitioning, and

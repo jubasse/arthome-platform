@@ -1,4 +1,4 @@
-import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
 /**
  * A ledger — reconciliation against the index's document count, and the trace link a
@@ -21,6 +21,10 @@ export class ShowProjection {
   @Column('text', { nullable: true })
   traceparent!: string | null;
 
+  // ⚠ Named to match the migration's `CREATE INDEX show_projection_indexed_at`. A
+  //   bare `@Index()` generates `IDX_<hash>`, which `migration:generate` then
+  //   reconciles against the live name by emitting DROP and CREATE.
+  @Index('show_projection_indexed_at')
   @Column('timestamptz', { default: () => 'now()' })
   indexed_at!: Date;
 }
