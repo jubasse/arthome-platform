@@ -2303,6 +2303,14 @@ ratio.
 **Apply it opportunistically.** Any file you read or modify is one you may shrink: it costs a moment
 while the context is loaded, and it is the only way a convention reaches code written before it.
 
+⚠ **AND THE SHAPE THAT DEFEATS EVERY RATIO: JSDOC ATTACHED TO NOTHING.** TypeScript associates only
+the **last** of several consecutive `/** */` blocks, so two in a row before one declaration leaves the
+first documenting nothing, anywhere — while the file looks thoroughly documented. Measured on
+2026-09-25: **eighty lines in `packages/core/src/schema/vocabulary.ts`**, holding two real findings,
+parked above a private constant while the function they described 75 lines below had no doc at all.
+`REPOSITORY_MAP.md` is the instrument that finds them, because an export with a blank description in
+a file full of prose is an orphaned block. This is not verbosity; it is prose that is already dead.
+
 ⚠ **THE FAILURE MODE THAT PRODUCES ALL OF THIS: PAYING YOURSELF IN COMMENT LINES FOR WHAT THE
 DISCOVERY COST.** Every line you just fought for feels load-bearing, so each one gets a paragraph
 defending it — and the result is a twelve-line configuration object under forty lines of prose. The
@@ -2320,7 +2328,15 @@ Two shapes give it away, both measured on this repository the day the rule was w
   explaining what `applicationName` is for. Anyone reading a Postgres data source knows. Cut it
   whole.
 
-And a third, which is worse because it is invisible: **a comment explaining an absence.** Three lines
+⚠ **AND ONE CARVE-OUT, FOUND BY CUTTING IT AND WATCHING WHAT BROKE: a one-line gloss on a published
+export is not a restatement, even when it restates the code.** `REPOSITORY_MAP.md` is generated from
+JSDoc, so deleting `SlugSchema`'s "Lowercase, hyphenated, no leading or trailing hyphen" left its map
+entry **blank** — and a reader scanning 543 names has no code in front of them. The test above names
+"a reader with this code in front of them", and for a generated index that is the wrong reader. So in
+`packages/core` and `packages/contracts`, every export keeps one line saying what it **is**, however
+obvious it looks beside the declaration.
+
+And a third shape, which is worse because it is invisible: **a comment explaining an absence.** Three lines
 saying `statement_timeout` is deliberately *not* set here belong beside the setting that *is* set,
 not beside the gap where it isn't. Prose about what a file does not do rots first, because nothing
 fails when it stops being true.
