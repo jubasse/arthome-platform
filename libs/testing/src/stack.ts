@@ -22,7 +22,13 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import { Kafka, logLevel } from 'kafkajs';
-import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
+import {
+  GenericContainer,
+  Network,
+  Wait,
+  type StartedNetwork,
+  type StartedTestContainer,
+} from 'testcontainers';
 
 /** Where a running Postgres can be reached, and as whom. */
 export interface PostgresEndpoint {
@@ -54,6 +60,21 @@ export interface StartedOpenSearch {
   stop(): Promise<void>;
 }
 
+/** Where a running Kafka Connect worker's REST API can be reached. */
+export interface ConnectEndpoint {
+  readonly url: string;
+  /** The broker address a connector's own configuration should name. */
+  readonly brokerInsideNetwork: string;
+  /** The database host a connector's own configuration should name. */
+  readonly postgresHostInsideNetwork: string;
+  readonly postgresPortInsideNetwork: number;
+}
+
+export interface StartedConnect {
+  readonly endpoint: ConnectEndpoint;
+  stop(): Promise<void>;
+}
+
 export interface StartedPostgres {
   readonly endpoint: PostgresEndpoint;
   stop(): Promise<void>;
@@ -70,6 +91,14 @@ export interface StackRequest {
   readonly kafka?: boolean;
   readonly opensearch?: boolean;
   /**
+   * Kafka Connect, carrying Debezium.
+   *
+   * ⚠ IMPLIES `postgres` AND `kafka`, and puts all three on one Docker network —
+   *   a connector reaches its database and its broker from INSIDE Docker, where
+   *   the host's mapped ports do not exist.
+   */
+  readonly connect?: boolean;
+  /**
    * Milliseconds allowed per container before startup is called a failure.
    * Generous by default: a first run pulls the image.
    */
@@ -83,6 +112,8 @@ export interface StartedStack {
   readonly kafka: KafkaEndpoint;
   /** ⚠ Throws if `opensearch` was not requested — never returns a dead endpoint. */
   readonly opensearch: OpenSearchEndpoint;
+  /** ⚠ Throws if `connect` was not requested — never returns a dead endpoint. */
+  readonly connect: ConnectEndpoint;
   stop(): Promise<void>;
 }
 
@@ -97,6 +128,22 @@ const DEFAULT_STARTUP_MS = 180_000;
 const POSTGRES_SERVICE = 'postgres';
 const KAFKA_SERVICE = 'kafka';
 const OPENSEARCH_SERVICE = 'opensearch';
+const CONNECT_SERVICE = 'connect';
+
+/**
+ * The network aliases the containers answer to when they have to reach each
+ * other, and deliberately the compose service names.
+ *
+ * ⚠ THEY ARE NOT COSMETIC. A Debezium connector's configuration names its
+ *   database by host, and the connector runs INSIDE Docker: `localhost` there is
+ *   the Connect container. Using compose's own names means the connector JSON a
+ *   test posts is the same JSON `infra/debezium/` holds, rather than a second
+ *   version of it with the hosts rewritten.
+ */
+const POSTGRES_ALIAS = POSTGRES_SERVICE;
+const KAFKA_ALIAS = KAFKA_SERVICE;
+
+const CONNECT_PORT = 8083;
 
 /**
  * Throwaway credentials, and deliberately the same words the development stack
@@ -249,8 +296,12 @@ function delay(ms: number): Promise<void> {
  */
 export async function startPostgres(
   startupTimeoutMs: number = DEFAULT_STARTUP_MS,
+  network?: StartedNetwork,
 ): Promise<StartedPostgres> {
-  const container = await new GenericContainer(composeImage(POSTGRES_SERVICE))
+  const base = new GenericContainer(composeImage(POSTGRES_SERVICE));
+  const container = await (
+    network === undefined ? base : base.withNetwork(network).withNetworkAliases(POSTGRES_ALIAS)
+  )
     .withEnvironment({
       POSTGRES_USER,
       POSTGRES_PASSWORD,
@@ -326,6 +377,56 @@ export async function startOpenSearch(
   };
 }
 
+/**
+ * One Kafka Connect worker carrying Debezium, on a network with its dependencies.
+ *
+ * ⚠ ITS STARTUP IS THE SLOWEST THING IN THIS HARNESS — a JVM, then a plugin scan.
+ *   The wait is on `GET /connectors` answering, which is the first moment a
+ *   connector can be posted; waiting on the listening port instead returns a
+ *   worker that refuses the POST with a connection reset.
+ *
+ * ⚠ IT NEEDS ITS THREE INTERNAL TOPICS AT REPLICATION FACTOR 1. The image
+ *   defaults to 3, and against a one-broker cluster the worker starts, accepts a
+ *   connector, and then fails to persist its configuration — which reads as the
+ *   connector vanishing rather than as a replication setting.
+ */
+export async function startConnect(
+  network: StartedNetwork,
+  startupTimeoutMs: number = DEFAULT_STARTUP_MS,
+): Promise<StartedConnect> {
+  const container = await new GenericContainer(composeImage(CONNECT_SERVICE))
+    .withNetwork(network)
+    .withNetworkAliases(CONNECT_SERVICE)
+    .withEnvironment({
+      BOOTSTRAP_SERVERS: `${KAFKA_ALIAS}:${KAFKA_INTERNAL_PORT}`,
+      GROUP_ID: `arthome-harness-${randomUUID().slice(0, 8)}`,
+      CONFIG_STORAGE_TOPIC: '_connect_configs',
+      OFFSET_STORAGE_TOPIC: '_connect_offsets',
+      STATUS_STORAGE_TOPIC: '_connect_status',
+      CONFIG_STORAGE_REPLICATION_FACTOR: '1',
+      OFFSET_STORAGE_REPLICATION_FACTOR: '1',
+      STATUS_STORAGE_REPLICATION_FACTOR: '1',
+    })
+    .withExposedPorts(CONNECT_PORT)
+    .withWaitStrategy(
+      Wait.forHttp('/connectors', CONNECT_PORT).forStatusCodeMatching((code) => code === 200),
+    )
+    .withStartupTimeout(startupTimeoutMs)
+    .start();
+
+  return {
+    endpoint: {
+      url: `http://${container.getHost()}:${container.getMappedPort(CONNECT_PORT)}`,
+      brokerInsideNetwork: `${KAFKA_ALIAS}:${KAFKA_INTERNAL_PORT}`,
+      postgresHostInsideNetwork: POSTGRES_ALIAS,
+      postgresPortInsideNetwork: POSTGRES_PORT,
+    },
+    stop: async (): Promise<void> => {
+      await container.stop();
+    },
+  };
+}
+
 /** Refuse a server that would make every CDC test a false negative. */
 async function assertWalLevel(container: StartedTestContainer): Promise<void> {
   const shown = await container.exec([
@@ -380,6 +481,7 @@ async function assertWalLevel(container: StartedTestContainer): Promise<void> {
  */
 export async function startKafka(
   startupTimeoutMs: number = DEFAULT_STARTUP_MS,
+  network?: StartedNetwork,
 ): Promise<StartedKafka> {
   const container = await new GenericContainer(composeImage(KAFKA_SERVICE))
     .withEnvironment({
@@ -410,6 +512,8 @@ export async function startKafka(
       CLUSTER_ID: Buffer.from(randomUUID().replace(/-/g, ''), 'hex').toString('base64url'),
     })
     .withExposedPorts(KAFKA_CLIENT_PORT)
+    .withNetworkMode(network?.getName() ?? 'bridge')
+    .withNetworkAliases(...(network === undefined ? [] : [KAFKA_ALIAS]))
     .withCommand([
       'sh',
       '-c',
@@ -430,7 +534,15 @@ export async function startKafka(
     {
       content: [
         '#!/bin/sh',
-        `export KAFKA_ADVERTISED_LISTENERS='PLAINTEXT://localhost:${KAFKA_INTERNAL_PORT}` +
+        // ⚠ WHEN THERE IS A NETWORK, PLAINTEXT MUST ADVERTISE THE ALIAS AND NOT
+        //   `localhost`. PLAINTEXT is what another container connects to, and
+        //   `localhost` inside Kafka Connect is Kafka Connect: it connects once,
+        //   is redirected to itself, and reports the broker unreachable rather
+        //   than the address being wrong. With one broker, which is its own
+        //   controller, naming the alias is safe — it resolves from inside the
+        //   broker too.
+        `export KAFKA_ADVERTISED_LISTENERS='PLAINTEXT://` +
+          `${network === undefined ? 'localhost' : KAFKA_ALIAS}:${KAFKA_INTERNAL_PORT}` +
           `,HOST://${broker}'`,
         `exec ${KAFKA_ENTRY_POINT}`,
         // Written last, read by the shell loop above: the file is complete when
@@ -509,13 +621,35 @@ async function waitForBroker(broker: string, timeoutMs: number): Promise<void> {
 export async function startStack(request: StackRequest): Promise<StartedStack> {
   const timeout = request.startupTimeoutMs ?? DEFAULT_STARTUP_MS;
 
+  // ⚠ `connect` IMPLIES ITS DEPENDENCIES AND A NETWORK, and it cannot be started
+  //   in the same breath as them: a connector reaches its database and its broker
+  //   from inside Docker, so those two have to exist, on a shared network, before
+  //   the worker comes up pointing at their aliases. Everything else starts in
+  //   parallel because nothing else depends on anything.
+  const wantsConnect = request.connect === true;
+  const network = wantsConnect ? await new Network().start() : undefined;
+  const wantsPostgres = request.postgres === true || wantsConnect;
+  const wantsKafka = request.kafka === true || wantsConnect;
+
   const [postgres, kafka, opensearch] = await Promise.allSettled([
-    request.postgres === true ? startPostgres(timeout) : null,
-    request.kafka === true ? startKafka(timeout) : null,
+    wantsPostgres ? startPostgres(timeout, network) : null,
+    wantsKafka ? startKafka(timeout, network) : null,
     request.opensearch === true ? startOpenSearch(timeout) : null,
   ]);
 
-  const outcomes = [postgres, kafka, opensearch];
+  const dependenciesFailed = [postgres, kafka, opensearch].some((o) => o.status === 'rejected');
+  const connect = await (async (): Promise<PromiseSettledResult<StartedConnect | null>> => {
+    if (!wantsConnect || network === undefined || dependenciesFailed) {
+      return { status: 'fulfilled', value: null };
+    }
+    try {
+      return { status: 'fulfilled', value: await startConnect(network, timeout) };
+    } catch (reason) {
+      return { status: 'rejected', reason };
+    }
+  })();
+
+  const outcomes = [postgres, kafka, opensearch, connect];
   const started = outcomes.flatMap((outcome) =>
     outcome.status === 'fulfilled' && outcome.value !== null ? [outcome.value] : [],
   );
@@ -525,6 +659,10 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
 
   const stop = async (): Promise<void> => {
     await Promise.allSettled(started.map((container) => container.stop()));
+    // The network goes last: removing it while a container is still attached
+    // fails, and the failure is reported against the network rather than against
+    // the container that outlived it.
+    if (network !== undefined) await network.stop();
   };
 
   if (failed.length > 0) {
@@ -536,6 +674,7 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
   const kafkaEndpoint = kafka.status === 'fulfilled' ? kafka.value?.endpoint : undefined;
   const openSearchEndpoint =
     opensearch.status === 'fulfilled' ? opensearch.value?.endpoint : undefined;
+  const connectEndpoint = connect.status === 'fulfilled' ? connect.value?.endpoint : undefined;
 
   return {
     // Getters rather than nullable fields: a test that forgot to ask for a
@@ -558,6 +697,12 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
         throw new Error('startStack was not asked for kafka: pass { kafka: true }.');
       }
       return kafkaEndpoint;
+    },
+    get connect(): ConnectEndpoint {
+      if (connectEndpoint === undefined) {
+        throw new Error('startStack was not asked for connect: pass { connect: true }.');
+      }
+      return connectEndpoint;
     },
     stop,
   };

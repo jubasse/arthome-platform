@@ -11,12 +11,21 @@
  *   test:integration`.
  */
 
-export { composeImage, startKafka, startOpenSearch, startPostgres, startStack } from './stack.js';
+export {
+  composeImage,
+  startConnect,
+  startKafka,
+  startOpenSearch,
+  startPostgres,
+  startStack,
+} from './stack.js';
 export type {
+  ConnectEndpoint,
   KafkaEndpoint,
   OpenSearchEndpoint,
   PostgresEndpoint,
   StackRequest,
+  StartedConnect,
   StartedKafka,
   StartedOpenSearch,
   StartedPostgres,
