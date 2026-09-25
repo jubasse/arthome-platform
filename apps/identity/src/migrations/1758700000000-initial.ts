@@ -1,21 +1,15 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * The identity schema, and the outbox the Debezium router reads.
- *
- * ⚠ ADDITIVE MIGRATIONS ONLY ON `outbox_event`, from here on. The publication
- *   references the columns by name: renaming one breaks replication, and the
- *   connector either fails or loses the column in silence (data-model.md §7.4).
- *   A rename is four steps across two versions — add, backfill, write to both,
- *   drop later — never one.
+ * ⚠ ADDITIVE MIGRATIONS ONLY ON `outbox_event` from here on: the publication references
+ *   the columns by name, and a rename breaks replication or loses the column in silence
+ *   (data-model.md §7.4).
  */
 export class Initial1758700000000 implements MigrationInterface {
   name = 'Initial1758700000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // `citext` is what makes a handle and an email case-insensitively unique
-    // without a functional index on lower(), which every query would then have
-    // to remember to match.
+    // `citext` is what makes a handle and an email case-insensitively unique without a functional index every query must match.
     await queryRunner.query('CREATE EXTENSION IF NOT EXISTS citext');
 
     await queryRunner.query(`
@@ -30,9 +24,7 @@ export class Initial1758700000000 implements MigrationInterface {
       )
     `);
 
-    // The column names are the Debezium outbox router's, not ours: lowercase
-    // and unseparated. Renaming one for readability does not fail a test, it
-    // fails the connector (data-model.md §7.3).
+    // The column names are the Debezium outbox router's, not ours: renaming one for readability fails the connector, not a test.
     await queryRunner.query(`
       CREATE TABLE outbox_event (
         id            uuid        PRIMARY KEY,
@@ -46,7 +38,6 @@ export class Initial1758700000000 implements MigrationInterface {
       )
     `);
 
-    // Used by the cleanup job only — the application never reads this table.
     await queryRunner.query(
       'CREATE INDEX idx_outbox_event_created_at ON outbox_event (created_at)',
     );

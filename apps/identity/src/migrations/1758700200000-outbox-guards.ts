@@ -1,13 +1,6 @@
 import { outboxConstraints } from '@arthome-platform/messaging';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-/**
- * Make a connector-killing outbox row impossible to commit.
- *
- * ⚠ ADDITIVE ONLY, as §7.4 requires on a captured table: this adds constraints
- *   and renames nothing. A CHECK does not change the columns the publication
- *   references, so replication is untouched.
- */
 export class OutboxGuards1758700200000 implements MigrationInterface {
   name = 'OutboxGuards1758700200000';
 

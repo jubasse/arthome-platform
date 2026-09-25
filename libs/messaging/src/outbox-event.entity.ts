@@ -3,16 +3,10 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 /**
  * The contract between this service and the Debezium outbox router.
  *
- * ⚠ THE COLUMN NAMES ARE NOT OURS TO CHOOSE. `aggregatetype`, `aggregateid`,
- *   `type` and `payload` are what the router expects, lowercase and unseparated
- *   (data-model.md §7.3). Renaming one to something more readable does not fail
- *   a test — it fails the connector, in production, silently.
- *
- * ⚠ THE APPLICATION ONLY EVER INSERTS. It never reads this table and never
- *   updates a row: CDC reads the write-ahead log. That is what makes
- *   `REPLICA IDENTITY DEFAULT` sufficient, and it is why there is no `status`
- *   column here — a row marked "published" by the application would be a second
- *   source of truth about something the connector already knows.
+ * ⚠ The column names are the router's, not ours — lowercase and unseparated (§7.3). Renaming
+ *   one to something more readable does not fail a test; it fails the connector, silently.
+ * ⚠ The application only ever INSERTS; CDC reads the write-ahead log. That is what makes
+ *   `REPLICA IDENTITY DEFAULT` sufficient, and why there is no `status` column.
  */
 @Entity('outbox_event')
 export class OutboxEvent {
@@ -37,11 +31,9 @@ export class OutboxEvent {
   payload!: Buffer;
 
   /**
-   * W3C traceparent, injected HERE, at write time.
-   *
-   * The relay runs outside the request that caused the fact. Injecting later
-   * means injecting a context that no longer exists, and the link between the
-   * command and everything it causes is lost for good (events.md §1.3).
+   * ⚠ Injected here, at write time: the relay runs outside the request that caused the fact,
+   *   so injecting later injects a context that no longer exists and the link between the
+   *   command and everything it causes is lost for good (events.md §1.3).
    */
   @Column('text', { nullable: true })
   tracecontext!: string | null;

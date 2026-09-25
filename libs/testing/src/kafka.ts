@@ -1,11 +1,7 @@
 /**
- * The waiting an event test cannot be written without.
- *
- * Kafka has no "give me the message that was just produced": there is a group,
- * an assignment, an offset and a poll loop, and every one of them is a way for a
- * test to hang instead of failing. What is here turns that into one call that
- * either returns the message or says, with a number, how long it waited and how
- * many messages it did see.
+ * Kafka has no "give me the message that was just produced": every step of the
+ * group, assignment, offset and poll loop is a way for a test to hang instead of
+ * failing. One call here either returns the message or says how long it waited.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -13,55 +9,36 @@ import { randomUUID } from 'node:crypto';
 import { header } from '@arthome-platform/messaging';
 import type { EachMessagePayload, Kafka } from 'kafkajs';
 
-/** A topic and the partition count it must be created with. */
 export interface TopicSpec {
   readonly topic: string;
-  /** `events.md` §3 fixes this per topic. It is never left to the broker. */
+  /** `events.md` §3 fixes this per topic; it is never left to the broker. */
   readonly partitions: number;
 }
 
-/** One message, decoded far enough to assert on without reaching into KafkaJS. */
 export interface ObservedMessage {
   readonly topic: string;
   readonly partition: number;
   readonly offset: string;
-  /** The partition key as a string. This is what keeps one aggregate in order. */
   readonly key: string | null;
   readonly value: Buffer | null;
-  /** Headers as strings. Debezium's literal `"null"` is already absent here. */
+  /** Debezium's literal `"null"` is already absent here. */
   readonly headers: Readonly<Record<string, string>>;
 }
 
 export interface WaitForMessageOptions {
   readonly topic: string;
-  /** Which message the test is waiting for. Omitted, the first one will do. */
   readonly matches?: (message: ObservedMessage) => boolean;
   readonly timeoutMs?: number;
-  /**
-   * Whether to read the topic from its start. True by default, and it is what a
-   * test almost always means: the message it is waiting for was very often
-   * produced before the consumer existed.
-   */
+  /** True by default: the awaited message is usually produced before the consumer exists. */
   readonly fromBeginning?: boolean;
 }
 
-/**
- * Long enough for a consumer to join a group and be assigned a partition, short
- * enough that a test which will never succeed says so while someone is watching.
- */
 const DEFAULT_WAIT_MS = 30_000;
 
 /**
- * A message's headers, as strings, with absent ones absent.
- *
- * ⚠ THE `"null"` RULE IS NOT REIMPLEMENTED HERE, AND MUST NOT BE. Debezium
- *   renders a NULL column as the four characters `null` rather than as a missing
- *   header, so a row with no trace context arrives carrying a `traceparent`
- *   whose value is the word "null" — and storing that is how a trace id becomes
- *   a string nobody can follow. `@arthome-platform/messaging` already owns that
- *   decision, in `dispatch.ts`. A second copy of it here would be a parallel
- *   implementation of the one rule in this system whose divergence is invisible:
- *   both versions return a string, and only one of them is a trace id.
+ * ⚠ Debezium renders a NULL column as the four characters `null`, not as a
+ *   missing header. `messaging/dispatch.ts` owns that rule; a second copy here
+ *   would diverge invisibly — both versions return a string, one is a trace id.
  */
 export function headersOf(payload: EachMessagePayload): Readonly<Record<string, string>> {
   const named: Record<string, string> = {};
@@ -72,7 +49,6 @@ export function headersOf(payload: EachMessagePayload): Readonly<Record<string, 
   return named;
 }
 
-/** What `eachMessage` hands over, reduced to what an assertion needs. */
 function observe(payload: EachMessagePayload): ObservedMessage {
   return {
     topic: payload.topic,
@@ -85,22 +61,13 @@ function observe(payload: EachMessagePayload): ObservedMessage {
 }
 
 /**
- * Create topics with the partition counts they are supposed to have.
+ * ⚠ A topic nobody created is auto-created by the first producer with the
+ *   broker's default of one partition, where `events.md` §3 fixes 3 or 12 — and
+ *   raising them later re-hashes every key. A consumer, meanwhile, cannot
+ *   subscribe to a missing topic: KafkaJS says "This server does not host this
+ *   topic-partition", which reads like a broker fault.
  *
- * ⚠ A TOPIC NOBODY CREATED IS NOT A TOPIC NOBODY HAS. The first producer
- *   auto-creates it with the BROKER's default partition count — one — while
- *   `events.md` §3 fixes 3 or 12. Partitions cannot be reduced afterwards, and
- *   raising them re-hashes every key, which breaks the per-aggregate ordering
- *   the key exists to guarantee. So a test that lets a topic be auto-created is
- *   not testing the topic the service will run against.
- *
- * ⚠ AND A CONSUMER CANNOT SUBSCRIBE TO A TOPIC THAT DOES NOT EXIST. KafkaJS
- *   fails with "This server does not host this topic-partition", which reads
- *   like a broker fault and is a missing `createTopics`.
- *
- * `waitForLeaders` is what makes this call mean "ready", not "requested": topic
- * creation is asynchronous, and a produce issued in between is refused for a
- * topic that was just created successfully.
+ * `waitForLeaders` makes this mean "ready" rather than "requested".
  */
 export async function createTopics(kafka: Kafka, topics: readonly TopicSpec[]): Promise<void> {
   const admin = kafka.admin();
@@ -111,8 +78,7 @@ export async function createTopics(kafka: Kafka, topics: readonly TopicSpec[]): 
       topics: topics.map((spec) => ({
         topic: spec.topic,
         numPartitions: spec.partitions,
-        // One broker in the harness, so nothing can be replicated anywhere. This
-        // is the one setting that is deliberately NOT production's.
+        // One broker in the harness: the one setting deliberately not production's.
         replicationFactor: 1,
       })),
     });
@@ -122,19 +88,13 @@ export async function createTopics(kafka: Kafka, topics: readonly TopicSpec[]): 
 }
 
 /**
- * Consume a topic until a message matches, or until the timeout says it will not.
+ * ⚠ A fresh group every time, because KafkaJS honours `fromBeginning` only when
+ *   the group has no committed offset: a reused id resumes after the previous
+ *   test's message and waits for ever.
  *
- * ⚠ A FRESH GROUP EVERY TIME, AND THAT IS WHAT MAKES `fromBeginning` MEAN
- *   ANYTHING. KafkaJS honours `fromBeginning` only when the group has no
- *   committed offset; reusing a group id across tests makes the second call
- *   resume after the first one's message and wait for ever on a topic that
- *   already holds what it is waiting for.
- *
- * ⚠ THE CONSUMER IS DISCONNECTED WHATEVER HAPPENS. A consumer that is dropped
- *   without leaving stays a group member until its session times out, and the
- *   group sits in PreparingRebalance for that whole time — during which the NEXT
- *   test's consumer is assigned nothing and times out too. One forgotten
- *   `disconnect` turns into a suite where every test after the first is slow.
+ * ⚠ The consumer is disconnected whatever happens. Dropped without leaving, it
+ *   stays a member until its session times out, and the next test's consumer is
+ *   assigned nothing for that whole time.
  */
 export async function waitForMessage(
   kafka: Kafka,

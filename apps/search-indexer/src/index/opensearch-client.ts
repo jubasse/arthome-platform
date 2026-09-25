@@ -12,22 +12,15 @@ import {
 
 export type IndexWrite = 'indexed' | 'superseded';
 
-/**
- * ⚠ An interface rather than the client so the handler can be tested without a
- *   cluster. Every decision worth asserting — applied, duplicate, wrong type, stale
- *   event — is made before any network call, and a test needing a container would
- *   not be run.
- */
+/** An interface, not the client, so the handler is testable without a cluster. */
 export interface ShowIndex {
-  /** `version` is external: OpenSearch refuses a write older than what is stored. */
   put(document: ShowDocument, version: number): Promise<IndexWrite>;
 }
 
 /**
- * ⚠ RETRY AT ONE LAYER. The client defaults to `maxRetries: 3` at
- *   `requestTimeout: 30000`, on top of `libs/messaging`'s three tiers — 9 attempts,
- *   and a dead node holding a partition 90 s before the messaging layer is told.
- *   `failure.ts` records the same multiplication for KafkaJS.
+ * ⚠ RETRY AT ONE LAYER. The defaults (`maxRetries: 3`, `requestTimeout: 30000`) multiply
+ *   with `libs/messaging`'s three tiers: 9 attempts, and a dead node holds a partition
+ *   90 s before the messaging layer hears about it.
  */
 export function createOpenSearchClient(url: string): Client {
   return new Client({ node: url, maxRetries: 0, requestTimeout: 5_000 });
@@ -39,12 +32,9 @@ function statusOf(error: unknown): number | null {
 }
 
 /**
- * ⚠ `external_gte`, NOT `external`. `external` demands strictly greater, and the
- *   version is the event's `occurred_at` in milliseconds — two events about one show
- *   in the same millisecond would see the second refused and its content lost.
- *
- * ⚠ This is the consumer-side version guard AGENTS.md says a retry topic owes: the
- *   index refuses to go backwards, so nothing here assumes Kafka's ordering.
+ * ⚠ THE VERSION GUARD A RETRY TOPIC OWES: the index refuses to go backwards, so nothing
+ *   here assumes Kafka's ordering. `external_gte` and not `external`, which demands
+ *   strictly greater — two events about one show in the same millisecond would lose one.
  */
 export function showIndex(client: Client): ShowIndex {
   return {
@@ -61,13 +51,11 @@ export function showIndex(client: Client): ShowIndex {
       } catch (error) {
         const status = statusOf(error);
 
-        // A replay arriving after a newer event: its effect is already in the index.
+        // A replay behind a newer event: its effect is already in the index.
         if (status === 409) return 'superseded';
 
-        // ⚠ The document is a pure function of the event, so a mapping that rejects
-        //   these bytes rejects them identically for ever. Unclassified it would
-        //   dead-letter as `exhausted` — "a dependency never came back" — and the two
-        //   reasons mean opposite things.
+        // ⚠ Permanent because the document is a pure function of the event. Unclassified
+        //   it would dead-letter as `exhausted`, which means the opposite thing.
         if (status === 400) {
           throw new PermanentError(
             `OpenSearch refused document ${document.show_id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -81,14 +69,10 @@ export function showIndex(client: Client): ShowIndex {
 }
 
 /**
- * ⚠ ADDITIVE ONLY, AND OPENSEARCH ENFORCES IT. A field can be added to a live
- *   mapping; a type, a normalizer and the shard count cannot, and `put_mapping`
- *   answers 400. Nothing is reconciled here on purpose: catching that 400 would
- *   start a service whose index does not match what it is about to write, and the
- *   first symptom would be a query returning nothing.
- *
- *   A non-additive change is a reindex — create `…-v2`, reindex, move
- *   `SHOW_INDEX_ALIAS` in one `_aliases` call — not a deploy.
+ * ⚠ ADDITIVE ONLY, AND OPENSEARCH ENFORCES IT: a field can be added to a live mapping, a
+ *   type, a normalizer and the shard count cannot, and `put_mapping` answers 400. That
+ *   400 is left to fail the startup — a non-additive change is a reindex behind the
+ *   alias, not a deploy.
  */
 export async function ensureShowIndex(client: Client): Promise<void> {
   if (await indexExists(client, SHOW_INDEX_CONCRETE)) {
@@ -104,18 +88,16 @@ export async function ensureShowIndex(client: Client): Promise<void> {
     body: {
       settings: SHOW_INDEX_SETTINGS,
       mappings: SHOW_INDEX_MAPPING,
-      // ⚠ In the same call: created after, there is a window where the index exists
-      //   and the alias does not, and every write to the alias fails against a
-      //   healthy cluster.
+      // ⚠ In the same call: created after, there is a window in which every write to
+      //   the alias fails against a healthy cluster.
       aliases: { [SHOW_INDEX_ALIAS]: {} },
     },
   });
 }
 
 /**
- * ⚠ A 404 is this function's answer, not an error, so it alone is caught. Every other
- *   status propagates: a cluster refusing connections must not read as an empty one,
- *   because the repair for that misreading is creating an index beside the real one.
+ * ⚠ Only the 404 is caught, because it is the answer: a cluster refusing connections must
+ *   not read as an empty one, or the repair is a second index beside the real one.
  */
 async function indexExists(client: Client, index: string): Promise<boolean> {
   try {

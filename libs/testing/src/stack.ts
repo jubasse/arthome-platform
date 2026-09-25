@@ -2,20 +2,10 @@
  * Real infrastructure, in containers, for the assertions that cannot be made
  * without it.
  *
- * ⚠ THE IMAGES AND THE POSTGRES FLAGS ARE READ OUT OF `compose.yaml`, NOT COPIED
- *   HERE. A harness that tests a different Postgres than the one the stack runs
- *   is worse than no harness: it is a green test about a system nobody operates,
- *   and the drift is silent because both sides keep passing. `compose.yaml` is
- *   the one document that owns those versions (critical-rules.md 15), so this
- *   module REFERENCES it. When the reference cannot be resolved it throws, which
- *   is the whole difference between a harness that has drifted and one that is
- *   visibly broken.
- *
- * ⚠ NOTHING HERE TOUCHES THE DEVELOPMENT STACK. Testcontainers starts its own
- *   containers on its own random ports; the stack `docker compose up` runs keeps
- *   55432, 29092 and 8083 to itself. A harness that reached for those ports
- *   would pass alone and fail the moment anyone had the stack up — which is
- *   every day.
+ * ⚠ The images and the Postgres flags are read out of `compose.yaml`, never
+ *   copied here: a harness that tests a different Postgres than the one the stack
+ *   runs is a green test about a system nobody operates. An unresolvable
+ *   reference throws.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -30,28 +20,22 @@ import {
   type StartedTestContainer,
 } from 'testcontainers';
 
-/** Where a running Postgres can be reached, and as whom. */
 export interface PostgresEndpoint {
   readonly host: string;
   readonly port: number;
   readonly user: string;
   readonly password: string;
   readonly database: string;
-  /** The same thing as a connection string: what TypeORM's `url` option takes. */
   readonly url: string;
 }
 
-/** Where a running broker can be reached. */
 export interface KafkaEndpoint {
-  /** `host:port` pairs, as KafkaJS's `brokers` option wants them. */
   readonly brokers: readonly string[];
 }
 
-/** Where a running index can be reached. */
 export interface OpenSearchEndpoint {
   readonly host: string;
   readonly port: number;
-  /** What the OpenSearch client's `node` option takes. */
   readonly url: string;
 }
 
@@ -60,12 +44,9 @@ export interface StartedOpenSearch {
   stop(): Promise<void>;
 }
 
-/** Where a running Kafka Connect worker's REST API can be reached. */
 export interface ConnectEndpoint {
   readonly url: string;
-  /** The broker address a connector's own configuration should name. */
   readonly brokerInsideNetwork: string;
-  /** The database host a connector's own configuration should name. */
   readonly postgresHostInsideNetwork: string;
   readonly postgresPortInsideNetwork: number;
 }
@@ -85,114 +66,75 @@ export interface StartedKafka {
   stop(): Promise<void>;
 }
 
-/** Which containers a test needs. Anything left out is not started, nor paid for. */
 export interface StackRequest {
   readonly postgres?: boolean;
   readonly kafka?: boolean;
   readonly opensearch?: boolean;
   /**
-   * Kafka Connect, carrying Debezium.
-   *
-   * ⚠ IMPLIES `postgres` AND `kafka`, and puts all three on one Docker network —
-   *   a connector reaches its database and its broker from INSIDE Docker, where
-   *   the host's mapped ports do not exist.
+   * ⚠ Implies `postgres` and `kafka`, all three on one Docker network: a
+   *   connector reaches its database and broker from INSIDE Docker, where the
+   *   host's mapped ports do not exist.
    */
   readonly connect?: boolean;
-  /**
-   * Milliseconds allowed per container before startup is called a failure.
-   * Generous by default: a first run pulls the image.
-   */
   readonly startupTimeoutMs?: number;
 }
 
+/** ⚠ Each endpoint throws if its container was not requested, rather than reading back dead. */
 export interface StartedStack {
-  /** ⚠ Throws if `postgres` was not requested — never returns a dead endpoint. */
   readonly postgres: PostgresEndpoint;
-  /** ⚠ Throws if `kafka` was not requested — never returns a dead endpoint. */
   readonly kafka: KafkaEndpoint;
-  /** ⚠ Throws if `opensearch` was not requested — never returns a dead endpoint. */
   readonly opensearch: OpenSearchEndpoint;
-  /** ⚠ Throws if `connect` was not requested — never returns a dead endpoint. */
   readonly connect: ConnectEndpoint;
   stop(): Promise<void>;
 }
 
-/**
- * Container startup is measured in tens of seconds, and the first run of all in
- * minutes: an image has to be pulled. A short default here does not make a test
- * fast, it makes it flaky on the one machine that had a cold cache.
- */
+// Generous because a first run pulls the image; a short default only makes a cold
+// cache flaky.
 const DEFAULT_STARTUP_MS = 180_000;
 
-/** The compose service names this harness reproduces. */
 const POSTGRES_SERVICE = 'postgres';
 const KAFKA_SERVICE = 'kafka';
 const OPENSEARCH_SERVICE = 'opensearch';
 const CONNECT_SERVICE = 'connect';
 
 /**
- * The network aliases the containers answer to when they have to reach each
- * other, and deliberately the compose service names.
- *
- * ⚠ THEY ARE NOT COSMETIC. A Debezium connector's configuration names its
- *   database by host, and the connector runs INSIDE Docker: `localhost` there is
- *   the Connect container. Using compose's own names means the connector JSON a
- *   test posts is the same JSON `infra/debezium/` holds, rather than a second
- *   version of it with the hosts rewritten.
+ * ⚠ The aliases are compose's service names on purpose: a connector names its
+ *   database by host and runs INSIDE Docker, so a test can post the same JSON
+ *   `infra/debezium/` holds instead of a copy with the hosts rewritten.
  */
 const POSTGRES_ALIAS = POSTGRES_SERVICE;
 const KAFKA_ALIAS = KAFKA_SERVICE;
 
 const CONNECT_PORT = 8083;
 
-/**
- * Throwaway credentials, and deliberately the same words the development stack
- * uses: a URL printed by a failing test should read like the one in `.env`, not
- * like a second set of facts to learn. They are not read from `compose.yaml`
- * because a password is not a version — it cannot drift into being wrong.
- */
+// Deliberately the development stack's words: a URL printed by a failing test
+// should read like the one in `.env`.
 const POSTGRES_USER = 'arthome';
 const POSTGRES_PASSWORD = 'arthome';
 
 /**
- * The database the server is created with. It exists only so that `CREATE
- * DATABASE` has somewhere to be issued from — a test gets its own database from
- * `createDatabase`, never this one.
- *
- * ⚠ IT IS NOT NAMED AFTER A SERVICE. `identity`, `notifications` and the rest are
- *   members of `SERVICES` in @arthome/core, and this package does not depend on
- *   @arthome/core, so the only honest name is one that belongs to no vocabulary.
+ * Only so `CREATE DATABASE` has somewhere to be issued from — a test gets its own
+ * from `createDatabase`. ⚠ Not named after a service: those names belong to
+ * `SERVICES` in @arthome/core, which this package must not depend on.
  */
 const MAINTENANCE_DATABASE = 'arthome';
 
 const POSTGRES_PORT = 5432;
 
 /**
- * ⚠ WITHOUT THIS THERE IS NOTHING FOR DEBEZIUM TO READ. `wal_level=logical` is
- *   the setting the whole event path rests on, it needs a server restart on a
- *   real machine, and at any lower level the connector fails at startup with a
- *   message that does not mention it (data-model.md §7.4). It is asserted after
- *   startup rather than assumed, so that a regression in the `compose.yaml`
- *   reader above surfaces here instead of three layers downstream.
+ * ⚠ Below `logical` there is nothing in the write-ahead log for Debezium to
+ *   read, and the connector fails at startup with a message that does not say so
+ *   (data-model.md §7.4). Asserted after startup rather than assumed.
  */
 const REQUIRED_WAL_LEVEL = 'logical';
 
-/**
- * The broker's three listeners, mirroring `compose.yaml`: one for inter-broker
- * traffic, one for the KRaft controller, one for clients outside the container.
- */
 const OPENSEARCH_PORT = 9200;
 
 /**
- * ⚠ THESE MUST MATCH `compose.yaml`'s opensearch block, and they are NOT read
- *   out of it. `composeImage` reads the image tag because a version can drift;
- *   these three settings cannot drift into being *wrong*, they can only be
- *   absent — and absent, the container does not start at all, which a test
- *   discovers immediately rather than subtly.
- *
- *   `DISABLE_SECURITY_PLUGIN` is what makes `http://` work without credentials,
- *   and the heap cap is not tuning: OpenSearch sizes its default heap from the
- *   host's memory and refuses to start on a small machine without it.
+ * Not read out of `compose.yaml` like the image tag: these cannot drift into
+ * being wrong, only absent, and absent the container does not start. The heap cap
+ * is not tuning — OpenSearch sizes its default heap from host memory and refuses
+ * to start on a small machine without it.
  */
 const OPENSEARCH_ENVIRONMENT = {
   'discovery.type': 'single-node',
@@ -206,25 +148,19 @@ const KAFKA_INTERNAL_PORT = 9092;
 const KAFKA_CONTROLLER_PORT = 9093;
 const KAFKA_CLIENT_PORT = 29092;
 
-/** Where the advertised-listener script is written, and how the container waits for it. */
 const KAFKA_STARTER_SCRIPT = '/tmp/arthome-kafka-start.sh';
 const KAFKA_SCRIPT_TRAILER = 'ARTHOME_SCRIPT_COMPLETE';
 const KAFKA_WAITING_MARKER = 'arthome-testing: waiting for the advertised listeners';
 
-/** The image's own entry point, which the starter script hands over to. */
 const KAFKA_ENTRY_POINT = '/etc/kafka/docker/run';
 
 /**
- * `compose.yaml`, resolved from THIS MODULE and not from the working directory.
- *
- * A test is run from the repository root, from `libs/testing`, and from an
- * editor's own cwd, and all three have to work. `src/` and `dist/` sit at the
- * same depth under `libs/testing`, so one relative path serves the source and
- * the build.
+ * Resolved from THIS MODULE, not the working directory: a test runs from the
+ * repository root, from `libs/testing` and from an editor's cwd. `src/` and
+ * `dist/` sit at the same depth, so one path serves both.
  */
 const COMPOSE_FILE = new URL('../../../compose.yaml', import.meta.url);
 
-/** The lines of one service's block, from its name to the next service's. */
 function composeBlock(service: string): string[] {
   let text: string;
   try {
@@ -247,13 +183,6 @@ function composeBlock(service: string): string[] {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
-/**
- * The image tag `compose.yaml` pins for one service.
- *
- * Exported because every future container belongs here for the same reason: the
- * day a test wants OpenSearch, it asks this rather than writing the tag down a
- * second time.
- */
 export function composeImage(service: string): string {
   for (const line of composeBlock(service)) {
     const tag = /^ {4}image:\s*(\S+)\s*$/.exec(line)?.[1];
@@ -262,7 +191,6 @@ export function composeImage(service: string): string {
   throw new Error(`compose.yaml pins no image for \`${service}\`.`);
 }
 
-/** The `command:` list `compose.yaml` gives one service, item by item. */
 function composeCommand(service: string): string[] {
   const block = composeBlock(service);
   const at = block.indexOf('    command:');
@@ -283,16 +211,10 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Postgres 18 with the write-ahead log configured the way the connector needs.
- *
- * ⚠ THE READINESS CHECK IS TWO THINGS AND NEEDS TO BE. The official entry point
- *   runs the whole initialisation against a UNIX socket with `listen_addresses`
- *   empty, and prints "database system is ready to accept connections" while
- *   doing it. A `pg_isready` over the socket therefore succeeds on a server that
- *   will shortly be shut down and restarted, and a test that connects in that
- *   window sees its connection dropped mid-query. Waiting for the TCP port rules
- *   the init phase out; `pg_isready` over TCP then rules out a port that is open
- *   but not yet answering.
+ * ⚠ The readiness check is two things. The entry point initialises over a UNIX
+ *   socket, prints "ready to accept connections", then restarts — a test that
+ *   connects in that window loses its connection mid-query. The TCP port rules
+ *   the init phase out; `pg_isready` over TCP rules out a port not yet answering.
  */
 export async function startPostgres(
   startupTimeoutMs: number = DEFAULT_STARTUP_MS,
@@ -307,9 +229,6 @@ export async function startPostgres(
       POSTGRES_PASSWORD,
       POSTGRES_DB: MAINTENANCE_DATABASE,
     })
-    // The flags are compose's, read out of it: `wal_level`, the replication slot
-    // ceiling and the WAL sender ceiling travel together, and a harness that kept
-    // only the first would reproduce the setting while losing the capacity.
     .withCommand(composeCommand(POSTGRES_SERVICE))
     .withExposedPorts(POSTGRES_PORT)
     .withWaitStrategy(
@@ -344,13 +263,9 @@ export async function startPostgres(
 }
 
 /**
- * A single-node OpenSearch, for tests that assert on a projection.
- *
- * ⚠ IT WAITS ON `/_cluster/health`, NOT ON THE LISTENING PORT. OpenSearch binds
- *   9200 well before the cluster can serve a write: an index request in that
- *   window fails with a master-not-discovered error that reads like a bug in the
- *   test. A single-node cluster reports `yellow`, never `green` — it has no
- *   replica to place — so waiting for green would wait for ever.
+ * ⚠ It waits on `/_cluster/health`, not the listening port: 9200 binds well
+ *   before the cluster can serve a write. A single-node cluster reports `yellow`
+ *   and never `green`, so waiting for green waits for ever.
  */
 export async function startOpenSearch(
   startupTimeoutMs: number = DEFAULT_STARTUP_MS,
@@ -378,17 +293,12 @@ export async function startOpenSearch(
 }
 
 /**
- * One Kafka Connect worker carrying Debezium, on a network with its dependencies.
+ * ⚠ The wait is on `GET /connectors` answering, the first moment a connector can
+ *   be posted; on the listening port instead, the POST is reset.
  *
- * ⚠ ITS STARTUP IS THE SLOWEST THING IN THIS HARNESS — a JVM, then a plugin scan.
- *   The wait is on `GET /connectors` answering, which is the first moment a
- *   connector can be posted; waiting on the listening port instead returns a
- *   worker that refuses the POST with a connection reset.
- *
- * ⚠ IT NEEDS ITS THREE INTERNAL TOPICS AT REPLICATION FACTOR 1. The image
- *   defaults to 3, and against a one-broker cluster the worker starts, accepts a
- *   connector, and then fails to persist its configuration — which reads as the
- *   connector vanishing rather than as a replication setting.
+ * ⚠ The three internal topics need replication factor 1. The image defaults to
+ *   3, and against one broker the worker accepts a connector then fails to
+ *   persist it — which reads as the connector vanishing.
  */
 export async function startConnect(
   network: StartedNetwork,
@@ -427,7 +337,6 @@ export async function startConnect(
   };
 }
 
-/** Refuse a server that would make every CDC test a false negative. */
 async function assertWalLevel(container: StartedTestContainer): Promise<void> {
   const shown = await container.exec([
     'psql',
@@ -452,32 +361,15 @@ async function assertWalLevel(container: StartedTestContainer): Promise<void> {
 }
 
 /**
- * One Kafka broker in KRaft mode, reachable from the test process.
+ * ⚠ `advertised.listeners` must name the HOST port Docker mapped, unknown until
+ *   the container exists: advertise the container's own port and a producer
+ *   connects once, is redirected to an unpublished port, and hangs.
  *
- * ⚠ A BROKER TELLS ITS CLIENTS WHERE TO RECONNECT, AND IT HAS TO BE TOLD THE
- *   TRUTH. `advertised.listeners` is what comes back in a metadata response, so
- *   it must name the HOST port Docker mapped — which is not known until the
- *   container exists. Advertise the container's own port instead and every
- *   producer connects once, is redirected to a port that is not published, and
- *   hangs until its request timeout with an error about the broker being
- *   unreachable rather than about the address being wrong.
+ * ⚠ The shell waits for the script's LAST LINE, not the file: `docker cp`
+ *   creates it, then fills it, so testing `-f` hands half a script to `sh`.
  *
- *   The fix here is the one the testcontainers Kafka module uses, and it is a
- *   two-phase start: the container comes up running a shell that waits for a
- *   script, the mapped port is read off the started container, the script is
- *   written with the real address, and the shell hands over to Kafka's own entry
- *   point.
- *
- *   ⚠ THE SHELL WAITS FOR THE LAST LINE OF THE SCRIPT, NOT FOR THE FILE. A file
- *     exists from its first byte; `docker cp` creates it, then fills it. Testing
- *     `-f` can therefore hand a half-written script to `sh`, which is a syntax
- *     error inside a container at a moment when nothing is watching the logs.
- *     Grepping for a trailer that is written last cannot see a partial file.
- *
- * ⚠ RESERVING A HOST PORT UP FRONT WOULD HAVE BEEN SHORTER, AND IT IS THE THING
- *   THIS AVOIDS. Asking the kernel for a free port, closing it, and handing the
- *   number to Docker leaves a window in which anything else on the machine can
- *   take it — rare, unreproducible, and indistinguishable from a broken test.
+ * ⚠ Reserving a host port up front is the shorter version and loses: between
+ *   closing the probe socket and Docker binding it, anything can take it.
  */
 export async function startKafka(
   startupTimeoutMs: number = DEFAULT_STARTUP_MS,
@@ -494,21 +386,17 @@ export async function startKafka(
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP:
         'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,HOST:PLAINTEXT',
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER',
-      // compose says `1@kafka:9093` because `kafka` is the compose service's own
-      // DNS name. There is no second container here to resolve it, and the one
-      // broker is its own controller, so the quorum voter is the loopback.
+      // compose says `1@kafka:9093` for its own DNS name; here the single broker
+      // is its own controller, so the voter is the loopback.
       KAFKA_CONTROLLER_QUORUM_VOTERS: `1@localhost:${KAFKA_CONTROLLER_PORT}`,
       KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT',
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: '1',
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: '1',
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: '1',
-      // ⚠ NOT A PERFORMANCE TWEAK. The default is three seconds of deliberate
-      //   waiting for more group members before the first assignment, paid by
-      //   every consumer this harness creates. A test that waits for one message
-      //   would spend that three seconds doing nothing, per test.
+      // ⚠ Not a tweak: the default is three seconds of waiting for more group
+      //   members, paid by every consumer this harness creates.
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: '0',
-      // A fresh id per container: two harness brokers running side by side must
-      // not look to each other like two halves of one cluster.
+      // Fresh per container: two harness brokers must not look like one cluster.
       CLUSTER_ID: Buffer.from(randomUUID().replace(/-/g, ''), 'hex').toString('base64url'),
     })
     .withExposedPorts(KAFKA_CLIENT_PORT)
@@ -534,19 +422,14 @@ export async function startKafka(
     {
       content: [
         '#!/bin/sh',
-        // ⚠ WHEN THERE IS A NETWORK, PLAINTEXT MUST ADVERTISE THE ALIAS AND NOT
-        //   `localhost`. PLAINTEXT is what another container connects to, and
-        //   `localhost` inside Kafka Connect is Kafka Connect: it connects once,
-        //   is redirected to itself, and reports the broker unreachable rather
-        //   than the address being wrong. With one broker, which is its own
-        //   controller, naming the alias is safe — it resolves from inside the
-        //   broker too.
+        // ⚠ With a network, PLAINTEXT must advertise the alias: `localhost` inside
+        //   Kafka Connect is Kafka Connect, which redirects to itself and reports
+        //   the broker unreachable.
         `export KAFKA_ADVERTISED_LISTENERS='PLAINTEXT://` +
           `${network === undefined ? 'localhost' : KAFKA_ALIAS}:${KAFKA_INTERNAL_PORT}` +
           `,HOST://${broker}'`,
         `exec ${KAFKA_ENTRY_POINT}`,
-        // Written last, read by the shell loop above: the file is complete when
-        // this line is in it. Never executed — `exec` does not return.
+        // Written last, and what the shell loop above greps for.
         `# ${KAFKA_SCRIPT_TRAILER}`,
         '',
       ].join('\n'),
@@ -571,23 +454,18 @@ export async function startKafka(
 }
 
 /**
- * Poll until the broker answers a metadata request.
- *
- * ⚠ "KAFKA SERVER STARTED" IN THE LOG IS NOT THE SAME CLAIM. The log line is
- *   printed before the controller has finished electing itself, and a client
- *   that connects in between gets a metadata response with no leaders — which
- *   KafkaJS reports as an unrelated topic error. Asking the broker the question
- *   the test will ask is the only readiness signal worth having.
+ * ⚠ "Kafka Server started" in the log is not the same claim: it is printed
+ *   before the controller has elected itself, and a client connecting in between
+ *   gets a metadata response with no leaders, which KafkaJS reports as a topic
+ *   error.
  */
 async function waitForBroker(broker: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   const kafka = new Kafka({
     clientId: 'arthome-testing-probe',
     brokers: [broker],
-    // ⚠ SILENT AND WITHOUT RETRIES, both on purpose. KafkaJS's own retry would
-    //   sit inside this loop's iteration and turn a 250 ms poll into a minute of
-    //   exponential backoff; its default logger would print a connection warning
-    //   for every poll and bury the test output that matters.
+    // ⚠ KafkaJS's own retry would sit inside this loop and turn a 250 ms poll
+    //   into a minute of backoff; its logger would print a warning per poll.
     logLevel: logLevel.NOTHING,
     retry: { retries: 0 },
   });
@@ -610,22 +488,16 @@ async function waitForBroker(broker: string, timeoutMs: number): Promise<void> {
 }
 
 /**
- * Start what a test asks for, and nothing else.
- *
- * ⚠ THE TWO ARE STARTED IN PARALLEL AND TORN DOWN TOGETHER ON FAILURE. Started
- *   one after the other, a test that needs both pays the sum of two image pulls
- *   for no reason. Started in parallel with `Promise.all`, a failure of one
- *   abandons the other still running, and the leak is invisible until a machine
- *   has thirty of them.
+ * ⚠ Started in parallel to avoid paying two image pulls in sequence, and torn
+ *   down together on failure: a bare `Promise.all` abandons the containers that
+ *   did start, and the leak is invisible until a machine has thirty of them.
  */
 export async function startStack(request: StackRequest): Promise<StartedStack> {
   const timeout = request.startupTimeoutMs ?? DEFAULT_STARTUP_MS;
 
-  // ⚠ `connect` IMPLIES ITS DEPENDENCIES AND A NETWORK, and it cannot be started
-  //   in the same breath as them: a connector reaches its database and its broker
-  //   from inside Docker, so those two have to exist, on a shared network, before
-  //   the worker comes up pointing at their aliases. Everything else starts in
-  //   parallel because nothing else depends on anything.
+  // ⚠ `connect` implies its dependencies and a network, and cannot start in the
+  //   same breath as them: the worker comes up pointing at aliases that must
+  //   already resolve.
   const wantsConnect = request.connect === true;
   const network = wantsConnect ? await new Network().start() : undefined;
   const wantsPostgres = request.postgres === true || wantsConnect;
@@ -659,9 +531,7 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
 
   const stop = async (): Promise<void> => {
     await Promise.allSettled(started.map((container) => container.stop()));
-    // The network goes last: removing it while a container is still attached
-    // fails, and the failure is reported against the network rather than against
-    // the container that outlived it.
+    // Last: removing a network with a container still attached fails.
     if (network !== undefined) await network.stop();
   };
 
@@ -677,9 +547,6 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
   const connectEndpoint = connect.status === 'fulfilled' ? connect.value?.endpoint : undefined;
 
   return {
-    // Getters rather than nullable fields: a test that forgot to ask for a
-    // container is told so by name, instead of reading `undefined` out of an
-    // endpoint and failing later on a connection string of the word "undefined".
     get postgres(): PostgresEndpoint {
       if (postgresEndpoint === undefined) {
         throw new Error('startStack was not asked for postgres: pass { postgres: true }.');

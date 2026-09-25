@@ -1,19 +1,10 @@
 /**
  * The harness, proved against a real Postgres 18.
  *
- * ⚠ NAMED `.itest.ts` AND NOT `.spec.ts`. `pnpm run verify` ends in `vitest
- *   run`, whose default patterns are `*.spec.*` and `*.test.*`. This file starts
- *   a container: inside the gate it would make every commit depend on a Docker
- *   daemon and on half a minute of startup, and a gate that costs that much is a
- *   gate people stop running. Run it with `pnpm --filter
- *   @arthome-platform/testing run test:integration`.
- *
- * What it is actually for: `outboxTableDdl` and its CHECK constraints are the
- * only thing standing between a service and the worst failure this platform has
- * — a row whose `aggregatetype` is not topic-safe kills the Debezium task, stops
- * every later event from that service, and is recovered only by deleting a
- * committed business fact. No unit test can say whether those constraints hold,
- * because the thing being asserted is Postgres's behaviour.
+ * `outboxTableDdl`'s CHECK constraints are all that stands between a service and
+ * a row whose `aggregatetype` is not topic-safe, which kills the Debezium task,
+ * stops every later event from that service, and is recovered only by deleting a
+ * committed business fact. Only Postgres can say whether they hold.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -25,29 +16,19 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { applyMigrations, createDatabase, truncateAll } from './database.js';
 import { startPostgres, type StartedPostgres } from './stack.js';
 
-/** A first run pulls the image; after that it is seconds. */
 const STARTUP_BUDGET_MS = 300_000;
 const TEST_BUDGET_MS = 60_000;
 
-/**
- * Not named after a service. `identity`, `notifications` and the others are
- * members of `SERVICES` in @arthome/core, and a literal copy of one is what
- * `check-enums` exists to refuse.
- */
+// Not named after a service: those names belong to `SERVICES` in @arthome/core.
 const DATABASE = 'harness_outbox';
 
-/** Topic-safe, versioned, and belonging to no bounded context. */
 const AGGREGATE_TYPE = 'harness.probe';
 const EVENT_TYPE = 'harness.probe.happened.v1';
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 
 /**
- * The outbox alone, created from the DDL the seven services share.
- *
- * Running it here is the point: `outboxTableDdl` is a template string, so
- * nothing but a real `CREATE TABLE` can say whether it is valid SQL, whether the
- * regular expressions survive being embedded in it, and whether the constraints
- * it names are the ones a violation reports.
+ * `outboxTableDdl` is a template string, so only a real `CREATE TABLE` can say
+ * whether the regular expressions survive being embedded in it.
  */
 class OutboxOnly1758700000000 implements MigrationInterface {
   name = 'OutboxOnly1758700000000';
@@ -75,8 +56,7 @@ describe('the outbox, against a real Postgres', () => {
   }, STARTUP_BUDGET_MS);
 
   afterAll(async () => {
-    // Destroy the pool before stopping the container: a live pool keeps the Node
-    // process alive, and a runner that will not exit looks like a hung test.
+    // Before stopping the container: a live pool keeps the Node process alive.
     await dataSource.destroy();
     await postgres.stop();
   }, TEST_BUDGET_MS);
@@ -88,10 +68,6 @@ describe('the outbox, against a real Postgres', () => {
   it(
     'reproduces the wal_level the connector needs, not the default',
     async () => {
-      // The whole event path rests on this, and at `replica` there is simply
-      // nothing in the write-ahead log for Debezium to read. A harness that
-      // quietly ran the default would make every future CDC test a false
-      // negative.
       const shown = await dataSource.query<{ wal_level: string }[]>('SHOW wal_level');
       expect(shown[0]?.wal_level).toBe('logical');
     },
@@ -118,14 +94,12 @@ describe('the outbox, against a real Postgres', () => {
       const rows = await dataSource.getRepository(OutboxEvent).find();
       expect(rows).toHaveLength(1);
       expect(rows[0]?.id).toBe(messageId);
-      // ⚠ The message id is NOT the aggregate's. Reusing the aggregate id would
-      //   make a second event about the same object look like a duplicate of the
-      //   first, and every consumer would silently drop it.
+      // ⚠ The message id is NOT the aggregate's: reused, a second event about the
+      //   same object looks like a duplicate and every consumer drops it.
       expect(rows[0]?.id).not.toBe(aggregateId);
       expect(rows[0]?.aggregateid).toBe(aggregateId);
       expect(rows[0]?.aggregatetype).toBe(AGGREGATE_TYPE);
-      // Injected at write time, inside the request that caused the fact. Injected
-      // by the relay instead, it would be a context that no longer exists.
+      // Injected at write time; the relay would inject a context that is gone.
       expect(rows[0]?.tracecontext).toBe(TRACEPARENT);
       expect(rows[0]?.payload.equals(payload)).toBe(true);
     },
@@ -135,12 +109,9 @@ describe('the outbox, against a real Postgres', () => {
   it(
     'refuses, inside the transaction, the row that would kill the connector',
     async () => {
-      // A space here becomes an InvalidTopicException in the producer's send
-      // callback, past `errors.tolerance` and past a dead-letter queue a SOURCE
-      // connector does not have. The task dies, every later event from the
-      // service stops, and the replication slot retains the write-ahead log
-      // until the disk is full. Refusing it here refuses it while a request is
-      // still waiting to be told.
+      // A space here becomes an InvalidTopicException past `errors.tolerance` and
+      // past a DLQ a SOURCE connector does not have: the task dies and the
+      // replication slot retains the write-ahead log until the disk is full.
       const refused = dataSource.transaction((manager) =>
         writeOutboxEvent(manager, {
           aggregateType: 'harness probe',
@@ -191,9 +162,8 @@ describe('the outbox, against a real Postgres', () => {
       await truncateAll(dataSource);
 
       expect(await dataSource.getRepository(OutboxEvent).count()).toBe(0);
-      // ⚠ The migration record has to survive. Truncated, it tells TypeORM that
-      //   nothing has ever run, and the next `runMigrations` replays CREATE TABLE
-      //   against a schema that still has the table.
+      // ⚠ Truncated, it tells TypeORM nothing has ever run and the next
+      //   `runMigrations` replays CREATE TABLE against the tables it left.
       const applied = await dataSource.query<{ name: string }[]>('SELECT name FROM migrations');
       expect(applied.map((row) => row.name)).toContain('OutboxOnly1758700000000');
     },

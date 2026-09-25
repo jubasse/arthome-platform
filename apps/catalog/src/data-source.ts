@@ -8,10 +8,10 @@ import { env } from './env.js';
 import { Initial1758800000000 } from './migrations/1758800000000-initial.js';
 
 /**
- * The DataSource, used by the application AND by the migration CLI.
+ * Used by the application AND by the migration CLI.
  *
- * ⚠ `synchronize` stays false: it would drop and recreate columns to match the
- *   entities, breaking the connector with no migration to review (data-model.md §7.4).
+ * ⚠ `synchronize` stays false: it would drop and recreate columns to match the entities,
+ *   breaking the connector with no migration to review (data-model.md §7.4).
  */
 export const dataSource: DataSource = new DataSource({
   type: 'postgres',
@@ -20,14 +20,14 @@ export const dataSource: DataSource = new DataSource({
   migrations: [Initial1758800000000],
   applicationName: Service.CATALOG,
 
-  // ⚠ `poolSize` × replicas, plus one replication connection per registered
-  //   connector, must stay under Postgres's `max_connections` — default 100.
+  // ⚠ `poolSize` × replicas, plus one replication connection per registered connector, must
+  //   stay under Postgres's `max_connections` — default 100.
   poolSize: 10,
 
-  // ⚠ pg waits FOR EVER by default: a service started against a dead Postgres hung
-  //   in `initialize()` with nothing to restart it. The statement and
-  //   idle-in-transaction timeouts live in `infra/postgres/init-databases.sql`, since
-  //   the migration CLI shares this DataSource and they would kill a backfill.
+  // ⚠ pg waits FOR EVER by default: a service started against a dead Postgres hung in
+  //   `initialize()` with nothing to restart it. The statement and idle-in-transaction
+  //   timeouts live in `init-databases.sql`, since the CLI shares this DataSource and they
+  //   would kill a backfill.
   extra: { connectionTimeoutMillis: 10_000 },
 
   synchronize: false,

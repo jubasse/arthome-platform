@@ -15,20 +15,9 @@ export class IdentityController {
     @Body({ schema: RegisterAccountSchema }) body: RegisterAccountBody,
     @Headers('traceparent') traceparent?: string,
   ): Promise<{ publicHandle: string }> {
-    // ⚠ THE HEADER IS CHECKED HERE AND THE BODY IS NOT, AND THAT IS NOT AN
-    //   INCONSISTENCY. `@Body({ schema })` carries a schema the global
-    //   `StandardSchemaValidationPipe` finds; `@Headers` takes no options object at
-    //   all — verified in the installed `@nestjs/common` 12.0.3, where it is
-    //   declared `(property?: string) => ParameterDecorator` — so no pipe can ever
-    //   see it. A header is validated by hand or not at all.
-    //
-    // ⚠ AND A MALFORMED ONE DOES NOT FAIL THE REQUEST. That is decided, and the
-    //   decision is what this line keeps: a broken trace is an observability
-    //   fault, never a business one. `parseTraceparent` returns `null` instead of
-    //   throwing, so a wrong value is dropped rather than carried into
-    //   `outbox_event.tracecontext` — the one outbox column with no CHECK
-    //   constraint, and from there into a Kafka header and into
-    //   `notifications.welcome_email`.
+    // ⚠ Validated by hand because it cannot be validated otherwise: `@Headers` takes no
+    //   options object, so no pipe ever sees it. A malformed value is dropped rather than
+    //   refused — a broken trace is an observability fault, never a business one.
     const trace = parseTraceparent(traceparent);
 
     await this.registerAccount.register({
@@ -39,13 +28,8 @@ export class IdentityController {
       traceparent: trace === null ? null : trace.traceparent,
     });
 
-    // ⚠ THE ACCOUNT ID IS NOT RETURNED, AND IT USED TO BE. `account.entity.ts`
-    //   says of the primary key "UUIDv7, never exposed", and `data-model.md` §7.1
-    //   gives the reason: a UUIDv7 reveals its own creation instant and is
-    //   orderable, so handing one out leaks when an account was created and lets a
-    //   holder of two of them order the population. `public_handle` is the
-    //   identifier a surface is given — and the caller already sent it, so nothing
-    //   is lost by echoing it back rather than the internal key.
+    // ⚠ Never the account id: a UUIDv7 reveals its own creation instant and is orderable
+    //   (data-model.md §7.1). `public_handle` is what a surface is given.
     return { publicHandle: body.publicHandle };
   }
 }

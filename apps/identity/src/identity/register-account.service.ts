@@ -14,7 +14,6 @@ export interface RegisterAccountCommand {
   readonly email: string;
   readonly locale: string;
   readonly country: string;
-  /** W3C traceparent of the request that caused this, when there is one. */
   readonly traceparent: string | null;
 }
 
@@ -28,18 +27,11 @@ export class RegisterAccountService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   /**
-   * Register an account and record the fact, in ONE transaction.
+   * ⚠ ONE transaction, and that is the feature: `save()` then `emit()` loses the event on
+   *   a crash between them and invents one on a rollback after.
    *
-   * ⚠ THE TRANSACTION IS THE FEATURE. Never `save()` then `emit()`: a crash
-   *   between the two loses the event, and a rollback after the emission invents
-   *   one. Both writes go through the SAME `manager` — the one the transaction
-   *   hands us — and neither is retried on its own.
-   *
-   * ⚠ `traceparent` IS INJECTED HERE, NOT WHEN THE MESSAGE IS PUBLISHED. The
-   *   relay runs outside this request: by the time Debezium reads the row, the
-   *   context that caused it no longer exists anywhere. Injected later, the link
-   *   between the command and everything it causes is lost for good
-   *   (events.md §1.3).
+   * ⚠ `traceparent` is injected here, not at publication: the relay runs outside this
+   *   request, and by then the context that caused the row is gone (events.md §1.3).
    */
   async register(command: RegisterAccountCommand): Promise<RegisteredAccount> {
     const accountId = uuidv7();
@@ -67,18 +59,11 @@ export class RegisterAccountService {
         {
           // `identity.account` → topic `arthome.identity.account` (events.md §3).
           aggregateType: 'identity.account',
-          // The partition key. One account's events stay in order because of it.
           aggregateId: accountId,
           type: 'identity.account.registered.v1',
-          // ⚠ Serialised HERE, by the producer. Debezium transports the bytes and
-          //   reads none of them. The registry framing — magic byte, schema id,
-          //   message indexes — belongs in front of these bytes and arrives with
-          //   the schema registry; the path, key, headers and ordering do not
-          //   depend on it.
           payload: toBinary(AccountRegisteredSchema, event),
           traceparent: command.traceparent,
-          // No human actor: a registration is caused by the person being created,
-          // who has no account id until this transaction commits.
+          // No human actor: the person being created has no account id until this commits.
           actorId: null,
         },
         occurredAt,

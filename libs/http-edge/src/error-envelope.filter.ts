@@ -20,12 +20,11 @@ import {
 import { parseTraceparent } from './traceparent.js';
 
 /**
- * Postgres's `unique_violation` — the one failure a service provokes on a perfectly
- * well-formed request, and the reason this filter exists. Before it, a duplicate
- * `email` or `public_handle` in `identity` left as
- * `{"statusCode":500,"message":"Internal server error"}`: wrong status, nothing to
- * branch on, and a 500-versus-201 difference answering "is this address registered?"
- * to anyone who can reach the port.
+ * Postgres's `unique_violation` — the one failure a service provokes on a well-formed
+ * request, and the reason this filter exists. Measured: a duplicate `email` in `identity`
+ * left as `{"statusCode":500,"message":"Internal server error"}` — wrong status, nothing to
+ * branch on, and a 500-versus-201 oracle answering "is this address registered?" to anyone
+ * who can reach the port.
  */
 const UNIQUE_VIOLATION = '23505';
 
@@ -42,39 +41,23 @@ interface ErrorEnvelope {
 }
 
 /**
- * The single place an error becomes a response.
+ * The single place an error becomes a response — a library rather than a file per service,
+ * because two copies of one envelope is critical-rules #2.
  *
- * ⚠ ONE SHAPE, AND UNTIL NOW THERE WERE TWO. `catalog` answered a bad
- *   `languageDependency` with `{code, params, nature}` at the root and everything else
- *   with NestJS's `{statusCode, message}` — and §5.6 requires the boundary envelope to
- *   be "one single shape, defined once". That "defined once" is also why this is a
- *   library rather than a file in each service: two copies of one envelope is
- *   critical-rules #2, "two calls are allowed, two implementations never".
- *
- * ⚠ IT REPLIES THROUGH `httpAdapter.reply`, NOT `response.status().json()`. Both
- *   services run on `@nestjs/platform-fastify`, where the Express idiom throws
- *   "response.status is not a function" (`nestjs-request-pipeline` rule 8).
- *
- * ⚠ `@Catch()` WITH NO ARGUMENT, AND THE ONLY FILTER. A catch-all must be registered
- *   BEFORE any specific one — NestJS reverses the list and the first match wins (rule
- *   7) — so the status mapping is a lookup inside it rather than a second filter with
- *   an order to get wrong.
- *
- * ⚠ NOTHING HERE REACHES A KAFKA CONSUMER, and that is not a gap: no filter runs for
- *   a KafkaJS handler. `@arthome-platform/messaging`'s `dispatch` and `routeFailure`
- *   own that path with their own retry and dead-letter policy, and still would for a
- *   service that both produces and consumes.
+ * ⚠ It replies through `httpAdapter.reply`, not `response.status().json()`: on
+ *   `@nestjs/platform-fastify` the Express idiom throws "response.status is not a function".
+ * ⚠ `@Catch()` with no argument, and the only filter. A catch-all must be registered BEFORE
+ *   any specific one — NestJS reverses the list and the first match wins — so the status
+ *   mapping is a lookup inside it rather than a second filter with an order to get wrong.
  */
 @Catch()
 export class ErrorEnvelopeFilter implements ExceptionFilter {
   private readonly logger = new Logger(ErrorEnvelopeFilter.name);
 
   /**
-   * @param uniqueViolationCodes - the service's uniquely-constrained columns and the
-   *   published code each answers with. Empty is legitimate: `catalog`'s `show` has
-   *   no unique constraint, so it can raise no conflict — and an unmapped violation is
-   *   logged as a gap rather than given a generic code, because the contract's 409
-   *   design is that the code names the specific refusal.
+   * An empty `uniqueViolationCodes` is legitimate — `catalog`'s `show` has no unique
+   * constraint — and an unmapped violation is logged as a gap rather than given a generic
+   * code, because the contract's 409 design is that the code names the specific refusal.
    */
   public constructor(
     private readonly adapterHost: HttpAdapterHost,
@@ -94,15 +77,13 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
         code: refusal.code,
         nature: refusal.nature,
         params: refusal.params,
-        // ⚠ OMITTED RATHER THAN EMPTY WHEN THERE IS NO TRACE. §5.5 makes `traceId` the
-        //   link between "my application crashed" and a server log, and
-        //   `ErrorSchema.traceId` is `z.string().min(1)`: an empty string would satisfy
-        //   the field's presence and lead a reader to a log line that does not exist.
-        //   `exactOptionalPropertyTypes` is why this is a spread.
+        // ⚠ Omitted rather than empty: `ErrorSchema.traceId` is `z.string().min(1)`, so an
+        //   empty string would satisfy the field's presence and lead a reader to a log line
+        //   that does not exist. `exactOptionalPropertyTypes` is why this is a spread.
         ...(trace === null ? {} : { traceId: trace.traceId }),
       },
-      // critical-rules #9 and #6. Through the `Clock` port, never `new Date()` — a
-      // filter that reads the machine's time cannot be asserted on (`kernel/clock.ts`).
+      // Through the `Clock` port, never `new Date()`: a filter that reads the machine's time
+      // cannot be asserted on (critical-rules #9 and #6).
       servedAt: this.clock.now(),
     };
 
@@ -111,17 +92,13 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
 
   /** The status and refusal to serve, in the order the cases must be tried. */
   private resolve(exception: unknown): { status: number; refusal: Refusal } {
-    // First, because it is the only case that already knows its own code and
-    // parameters. Everything below is reconstruction.
     if (exception instanceof RefusalException) {
       return { status: exception.getStatus(), refusal: exception.refusal };
     }
 
-    // ⚠ SECOND, AND IT NEEDS NO TRANSLATION TABLE: `DomainError` already carries
-    //   `code`, `params` and `nature`, the three fields §5.5 asks for. The domain
-    //   throws these rather than `HttpException`s (rule 1) because a rule in
-    //   `@arthome/core` is reachable from seven services and must not know what
-    //   transport is above it.
+    // ⚠ No translation table needed: `DomainError` already carries `code`, `params` and
+    //   `nature`. The domain throws these rather than `HttpException`s because a rule in
+    //   `@arthome/core` is reachable from seven services and must not know its transport.
     if (isDomainError(exception)) {
       return { status: statusForDomainError(exception), refusal: exception };
     }
@@ -133,8 +110,8 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       if (exception.errorCode === undefined && !isMappedStatus(status)) {
-        // A status nobody designed a code for. The response is honest rather than
-        // invented, and the log is what gets the mapping written.
+        // A status nobody designed a code for. The response is honest rather than invented,
+        // and the log is what gets the mapping written.
         this.logger.error(
           `No error code declared for status ${String(status)}; answered it anyway.`,
         );
@@ -142,16 +119,14 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
       const fallback = refusalForStatus(status);
       return {
         status,
-        // `errorCode` if the thrower set one: the branchable id rule 2 asks for, and
-        // honouring it is rule 8's purpose. `getResponse()` is NOT spread in — for a
-        // built-in exception it holds an English `message`, which §5.5 forbids.
+        // `getResponse()` is NOT spread in: for a built-in exception it holds an English
+        // `message`, which §5.5 forbids.
         refusal: { ...fallback, code: exception.errorCode ?? fallback.code },
       };
     }
 
-    // ⚠ LOGGED HERE AND NOWHERE ELSE, AND THE RESPONSE SAYS NOTHING. An unknown error's
-    //   message carries SQL, connection strings and stack frames, so it may not be
-    //   echoed (rule 6). `Logger.error` takes the error so the stack survives.
+    // ⚠ An unknown error's message carries SQL, connection strings and stack frames, so it
+    //   may not be echoed. `Logger.error` takes the error so the stack survives.
     this.logger.error('Unhandled error; answered 500.', exception);
     return {
       status: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -160,29 +135,19 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
   }
 
   /**
-   * ⚠ THE CONSTRAINT NAME IS READ, LOGGED, AND NEVER SERVED. It has to be read,
-   *   because the contract's 409 design is that the code names the SPECIFIC refusal —
-   *   `identity.email_taken` for one column and `identity.handle_taken` for the other —
-   *   and collapsing both into one code is the false statement this exists to avoid.
-   *
-   *   What must not travel is the rest of the error. `QueryFailedError` copies the
-   *   driver error's properties onto itself, so its `message` is pg's "duplicate key
-   *   value violates unique constraint …" and its `detail` is
-   *   "Key (email)=(someone@example.test) already exists" — the column AND the value.
-   *   Only the code leaves; only the constraint name is logged, never the `detail`,
-   *   which holds a person's address.
-   *
-   * ⚠ IT MATCHES THE COLUMN INSIDE THE CONSTRAINT NAME RATHER THAN THE WHOLE NAME.
-   *   `account`'s two `UNIQUE`s are declared inline, so Postgres names them by its own
-   *   `{table}_{column}_key` rule — `account_email_key` — and a later hand-named or
-   *   ORM-generated `UQ_account_email` would break an exact match while meaning the
-   *   same thing. The column is the fact; the constraint name is only its carrier.
-   *   `public_handle` and `email` do not overlap, so there is no ambiguity. Not
-   *   verified against a running Postgres — no container was available — so this is
-   *   the first thing to check when the event-path walkthrough is next run.
-   *
-   *   `detail` would also name the column, and is NOT used for it: pg translates
-   *   `detail` under `lc_messages` while constraint names are never translated.
+   * ⚠ The constraint name is read, logged, and never served. It must be read because the 409
+   *   design is that the code names the SPECIFIC refusal — `identity.email_taken` for one
+   *   column, `identity.handle_taken` for the other. What must not travel is the rest:
+   *   `QueryFailedError` copies the driver error's properties onto itself, so its `detail` is
+   *   "Key (email)=(someone@example.test) already exists" — the column AND the value. Only
+   *   the code leaves; only the constraint name is logged, never `detail`.
+   * ⚠ It matches the column INSIDE the name rather than the whole name: Postgres names inline
+   *   `UNIQUE`s `{table}_{column}_key`, and a later hand-named or ORM-generated
+   *   `UQ_account_email` would break an exact match while meaning the same thing.
+   *   `public_handle` and `email` do not overlap. Not verified against a running Postgres —
+   *   check this first when the event-path walkthrough is next run.
+   * ⚠ `detail` would also name the column and is deliberately not used for it: pg translates
+   *   `detail` under `lc_messages`, while constraint names are never translated.
    */
   private resolveUniqueViolation(constraint: string | null): { status: number; refusal: Refusal } {
     const matched = this.uniqueViolationCodes.find(
@@ -209,15 +174,10 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
 }
 
 /**
- * ⚠ THE PER-CODE TABLE §5.5 CALLS FOR DOES NOT EXIST AND IS NOT INVENTED HERE. That
- *   document puts it "single, in `@arthome/contracts`"; there is none, and neither
- *   service depends on that package. Nature alone cannot choose — `refused` covers
- *   400, 401, 403, 404, 409 and 410 there — and 400 is the least wrong default for a
- *   refusal the caller's own input provoked. `publication.transition_forbidden`
- *   wanting 409 is what will force the real table.
- *
- *   `offline_forbidden` cannot arrive: §5.5 says the server never emits it. It falls
- *   to 503 with the rest rather than being special-cased into a lie.
+ * ⚠ The per-code table §5.5 calls for does not exist and is not invented here: it belongs
+ *   "single, in `@arthome/contracts`" and neither service depends on that package. Nature
+ *   alone cannot choose — `refused` covers 400, 401, 403, 404, 409 and 410 — and 400 is the
+ *   least wrong default for a refusal the caller's own input provoked.
  */
 function statusForDomainError(error: DomainError): number {
   return error.nature === FailureNature.REFUSED
@@ -226,15 +186,11 @@ function statusForDomainError(error: DomainError): number {
 }
 
 /**
- * ⚠ DUCK-TYPED RATHER THAN `instanceof QueryFailedError`, SO THE TRANSPORT LAYER DOES
- *   NOT DEPEND ON THE ORM. The next reader's instinct will be to import it; that would
- *   put `typeorm` in this library's manifest for one `instanceof`.
- *
- *   TypeORM 1.1.1 keeps the pg error on `driverError` and also copies its enumerable
- *   properties onto the wrapper, so both paths carry the code. `driverError` is read
- *   first because it is the authoritative one — the copy is an ORM convenience, and a
- *   version that stopped performing it would silently turn every conflict back into a
- *   500.
+ * ⚠ Duck-typed rather than `instanceof QueryFailedError`, so the transport layer does not
+ *   depend on the ORM for one `instanceof`. TypeORM 1.1.1 keeps the pg error on `driverError`
+ *   and also copies its enumerable properties onto the wrapper; `driverError` is read first
+ *   because it is authoritative — a version that stopped copying would silently turn every
+ *   conflict back into a 500.
  */
 function postgresErrorCodeOf(error: unknown): string | null {
   if (typeof error !== 'object' || error === null) {

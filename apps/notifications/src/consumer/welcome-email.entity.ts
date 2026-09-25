@@ -1,10 +1,6 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 
-/**
- * The business effect, kept deliberately trivial: wave 1 proves the PATH, not
- * what notifications eventually does with it. What matters is that exactly one
- * row appears per account however many times the message is delivered.
- */
+/** ⚠ Exactly one row per account, however many times the message is delivered. */
 @Entity('welcome_email')
 export class WelcomeEmail {
   @PrimaryColumn('uuid')

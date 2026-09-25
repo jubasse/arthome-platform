@@ -19,26 +19,21 @@ export interface SearchIndexerEnv extends ConsumerEnv {
 }
 
 /**
- * ⚠ IT PARSES ONCE, AT STARTUP, AND THROWS. A configuration fault is not a runtime
- *   condition to degrade around — it is a deployment that should not have started.
- *   Reading `process.env` again later, anywhere, defeats this.
+ * ⚠ Parsed once, at startup, and throwing: a configuration fault is a deployment
+ *   that should not have started. Reading `process.env` later defeats this.
  */
 const nodeEnv = z.enum(['development', 'test', 'production']);
 
 /**
- * ⚠ `z.url()` ALONE ACCEPTS NONSENSE HERE. The URL constructor reads
- *   `localhost:29092` as the scheme `localhost:` with the path `29092`, so a plain
- *   `z.url()` passes a broker list, a bare hostname and a typo alike. The protocol is
- *   the assertion that makes the type mean something.
+ * ⚠ `z.url()` alone reads `localhost:29092` as the scheme `localhost:` with the
+ *   path `29092`, passing a broker list, a bare hostname and a typo alike.
  */
 const postgresUrl = z.url({ protocol: /^postgres(ql)?$/ });
 const httpUrl = z.url({ protocol: /^https?$/ });
 
 /**
- * ⚠ A BROKER LIST IS NOT A URL, AND IT IS NOT ONE BROKER. It was being passed to
- *   KafkaJS as `[process.env.KAFKA_BROKERS]`, so a production value of
- *   `a:9092,b:9092` arrived as a single broker whose host contained a comma —
- *   resolvable by nothing, and a connection failure that names the wrong cause.
+ * ⚠ It was passed to KafkaJS as `[process.env.KAFKA_BROKERS]`, so `a:9092,b:9092`
+ *   arrived as one broker whose host contained a comma, resolvable by nothing.
  */
 const brokerList = z
   .string()
@@ -46,33 +41,23 @@ const brokerList = z
   .pipe(z.array(z.string().regex(/^[A-Za-z0-9.-]+:\d{1,5}$/, 'expected host:port')).min(1));
 
 /**
- * ⚠ DEFAULTED, UNLIKE EVERY OTHER VARIABLE HERE, AND THE ASYMMETRY IS THE POINT. The
- *   migration CLI loads `data-source.ts` and never listens, so requiring PORT made
- *   the documented `migration:run` unrunnable. A wrong port also fails loudly — the
- *   bind fails, or nothing answers — where a wrong DATABASE_URL connects somewhere
- *   else in silence. `nestjs-config` rule 1 defaults it for the same reason.
+ * ⚠ Defaulted, unlike every other variable here: the migration CLI loads
+ *   `data-source.ts` and never listens, so requiring PORT made `migration:run`
+ *   unrunnable. A wrong port fails loudly, where a wrong DATABASE_URL does not.
  *
- * ⚠ `min(1)` REFUSES `PORT=0`, which `.int()` accepts: `Number('')` is 0.
+ * ⚠ `min(1)` refuses `PORT=0`, which `.int()` accepts: `Number('')` is 0.
  */
 const port = z.coerce.number().int().min(1).max(65535).default(3000);
 
 /**
- * The local defaults, applied only outside production.
+ * ⚠ `compose.yaml` owns these ports and they are deliberately unconventional, so
+ *   the stack runs beside another project instead of fighting it for 5432.
  *
- * ⚠ `compose.yaml` OWNS THESE PORTS AND THEY ARE DELIBERATELY NOT THE CONVENTIONAL
- *   ONES — 55432, 29092, 19200, so the stack runs beside another project instead of
- *   fighting it for 5432. Changing one here without changing it there gives every
- *   service a default that connects to nothing.
+ * ⚠ Applied outside production only: as unconditional `?? 'localhost…'`, a
+ *   deployment with no DATABASE_URL started and reported a database as down.
  *
- * ⚠ IN PRODUCTION A MISSING VARIABLE MUST BE A FAILED STARTUP, NOT A QUIET
- *   LOCALHOST. Every one of these was an unconditional `?? 'localhost…'` in a
- *   service's source, so a deployment with no DATABASE_URL started, connected to
- *   nothing, and reported it as a database that was down.
- *
- * ⚠ NODE_ENV ITSELF IS NEVER DEFAULTED. Defaulting it to `development` would make an
- *   unset variable open the production-guarded write routes, which is the inverse of
- *   what isProductionEnvironment is for. A migration run against an unnamed
- *   environment now fails instead of migrating localhost.
+ * ⚠ NODE_ENV itself is never defaulted: defaulting it to `development` would let
+ *   an unset variable open the production-guarded write routes.
  */
 function developmentDefaults(databaseName: string): {
   DATABASE_URL: string;
@@ -95,18 +80,16 @@ function withDevelopmentDefaults(
 }
 
 /**
- * ⚠ PARSED AS AN OBJECT, NOT AS A BARE VALUE. `nodeEnv.parse(source.NODE_ENV)` throws
- *   with an empty path, so the operator reads `Invalid option: expected one of
- *   "development"|"test"|"production"` and is never told which variable it came from.
+ * ⚠ An object, not a bare value: `nodeEnv.parse(source.NODE_ENV)` throws with an
+ *   empty path, so the operator is never told which variable was wrong.
  */
 function readNodeEnv(source: Record<string, string | undefined>): NodeEnv {
   return z.object({ NODE_ENV: nodeEnv }).parse(source).NODE_ENV;
 }
 
 /**
- * ⚠ An empty variable is an absent one for the purpose of a default: a compose file
- *   that declares `DATABASE_URL:` with no value would otherwise shadow the default
- *   with the empty string and fail the URL check instead of filling in.
+ * ⚠ An empty variable is an absent one here: a compose file declaring
+ *   `DATABASE_URL:` with no value would otherwise shadow the default.
  */
 function stripEmpty(
   source: Record<string, string | undefined>,
@@ -147,9 +130,8 @@ export function readSearchIndexerEnv(
 }
 
 /**
- * ⚠ An allow-list of the two non-production environments, not `=== 'production'`:
- *   a `staging` added later is then production-like until someone says otherwise, so
- *   widening the enum cannot quietly open a guarded route.
+ * ⚠ An allow-list, not `=== 'production'`: a `staging` added later is
+ *   production-like until someone says otherwise.
  */
 export function isProductionEnvironment(
   source: Record<string, string | undefined> = process.env,

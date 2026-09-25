@@ -8,16 +8,12 @@ import { ProcessedMessage } from './processed-message.entity.js';
 import { WelcomeEmail } from './welcome-email.entity.js';
 
 /**
- * Apply one message, exactly once, whatever the delivery does.
- *
- * ⚠ THE DEDUP INSERT AND THE BUSINESS WRITE SHARE ONE TRANSACTION AND ONE
- *   MANAGER. `orIgnore().returning('id')` returns no row when the identifier is
- *   already there, and that is the signal to skip — not a prior SELECT, which
- *   would leave a window in which two consumers both see nothing.
- *
- * ⚠ A MISSING `message-id` IS A PERMANENT ERROR, never a generated default.
- *   Inventing one would make the message undeduplicable and silently
- *   reprocessable for ever (events.md §1.3).
+ * ⚠ The dedup insert and the business write share one transaction and one manager.
+ *   `orIgnore().returning('id')` returns no row when the identifier is already there, and
+ *   that is the signal to skip — not a prior SELECT, which would leave a window in which two
+ *   consumers both see nothing.
+ * ⚠ A missing `message-id` is a permanent error, never a generated default: inventing one
+ *   would make the message undeduplicable and silently reprocessable for ever (§1.3).
  */
 export async function applyMessage(
   dataSource: DataSource,
@@ -25,9 +21,6 @@ export async function applyMessage(
 ): Promise<Outcome> {
   const messageId = header(payload, 'message-id');
   if (messageId === null) {
-    // PERMANENT: no amount of waiting grows a header. And it cannot be given a
-    // generated one — that would make the message undeduplicable and silently
-    // reprocessable for ever (events.md §1.3).
     throw new PermanentError(
       `message on ${payload.topic} has no message-id header — permanent, not a default`,
     );
@@ -43,7 +36,7 @@ export async function applyMessage(
   try {
     event = fromBinary(AccountRegisteredSchema, new Uint8Array(value));
   } catch (cause) {
-    // PERMANENT: bytes that are not this schema will not become this schema.
+    // Permanent: bytes that are not this schema will not become this schema.
     throw new PermanentError(
       `message ${messageId} does not decode as AccountRegistered: ${String(cause)}`,
     );
@@ -62,20 +55,14 @@ export async function applyMessage(
     if ((claimed.raw as unknown[]).length === 0) return 'duplicate';
 
     /**
-     * ⚠ `orIgnore()` BECAUSE THE TWO GUARDS ANSWER DIFFERENT QUESTIONS. The dedup
-     *   insert above answers "have I seen this MESSAGE"; `welcome_email`'s primary key
-     *   answers "does this ACCOUNT already have one". Two different `message-id`s
-     *   carrying one account pass the first and violate the second, and a bare
-     *   `insert` turns that into a 23505 — not a `PermanentError`, so it is retried
-     *   three times over five minutes and dead-lettered as a failure, when the
-     *   outcome it describes is simply "already done".
-     *
-     *   ⚠ AND THE 23505 POISONS THE WHOLE TRANSACTION, dedup claim included. Measured
-     *     against Postgres 18: the bare insert answers `duplicate key value violates
-     *     unique constraint "welcome_email_pkey"` and every later statement gets
-     *     `current transaction is aborted`. So the `message-id` is never recorded and
-     *     each retry redoes all of it. `ON CONFLICT DO NOTHING RETURNING` returns no
-     *     row and leaves the transaction usable — both halves verified by hand.
+     * ⚠ `orIgnore()` because the two guards answer different questions: the dedup insert above
+     *   answers "have I seen this MESSAGE", `welcome_email`'s primary key answers "does this
+     *   ACCOUNT already have one". Two `message-id`s carrying one account pass the first and
+     *   violate the second.
+     * ⚠ Measured against Postgres 18: a bare insert raises 23505 and poisons the whole
+     *   transaction, dedup claim included — every later statement gets `current transaction is
+     *   aborted`, so the `message-id` is never recorded and each retry redoes all of it.
+     *   `ON CONFLICT DO NOTHING RETURNING` returns no row and leaves the transaction usable.
      */
     const written = await manager
       .createQueryBuilder()

@@ -17,32 +17,20 @@ import { UNIQUE_VIOLATION_CODES } from './unique-violations.js';
 @Module({
   imports: [TypeOrmModule.forRoot(dataSource.options), IdentityModule],
   providers: [
-    /**
-     * ⚠ A schema on a `@Body()` parameter is metadata: without this pipe reading it,
-     *   nothing validates. Global rather than `@UsePipes` on a method, where the
-     *   schema would run on every parameter of the handler, `@Param('id')` included.
-     */
+    // ⚠ Global, not `@UsePipes`: a schema on `@Body()` is inert without this pipe, and per
+    //   method it would run on every parameter of the handler.
     {
       provide: APP_PIPE,
       useValue: new StandardSchemaValidationPipe({ exceptionFactory: schemaInvalidException }),
     },
-    /**
-     * ⚠ `useFactory` rather than `useGlobalFilters`, which cannot inject the
-     *   `HttpAdapterHost` this filter replies through. `Clock` has no DI token, and
-     *   passing it is what lets a `FixedClock` assert `servedAt`.
-     */
+    // `useGlobalFilters` cannot inject the `HttpAdapterHost` this filter replies through.
     {
       provide: APP_FILTER,
       inject: [HttpAdapterHost],
       useFactory: (adapterHost: HttpAdapterHost): ErrorEnvelopeFilter =>
         new ErrorEnvelopeFilter(adapterHost, new SystemClock(), UNIQUE_VIOLATION_CODES),
     },
-    /**
-     * ⚠ It refuses EVERY route, so the liveness probe this service does not have yet
-     *   will need an exemption — `Reflector.createDecorator`, read with
-     *   `getAllAndOverride`. Not built: a decorator with no route to exempt is shape
-     *   invented ahead of use.
-     */
+    // ⚠ It refuses EVERY route, so a liveness probe will need an exemption.
     {
       provide: APP_GUARD,
       useFactory: (): DenyInProductionGuard => new DenyInProductionGuard(isProductionEnvironment()),

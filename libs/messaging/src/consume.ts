@@ -11,21 +11,18 @@ import {
 import { retryTopic } from './failure.js';
 
 /**
- * KafkaJS's own defaults, written out because the wait below is derived from them
- * and a derived number must not silently follow a default that changes.
- *
- * ⚠ `events.md` §2 names tuning these as the mitigation for KafkaJS's eager
- *   rebalancing, and nothing was tuning them.
+ * KafkaJS's own defaults, written out because the heartbeat slice below is derived from them
+ * and a derived number must not silently follow a default that changes. Tuning them is
+ * events.md §2's mitigation for KafkaJS's eager rebalancing.
  */
 const SESSION_TIMEOUT_MS = 30_000;
 const REBALANCE_TIMEOUT_MS = 60_000;
 const HEARTBEAT_INTERVAL_MS = 3_000;
 
 /**
- * ⚠ KAFKAJS CONSUMES ONE MESSAGE AT A TIME BY DEFAULT — `partitionsConsumedConcurrently`
- *   is 1 — so a 12-partition topic is drained serially. `events.md` §2 calls that
- *   out as "not a detail". Order still holds per partition, which is the only
- *   guarantee the event path rests on.
+ * ⚠ KafkaJS consumes one message at a time by default (`partitionsConsumedConcurrently` is
+ *   1), so a 12-partition topic drains serially. Order still holds per partition, which is
+ *   the only guarantee the event path rests on.
  */
 const DEFAULT_CONCURRENCY = 3;
 
@@ -34,39 +31,23 @@ export interface ConsumerSetup {
   readonly producer: Producer;
   /** The consuming service's own name. Groups and topics are derived from it. */
   readonly service: string;
-  /** The topics this service consumes, and the handler for each. */
   readonly sources: readonly { readonly topic: string; readonly handler: MessageHandler }[];
   readonly onDisposition?: (topic: string, disposition: Disposition) => void;
-  /** Partitions drained in parallel per consumer. Defaults to 3. */
   readonly concurrency?: number;
 }
 
 /**
- * Hold the message until its `not-before` passes, heartbeating so the broker does
- * not evict us, and give up if the service is shutting down.
- *
- * ⚠ THIS REPLACED A `pause()` + `setTimeout` + `seek()` THAT LOST MESSAGES, and
- *   the mechanism is worth stating because it looked correct. KafkaJS resolves
- *   the offset UNCONDITIONALLY as soon as `eachMessage` RETURNS
- *   (`runner.js`: `resolveOffset` at :254, the pause only breaks the loop at
- *   :258, `autoCommitOffsets` at :457), and `resolveOffset` stores `offset + 1`.
- *   So returning early committed past a message whose ONLY copy was that retry
- *   record — for up to five minutes on the third tier. A restart, a SIGTERM
- *   deploy, an OOM kill or a partition reassignment inside that window dropped a
- *   committed business fact silently and unrecoverably: `seek` is a no-op once
- *   the partition has left the assignment, and the replacement consumer starts
- *   at `offset + 1`. The window is exactly the one an incident creates.
- *
- *   Waiting HERE means the offset is resolved only after the message has been
- *   handled. It holds the retry partition for the duration, which is what a retry
- *   topic is for — and the main topic keeps moving because it is a different
- *   consumer in a different group.
- *
- * ⚠ ON SHUTDOWN IT THROWS RATHER THAN RETURNING. Returning would commit the
- *   offset and lose the message, which is the very fault this function exists to
- *   remove; throwing leaves it uncommitted, so it is redelivered. `not-before` is
- *   an absolute instant, so the replacement computes what remains rather than
- *   restarting the wait.
+ * ⚠ This replaced a `pause()` + `setTimeout` + `seek()` that LOST MESSAGES, and the mechanism
+ *   is worth stating because it looked correct. KafkaJS resolves the offset unconditionally
+ *   as soon as `eachMessage` returns (`runner.js`: `resolveOffset` at :254, the pause only
+ *   breaks the loop at :258), storing `offset + 1` — so returning early committed past a
+ *   message whose only copy was that retry record, for up to five minutes on the third tier.
+ *   A restart, a SIGTERM deploy, an OOM kill or a reassignment inside that window dropped a
+ *   committed business fact silently: `seek` is a no-op once the partition has left the
+ *   assignment. Waiting here resolves the offset only after the message has been handled,
+ *   holding the retry partition for the duration — which is what a retry topic is for.
+ * ⚠ On shutdown it throws rather than returning: returning would commit the offset and lose
+ *   the message. `not-before` is absolute, so the replacement computes what remains.
  */
 async function waitUntilDue(
   waitMs: number,
@@ -90,21 +71,15 @@ async function waitUntilDue(
 /**
  * Subscribe a service to its topics and to its own retry topic.
  *
- * ⚠ THE RETRY TOPIC GETS ITS OWN CONSUMER AND ITS OWN GROUP. It has to: honouring
- *   a delay means BLOCKING the handler for up to five minutes (`waitUntilDue`),
- *   and doing that on the main consumer would stall live traffic behind a message
- *   that is deliberately waiting. A separate group is what confines the stall to
- *   the retry topic.
- *
- * ⚠ ONE GROUP PER SERVICE, never one shared across services. A shared group makes
- *   the leader assign only its own topics and the others go unconsumed — silently
- *   (events.md §1.4).
- *
- * Returns a `stop` that leaves the groups cleanly. ⚠ A consumer killed without
- * disconnecting stays a member until its session times out, and the group sits in
- * PreparingRebalance for that whole time — during which its REPLACEMENT consumes
- * nothing. In a rolling deploy that is a stall at every pod, and it looks like a
- * broker problem rather than a missing call.
+ * ⚠ The retry topic gets its own consumer and its own group: honouring a delay means BLOCKING
+ *   the handler for up to five minutes, and doing that on the main consumer would stall live
+ *   traffic behind a message that is deliberately waiting.
+ * ⚠ One group per service, never one shared across services — a shared group makes the leader
+ *   assign only its own topics and the others go unconsumed, silently (events.md §1.4).
+ * ⚠ The returned `stop` must be called: a consumer killed without disconnecting stays a member
+ *   until its session times out, and the group sits in PreparingRebalance for that whole time
+ *   while its replacement consumes nothing. In a rolling deploy that is a stall at every pod,
+ *   and it looks like a broker problem rather than a missing call.
  */
 export async function runConsumers(setup: ConsumerSetup): Promise<() => Promise<void>> {
   const { kafka, producer, service, sources, onDisposition } = setup;
@@ -142,8 +117,8 @@ export async function runConsumers(setup: ConsumerSetup): Promise<() => Promise<
             );
         }
 
-        // On the retry topic the original topic decides the handler, because the
-        // message is a copy of something that arrived somewhere else.
+        // On the retry topic the origin decides the handler: the message is a copy of
+        // something that arrived somewhere else.
         const origin = header(payload, ORIGIN_HEADER) ?? payload.topic;
         const handler = byTopic.get(origin);
         if (handler === undefined) {
@@ -157,12 +132,11 @@ export async function runConsumers(setup: ConsumerSetup): Promise<() => Promise<
     });
   };
 
-  // ⚠ ONE CONSUMER FOR ALL THE SOURCES, NOT ONE PER TOPIC. Several members of one
-  //   group with DISJOINT subscriptions is the trap events.md §1.4 names: KafkaJS
-  //   assigns with the LEADER's own subscription (`consumerGroup.js`:
-  //   `assigner.assign({ members, topics: topicsSubscribed })`), so the second and
-  //   later topics get no assignment and go unconsumed — silently. Both services
-  //   pass exactly one source today, which is the only reason this never showed.
+  // ⚠ One consumer for ALL the sources, not one per topic. Several members of one group with
+  //   disjoint subscriptions is the trap events.md §1.4 names: KafkaJS assigns with the
+  //   LEADER's own subscription (`consumerGroup.js`: `assigner.assign({ members, topics:
+  //   topicsSubscribed })`), so later topics get no assignment and go unconsumed, silently.
+  //   Both services pass exactly one source today, which is the only reason this never showed.
   await start(
     group(service),
     sources.map((s) => s.topic),
@@ -171,8 +145,8 @@ export async function runConsumers(setup: ConsumerSetup): Promise<() => Promise<
   await start(group(`${service}-retry`), [retryTopic(service)], true);
 
   return async () => {
-    // Set before disconnecting: a handler waiting out a backoff sees it, throws,
-    // and leaves its message uncommitted for the next process to redeliver.
+    // Set before disconnecting: a handler waiting out a backoff sees it, throws, and leaves
+    // its message uncommitted for the next process to redeliver.
     stopping = true;
     await Promise.allSettled(started.map((c) => c.disconnect()));
   };

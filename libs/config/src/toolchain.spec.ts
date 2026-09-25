@@ -1,9 +1,6 @@
-// The wave-0 smoke test: it asserts the TOOLCHAIN, not this library.
-//
-// arthome-platform consumes three unpublished packages as tarballs under
-// vendor/. Plenty can go wrong in that chain and stay invisible until something
-// far away behaves oddly, so the chain is asserted here, once, where a failure
-// names itself.
+// The wave-0 smoke test: it asserts the TOOLCHAIN, not this library — the three
+// unpublished @arthome/* packages consumed as tarballs under vendor/, whose
+// failures otherwise surface far away.
 
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -17,19 +14,14 @@ describe('the vendored @arthome/* chain', () => {
   });
 
   it('resolves @arthome/contracts through a subpath', () => {
-    // There is deliberately no `.` entry point: the barrel rule is structural
-    // rather than a convention, so this import shape is the only one there is.
+    // There is deliberately no `.` entry point: a subpath is the only import shape.
     expect(StorefrontErrorSchema).toBeDefined();
   });
 
   it('runs ONE copy of zod, not two', () => {
-    // ⚠ THE FAULT THIS GUARDS AGAINST DOES NOT LOOK LIKE A VERSION PROBLEM.
-    //   `instanceof` compares class identity, so two copies of zod in one
-    //   node_modules make every schema fail every instanceof against the other
-    //   copy — and the symptom is "this is not a zod schema" about something
-    //   that plainly is. arthome-core's emit tool had to resolve zod from
-    //   packages/contracts for exactly this reason, and a tarball install is a
-    //   new chance to end up with two.
+    // ⚠ Two copies of zod in one node_modules make every schema fail every
+    //   `instanceof` against the other copy, and the symptom is "this is not a
+    //   zod schema" about something that plainly is.
     expect(StorefrontErrorSchema instanceof z.ZodType).toBe(true);
   });
 
