@@ -166,6 +166,9 @@ importers:
 
   .:
     devDependencies:
+      '@arthome-platform/messaging':
+        specifier: workspace:*
+        version: link:libs/messaging
       '@arthome/tooling':
         specifier: file:./vendor/arthome-tooling-454ab8535c57.tgz
         version: file:vendor/arthome-tooling-454ab8535c57.tgz(@eslint/js@10.0.1(eslint@10.11.0))(@typescript-eslint/utils@8.70.0(eslint@10.11.0)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.11.0))(eslint@10.11.0)(prettier@3.9.8)(typescript@6.0.3)

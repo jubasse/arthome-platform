@@ -3,7 +3,9 @@ export { deadLetterTopic, retryTopic, routeFailure } from './failure.js';
 export type { FailureRoute } from './failure.js';
 
 export { OutboxEvent } from './outbox-event.entity.js';
-export { outboxConstraints, outboxTableDdl } from './outbox.js';
+export { outboxConstraintNames, outboxConstraints, outboxTableDdl } from './outbox.js';
+export { purgeOutbox, purgeProcessedMessages } from './retention.js';
+export type { PurgeOutcome } from './retention.js';
 export { writeOutboxEvent } from './write.js';
 export type { OutboxFact } from './write.js';
 

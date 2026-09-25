@@ -94,6 +94,7 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 | `pnpm run verify:offline` | the subset needing no install — vendor, versions, tsconfig, enums, language |
 | `pnpm run check:enums` | string literals that duplicate a domain vocabulary |
 | `pnpm run fix` | Prettier, then ESLint `--fix`, then Prettier again |
+| `pnpm run purge:retention <service>` | what the retention job would delete; `--apply` to do it |
 
 ## Running the event path
 
@@ -125,6 +126,23 @@ and a wrong port fails at bind where a wrong `DATABASE_URL` connects somewhere e
 No service reads `process.env` any more. `libs/config` parses once, at module load, with the
 protocol asserted — `postgres:` for the database, `http:`/`https:` for the index — because a bare
 URL check accepts `localhost:29092` as a URL whose scheme is `localhost:`.
+
+⚠ **THE RETENTION JOB IS A COMMAND, NOT A SCHEDULE.** `data-model.md` §7.5 owes `outbox_event` a
+7-day purge and `processed_message` a horizon; neither existed. `libs/messaging` now has
+`purgeOutbox` and `purgeProcessedMessages`, and `pnpm run purge:retention <service>` runs them.
+There is no job runner here, so nothing calls it on a timer — that is a deployment concern, and it
+is visible rather than missing.
+
+  ⚠ **The outbox purge is gated on the connector, not on the clock.** It reads the slot's
+  `confirmed_flush_lsn` and refuses when the slot is inactive or lagging past §7.4's own
+  one-gigabyte alert threshold, because deleting a row Debezium has not read destroys a committed
+  fact that was never published and nothing reads that table back to notice. Proven both ways on
+  the running stack: it purges with the connector up, and answers `REFUSED` with it stopped.
+
+  ⚠ **`processed_message`'s 30 days must stay above every DLQ topic's retention.** Past that a
+  message cannot come back at all; below it, a replay finds no row and the effect applies twice in
+  silence. No topic in `infra/kafka/topics.json` sets a retention, so the broker's 168 h default
+  applies today, and nothing checks the coupling.
 
 ⚠ **`migration:generate` OUTPUT IS NOT TRUSTWORTHY ON `outbox_event`, AND THE DAMAGE IT PROPOSES IS
 REAL.** Run against a migrated identity or catalog database it emits a migration that DROPS and

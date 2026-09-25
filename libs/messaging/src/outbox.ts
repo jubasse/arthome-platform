@@ -40,27 +40,46 @@ export function outboxTableDdl(table = 'outbox_event'): string {
   `;
 }
 
+/**
+ * One source, two projections: the clauses for a `CREATE TABLE` or an `ALTER`, and the names a
+ * migration needs to validate or drop them. A second hand-kept list of names is E2.
+ */
+function outboxChecks(table: string): { readonly name: string; readonly check: string }[] {
+  return [
+    {
+      // Interpolated straight into a topic name: a space, a slash or an accent is an
+      // InvalidTopicException that kills the task for good.
+      name: `${table}_aggregatetype_is_topic_safe`,
+      check: `aggregatetype ~ '${TOPIC_SEGMENT}' AND length(aggregatetype) <= 200`,
+    },
+    {
+      // The partition key. Empty hashes every aggregate onto one partition — ordering silently
+      // stops meaning anything, and nothing fails.
+      name: `${table}_aggregateid_present`,
+      check: 'length(aggregateid) > 0',
+    },
+    {
+      // Chooses the handler inside a multi-type topic; the version suffix is what lets a shape
+      // change without breaking a reader.
+      name: `${table}_type_is_versioned`,
+      check: `type ~ '${VERSIONED_TYPE}'`,
+    },
+    {
+      // Zero bytes decode to a default-valued message rather than to an error, so an empty
+      // payload is a fact that arrives saying nothing and claims success.
+      name: `${table}_payload_not_empty`,
+      check: 'octet_length(payload) > 0',
+    },
+  ];
+}
+
 /** The constraints alone, so a table that already exists can be brought up to them. */
 export function outboxConstraints(table = 'outbox_event'): string[] {
-  return [
-    // Interpolated straight into a topic name: a space, a slash or an accent is an
-    // InvalidTopicException that kills the task for good.
-    `CONSTRAINT ${table}_aggregatetype_is_topic_safe
-       CHECK (aggregatetype ~ '${TOPIC_SEGMENT}' AND length(aggregatetype) <= 200)`,
+  return outboxChecks(table).map(
+    ({ name, check }) => `CONSTRAINT ${name}\n       CHECK (${check})`,
+  );
+}
 
-    // The partition key. Empty hashes every aggregate onto one partition — ordering silently
-    // stops meaning anything, and nothing fails.
-    `CONSTRAINT ${table}_aggregateid_present
-       CHECK (length(aggregateid) > 0)`,
-
-    // Chooses the handler inside a multi-type topic; the version suffix is what lets a shape
-    // change without breaking a reader.
-    `CONSTRAINT ${table}_type_is_versioned
-       CHECK (type ~ '${VERSIONED_TYPE}')`,
-
-    // Zero bytes decode to a default-valued message rather than to an error, so an empty
-    // payload is a fact that arrives saying nothing and claims success.
-    `CONSTRAINT ${table}_payload_not_empty
-       CHECK (octet_length(payload) > 0)`,
-  ];
+export function outboxConstraintNames(table = 'outbox_event'): string[] {
+  return outboxChecks(table).map(({ name }) => name);
 }
