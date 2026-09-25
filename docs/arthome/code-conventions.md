@@ -1,8 +1,3 @@
-<!-- COPIED BY `arthome-sync-agent-docs` ON INSTALL. DO NOT EDIT.
-     The original is `architecture/code-conventions.md` in arthome-core; edit it there.
-     This copy is committed on purpose: a `postinstall` that rewrites it makes
-     `git status` the freshness check, so no gate is needed to notice a stale one. -->
-
 # Development conventions and tooling
 
 > **Scope** — the seven Arthome repositories. This document says **how we write and how we tool**,
@@ -2259,54 +2254,70 @@ tested exhaustively on their **boundaries**, because those are what compose the 
 `corrections-handoff.md` found diverging everywhere. `definition-of-done.md` has the last word on what
 makes a batch finished.
 
-### 5.10 Comments — the why and the failure, never the what
+### 5.10 Comments — delete by default
 
-**[floor] The first instrument is the NAME, not the comment.** A function named for exactly what it
-does, and a variable named for exactly what it holds, remove the need for the paragraph above them —
-and a long name is the cheap side of that trade. `waitUntilDue` needs no gloss;
-`handleRetryTiming` needs one. Prefer `refuseCommitWhenVerifyIsRed` to `check` plus three lines of
-explanation. See §5.2 for the naming rules themselves; what matters here is the order: **name first,
-and comment only what a name cannot carry.**
+**[floor] The default is no comment.** The first instrument is the NAME: `waitUntilDue` needs no
+gloss, `handleRetryTiming` needs one. Name it, then comment only what a name cannot carry (§5.2).
 
-**[floor] JSDoc is not owed to every export.** Write it when the code is non-trivial, or when a
-reader needs context the signature cannot give — where the function sits in a flow, what must be true
-before calling it, what it costs. A one-line function whose name says what it does gets nothing; a
-`@param` that restates the parameter's name is noise. And when a comment is warranted, **it is
-concise**: the shortest form that carries the fact.
+**[floor] A comment survives only if it answers what the code cannot.** The test: *would a reader
+with this code in front of them learn something they could not derive from it?*
 
-**[floor] A comment earns its place by saying something the code cannot.** The test is one question:
-*would a reader with this code in front of them learn something they could not derive from it?*
+**Keep** — a measured failure, with what it cost · a constraint invisible at that line · a decision
+and its reason, where the code shows only the outcome · a `⚠` where the obvious change is wrong.
 
-Keep:
+**Delete** — a comment on trivial code (a delegate, a getter, a `findAll` calling `Model.findAll`) ·
+any block above a name that already carries it · JSDoc restating the signature · narration of a
+readable sequence · history ("before this there was no…") · a default or a library behaviour
+explained · **prose about what the file does *not* do**, which rots first because nothing fails when
+it stops being true · a second copy of `DECISIONS.md` — link instead.
 
-- **a measured failure** — what went wrong, and what it cost. These are the most valuable lines in
-  the repository and several of them have already stopped a defect being reintroduced;
-- **a constraint that is not visible locally** — a column name a router owns, an ordering a library
-  imposes, a version that behaves differently from its documentation;
-- **a decision and its reason**, where the code shows only the outcome;
-- **a trap**, marked `⚠`, where the obvious change is the wrong one.
+**[floor] TypeScript already documents the types, so JSDoc must not.** The signature gives the
+parameter names, their types and the return type; repeating any of it is noise — `@param source - the
+source`, `@returns the result`, a line naming a type the annotation states. JSDoc earns its place in
+two cases only, never systematically: a parameter whose **meaning** the type cannot give (units, a
+range, what must be true before calling, which of two same-typed arguments is which), and a **union
+return** — which branch comes back and when. `Promise<'indexed' | 'superseded'>` gives the shapes, not
+their causes.
 
-Cut:
+**Where one line does, use one line, and give the scope rather than the whole story.** No account of
+the why and the how from A to Z: enough to situate it. A surviving `⚠` is two to four lines, never
+ten.
 
-- anything that restates the code. `// increment the counter` above `counter += 1`;
-- an explanation of a well-named function. Naming it well is the comment;
-- narration of a sequence a reader can simply read;
-- a second copy of something already written in `DECISIONS.md` or an ADR — **link, do not restate**.
+⚠ **NEVER DELETE A RECORDED MEASUREMENT.** Shorten its prose to one sentence; keep the fact. The
+failure mode this rule replaces is verbosity, and the one it could create is losing the paragraph
+that stopped a defect coming back.
 
-**A rough ceiling, and it is a smell rather than a limit: past a quarter of a file, ask whether the
-code is unclear instead.** Measured on 2026-09-25, `libs/messaging` in arthome-platform stood at
-**59 %, 55 % and 40 %** comment lines in its three main files. Those files carry real findings —
-the offset-resolution rule among them — buried in paragraphs that explain code which explains
-itself. The findings were worth keeping; their length was not.
+**One exception, narrow.** A gate's header block, which records the defect it was built against and
+the scope it does **not** cover.
 
-⚠ **THIS IS NOT A LICENCE TO DELETE REASONS.** The failure mode this rule replaces is verbosity; the
-failure mode it could create is losing the one paragraph that stopped somebody re-introducing a
-defect. When a comment is long **because** it records something expensive, shorten the prose and keep
-the fact. When in doubt, keep it and make it tighter — never delete a recorded reason to satisfy a
-ratio.
+⚠ **AND ONE CLARIFICATION THAT LOOKS LIKE A SECOND EXCEPTION AND IS NOT.** `REPOSITORY_MAP.md` is
+generated from JSDoc, so a deleted description blanks an export's row in an index of 594 names — but
+that row also carries the **type signature**, so the reader is not stranded: `plusMinutes` prints
+`function plusMinutes(instant: Instant, minutes: number): Instant;` and needs nothing added. The test
+is the same one as everywhere else: a description earns its place by saying what the name and the
+signature cannot. `SlugSchema: z.ZodString` earns "Lowercase, hyphenated, no leading or trailing
+hyphen", because the regex's shape is not in `z.ZodString`. **373 of 594 rows have no description and
+most of them are correct.** Filling them would mean writing 240 comments the rule forbids. What a
+description must never do is open on `⚠`: the row then names the hazard and never the export.
 
-**Apply it opportunistically.** Any file you read or modify is one you may shrink: it costs a moment
-while the context is loaded, and it is the only way a convention reaches code written before it.
+**Apply it opportunistically**: any file you read is one you may shrink.
+
+#### Four shapes, each measured on this repository
+
+1. **Paying yourself in comment lines for what the discovery cost** — the mechanism behind the other
+   three. A line just fought for feels load-bearing, so each gets a paragraph. The effort of finding
+   something out is **not the reader's problem**: it belongs in the commit message.
+2. **A default written out with a paragraph defending it.** `migrationsTransactionMode: 'all'` is
+   TypeORM's default and had ten lines arguing for it. Delete both, the option included.
+3. **A comment on a self-documenting option.** `applicationName` had four lines saying what
+   `applicationName` is for.
+4. **JSDoc attached to nothing**, which defeats every ratio: TypeScript associates only the **last**
+   of consecutive `/** */` blocks. Eighty lines in `packages/core/src/schema/vocabulary.ts` held two
+   real findings above a private constant while the function they described seventy-five lines below
+   had none. An export with a blank `REPOSITORY_MAP.md` description is how you find them.
+
+⚠ **This rule was itself 989 words and produced dissertations in the code it governed.** A long rule
+about concision teaches the register it forbids.
 
 ### 5.9 Commit messages
 
