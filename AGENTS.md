@@ -158,6 +158,26 @@ EXCLUSIVE and scans the whole table — on the table every write inserts into.
   gates preventing — so the generator stays untrustworthy here by choice, and this note is the
   mitigation.
 
+⚠ **NEVER DROP A PUBLICATION UNDER A LIVE SLOT, AND DELETING A CONNECTOR DOES NOT CLEAR ITS
+OFFSETS.** Both learned the hard way on 2026-09-26, and together they lose events.
+
+  The publication had been created `FOR ALL TABLES` by a connector registered before
+  `publication.autocreate.mode: filtered` was added to the file — the fix was on disk and had never
+  been re-posted, and **a publication is not corrected by changing the config**. Dropping it while
+  the slot still held a position failed the task with
+  `Message with LSN '…' not present among LSNs seen in the location phase`.
+
+  Recovering by dropping the slot too then loses whatever was written between the stored offset and
+  the new slot's start: Kafka Connect keeps a deleted connector's offsets under its name, so the
+  connector resumes at an LSN whose WAL the new slot never covered, and the log says
+  `no snapshot will be executed`. **The row stays in `outbox_event`, unpublished, and nothing reads
+  that table back to notice** — the §7.5 hazard arriving from the other direction, and there is no
+  republish path today.
+
+  So: to change a publication, delete the connector, drop the publication, **and** drop the slot,
+  then verify `pg_publication_tables` returns exactly one row before producing anything you care
+  about. Do it on an empty outbox.
+
 ⚠ **`provision:topics` is not a convenience.** A topic auto-created by the first producer takes the
 broker's default partition count — **one** — while `events.md` §3 fixes 3 or 12 depending on the
 topic. Those numbers are the headroom that lets replicas be added without repartitioning, and
