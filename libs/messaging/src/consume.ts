@@ -91,8 +91,10 @@ async function waitUntilDue(
  * Subscribe a service to its topics and to its own retry topic.
  *
  * ⚠ THE RETRY TOPIC GETS ITS OWN CONSUMER AND ITS OWN GROUP. It has to: honouring
- *   a delay means PAUSING the partition, and doing that on the main consumer
- *   would stall live traffic behind a message that is deliberately waiting.
+ *   a delay means BLOCKING the handler for up to five minutes (`waitUntilDue`),
+ *   and doing that on the main consumer would stall live traffic behind a message
+ *   that is deliberately waiting. A separate group is what confines the stall to
+ *   the retry topic.
  *
  * ⚠ ONE GROUP PER SERVICE, never one shared across services. A shared group makes
  *   the leader assign only its own topics and the others go unconsumed — silently

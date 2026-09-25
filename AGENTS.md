@@ -81,6 +81,8 @@ cannot run beside anything else.
 docker compose up -d
 pnpm --filter @arthome-platform/identity      run migration:run
 pnpm --filter @arthome-platform/notifications run migration:run
+pnpm --filter @arthome-platform/catalog       run migration:run
+pnpm --filter @arthome-platform/search-indexer run migration:run
 pnpm run provision:topics          # BEFORE the connector, and before any consumer
 curl -s -X POST -H 'Content-Type: application/json' \
   --data @infra/debezium/identity-outbox.json http://localhost:8083/connectors
@@ -110,7 +112,7 @@ What should then be true, and what is worth checking because each step can fail 
 | --- | --- |
 | `identity.outbox_event` | one row, `aggregatetype = identity.account`, `aggregateid` = the account id |
 | topic `arthome.identity.account` | one message, **key = the account id**, so one account stays ordered |
-| its headers | `message-id`, `type`, `traceparent` — the same traceparent the request carried |
+| its headers | all five: `message-id`, `type`, `traceparent`, `actor-id`, `occurred-at` — the traceparent being the one the request carried. Debezium renders a NULL column as the four characters `null`, not as an absent header |
 | `notifications.welcome_email` | one row, holding that same traceparent |
 | replaying the message | the consumer says `duplicate` and the row count does **not** move |
 
@@ -126,22 +128,32 @@ Two reject paths, and they answer different questions.
 Anything unrecognised is treated as **transient**, deliberately: retrying a permanent failure costs
 three attempts, while discarding a transient one loses the fact for good.
 
-```bash
-# the retry and dead-letter topics are per service, and are not auto-created
-for t in arthome.notifications.retry arthome.notifications.dlq; do
-  docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
-    --bootstrap-server localhost:9092 --create --topic "$t" --partitions 3 --replication-factor 1
-done
-```
+The retry and dead-letter topics are declared in `infra/kafka/topics.json`; `pnpm run provision:topics` creates them at the partition counts `events.md` §3 fixes. ⚠ Not by hand and not by auto-creation — a second, hand-maintained source for the same fact is the parallel table this repository's own gate exists to refuse.
 
 ⚠ **Retry at ONE layer.** A client retry, the broker's own redelivery and this budget multiply:
 three of each is twenty-seven attempts for one message, and an outage becomes an overload caused by
 the retries. `@arthome-platform/messaging` is the single owner for business failures.
 
 ⚠ **A retry topic reorders one key's events.** Kafka's ordering holds per partition, and a message
-that waits five minutes comes back behind later events for the same aggregate. Nothing guards this
-yet — the guard is an aggregate version on the consumer's side, and it is owed the day a consumer
-applies two events whose order matters.
+that waits five minutes comes back behind later events for the same aggregate.
+
+**`search-indexer` guards this.** `version_type: external_gte` on the OpenSearch write, with the
+event's `occurred_at` in epoch milliseconds as the version, so an older event is refused by the index
+rather than applied — and `show_projection`'s upsert carries the same condition, so the ledger cannot
+go backwards either. **`notifications` does not, and does not need to**: it handles one message type
+and its effect is one row keyed by `account_id`, so there is no second event to arrive out of order.
+The guard is owed by the next consumer that applies two events whose order matters.
+
+⚠ **The wait is held INSIDE the handler, and that is not an implementation detail.** KafkaJS resolves
+a message's offset as soon as `eachMessage` **returns** — unconditionally, storing `offset + 1`. So
+any mechanism that returns early and arranges to come back later (pause + `setTimeout` + `seek` is
+the obvious one, and was here) commits past a message whose only copy is that retry record. A
+restart, a SIGTERM deploy, an OOM kill or a reassignment inside the wait then drops a committed
+business fact, silently — `seek` is a no-op once the partition has left the assignment, and the
+replacement starts at `offset + 1`. On the third tier that window is five minutes wide, and it is the
+window an incident creates. `waitUntilDue` therefore blocks in the handler, heartbeats every 3 s, and
+**throws** on shutdown so the message is redelivered rather than committed and lost. The cost is
+intended: the retry partition is held for the duration, which is what a retry topic is for.
 
 ⚠ **There is no dead-letter queue on the connector, and the logs will suggest otherwise.** Kafka
 Connect implements `errors.deadletterqueue.*` for sink connectors only; the outbox router is a

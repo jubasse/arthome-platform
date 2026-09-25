@@ -23,6 +23,7 @@
     "value.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
     "errors.log.enable": "true",
     "errors.log.include.messages": "true",
-    "errors.tolerance": "none"
+    "errors.tolerance": "none",
+    "publication.autocreate.mode": "filtered"
   }
 }

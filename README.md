@@ -46,7 +46,7 @@ Kafka 4.0 in KRaft mode, Debezium 3.0, OpenSearch 2.18. ⚠ Postgres publishes o
 5432: a development stack that fights for well-known ports is one you cannot run beside anything
 else.
 
-**Nine gates and 65 tests run in under two seconds** (`pnpm run verify`), and need no Docker. The
+**`pnpm run verify` runs in under two seconds** and needs no Docker. The
 integration tests that do need it are `*.itest.ts`, behind their own command — a gate that costs
 half a minute stops being run, and then stops being true.
 
