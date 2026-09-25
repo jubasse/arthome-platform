@@ -22,7 +22,40 @@ aggregate's events — and `nestjs-validation` was never opened at all, which is
 accepted any JSON body. Skills trigger on their descriptions, and an agent that believes it already
 knows NestJS skips them.
 
-## Everything else
+## Read AGENTS.md
 
-[`AGENTS.md`](AGENTS.md) is the working guide: the three documents to read first, the commands, how
-to run the event path, and what happens when a message cannot be applied.
+**[`AGENTS.md`](AGENTS.md) is this repository's working guide, and it is not loaded for you — read it
+at the start of a session.** Whether a tool picks it up by itself varies, so the instruction is here
+rather than assumed. It holds the three documents to read first, the commands, how to run the event
+path, and what happens when a message cannot be applied.
+
+## Comments — the why and the failure, never the what
+
+**Name it, then comment what the name cannot carry.** A function named for exactly what it does and a
+variable named for exactly what it holds remove the paragraph above them — and a long name is the
+cheap side of that trade. `waitUntilDue` needs no gloss; `handleRetryTiming` needs one.
+
+**JSDoc is not owed to every export.** Write it when the code is non-trivial, or when the reader needs
+context the signature cannot give. A one-line function whose name says what it does gets nothing, and
+a `@param` restating the parameter's name is noise. When a comment is warranted, it is **concise**.
+
+A comment earns its place by saying something the code cannot. The test: *would a reader with this
+code in front of them learn something they could not derive from it?*
+
+**Keep** a measured failure, a constraint that is not visible locally, a decision and its reason, and
+a `⚠` on a trap where the obvious change is the wrong one. **Cut** anything that restates the code,
+explains a well-named function, narrates a readable sequence, or copies what `DECISIONS.md` already
+says — link instead.
+
+Past roughly a quarter of a file, ask whether the code is unclear rather than under-explained.
+Measured on 2026-09-25, three files in arthome-platform's `libs/messaging` stood at 59 %, 55 % and
+40 %.
+
+⚠ **This is not a licence to delete reasons.** Where a comment is long *because* it records something
+expensive, shorten the prose and keep the fact. Never delete a recorded reason to satisfy a ratio.
+
+**Apply it opportunistically**: any file you read or modify is one you may shrink. It costs a moment
+while the context is already loaded, and it is the only way this reaches code written before it.
+
+The full rule is `code-conventions.md` §5.10 — in `docs/arthome/` here, and the original in
+arthome-core.

@@ -40,6 +40,24 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 
 ## Before you write anything
 
+- **Name it first.** A function named for exactly what it does and a variable named for exactly
+  what it holds remove the paragraph above them, and a long name is the cheap side of that
+  trade — `waitUntilDue` needs no gloss, `handleRetryTiming` needs one. A comment is what is
+  left when a name cannot carry it.
+
+- **No systematic JSDoc.** Write it when the code is non-trivial or the reader needs context the
+  signature cannot give; a one-line function whose name says what it does gets nothing, and a
+  `@param` restating the parameter's name is noise. When warranted, **concise**.
+
+- **Comment the why and the failure, never the what.** A comment earns its place by saying something
+  the code cannot: a measured failure, a constraint that is not visible locally, a decision and its
+  reason, a `⚠` where the obvious change is the wrong one. Cut anything that restates the code or
+  explains a well-named function. Past roughly a quarter of a file, the code is probably unclear
+  rather than under-explained — measured here on 2026-09-25, three `libs/messaging` files stood at
+  59 %, 55 % and 40 %. ⚠ Never delete a recorded reason to satisfy a ratio: shorten the prose, keep
+  the fact. **Shrink as you go** — any file you read or modify is one you may tighten, and that is the
+  only way this reaches code written before the rule. Full text: `code-conventions.md` §5.10.
+
 - **The domain is not defined here.** Entities, vocabularies, error codes and boundary DTOs come
   from `@arthome/core` and `@arthome/contracts`. A string literal that duplicates a vocabulary value
   is caught by `pnpm run check:enums`, and the fix is always the import, never the literal.

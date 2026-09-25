@@ -1,0 +1,78 @@
+#!/bin/sh
+# commit-msg — the subject line, per §5.9 of arthome-core/architecture/code-conventions.md.
+#
+#   <area>: <prose subject>          area lowercase: a package, a service, a surface, a concern
+#   <area>(<scope>): <subject>       an optional scope narrows the area — openapi, tools, D-069
+#   <Milestone>: <subject>           capitalised, up to four words — "Wave 2 scaffolding", "Time 3"
+#
+# WHAT THIS HOOK DELIBERATELY DOES NOT CHECK, AND WHY.
+#
+#   · The language. "Messages in English" is D-008's arbitration and it still holds — but a word
+#     list cannot judge English, and `arthome-check-language` already reads every committed file
+#     (§8.1, gate 17). A check that misjudges trains people to pass `--no-verify`.
+#
+#   · The body: its presence, its width, its blank line. §5.9 asks the body for *why*, and no
+#     pattern distinguishes a reason from a restatement. A hook that demanded a body would be
+#     given an empty one, and the rule would be worse off than unenforced.
+#
+#   · The area against a closed list. Areas are born with services, and a list written here would
+#     need the same edit in seven repositories each time one appears. The day it is not edited, the
+#     gate rejects honest work — which is the exact failure that got the previous pattern removed.
+#
+#   · The trailing period, the imperative mood, the subject's leading capital, a 72-character
+#     ceiling. Every one of those would reject commits already in this repository's history.
+#
+# `git commit --no-verify` still skips it, and that is git's design rather than a hole to plug: a
+# hook is a reflex, not an authority (§8.4).
+
+subject=$(sed -e '/^#/d' -e '/^[[:space:]]*$/d' "$1" | head -n 1)
+
+# git writes these subjects itself; their shape is not ours to choose.
+case "$subject" in
+  'Merge '*|'Revert '*|'fixup! '*|'squash! '*|'amend! '*) exit 0 ;;
+esac
+
+shape='^([a-z][a-z0-9.-]*(\([A-Za-z0-9._-]+\))?|[A-Z][A-Za-z0-9]*( [A-Za-z0-9@._/-]+){0,3})!?: [^ ].*$'
+
+explain() {
+  echo '' >&2
+  echo 'commit-msg: the subject does not follow §5.9 — nothing was committed.' >&2
+  echo '' >&2
+  echo '  Expected:  <area>: <subject>            e.g. catalog: the second service, and why' >&2
+  echo '             <area>(<scope>): <subject>   e.g. docs(D-069): the boundary is settled' >&2
+  echo '             <Milestone>: <subject>       e.g. Wave 2 scaffolding: three disjoint trees' >&2
+  echo '' >&2
+  echo '  The area is lowercase and names a package, service, surface or concern. A milestone' >&2
+  echo '  label is capitalised and at most four words. A colon and one space separate it from' >&2
+  echo '  the subject, which is prose in English, with no length target below 140 bytes.' >&2
+  echo '' >&2
+  echo "  Got:       $subject" >&2
+  echo '' >&2
+}
+
+if [ -z "$subject" ]; then
+  echo '' >&2
+  echo 'commit-msg: the message is empty — nothing was committed.' >&2
+  echo '  A commit says which area changed and why. Both are missing here.' >&2
+  echo '' >&2
+  exit 1
+fi
+
+if ! printf '%s\n' "$subject" | grep -qE "$shape"; then
+  explain
+  exit 1
+fi
+
+# A ceiling only to catch a paragraph, or a body, pasted onto the subject line. It is measured in
+# bytes, so an em dash costs three; the longest real subject in either repository is 107 bytes, and
+# this cap is deliberately far above it. A cap that trims real practice is the defect §8.4 records.
+if [ "$(printf '%s' "$subject" | wc -c)" -gt 140 ]; then
+  echo '' >&2
+  echo 'commit-msg: the subject is over 140 bytes — nothing was committed.' >&2
+  echo '  That length is a pasted paragraph or a body on the subject line, not a subject.' >&2
+  echo '  Put the detail in the body, after a blank line.' >&2
+  echo '' >&2
+  exit 1
+fi
+
+exit 0

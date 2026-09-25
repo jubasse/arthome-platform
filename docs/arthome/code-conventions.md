@@ -46,7 +46,7 @@ marked as such, so that nobody tells themselves it is being upheld.
 
 1. **One person, seven repositories.** Any mechanism that must be maintained in seven copies will be
    abandoned. That is why `@arthome/tooling` exists (§4), and why this document refuses husky,
-   lint-staged and commitlint in favour of two ten-line git hooks (§8.4).
+   lint-staged and commitlint in favour of two dependency-free git hooks (§8.4). ⚠ They were described as "ten-line" until 2026-09-25, when writing them showed the cost honestly: `pre-commit` is short, and `commit-msg` is 78 lines of which 18 are logic — the rest is the refusal message that teaches the shape, and the record of what it deliberately does not check. The argument was never brevity; it is that three packages, three configurations and three version bumps in seven copies buy nothing git does not already do.
 2. **The account's GitHub Actions quota is exhausted.** No gate in this document assumes a remote
    runner. Everything runs locally, with the command given. When the quota returns, the workflow
    file will only have to call the same commands — which is why they all sit behind
@@ -2259,31 +2259,141 @@ tested exhaustively on their **boundaries**, because those are what compose the 
 `corrections-handoff.md` found diverging everywhere. `definition-of-done.md` has the last word on what
 makes a batch finished.
 
+### 5.10 Comments — the why and the failure, never the what
+
+**[floor] The first instrument is the NAME, not the comment.** A function named for exactly what it
+does, and a variable named for exactly what it holds, remove the need for the paragraph above them —
+and a long name is the cheap side of that trade. `waitUntilDue` needs no gloss;
+`handleRetryTiming` needs one. Prefer `refuseCommitWhenVerifyIsRed` to `check` plus three lines of
+explanation. See §5.2 for the naming rules themselves; what matters here is the order: **name first,
+and comment only what a name cannot carry.**
+
+**[floor] JSDoc is not owed to every export.** Write it when the code is non-trivial, or when a
+reader needs context the signature cannot give — where the function sits in a flow, what must be true
+before calling it, what it costs. A one-line function whose name says what it does gets nothing; a
+`@param` that restates the parameter's name is noise. And when a comment is warranted, **it is
+concise**: the shortest form that carries the fact.
+
+**[floor] A comment earns its place by saying something the code cannot.** The test is one question:
+*would a reader with this code in front of them learn something they could not derive from it?*
+
+Keep:
+
+- **a measured failure** — what went wrong, and what it cost. These are the most valuable lines in
+  the repository and several of them have already stopped a defect being reintroduced;
+- **a constraint that is not visible locally** — a column name a router owns, an ordering a library
+  imposes, a version that behaves differently from its documentation;
+- **a decision and its reason**, where the code shows only the outcome;
+- **a trap**, marked `⚠`, where the obvious change is the wrong one.
+
+Cut:
+
+- anything that restates the code. `// increment the counter` above `counter += 1`;
+- an explanation of a well-named function. Naming it well is the comment;
+- narration of a sequence a reader can simply read;
+- a second copy of something already written in `DECISIONS.md` or an ADR — **link, do not restate**.
+
+**A rough ceiling, and it is a smell rather than a limit: past a quarter of a file, ask whether the
+code is unclear instead.** Measured on 2026-09-25, `libs/messaging` in arthome-platform stood at
+**59 %, 55 % and 40 %** comment lines in its three main files. Those files carry real findings —
+the offset-resolution rule among them — buried in paragraphs that explain code which explains
+itself. The findings were worth keeping; their length was not.
+
+⚠ **THIS IS NOT A LICENCE TO DELETE REASONS.** The failure mode this rule replaces is verbosity; the
+failure mode it could create is losing the one paragraph that stopped somebody re-introducing a
+defect. When a comment is long **because** it records something expensive, shorten the prose and keep
+the fact. When in doubt, keep it and make it tighter — never delete a recorded reason to satisfy a
+ratio.
+
+**Apply it opportunistically.** Any file you read or modify is one you may shrink: it costs a moment
+while the context is loaded, and it is the only way a convention reaches code written before it.
+
 ### 5.9 Commit messages
 
-**[floor] Conventional Commits, in English**, per D-008.
+**[floor] `<area>: <subject>`, in English.** The language is D-008's; the format is this document's.
 
 ```
-<type>(<scope>): <imperative subject, no leading capital, no trailing period>
+<area>: <subject>                  the common case
+<area>(<scope>): <subject>         when the area is wide enough to need narrowing
+<Milestone>: <subject>             a wave, a time, a phase — which milestone the change belongs to
 
 <optional body: why, never what — the diff already says what>
 
 <optional footer: BREAKING CHANGE:, Refs: …>
 ```
 
-**Types:** `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `chore`, `revert`.
+**Which half of this rule is arbitrated, and which half is not.** D-008 says: "`arthome-core` is
+committed at the end of phase 0, then at the end of each of the three times. **Messages in English.**
+No remote, no push, ever." It settles cadence, language and pushing. So **"in English" is not this
+section's to change** — changing it reopens an arbitration, which §7.1 does not permit. The format is
+not in D-008 and never was: it is a convention this document owns and may revise on its own
+authority. An earlier version of this section read "[floor] Conventional Commits, in English, per
+D-008" and hung both halves on that citation. The citation was never made; §8.4 records how it was
+found.
 
-**Scopes:** the name of the package, service or surface — `core`, `contracts`, `tooling`, `identity`,
-`catalog`, `ticketing`, `chat`, `payouts`, `streaming`, `notifications`, `storefront-web`,
-`storefront-mobile`, `storefront-tv`, `studio-web`, `studio-mobile`. A scope in none of those lists is
-probably a commit doing two things.
+**The area** names where the change lands — a package, a service, a surface or a concern: `core`,
+`contracts`, `tooling`, `identity`, `catalog`, `ticketing`, `chat`, `payouts`, `streaming`,
+`notifications`, `messaging`, `search-indexer`, `events`, `testing`, `hooks`, `conventions`,
+`storefront-web`, `storefront-mobile`, `storefront-tv`, `studio-web`, `studio-mobile`. It may instead
+name the **kind** of change, when one kind of change crosses several places: `docs`, `fix`, `feat`,
+`chore`, `refactor` are all in use as areas in `arthome-core`, and `docs` is the single most frequent
+area in the repository. Lowercase, hyphens allowed. An area that matches nothing on either list is
+usually a commit doing two things.
+
+**The scope**, in parentheses, narrows an area wide enough to need it: `fix(openapi)`, `feat(tools)`,
+`docs(architecture)`. A decision number is a legitimate scope — `docs(D-069)` — which is why the scope
+is the one part of the shape allowed a capital.
+
+**The milestone label** is capitalised and at most four words: `Wave 3`, `Wave 2 scaffolding`,
+`Time 3`, `Core wave 5`, `Stage 0`, `Audit fixes`, `Resilience`. It answers a question no area name
+can: *which milestone does this change belong to*. Four words is the observed ceiling across both
+repositories, and it is what makes the label mechanically distinguishable from a sentence.
+
+**Why Conventional Commits was refused, so that nobody reintroduces it as an obvious improvement.**
+Conventional Commits exists to drive two machines from the commit log: a changelog generator and a
+semver bump. **Neither is driven from the commit log here, and that is by decision rather than by
+omission.** Three packages are published to GitHub Packages (D-014), so "nothing is published" would
+be the wrong reason — the right one is that nothing *reads the commits*. No changelog is generated
+from git: the only changelog in the repository is `oasdiff changelog`, and it reads OpenAPI
+(`definition-of-done.md`). No version is derived from a subject line either: §7.1 gives every bump to
+one person, in three regimes, with the majors recorded in `DECISIONS.md` and the versions exactly
+pinned — a `feat:` cannot mint a minor when the pin is the decision. So the format would charge the
+only currency a subject line has, its width, and buy machinery nobody has wired. It is not that
+Conventional Commits is bad; it optimises for something that does not run here, and the
+twelve-of-thirteen measurement in §8.4 is what paying that price looks like.
+
+**What the practice buys that `type(scope):` cannot express.** Two things, and both are load-bearing
+here. First, the **area** is free to be a place *or* a kind, so `search-indexer:` and `docs:` are both
+sayable; the `feat|fix|chore` vocabulary forces every place-shaped change to be filed under a kind,
+and `messaging:` becomes `feat(messaging):` — a word longer and no more informative. Second, the
+**milestone**: a repository built in waves needs `Wave 2 scaffolding:` to say that a commit is
+groundwork for work that has not started, and there is no Conventional Commits type for *groundwork
+for a milestone*. Losing that is losing the only record of why an empty tree was committed.
+
+**The subject is prose, and prose is not an imperative.** The practice is a noun phrase naming what
+the commit contains, very often in two halves — what was done, and what it cost or revealed: "one
+package the seven services share, **and the poison row that forced it**". Fourteen of the last
+twenty-six subjects have that shape. It is lowercase unless the first word is a proper noun
+(`testing: Kafka Connect and a shared network…`) and carries no trailing period — zero of the last
+twenty-six do. **None of that is checked**, because a pattern cannot tell a noun phrase from an
+imperative, nor a proper noun from a stray capital, and a gate that misjudges even occasionally
+teaches people to pass `--no-verify`. It is style, held by whoever writes it.
+
+**There is no 72-character rule, and there never truthfully was one.** Of the last twenty-six
+subjects across the two repositories, fifteen exceed 72 bytes, the mean is 76 and the longest is 107.
+A 72-character ceiling would reject more than half of the practice it claims to describe. The only
+length the hook enforces is 140 bytes, and that is not a style target: it is there to catch a
+paragraph, or a body, pasted onto the subject line. Name the failure it prevents and it is obvious
+how loose it should be.
 
 **[floor] A `BREAKING CHANGE:` is mandatory** for any change to the public surface of
 `@arthome/core`, `@arthome/contracts` or `@arthome/tooling`. For `@arthome/contracts` it counts as a
-**contract change** and triggers the reasoning of §7.1.
+**contract change** and triggers the reasoning of §7.1. A `!` before the colon — `contracts!: …` —
+may flag it in the subject; the footer is what is mandatory.
 
 **The gate, with no dependency** — `commitlint` would mean a package, a configuration and a hook to
-maintain in seven copies. A ten-line `commit-msg` hook does the same job (§8.4).
+maintain in seven copies. `.githooks/commit-msg` does the same job in eighteen lines of logic, and it
+is written, installed and exercised against real history: §8.4.
 
 ---
 
@@ -2764,7 +2874,7 @@ The account's Actions quota is exhausted. No gate assumes a remote runner.
 | 12 | Tooling out of production | `pnpm why -P @arthome/tooling` | no dependency | §4.7 |
 | 13 | `@arthome/core` dependency-free | the script in §4.7 | empty | §4.7 |
 | 14 | Tests | `pnpm exec vitest run` | green | §5.8 |
-| 15 | Commit message | the `commit-msg` hook | conformant | §5.9, §8.4 |
+| 15 | Commit message | `.githooks/commit-msg`, on every commit — **armed per clone** by `git config core.hooksPath .githooks` (§8.4) | a subject that is not `<area>: <subject>` is refused; unarmed clones check nothing | §5.9, §8.4 |
 | 16 | OpenAPI conformance | `python3 tools/check-openapi.py openapi/*.yaml` | `✓ conformant` | `definition-of-done.md` |
 | 17 | No French prose committed | `pnpm exec arthome-check-language` | `PASS` | D-024 |
 | 18 | **Contracts and domain share one vocabulary** | `python3 tools/check-vocabulary.py openapi/*.yaml` | `PASS` | §5.3.1 |
@@ -2864,7 +2974,7 @@ The five applications have **no** Turborepo: a single-application repository has
 cache, and adding one would be tooling to maintain for nothing. **No Nx**, in any of the seven
 (README §3).
 
-### 8.4 The git hooks — two files, no dependency
+### 8.4 The git hooks — two files, and the one command per clone that arms them
 
 No husky, no lint-staged, no commitlint. Three packages, three configurations and three version bumps
 to maintain in seven copies, for what git does natively:
@@ -2873,21 +2983,79 @@ to maintain in seven copies, for what git does natively:
 git config core.hooksPath .githooks       # once per repository, after cloning
 ```
 
-**`.githooks/pre-commit`** — Prettier on staged files only, not on the whole repository:
+**`.githooks/pre-commit`** — two jobs: Prettier on staged files only, then refuse a red commit.
 
 ```sh
 #!/bin/sh
-files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|js|mjs|json|html|css|scss)$')
-[ -z "$files" ] && exit 0
-echo "$files" | xargs pnpm exec prettier --write
-echo "$files" | xargs git add
+set -e
+
+files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|js|mjs|json|html|css|scss)$' || true)
+if [ -n "$files" ]; then
+  echo "$files" | xargs pnpm exec prettier --write
+  echo "$files" | xargs git add
+fi
+
+if ! pnpm run verify; then
+  echo ''
+  echo 'pre-commit: `pnpm run verify` failed — nothing was committed.'
+  exit 1
+fi
 ```
+
+**⚠ THE SECOND JOB WAS ADDED AFTER THE SAME FAULT RECURRED THREE TIMES**, and it is the reason this
+section is no longer one command. A compound shell line of the shape
+
+```sh
+pnpm run verify > log 2>&1; echo "EXIT=$?" && git commit …
+```
+
+reads as though the commit were gated and is not: `;` discards verify's status, and `echo` always
+succeeds. Twice that pushed a red tree; the third time it committed one. **Writing "chain with `&&`,
+never `;`" into the agent files did not prevent the third occurrence** — a rule about how to write a
+shell line is enforced by whoever is writing it, which is exactly the party that got it wrong. The
+hook holds whatever the line happens to say.
+
+It is affordable because `verify` runs in about a second and a half and needs no Docker. That is a
+property worth protecting rather than a happy accident: it is why the integration tests are named
+`*.itest.ts` and sit behind their own command (§8.2). A gate that cost half a minute would be
+skipped, and then it would stop being true.
+
+`git commit --no-verify` still skips it, and that is git's design rather than a hole to plug: a hook
+is a reflex, not an authority. What it removes is the accident, not the deliberate exception.
 
 (Note the absence of `md` in that pattern: Markdown is outside Prettier's scope here — §3.7.)
 
-**`.githooks/commit-msg`** — Conventional Commits (§5.9), ten lines, zero dependencies:
+**`.githooks/commit-msg`** — written, installed and **identical in `arthome-core` and
+`arthome-platform`** (same file, byte for byte; a difference between the two is a bug in whichever was
+edited alone). It enforces §5.9's `<area>: <subject>`. Checked on 2026-09-25: `.githooks/` now holds
+`pre-commit` and `commit-msg` in both repositories.
+
+**It was written against the practice, not against a format, and that was verified before it was
+installed.** All thirteen of the last thirteen subjects pass in each repository — twenty-six of
+twenty-six — and so do the last 119 consecutive commits of `arthome-core` and all 18 of
+`arthome-platform`. That test is the point: *a hook that rejects the practice it was written to encode
+is worse than no hook*, because the first honest commit it refuses teaches everyone that
+`--no-verify` is the way to commit.
+
+**What it replaced, and the measurement that condemned it.** The pattern below — Conventional
+Commits, as §5.9 used to prescribe — rejects **twelve of the thirteen commits ending at `bf41b03`**
+in arthome-platform, the count as taken on 2026-09-25. (On a later HEAD the same pattern rejects
+eleven of thirteen, because two short `docs:` subjects have since entered the window; the window
+moves, the finding does not. In `arthome-core` it rejects twelve of thirteen as well, passing only
+`feat(tooling): …`.) The drift was one consistent shape rather than carelessness: this project writes
+`<area>: <prose subject>`, where the areas used — `messaging`, `catalog`, `testing`, `events`,
+`search-indexer` — are valid §5.9 *scopes* with no type in front, and the wave labels (`Wave 1:`,
+`Wave 2 scaffolding:`) carry which milestone a change belongs to, which the `feat|fix|refactor|…`
+vocabulary cannot express. The one subject that did pass was a `docs:`; a second `docs:` failed on
+length at 82 characters (an earlier note here said 81 — re-measured, it is 82 bytes and 82
+characters; the point it was making is unchanged).
+
+That last figure understated the problem. Measured across the last twenty-six subjects of the two
+repositories: **fifteen exceed 72 bytes**, the mean is 76 and the longest is 107. The 72-character
+ceiling was not grazed by an outlier, it was contradicted by the majority.
 
 ```sh
+# THE REJECTED PATTERN — kept so the measurements above stay reproducible. Do not reinstate it.
 #!/bin/sh
 pattern='^(feat|fix|refactor|perf|test|docs|build|chore|revert)(\([a-z0-9-]+\))?!?: .{1,72}$'
 head -n1 "$1" | grep -qE "$pattern" && exit 0
@@ -2896,6 +3064,81 @@ echo "Commit message not conformant (§5.9 of architecture/code-conventions.md).
 echo "Shape: type(scope): imperative subject, 72 characters max." >&2
 exit 1
 ```
+
+It carried a second defect worth recording, independent of the format: `grep -q '^Merge' "$1"` reads
+the **whole message**, not the subject, so any commit whose body happened to contain a line starting
+with "Merge" was waved through entirely. A whitelist must be anchored to the line it is about.
+
+⚠ **AND §5.9 CITED A DECISION THAT DOES NOT MAKE THE RULE.** §5.9 read "[floor] Conventional
+Commits, in English, per D-008". D-008 says: "`arthome-core` is committed at the end of phase 0, then
+at the end of each of the three times. Messages in English. No remote, no push, ever." It arbitrates
+cadence, language and pushing — and says nothing about the format. So "in English" is backed by an
+arbitration and "Conventional Commits" was an unsourced `[floor]` rule. That was never a decision to
+reopen; it was a citation that was never made.
+
+**Settled on 2026-09-25 — the practice wins.** The choice was between a format that rejects thirteen
+commits of deliberate prose and a practice that no rule described. Conventional Commits optimises for
+changelog generation and semver automation from the commit log; nothing here reads the commit log —
+the only changelog is `oasdiff`'s, from OpenAPI, and §7.1 gives every version bump to a person and an
+exact pin — so the format would have cost subject width and the milestone label to serve two machines
+that are not wired. §5.9 now states the practice and this hook enforces it. The reasoning belongs to
+§5.9; what belongs here is that the gate stopped being a specification and became a file.
+
+The hook, zero dependencies, eighteen lines of logic. The comment block at the top of the real file
+says what it deliberately does **not** check and why — language, body, a closed area list, style —
+and is not copied here, because two copies of a rule are two rules. `.githooks/commit-msg` is
+authoritative:
+
+```sh
+#!/bin/sh
+# … header comment: the shape, and what this hook deliberately does not check …
+
+subject=$(sed -e '/^#/d' -e '/^[[:space:]]*$/d' "$1" | head -n 1)
+
+# git writes these subjects itself; their shape is not ours to choose.
+case "$subject" in
+  'Merge '*|'Revert '*|'fixup! '*|'squash! '*|'amend! '*) exit 0 ;;
+esac
+
+shape='^([a-z][a-z0-9.-]*(\([A-Za-z0-9._-]+\))?|[A-Z][A-Za-z0-9]*( [A-Za-z0-9@._/-]+){0,3})!?: [^ ].*$'
+
+if [ -z "$subject" ]; then
+  …  # "the message is empty"
+  exit 1
+fi
+
+if ! printf '%s\n' "$subject" | grep -qE "$shape"; then
+  …  # the three accepted shapes, with an example of each, then the subject it got
+  exit 1
+fi
+
+if [ "$(printf '%s' "$subject" | wc -c)" -gt 140 ]; then
+  …  # "that length is a pasted paragraph or a body on the subject line"
+  exit 1
+fi
+
+exit 0
+```
+
+**Three judgements inside that pattern**, each with the failure it is avoiding:
+
+- **The area is not checked against a list.** Areas are born with services, and a list here would
+  need the same edit in seven repositories every time one appears — the day it is not edited, the gate
+  refuses honest work, which is the failure this section exists to document. What is checked is that
+  an area is *there*: a subject with no `<label>: ` prefix at all is refused.
+- **`Revert`, `fixup!`, `squash!` and `amend!` join `Merge` in the exemption**, for the same reason a
+  merge is exempt: git writes those subjects itself and their shape is not the author's to choose.
+  `fixup!` commits are transient besides — they exist to be autosquashed away.
+- **140 bytes, not 72.** The cap exists only to catch a paragraph or a body pasted onto the subject
+  line, and it sits 33 bytes above the longest real subject on purpose. It is counted in bytes, so an
+  em dash costs three; nothing in either history comes near enough for that to decide a case.
+
+**What it costs to be wrong here, and what it does not.** The hook refuses only the *shape*. It
+cannot tell whether a subject is in English — `arthome-check-language` (§8.1, gate 17) reads every
+committed file and is the gate that can — and it reads no part of the body, because §5.9 asks the body
+for *why*, and no pattern separates a reason from a restatement. It would reject 22 of
+`arthome-core`'s first 51 commits, which are bare prose from before the repository was translated to
+English; those are history, and history is not re-committed.
 
 **What the hooks do not do:** they run neither `eslint`, nor `tsc`, nor the tests. A slow hook is a
 hook you bypass with `--no-verify`, and a bypassed hook is worth less than no hook at all, because it
