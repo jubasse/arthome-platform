@@ -2271,7 +2271,17 @@ readable sequence · history ("before this there was no…") · a default or a l
 explained · **prose about what the file does *not* do**, which rots first because nothing fails when
 it stops being true · a second copy of `DECISIONS.md` — link instead.
 
-**Where one line does, use one line.** A surviving `⚠` is two to four lines, never ten.
+**[floor] TypeScript already documents the types, so JSDoc must not.** The signature gives the
+parameter names, their types and the return type; repeating any of it is noise — `@param source - the
+source`, `@returns the result`, a line naming a type the annotation states. JSDoc earns its place in
+two cases only, never systematically: a parameter whose **meaning** the type cannot give (units, a
+range, what must be true before calling, which of two same-typed arguments is which), and a **union
+return** — which branch comes back and when. `Promise<'indexed' | 'superseded'>` gives the shapes, not
+their causes.
+
+**Where one line does, use one line, and give the scope rather than the whole story.** No account of
+the why and the how from A to Z: enough to situate it. A surviving `⚠` is two to four lines, never
+ten.
 
 ⚠ **NEVER DELETE A RECORDED MEASUREMENT.** Shorten its prose to one sentence; keep the fact. The
 failure mode this rule replaces is verbosity, and the one it could create is losing the paragraph

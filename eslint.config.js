@@ -38,11 +38,8 @@ export default defineConfig([
   },
 
   {
-    // A process entry point writing to stdout IS its log in a container: there
-    // is no file to tail and no transport to configure, and a consumer that
-    // reports nothing about what it applied is operationally blind. Scoped to
-    // the entry points alone — anywhere else, a console call is a debug
-    // statement somebody forgot.
+    // Scoped to the entry points: stdout IS the log in a container. Anywhere else a
+    // console call is a debug statement somebody forgot.
     files: ['apps/*/src/main.ts'],
     rules: {
       'no-console': 'off',
