@@ -7,6 +7,7 @@ import { Service } from '@arthome/core';
 
 import { applyMessage } from './consumer/account-consumer.js';
 import { dataSource } from './data-source.js';
+import { env } from './env.js';
 
 const SOURCE_TOPIC = 'arthome.identity.account';
 
@@ -19,7 +20,8 @@ async function main(): Promise<void> {
     //   domain fact, and a typo in a groupId does not fail — it silently forms a
     //   second consumer group that reads everything again from the beginning.
     clientId: Service.NOTIFICATIONS,
-    brokers: [process.env.KAFKA_BROKERS ?? 'localhost:29092'],
+    // Copied because KafkaJS declares `brokers` mutable; the parsed config is not.
+    brokers: [...env.KAFKA_BROKERS],
   });
 
   const producer = kafka.producer();

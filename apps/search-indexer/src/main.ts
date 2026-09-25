@@ -5,6 +5,7 @@ import { Kafka } from 'kafkajs';
 
 import { applyMessage } from './consumer/show-consumer.js';
 import { dataSource } from './data-source.js';
+import { env } from './env.js';
 import { createOpenSearchClient, ensureShowIndex, showIndex } from './index/opensearch-client.js';
 
 /**
@@ -39,7 +40,7 @@ const SOURCE_TOPIC = 'arthome.catalog.show';
 async function main(): Promise<void> {
   await dataSource.initialize();
 
-  const opensearch = createOpenSearchClient();
+  const opensearch = createOpenSearchClient(env.OPENSEARCH_URL);
   // ⚠ BEFORE THE FIRST MESSAGE, NOT LAZILY ON THE FIRST WRITE. Writing to an
   //   index that does not exist AUTO-CREATES it, with a mapping OpenSearch
   //   guesses from the first document — which is the one outcome
@@ -50,7 +51,8 @@ async function main(): Promise<void> {
 
   const kafka = new Kafka({
     clientId: SEARCH,
-    brokers: [process.env.KAFKA_BROKERS ?? 'localhost:29092'],
+    // Copied because KafkaJS declares `brokers` mutable; the parsed config is not.
+    brokers: [...env.KAFKA_BROKERS],
   });
 
   const producer = kafka.producer();

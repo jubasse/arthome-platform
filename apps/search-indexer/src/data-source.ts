@@ -2,6 +2,7 @@ import { DataSource } from 'typeorm';
 
 import { ProcessedMessage } from './consumer/processed-message.entity.js';
 import { ShowProjection } from './consumer/show-projection.entity.js';
+import { env } from './env.js';
 import { Initial1758700400000 } from './migrations/1758700400000-initial.js';
 
 /**
@@ -18,7 +19,7 @@ import { Initial1758700400000 } from './migrations/1758700400000-initial.js';
 export const dataSource: DataSource = new DataSource({
   type: 'postgres',
   // 55432, not 5432 — see compose.yaml, and AGENTS.md for why.
-  url: process.env.DATABASE_URL ?? 'postgres://arthome:arthome@localhost:55432/search',
+  url: env.DATABASE_URL,
   entities: [ProcessedMessage, ShowProjection],
   migrations: [Initial1758700400000],
   synchronize: false,

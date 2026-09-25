@@ -104,6 +104,7 @@ cannot run beside anything else.
 
 ```bash
 docker compose up -d
+export NODE_ENV=development       # required, and never defaulted — see below
 pnpm --filter @arthome-platform/identity      run migration:run
 pnpm --filter @arthome-platform/notifications run migration:run
 pnpm --filter @arthome-platform/catalog       run migration:run
@@ -112,6 +113,18 @@ pnpm run provision:topics          # BEFORE the connector, and before any consum
 curl -s -X POST -H 'Content-Type: application/json' \
   --data @infra/debezium/identity-outbox.json http://localhost:8083/connectors
 ```
+
+⚠ **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
+anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`,
+`OPENSEARCH_URL` — is filled from a local default **only outside production**, and `NODE_ENV` is
+what selects that. Defaulting it to `development` would make an unset variable open the
+production-guarded write routes and point a migration at localhost; both fail loudly instead, naming
+the variable. `PORT` is the single exception and defaults to 3000: the migration CLI never listens,
+and a wrong port fails at bind where a wrong `DATABASE_URL` connects somewhere else in silence.
+
+No service reads `process.env` any more. `libs/config` parses once, at module load, with the
+protocol asserted — `postgres:` for the database, `http:`/`https:` for the index — because a bare
+URL check accepts `localhost:29092` as a URL whose scheme is `localhost:`.
 
 ⚠ **`provision:topics` is not a convenience.** A topic auto-created by the first producer takes the
 broker's default partition count — **one** — while `events.md` §3 fixes 3 or 12 depending on the

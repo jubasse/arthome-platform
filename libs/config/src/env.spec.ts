@@ -1,28 +1,116 @@
 import { describe, expect, it } from 'vitest';
 
-import { readEnv } from './env.js';
+import {
+  isProductionEnvironment,
+  readConsumerEnv,
+  readHttpServiceEnv,
+  readSearchIndexerEnv,
+} from './env.js';
 
-describe('readEnv', () => {
-  it('reads a well-formed environment', () => {
-    expect(readEnv({ NODE_ENV: 'test', PORT: '3000' })).toEqual({
-      NODE_ENV: 'test',
+const PRODUCTION = {
+  NODE_ENV: 'production',
+  PORT: '3000',
+  DATABASE_URL: 'postgres://arthome:secret@db.internal:5432/identity',
+  KAFKA_BROKERS: 'broker-a.internal:9092,broker-b.internal:9092',
+  OPENSEARCH_URL: 'https://search.internal:9200',
+};
+
+describe('the local defaults stop at the production boundary', () => {
+  it('fills them outside production', () => {
+    expect(readHttpServiceEnv('identity', { NODE_ENV: 'development', PORT: '3000' })).toEqual({
+      NODE_ENV: 'development',
       PORT: 3000,
+      DATABASE_URL: 'postgres://arthome:arthome@localhost:55432/identity',
     });
   });
 
-  it('coerces PORT, because an environment variable is always a string', () => {
-    expect(readEnv({ NODE_ENV: 'test', PORT: '8080' }).PORT).toBe(8080);
+  it('refuses a production deployment with no DATABASE_URL instead of using localhost', () => {
+    expect(() =>
+      readHttpServiceEnv('identity', { NODE_ENV: 'production', PORT: '3000' }),
+    ).toThrow();
   });
 
-  it('throws on a missing variable rather than defaulting', () => {
-    expect(() => readEnv({ NODE_ENV: 'test' })).toThrow();
+  it('treats an empty variable as absent, so a valueless compose entry still defaults', () => {
+    expect(
+      readHttpServiceEnv('identity', { NODE_ENV: 'test', PORT: '3000', DATABASE_URL: '' })
+        .DATABASE_URL,
+    ).toBe('postgres://arthome:arthome@localhost:55432/identity');
   });
 
-  it('throws on a port outside the range', () => {
-    expect(() => readEnv({ NODE_ENV: 'test', PORT: '70000' })).toThrow();
+  it('never defaults NODE_ENV, because an unset one would open the guarded routes', () => {
+    expect(() => readHttpServiceEnv('identity', { PORT: '3000' })).toThrow(/NODE_ENV/);
+    expect(() => isProductionEnvironment({})).toThrow();
+  });
+});
+
+describe('a broker list is a list, and it is not a URL', () => {
+  it('splits every broker out, so KafkaJS is not handed one host containing a comma', () => {
+    expect(readConsumerEnv('notifications', PRODUCTION).KAFKA_BROKERS).toEqual([
+      'broker-a.internal:9092',
+      'broker-b.internal:9092',
+    ]);
   });
 
-  it('refuses an unknown NODE_ENV instead of passing it through', () => {
-    expect(() => readEnv({ NODE_ENV: 'staging', PORT: '3000' })).toThrow();
+  it('refuses a broker with no port', () => {
+    expect(() =>
+      readConsumerEnv('notifications', { ...PRODUCTION, KAFKA_BROKERS: 'broker-a.internal' }),
+    ).toThrow();
+  });
+});
+
+describe('a URL variable asserts its protocol', () => {
+  /**
+   * ⚠ `z.url()` ALONE PASSES THIS. The URL constructor reads `localhost:29092` as the
+   *   scheme `localhost:` with the path `29092`, so without the protocol assertion a
+   *   broker list pasted into DATABASE_URL validates and fails at connection time.
+   */
+  it('refuses a broker list pasted into DATABASE_URL', () => {
+    expect(() =>
+      readConsumerEnv('notifications', { ...PRODUCTION, DATABASE_URL: 'localhost:29092' }),
+    ).toThrow();
+  });
+
+  it('refuses an http database and a postgres search index', () => {
+    expect(() =>
+      readConsumerEnv('notifications', { ...PRODUCTION, DATABASE_URL: 'http://localhost:55432/x' }),
+    ).toThrow();
+    expect(() =>
+      readSearchIndexerEnv('search', {
+        ...PRODUCTION,
+        OPENSEARCH_URL: 'postgres://localhost:9200',
+      }),
+    ).toThrow();
+  });
+});
+
+describe('PORT', () => {
+  it('coerces the string the platform hands over', () => {
+    expect(readHttpServiceEnv('identity', { NODE_ENV: 'test', PORT: '8080' }).PORT).toBe(8080);
+  });
+
+  /**
+   * ⚠ The migration CLI loads `data-source.ts` and never listens, so a required PORT
+   *   made `migration:run` unrunnable. A wrong port fails loudly, unlike a wrong
+   *   DATABASE_URL, which is why this one variable is defaulted and the rest are not.
+   */
+  it('defaults when the process does not listen', () => {
+    expect(readHttpServiceEnv('identity', { NODE_ENV: 'test' }).PORT).toBe(3000);
+  });
+
+  it('refuses PORT=0, which `.int()` alone accepts', () => {
+    expect(() => readHttpServiceEnv('identity', { NODE_ENV: 'test', PORT: '0' })).toThrow();
+  });
+
+  it('refuses a port outside the range', () => {
+    expect(() => readHttpServiceEnv('identity', { NODE_ENV: 'test', PORT: '70000' })).toThrow();
+  });
+});
+
+describe('isProductionEnvironment', () => {
+  it('is an allow-list, so an environment nobody listed is production-like', () => {
+    expect(isProductionEnvironment({ NODE_ENV: 'development' })).toBe(false);
+    expect(isProductionEnvironment({ NODE_ENV: 'test' })).toBe(false);
+    expect(isProductionEnvironment({ NODE_ENV: 'production' })).toBe(true);
+    expect(() => isProductionEnvironment({ NODE_ENV: 'staging' })).toThrow();
   });
 });

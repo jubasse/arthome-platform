@@ -11,7 +11,6 @@ import {
 } from './show-document.js';
 
 /** The development stack's OpenSearch, published on 19200 by `compose.yaml`. */
-const DEFAULT_OPENSEARCH_URL = 'http://localhost:19200';
 
 /** What an attempt to write one document ended as. */
 export type IndexWrite = 'indexed' | 'superseded';
@@ -35,9 +34,7 @@ export interface ShowIndex {
   put(document: ShowDocument, version: number): Promise<IndexWrite>;
 }
 
-export function createOpenSearchClient(
-  url: string = process.env.OPENSEARCH_URL ?? DEFAULT_OPENSEARCH_URL,
-): Client {
+export function createOpenSearchClient(url: string): Client {
   return new Client({ node: url });
 }
 
