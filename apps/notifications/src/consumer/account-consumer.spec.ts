@@ -37,25 +37,46 @@ function message(headers: Record<string, string>): EachMessagePayload {
   } as unknown as EachMessagePayload;
 }
 
-/** `claimed` decides whether the dedup insert reports a fresh identifier. */
-function fakeDataSource(claimed: boolean, inserted: Record<string, unknown>[] = []): DataSource {
+/**
+ * `claimed` decides whether the dedup insert reports a fresh identifier;
+ * `accountAlreadyHasOne` whether `welcome_email`'s primary key already holds the row.
+ *
+ * ⚠ BOTH WRITES ARE `orIgnore()` QUERY BUILDERS NOW, so the double has to tell them
+ *   apart by the table they target — the business write returning no row is a distinct
+ *   outcome from the dedup write returning none, and a double that conflated them
+ *   could not see the defect the second guard exists for.
+ */
+function fakeDataSource(
+  claimed: boolean,
+  inserted: Record<string, unknown>[] = [],
+  accountAlreadyHasOne = false,
+): DataSource {
   const manager = {
-    createQueryBuilder: () => ({
-      insert: () => ({
-        into: () => ({
-          values: () => ({
-            orIgnore: () => ({
-              returning: () => ({
-                execute: () => Promise.resolve({ raw: claimed ? [{ id: MESSAGE_ID }] : [] }),
-              }),
-            }),
-          }),
-        }),
-      }),
-    }),
-    insert: (_target: unknown, values: Record<string, unknown>) => {
-      inserted.push(values);
-      return Promise.resolve();
+    createQueryBuilder: () => {
+      let target: unknown;
+      let values: Record<string, unknown> = {};
+      const chain = {
+        insert: () => chain,
+        into: (table: unknown) => {
+          target = table;
+          return chain;
+        },
+        values: (given: Record<string, unknown>) => {
+          values = given;
+          return chain;
+        },
+        orIgnore: () => chain,
+        returning: () => chain,
+        execute: () => {
+          if (target !== WelcomeEmail) {
+            return Promise.resolve({ raw: claimed ? [{ id: MESSAGE_ID }] : [] });
+          }
+          if (accountAlreadyHasOne) return Promise.resolve({ raw: [] });
+          inserted.push(values);
+          return Promise.resolve({ raw: [{ account_id: values.account_id }] });
+        },
+      };
+      return chain;
     },
   };
   return {
@@ -122,7 +143,22 @@ describe('applyMessage', () => {
     await applyMessage(fakeDataSource(true, inserted), message(headers));
     expect(inserted[0]?.traceparent).toBe(headers.traceparent);
   });
-});
 
-// Referenced so the entity import is not elided by verbatimModuleSyntax.
-void WelcomeEmail;
+  /**
+   * ⚠ THE TWO GUARDS ANSWER DIFFERENT QUESTIONS, and this is the gap between them.
+   *   A second `message-id` carrying an account that already has its email passes the
+   *   dedup insert and meets `welcome_email`'s primary key. Before `orIgnore()` on the
+   *   business write that was a 23505 — not a `PermanentError`, so retried three times
+   *   over five minutes and dead-lettered as a failure, describing "already done".
+   */
+  it('reports a second message for an account that already has its email as a duplicate', async () => {
+    const inserted: Record<string, unknown>[] = [];
+    const outcome = await applyMessage(
+      fakeDataSource(true, inserted, true),
+      message({ ...headers, 'message-id': '01a0d537-0abe-71f1-9ee1-000000000002' }),
+    );
+
+    expect(outcome).toBe('duplicate');
+    expect(inserted).toHaveLength(0);
+  });
+});

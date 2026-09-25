@@ -61,13 +61,36 @@ export async function applyMessage(
 
     if ((claimed.raw as unknown[]).length === 0) return 'duplicate';
 
-    await manager.insert(WelcomeEmail, {
-      account_id: event.accountId,
-      locale: event.locale,
-      country: event.country,
-      traceparent: header(payload, 'traceparent'),
-    });
+    /**
+     * ⚠ `orIgnore()` BECAUSE THE TWO GUARDS ANSWER DIFFERENT QUESTIONS. The dedup
+     *   insert above answers "have I seen this MESSAGE"; `welcome_email`'s primary key
+     *   answers "does this ACCOUNT already have one". Two different `message-id`s
+     *   carrying one account pass the first and violate the second, and a bare
+     *   `insert` turns that into a 23505 — not a `PermanentError`, so it is retried
+     *   three times over five minutes and dead-lettered as a failure, when the
+     *   outcome it describes is simply "already done".
+     *
+     *   ⚠ AND THE 23505 POISONS THE WHOLE TRANSACTION, dedup claim included. Measured
+     *     against Postgres 18: the bare insert answers `duplicate key value violates
+     *     unique constraint "welcome_email_pkey"` and every later statement gets
+     *     `current transaction is aborted`. So the `message-id` is never recorded and
+     *     each retry redoes all of it. `ON CONFLICT DO NOTHING RETURNING` returns no
+     *     row and leaves the transaction usable — both halves verified by hand.
+     */
+    const written = await manager
+      .createQueryBuilder()
+      .insert()
+      .into(WelcomeEmail)
+      .values({
+        account_id: event.accountId,
+        locale: event.locale,
+        country: event.country,
+        traceparent: header(payload, 'traceparent'),
+      })
+      .orIgnore()
+      .returning('account_id')
+      .execute();
 
-    return 'applied';
+    return (written.raw as unknown[]).length === 0 ? 'duplicate' : 'applied';
   });
 }

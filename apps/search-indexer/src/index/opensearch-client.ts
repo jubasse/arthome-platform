@@ -34,8 +34,17 @@ export interface ShowIndex {
   put(document: ShowDocument, version: number): Promise<IndexWrite>;
 }
 
+/**
+ * ⚠ RETRY AT ONE LAYER, AND THE CLIENT'S OWN BUDGET IS THE ONE TO GIVE UP. It
+ *   defaults to `maxRetries: 3` with `requestTimeout: 30000`, which sits on top of
+ *   `libs/messaging`'s three tiers — 9 attempts, and a dead node holding a partition
+ *   for 90 s before the messaging layer is even told. `failure.ts` records the same
+ *   trap for KafkaJS: a client retry, the broker's redelivery and the retry budget
+ *   MULTIPLY. So retry belongs to the consumer, which can dead-letter; the client
+ *   fails once and fast.
+ */
 export function createOpenSearchClient(url: string): Client {
-  return new Client({ node: url });
+  return new Client({ node: url, maxRetries: 0, requestTimeout: 5_000 });
 }
 
 /**
