@@ -27,6 +27,7 @@ export function dateDocument(overrides: Partial<ServableDateDocument> = {}): Ser
     ends_at: '2026-11-04T21:05:00.000Z',
     over_at: '2026-11-07T21:05:00.000Z',
     artist_id: '01a0e400-0000-7000-8000-0000000000b1',
+    artist_name: 'Compagnie Verticale',
     category_id: 'theatre',
     genre_ids: ['contemporary'],
     tag_ids: [],

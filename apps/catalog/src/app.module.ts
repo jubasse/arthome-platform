@@ -29,11 +29,13 @@ import { DataSource } from 'typeorm';
 
 import { Service, SystemClock } from '@arthome/core';
 
+import { ArtistsModule } from './artists/artists.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { dataSource } from './data-source.js';
 import { DatesModule } from './dates/dates.module.js';
 import { PublicModule } from './public/public.module.js';
 import { SearchModule } from './search/search.module.js';
+import { UNIQUE_VIOLATION_CODES } from './unique-violations.js';
 import { VenuesModule } from './venues/venues.module.js';
 
 @Module({
@@ -44,6 +46,7 @@ import { VenuesModule } from './venues/venues.module.js';
     VenuesModule,
     DatesModule,
     PublicModule,
+    ArtistsModule,
     SearchModule,
   ],
   providers: [
@@ -65,7 +68,7 @@ import { VenuesModule } from './venues/venues.module.js';
       provide: APP_FILTER,
       inject: [HttpAdapterHost],
       useFactory: (adapterHost: HttpAdapterHost): ErrorEnvelopeFilter =>
-        new ErrorEnvelopeFilter(adapterHost, new SystemClock()),
+        new ErrorEnvelopeFilter(adapterHost, new SystemClock(), UNIQUE_VIOLATION_CODES),
     },
     // §5.5's envelope on the success path, symmetric with the filter on the error path: both
     // take the `Clock` rather than reading the machine's time.

@@ -27,6 +27,9 @@ export interface PublicDate {
   readonly date_id: string;
   readonly show_id: string;
   readonly channel_id: string;
+  /** Named on the card once the channel has a public face (`updateChannelIdentity`). */
+  readonly artist_id: string | null;
+  readonly artist_name: string | null;
   readonly venue_id: string;
   /** The search index holds no venue name. */
   readonly venue_name?: string;
@@ -90,6 +93,8 @@ export function dateCardOf(date: PublicDate, now: Instant): DateCard {
     id: date.date_id,
     showId: date.show_id,
     channelId: date.channel_id,
+    ...(date.artist_id !== null &&
+      date.artist_name !== null && { artist: { id: date.artist_id, name: date.artist_name } }),
     slug: french ? date.slug_fr : date.slug_en,
     canonicalUrl: date.canonical_url,
     title: french ? date.title_fr : date.title_en,

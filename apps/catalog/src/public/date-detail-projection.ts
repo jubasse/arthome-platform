@@ -3,6 +3,7 @@ import type { EntityManager } from 'typeorm';
 import type { DateOutcome, PublicationState } from '@arthome/core';
 
 import { DateDetailPublic } from './date-detail-public.entity.js';
+import { Artist } from '../artists/artist.entity.js';
 import type { Show } from '../catalog/show.entity.js';
 import type { PerformanceDate } from '../dates/performance-date.entity.js';
 import type { Venue } from '../venues/venue.entity.js';
@@ -17,7 +18,9 @@ export async function projectPublishedDate(
   venue: Venue,
   state: PublicationState,
 ): Promise<void> {
+  const artist = await manager.findOneBy(Artist, { channel_id: date.channel_id });
   await manager.insert(DateDetailPublic, {
+    artist_name: artist?.public_name ?? null,
     date_id: date.id,
     show_id: date.show_id,
     channel_id: date.channel_id,
@@ -34,7 +37,8 @@ export async function projectPublishedDate(
     slug_fr: date.slug_fr,
     slug_en: date.slug_en,
     publication_state: state,
-    artist_id: show.artist_id,
+    // The channel's face when it has one, else what the show named: one artist per channel.
+    artist_id: artist?.id ?? show.artist_id,
     category_id: show.category_id,
     genre_ids: show.genre_ids,
     tag_ids: show.tag_ids,
@@ -100,5 +104,17 @@ export async function projectOutcome(
       ...(rescheduledTo !== null && { starts_at: rescheduledTo }),
       ...APPLIED,
     },
+  );
+}
+
+/** The channel's public face, on every public date of the channel. */
+export async function projectArtist(
+  manager: EntityManager,
+  artist: Pick<Artist, 'id' | 'channel_id' | 'public_name'>,
+): Promise<void> {
+  await manager.update(
+    DateDetailPublic,
+    { channel_id: artist.channel_id },
+    { artist_id: artist.id, artist_name: artist.public_name, ...APPLIED },
   );
 }

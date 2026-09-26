@@ -5,9 +5,13 @@ import { Controller, Get, Header, Headers, Inject, Param, Query, Res } from '@ne
 import type { z } from 'zod';
 
 import type { Clock } from '@arthome/core';
-import { DateIdSchema } from '@arthome/core/schema';
+import { ArtistIdSchema, DateIdSchema } from '@arthome/core/schema';
 
-import { DateDetailResponseSchema, ResolveResponseSchema } from './date-responses.schema.js';
+import {
+  ArtistDetailResponseSchema,
+  DateDetailResponseSchema,
+  ResolveResponseSchema,
+} from './date-responses.schema.js';
 import { ResolveQuerySchema, type ResolveQuery } from './resolve-query.schema.js';
 import { CatalogClient, type CatalogCall } from '../catalog/catalog.client.js';
 import { CLOCK } from '../clock.js';
@@ -20,6 +24,7 @@ const PUBLIC_READ_BUDGET_MS = 400;
 
 type DateDetail = z.output<typeof DateDetailResponseSchema>['data'];
 type ResolvedLink = z.output<typeof ResolveResponseSchema>['data'];
+type ArtistDetail = z.output<typeof ArtistDetailResponseSchema>['data'];
 
 interface Reply {
   readonly raw: ServerResponse;
@@ -52,6 +57,25 @@ export class DatesController {
       DateDetailResponseSchema,
     );
     reply.header('etag', entityTagOf({ data, validUntil }));
+    return new PerishableResponse(data, validUntil ?? null);
+  }
+
+  @Get('artists/:artistId')
+  @Header('cache-control', 'public, max-age=300')
+  @Header('vary', VARY_AUTH)
+  public async artist(
+    @Param('artistId', { schema: ArtistIdSchema }) artistId: string,
+    @Headers(SURFACE_HEADER) surface: string | undefined,
+    @Headers('traceparent') traceparent: string,
+    @Res({ passthrough: true }) reply: Reply,
+  ): Promise<PerishableResponse<ArtistDetail>> {
+    assertStorefrontSurface(surface);
+    const { data, validUntil } = await this.catalog.get(
+      `/v1/artists/${artistId}`,
+      new URLSearchParams(),
+      this.callFor(traceparent, reply),
+      ArtistDetailResponseSchema,
+    );
     return new PerishableResponse(data, validUntil ?? null);
   }
 

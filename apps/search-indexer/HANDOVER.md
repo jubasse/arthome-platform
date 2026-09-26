@@ -43,6 +43,9 @@ input"; both are marked where they stand.
   `occurred_at`, each guarded like the other facts. The document carries `outcome` and
   `rescheduled_to`, and its `starts_at`, `ends_at` and `over_at` follow the move. A move that
   overtakes `DateScheduled` is kept and applied when the date is scheduled.
+- **`arthome.catalog.artist` is consumed too** (2026-09-27): `artist_projection` keeps each
+  channel's face, versioned by `occurred_at`, and a change rewrites every public date of the
+  channel with `artist_id` and `artist_name` (analysed, so a search matches it).
 
 ## 1. What was built
 

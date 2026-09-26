@@ -21,9 +21,9 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | Built | What it is |
 | --- | --- |
 | `apps/identity` | `POST /accounts`, the outbox producer |
-| `apps/catalog` | shows, venues, dates and their publication, the checklist consumer, the search over the date index, and the public date page from `date_detail_public` |
+| `apps/catalog` | shows, venues, dates and their publication, the checklist consumer, the search over the date index, the public date page from `date_detail_public`, and the artist |
 | `apps/notifications` | the idempotent consumer, with retries and dead-lettering |
-| `apps/bff-storefront` | the storefront's BFF: search, the date page and link resolution, from catalog, with the deadline and the error mapping |
+| `apps/bff-storefront` | the storefront's BFF: search, the date and artist pages, link resolution, from catalog, with the deadline and the error mapping |
 | `apps/search-indexer` | the catalog projection into OpenSearch, composed from a read model of its own |
 | `libs/messaging` | the outbox, failure classification, retry, dead-lettering — shared by every service |
 | `libs/events` | the Protobuf wire types, generated from arthome-core's `proto/` |

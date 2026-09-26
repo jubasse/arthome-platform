@@ -57,15 +57,40 @@ export function fingerprintOf(method: string, path: string, body: unknown): stri
  * second attempt with the same key waits on it; it is completed with the envelope before the
  * commit, so no crash can leave an effect without its response.
  */
-export async function runIdempotently<T>(
+export function runIdempotently<T>(
   manager: EntityManager,
   request: IdempotentRequest,
   clock: Clock,
   command: () => Promise<T>,
 ): Promise<MemorisedResponse<T>> {
+  return runEnveloped(manager, request, async () => {
+    const servedAt = clock.now();
+    return { servedAt, data: await command() };
+  });
+}
+
+/** For a command whose answer carries the aggregate's new `version` at the envelope's root. */
+export function runIdempotentlyVersioned<T>(
+  manager: EntityManager,
+  request: IdempotentRequest,
+  clock: Clock,
+  command: () => Promise<{ readonly data: T; readonly version: number }>,
+): Promise<MemorisedResponse<T>> {
+  return runEnveloped(manager, request, async () => {
+    const servedAt = clock.now();
+    const { data, version } = await command();
+    return { servedAt, version, data };
+  });
+}
+
+async function runEnveloped<T>(
+  manager: EntityManager,
+  request: IdempotentRequest,
+  envelopeOf: () => Promise<SuccessEnvelope<T>>,
+): Promise<MemorisedResponse<T>> {
   if (!(await claim(manager, request))) return replay<T>(manager, request);
 
-  const envelope: SuccessEnvelope<T> = { servedAt: clock.now(), data: await command() };
+  const envelope = await envelopeOf();
   await manager.query(
     `UPDATE idempotency_record
         SET state = 'completed', status_code = $3, response_body = $4

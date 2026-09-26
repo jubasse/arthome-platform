@@ -54,6 +54,8 @@ import { DatesService, type TransitionPublicationCommand } from './dates.service
 import { PerformanceDate } from './performance-date.entity.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { Publication } from './publication.entity.js';
+import { Artist } from '../artists/artist.entity.js';
+import { ArtistsService } from '../artists/artists.service.js';
 import { Show } from '../catalog/show.entity.js';
 import { UpdateShowService } from '../catalog/update-show.service.js';
 import type { IdempotentRequest } from '../idempotency/idempotency.js';
@@ -66,8 +68,12 @@ import { DateSlugs1790420400000 } from '../migrations/1790420400000-date-slugs.j
 import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500000-idempotency-response-as-json.js';
 import { DateDetailPublic1790420600000 } from '../migrations/1790420600000-date-detail-public.js';
 import { DateOutcome1790420700000 } from '../migrations/1790420700000-date-outcome.js';
+import { Artist1790420800000 } from '../migrations/1790420800000-artist.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';
+import { PublicArtistsService } from '../public/public-artists.service.js';
 import { PublicDatesService } from '../public/public-dates.service.js';
+import { PublicLinksService } from '../public/public-links.service.js';
+import { LinkKind } from '../public/resolve-query.schema.js';
 import { Venue } from '../venues/venue.entity.js';
 
 /**
@@ -205,6 +211,7 @@ beforeAll(async () => {
       Publication,
       PublicationChecklistFact,
       DateDetailPublic,
+      Artist,
       ProcessedMessage,
       OutboxEvent,
     ],
@@ -218,6 +225,7 @@ beforeAll(async () => {
       IdempotencyResponseAsJson1790420500000,
       DateDetailPublic1790420600000,
       DateOutcome1790420700000,
+      Artist1790420800000,
     ],
   });
   await dataSource.getRepository(Show).insert({
@@ -670,6 +678,8 @@ describe('the public date page', () => {
   const ORIGIN = 'https://arthome.test';
   const publicDates = (): PublicDatesService =>
     new PublicDatesService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'), ORIGIN);
+  const publicLinks = (): PublicLinksService =>
+    new PublicLinksService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'), ORIGIN);
   const rowOf = (dateId: string) =>
     dataSource.getRepository(DateDetailPublic).findOneBy({ date_id: dateId });
 
@@ -750,8 +760,8 @@ describe('the public date page', () => {
       const url = (await dates.sheet(dateId)).canonicalUrl ?? '';
       const slug = url.split('/').at(-1) ?? '';
 
-      const byUrl = await publicDates().resolve({ url });
-      const bySlug = await publicDates().resolve({ kind: 'date', slug });
+      const byUrl = await publicLinks().resolve({ url });
+      const bySlug = await publicLinks().resolve({ kind: 'date', slug });
       expect(byUrl.data).toMatchObject({ kind: 'date', id: dateId, canonicalUrl: url });
       expect(bySlug.data.id).toBe(dateId);
 
@@ -759,9 +769,9 @@ describe('the public date page', () => {
         { url: url.replace(ORIGIN, 'https://elsewhere.test') },
         { url: `${url}-x` },
       ]) {
-        expect((await refusalOf(publicDates().resolve(dead))).getStatus()).toBe(404);
+        expect((await refusalOf(publicLinks().resolve(dead))).getStatus()).toBe(404);
       }
-      const both = await refusalOf(publicDates().resolve({ url, kind: 'date', slug }));
+      const both = await refusalOf(publicLinks().resolve({ url, kind: 'date', slug }));
       expect(both.refusal).toMatchObject({
         code: ApiErrorCode.SCHEMA_INVALID,
         params: { fields: ['kind', 'slug'] },
@@ -912,6 +922,62 @@ describe('a date outcome', () => {
         displayState: DisplayState.CANCELLED,
         displayStateValidUntil: null,
         outcome: DateOutcome.CANCELLED,
+      });
+    },
+    CASE_MS,
+  );
+});
+
+describe('an artist’s page', () => {
+  const ORIGIN = 'https://arthome.test';
+  const clock = new FixedClock('2026-09-26T10:00:00.000Z');
+
+  it(
+    'names the artist on its channel’s cards, and lists the channel’s dates by what they show',
+    async () => {
+      const face = await new ArtistsService(dataSource, clock).updateIdentity(
+        {
+          channelId: CHANNEL,
+          expectedVersion: 0,
+          publicName: 'Compagnie Verticale',
+          categoryId: 'theatre',
+          biography: [{ contentLanguage: Locale.FR, text: 'Une compagnie.' }],
+          traceparent: null,
+        },
+        idempotency('artist-face'),
+      );
+      const artistId = face.envelope.data.artistId;
+
+      const published = '01a0e100-0000-7000-8000-0000000006a1';
+      await draft(published);
+      await satisfyProjectedItems(published);
+      await move(published, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
+
+      const card = (await new PublicDatesService(dataSource, clock, ORIGIN).detail(published)).data;
+      expect(card.artist).toEqual({ id: artistId, name: 'Compagnie Verticale' });
+
+      const { data: page } = await new PublicArtistsService(dataSource, clock, ORIGIN).page(
+        artistId,
+      );
+      expect(page).toMatchObject({
+        id: artistId,
+        name: 'Compagnie Verticale',
+        slug: 'compagnie-verticale',
+        biography: { contentLanguage: Locale.FR, text: 'Une compagnie.' },
+      });
+      const upcoming = (page.upcomingDates ?? []).map((date) => date.id);
+      const past = (page.pastDates ?? []).map((date) => date.id);
+      expect(upcoming).toContain(published);
+      // The cancelled date of the outcome cases is this channel's too, and it is over for good.
+      expect(past).toContain('01a0e100-0000-7000-8000-0000000005a2');
+
+      const resolved = await new PublicLinksService(dataSource, clock, ORIGIN).resolve({
+        url: `${ORIGIN}/fr/a/compagnie-verticale`,
+      });
+      expect(resolved.data).toMatchObject({
+        kind: LinkKind.ARTIST,
+        id: artistId,
+        canonicalUrl: `${ORIGIN}/fr/a/compagnie-verticale`,
       });
     },
     CASE_MS,

@@ -20,6 +20,16 @@
       "file": "apps/catalog/src/search/search-query.schema.ts",
       "value": "replays",
       "reason": "A tab of `/v1/search`, which storefront.yaml declares `x-arthome-vocabulary-source: none`: a property of that endpoint's list, not of the domain. PLAN_OPENINGS' `replays` is what a plan opens and NAVIGATION_ENTRIES' is a menu entry; importing either to name a search tab would be the NavigationEntry.JOURNAL mistake again."
+    },
+    {
+      "file": "apps/catalog/src/public/resolve-query.schema.ts",
+      "value": "artist",
+      "reason": "A kind of page `resolvePublicLink` names, which storefront.yaml declares `x-arthome-vocabulary-source: none`. MEMBER_ROLES' `artist` is a role a person holds in a channel; a link to an artist's page is not a role."
+    },
+    {
+      "file": "apps/catalog/src/artists/artist.entity.ts",
+      "value": "artist",
+      "reason": "The table of the Artist aggregate, named for the aggregate as `show`, `date` and `venue` are. MEMBER_ROLES' `artist` is a role a person holds in a channel, not the channel's public face this table stores."
     }
   ]
 }

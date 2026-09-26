@@ -87,6 +87,33 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
   postponement, or cancelling a postponed date, is refused: the never-rewritten invariant as
   data-model.md §2.2 writes it (D-074 notes it may need its own arbitration).
 
+## 0d. The artist, the channel's public face (2026-09-27)
+
+`PATCH /v1/channels/:channelId/identity`, the studio's `updateChannelIdentity`, writes `Artist`,
+1:1 with the channel (data-model.md §2.4); `GET /v1/artists/:artistId` serves its public page.
+
+- **`expectedVersion: 0` creates the face**, on a channel that has none, and needs `publicName`
+  and `categoryId`; every later edit names the version it read (409 `state.conflict`). The answer
+  carries `version` at the envelope's root (`runIdempotentlyVersioned`).
+- **The slug** is the one sent, or the name's, or the name's with the artist's id when another
+  artist holds it. A slug sent and held elsewhere is 409 `artist.slug_taken`; the unique index
+  `artist_slug` is the backstop, mapped by `src/unique-violations.ts`. An old slug does not keep
+  resolving after a change: no slug history is kept.
+- **`ArtistUpdated`** carries the whole face on `arthome.catalog.artist`, keyed by `artist_id`.
+- **A card names its channel's artist**: `date_detail_public.artist_id` and `artist_name` take the
+  face when it exists (at publication, and on every edit for all the channel's dates), else the
+  show's `artist_id` and no name, so no `artist` on the card. The search index does the same
+  through `search-indexer`, and a search matches the artist's name.
+- **The page** is the artist and its channel's public dates, two reads and no join: upcoming
+  (scheduled to live, and postponed) soonest first, replays soonest to expire first, over (ended,
+  cancelled, interrupted) latest first, twenty each. The biography is served in the language its
+  URL uses.
+- **`resolve` reads `/{language}/a/{slug}`** and `kind=artist`, and answers the artist's summary and
+  canonical URL.
+- **Not served**: `avatarAssetId` (accepted only as null: no asset service), `country`,
+  `verified`, the media, `followers` and `isLiveNow`, the shop. The **artists tab of the search and
+  the directory** (`listArtists`) wait for an artist index.
+
 ## 1. What was built
 
 | File | What it is |
@@ -601,5 +628,5 @@ both exist.
   `PublicationStateChanged`, `DateScheduled`, `PublicationEngaged` and `ShowUpdated`, then on
   2026-09-27 `DateOutcomeDeclared` and `DateRescheduled` (§0c). Still owed:
   `DateReplayPolicySet`, `DateRightsChanged`, a reschedule without an outcome, the two
-  transitions `streaming` causes (`technical -> live`, `live -> ended`), and `Artist`, `Taxonomy`,
-  `SavedSearch`.
+  transitions `streaming` causes (`technical -> live`, `live -> ended`), `Taxonomy` and
+  `SavedSearch`. `Artist` since 2026-09-27 (§0d).

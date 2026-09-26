@@ -46,6 +46,8 @@ export interface DateDocument {
   readonly over_at: string;
 
   readonly artist_id: string | null;
+  /** `ArtistUpdated`'s public name, by the date's channel; null until the channel has a face. */
+  readonly artist_name: string | null;
   readonly category_id: string | null;
   readonly genre_ids: readonly string[];
   readonly tag_ids: readonly string[];
@@ -89,6 +91,7 @@ export const DATE_INDEX_PROPERTIES: Record<string, Types.Common_Mapping.Property
   over_at: { type: 'date' },
 
   artist_id: { type: 'keyword' },
+  artist_name: { type: 'text', analyzer: 'standard' },
   category_id: { type: 'keyword' },
   genre_ids: { type: 'keyword' },
   tag_ids: { type: 'keyword' },

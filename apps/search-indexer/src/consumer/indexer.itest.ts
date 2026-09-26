@@ -1,4 +1,5 @@
 import {
+  ArtistUpdatedSchema,
   DateOutcome as WireDateOutcome,
   DateOutcomeDeclaredSchema,
   DateRescheduledSchema,
@@ -27,6 +28,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DateOutcome, Locale, PublicationState } from '@arthome/core';
 
+import { applyArtistMessage } from './artist-consumer.js';
+import { ArtistProjection } from './artist-projection.entity.js';
 import { applyDateMessage } from './date-consumer.js';
 import { DateProjection } from './date-projection.entity.js';
 import { applyShowMessage } from './show-consumer.js';
@@ -40,6 +43,7 @@ import {
 import { Initial1758700400000 } from '../migrations/1758700400000-initial.js';
 import { ReadModel1790430000000 } from '../migrations/1790430000000-read-model.js';
 import { DateOutcome1790430100000 } from '../migrations/1790430100000-date-outcome.js';
+import { ArtistProjection1790430200000 } from '../migrations/1790430200000-artist-projection.js';
 
 /**
  * The indexer against a real OpenSearch and a real Postgres. What is proved here and nowhere
@@ -138,6 +142,17 @@ function dateScheduled(dateId: string, showId: string) {
   });
 }
 
+function artistUpdated(artistId: string, publicName: string, occurredAt: string) {
+  return message('arthome.catalog.artist', 'catalog.artist.updated.v1', ArtistUpdatedSchema, {
+    artistId,
+    channelId: 'channel-1',
+    categoryId: 'theatre',
+    publicName,
+    slug: 'compagnie-verticale',
+    occurredAt: at(occurredAt),
+  });
+}
+
 function postponed(dateId: string, to: string) {
   return message(
     'arthome.catalog.date',
@@ -194,8 +209,13 @@ beforeAll(async () => {
   stack = await startStack({ postgres: true, opensearch: true, startupTimeoutMs: STARTUP_MS });
   const database = await createDatabase(stack.postgres, 'search_itest');
   dataSource = await applyMigrations(database, {
-    entities: [ProcessedMessage, ShowProjection, DateProjection],
-    migrations: [Initial1758700400000, ReadModel1790430000000, DateOutcome1790430100000],
+    entities: [ProcessedMessage, ShowProjection, DateProjection, ArtistProjection],
+    migrations: [
+      Initial1758700400000,
+      ReadModel1790430000000,
+      DateOutcome1790430100000,
+      ArtistProjection1790430200000,
+    ],
   });
   openSearchUrl = stack.opensearch.url;
   const client = createOpenSearchClient(openSearchUrl);
@@ -435,6 +455,34 @@ describe('a postponed date in the index', () => {
 
       expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toMatchObject({
         starts_at: '2026-11-20T19:30:00.000Z',
+      });
+    },
+    CASE_MS,
+  );
+});
+
+describe('an artist in the index', () => {
+  it(
+    'names the channel’s artist on its date documents, and keeps the newest name',
+    async () => {
+      const showId = nextId('e1');
+      const dateId = nextId('e2');
+      const artistId = nextId('e3');
+      await applyShow(showPublished(showId));
+      await applyDate(dateScheduled(dateId, showId));
+
+      const applyArtist = (payload: EachMessagePayload) =>
+        applyArtistMessage(dataSource, indices, payload);
+      expect(
+        await applyArtist(artistUpdated(artistId, 'Verticale', '2026-09-27T10:00:00.000Z')),
+      ).toBe('applied');
+      expect(
+        await applyArtist(artistUpdated(artistId, 'Ancien nom', '2026-09-27T09:00:00.000Z')),
+      ).toBe('superseded');
+
+      expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toMatchObject({
+        artist_id: artistId,
+        artist_name: 'Verticale',
       });
     },
     CASE_MS,

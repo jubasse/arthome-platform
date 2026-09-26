@@ -121,7 +121,7 @@ export function searchBodyOf(
   const text: Query =
     query.q === undefined
       ? { match_all: {} }
-      : { multi_match: { query: query.q, fields: ['title_fr', 'title_en'] } };
+      : { multi_match: { query: query.q, fields: ['title_fr', 'title_en', 'artist_name'] } };
   return {
     from: offset,
     size: Math.min(query.limit + 1, MAX_RESULT_WINDOW - offset),

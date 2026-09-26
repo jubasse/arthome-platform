@@ -41,6 +41,7 @@ function row(
     outcome: null,
     rescheduled_to: null,
     artist_id: 'artist-1',
+    artist_name: null,
     category_id: 'theatre',
     genre_ids: [],
     tag_ids: [],

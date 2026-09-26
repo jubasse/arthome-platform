@@ -4,6 +4,7 @@ import { fromBinary } from '@bufbuild/protobuf';
 import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource, EntityManager } from 'typeorm';
 
+import { ArtistProjection } from './artist-projection.entity.js';
 import type { DateProjection } from './date-projection.entity.js';
 import { claimed, decodedOrRefused, incomingOf } from './incoming.js';
 import {
@@ -172,12 +173,17 @@ export async function applyShowMessage(
   });
 
   if (result.outcome === 'superseded') return result.outcome;
+  const channelId = result.show.published?.channel_id;
+  const artist =
+    channelId === undefined
+      ? null
+      : await dataSource.manager.findOneBy(ArtistProjection, { channel_id: channelId });
   const document = showDocumentOf(result.show, now);
   if (document !== null) await indices.shows.put(document, Number(result.show.version));
   for (const date of result.dates) {
     if (date.scheduled === null) continue;
     await indices.dates.put(
-      dateDocumentOf({ ...date, scheduled: date.scheduled }, result.show, now),
+      dateDocumentOf({ ...date, scheduled: date.scheduled }, result.show, artist, now),
       Number(date.doc_version),
     );
   }

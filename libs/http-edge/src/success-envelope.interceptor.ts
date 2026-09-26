@@ -10,6 +10,8 @@ import type { Clock } from '@arthome/core';
 
 export interface SuccessEnvelope<T> {
   readonly servedAt: string;
+  /** The aggregate's version after a conditional command, at the root (transport.md §5.5). */
+  readonly version?: number;
   readonly data: T;
 }
 

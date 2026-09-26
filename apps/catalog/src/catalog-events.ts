@@ -15,13 +15,14 @@ export const CATALOG_EVENT_TOPICS = {
   'catalog.publication.engaged.v1': 'catalog.date',
   'catalog.date.outcome_declared.v1': 'catalog.date',
   'catalog.date.rescheduled.v1': 'catalog.date',
+  'catalog.artist.updated.v1': 'catalog.artist',
 } as const;
 
 export type CatalogEventType = keyof typeof CATALOG_EVENT_TOPICS;
 
 export interface CatalogEvent {
   readonly type: CatalogEventType;
-  /** The partition key: `show_id` on the show's topic, `date_id` on the date's. */
+  /** The partition key: the aggregate's id, `show_id`, `date_id` or `artist_id`. */
   readonly key: string;
   readonly payload: Uint8Array;
   readonly traceparent: string | null;

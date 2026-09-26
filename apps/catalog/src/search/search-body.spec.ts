@@ -53,9 +53,13 @@ describe('searchBodyOf', () => {
     });
   });
 
-  it('matches the title in both languages, and every date without a query', () => {
+  it('matches the title in both languages and the artist, and every date without a query', () => {
     expect(searchBodyOf(query({ q: 'nuits' }), 0, NOW).query).toMatchObject({
-      bool: { must: [{ multi_match: { query: 'nuits', fields: ['title_fr', 'title_en'] } }] },
+      bool: {
+        must: [
+          { multi_match: { query: 'nuits', fields: ['title_fr', 'title_en', 'artist_name'] } },
+        ],
+      },
     });
     expect(searchBodyOf(query({}), 0, NOW).query).toMatchObject({
       bool: { must: [{ match_all: {} }] },

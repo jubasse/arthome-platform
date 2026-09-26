@@ -15,7 +15,7 @@
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/events": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/core": "file:../../vendor/arthome-core-600348585bac.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-274180c97db4.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "kafkajs": "2.2.4",
     "pg": "8.23.0",

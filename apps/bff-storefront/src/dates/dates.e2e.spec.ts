@@ -184,3 +184,37 @@ describe('GET /v1/resolve on the storefront BFF', () => {
     expect(response.json()).toMatchObject({ error: { params: { fields: ['url'] } } });
   });
 });
+
+describe('GET /v1/artists/:artistId on the storefront BFF', () => {
+  it('serves the artist page catalog composed, cacheable for five minutes', async () => {
+    const artistId = '01a0e700-0000-7000-8000-0000000000b1';
+    catalogAnswer = {
+      status: 200,
+      body: {
+        servedAt: '2026-09-27T10:00:00.000Z',
+        validUntil: '2026-11-04T19:00:00.000Z',
+        data: {
+          id: artistId,
+          channelId: 'channel-1',
+          name: 'Compagnie Verticale',
+          slug: 'compagnie-verticale',
+          categoryId: 'theatre',
+          joinedAt: '2026-09-27T09:00:00.000Z',
+          upcomingDates: [CARD],
+          pastDates: [],
+          replays: [],
+        },
+      },
+    };
+    const response = await app.inject({
+      method: 'GET',
+      url: `/v1/artists/${artistId}`,
+      headers: HEADERS,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('public, max-age=300');
+    expect(response.json()).toMatchObject({ data: { name: 'Compagnie Verticale' } });
+    expect(catalogUrl).toBe(`/v1/artists/${artistId}`);
+  });
+});

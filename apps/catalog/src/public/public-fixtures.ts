@@ -8,6 +8,8 @@ export function publicDate(overrides: Partial<PublicDate> = {}): PublicDate {
     date_id: '01a0e400-0000-7000-8000-000000000001',
     show_id: '01a0e400-0000-7000-8000-0000000000a1',
     channel_id: 'channel-1',
+    artist_id: null,
+    artist_name: null,
     venue_id: '01a0e400-0000-7000-8000-0000000000c1',
     venue_city: 'Paris',
     venue_country: 'FR',

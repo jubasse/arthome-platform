@@ -12,6 +12,7 @@ import type { DataSource, EntityManager } from 'typeorm';
 
 import { PublicationState, type DateOutcome } from '@arthome/core';
 
+import { ArtistProjection } from './artist-projection.entity.js';
 import { DateProjection, type ScheduledDateFields } from './date-projection.entity.js';
 import { claimed, decodedOrRefused, incomingOf } from './incoming.js';
 import { ShowProjection } from './show-projection.entity.js';
@@ -190,7 +191,9 @@ export async function applyDateMessage(
     const firstDelivery = await claimed(manager, incoming, payload.topic);
     const row = await lockedDate(manager, fact.dateId);
     const next = firstDelivery ? dateAfter(row, fact) : row;
-    if (next === null) return { outcome: 'superseded' as const, date: null, show: null };
+    if (next === null) {
+      return { outcome: 'superseded' as const, date: null, show: null, artist: null };
+    }
 
     const date =
       firstDelivery && next.scheduled !== null
@@ -201,13 +204,22 @@ export async function applyDateMessage(
       date.scheduled === null
         ? null
         : await manager.findOneBy(ShowProjection, { show_id: date.scheduled.show_id });
-    return { outcome: firstDelivery ? ('applied' as const) : ('duplicate' as const), date, show };
+    const artist =
+      date.scheduled === null
+        ? null
+        : await manager.findOneBy(ArtistProjection, { channel_id: date.scheduled.channel_id });
+    return {
+      outcome: firstDelivery ? ('applied' as const) : ('duplicate' as const),
+      date,
+      show,
+      artist,
+    };
   });
 
   const { date } = result;
   if (date !== null && date.scheduled !== null) {
     await indices.dates.put(
-      dateDocumentOf({ ...date, scheduled: date.scheduled }, result.show, now),
+      dateDocumentOf({ ...date, scheduled: date.scheduled }, result.show, result.artist, now),
       Number(date.doc_version),
     );
   }

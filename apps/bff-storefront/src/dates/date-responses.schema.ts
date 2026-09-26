@@ -1,10 +1,19 @@
 import { z } from 'zod';
 
-import { ArtistSummarySchema, DateCardSchema, DateDetailSchema } from '@arthome/contracts/catalog';
+import {
+  ArtistDetailSchema,
+  ArtistSummarySchema,
+  DateCardSchema,
+  DateDetailSchema,
+} from '@arthome/contracts/catalog';
 import { StorefrontEnvelopeMetaSchema } from '@arthome/contracts/envelope';
 
 export const DateDetailResponseSchema = StorefrontEnvelopeMetaSchema.extend({
   data: DateDetailSchema,
+});
+
+export const ArtistDetailResponseSchema = StorefrontEnvelopeMetaSchema.extend({
+  data: ArtistDetailSchema,
 });
 
 /**

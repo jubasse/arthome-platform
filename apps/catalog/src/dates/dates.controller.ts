@@ -1,6 +1,5 @@
 import { parseTraceparent, type MemorisedResponse } from '@arthome-platform/http-edge';
 import { Body, Controller, Get, Header, HttpCode, Headers, Param, Post } from '@nestjs/common';
-import { z } from 'zod';
 
 import { DateIdSchema } from '@arthome/core/schema';
 
@@ -13,10 +12,8 @@ import {
   TransitionPublicationSchema,
   type TransitionPublicationBody,
 } from './transition-publication.schema.js';
+import { ChannelIdParam } from '../channel-id.schema.js';
 import { fingerprintOf, idempotencyKeyOf } from '../idempotency/idempotency.js';
-
-/** Text like the show's `channel_id`: the fixtures in use are not UUIDs. */
-const ChannelIdParam = z.string().min(1);
 
 @Controller()
 export class DatesController {

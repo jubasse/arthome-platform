@@ -70,6 +70,10 @@ export class DateDetailPublic {
   @Column('text', { nullable: true })
   outcome!: DateOutcome | null;
 
+  /** The channel's public face, when it has one: a card names its artist. */
+  @Column('text', { nullable: true })
+  artist_name!: string | null;
+
   @Column('timestamptz', { nullable: true })
   rescheduled_to!: Date | null;
 

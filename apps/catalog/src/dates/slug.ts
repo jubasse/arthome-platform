@@ -40,25 +40,11 @@ export function slugCandidates(
   return [base, `${base}-${pad(wall.hour)}${pad(wall.minute)}`, `${base}-${dateId.slice(-8)}`];
 }
 
-const DATE_SEGMENT = 'd';
+export const DATE_SEGMENT = 'd';
 
 /** The URL a date is shared and indexed under, in its title's own language (§2.7). */
 export function canonicalUrl(origin: string, language: Locale, slug: string): string {
   return `${origin}/${language}/${DATE_SEGMENT}/${slug}`;
-}
-
-/** The inverse of `canonicalUrl`: null for a URL this origin did not issue for a date. */
-export function dateLinkOf(
-  origin: string,
-  url: string,
-): { readonly language: Locale; readonly slug: string } | null {
-  const parsed = URL.parse(url);
-  if (parsed?.origin !== origin) return null;
-  const [, language, kind, slug, ...rest] = parsed.pathname.split('/');
-  if (kind !== DATE_SEGMENT || slug === undefined || slug.length === 0 || rest.length > 0)
-    return null;
-  if (language === Locale.FR || language === Locale.EN) return { language, slug };
-  return null;
 }
 
 /** The language a date is shared and indexed under: its title's own, French when it has one. */

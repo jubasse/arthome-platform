@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { deadLetterTopic, retryTopic, runConsumers } from '@arthome-platform/messaging';
 import { Kafka } from 'kafkajs';
 
+import { applyArtistMessage } from './consumer/artist-consumer.js';
 import { applyDateMessage } from './consumer/date-consumer.js';
 import { applyShowMessage } from './consumer/show-consumer.js';
 import { dataSource } from './data-source.js';
@@ -16,9 +17,10 @@ import { createOpenSearchClient, ensureIndices, indicesOf } from './index/opense
  */
 const SEARCH = 'search';
 
-/** Declared in `infra/kafka/topics.json`: shows keyed by show id, dates by date id. */
+/** Declared in `infra/kafka/topics.json`: each keyed by its aggregate's id. */
 const SHOW_TOPIC = 'arthome.catalog.show';
 const DATE_TOPIC = 'arthome.catalog.date';
+const ARTIST_TOPIC = 'arthome.catalog.artist';
 
 async function main(): Promise<void> {
   await dataSource.initialize();
@@ -46,6 +48,10 @@ async function main(): Promise<void> {
     sources: [
       { topic: SHOW_TOPIC, handler: (payload) => applyShowMessage(dataSource, indices, payload) },
       { topic: DATE_TOPIC, handler: (payload) => applyDateMessage(dataSource, indices, payload) },
+      {
+        topic: ARTIST_TOPIC,
+        handler: (payload) => applyArtistMessage(dataSource, indices, payload),
+      },
     ],
     onDisposition: (topic, disposition) => console.log(`${topic} ${disposition}`),
   });
@@ -69,7 +75,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown());
 
   console.log(
-    `search-indexer: consuming ${SHOW_TOPIC} and ${DATE_TOPIC}, retrying on ${retryTopic(SEARCH)}, dead-lettering to ${deadLetterTopic(SEARCH)}`,
+    `search-indexer: consuming ${SHOW_TOPIC}, ${DATE_TOPIC} and ${ARTIST_TOPIC}, retrying on ${retryTopic(SEARCH)}, dead-lettering to ${deadLetterTopic(SEARCH)}`,
   );
 }
 

@@ -2,6 +2,7 @@ import type { DateDocument, ShowDocument } from '@arthome-platform/search-index'
 
 import { DomainConstant, ReplayPolicy, endsAt, replayEndsAt, type DateTiming } from '@arthome/core';
 
+import type { ArtistProjection } from '../consumer/artist-projection.entity.js';
 import type { DateProjection, ScheduledDateFields } from '../consumer/date-projection.entity.js';
 import type { ShowProjection } from '../consumer/show-projection.entity.js';
 
@@ -48,6 +49,7 @@ function timingOf(scheduled: ScheduledDateFields, startsAt: string): DateTiming 
 export function dateDocumentOf(
   date: DateProjection & { readonly scheduled: ScheduledDateFields },
   show: ShowProjection | null,
+  artist: Pick<ArtistProjection, 'artist_id' | 'public_name'> | null,
   indexedAt: Date,
 ): DateDocument {
   const { scheduled } = date;
@@ -79,7 +81,9 @@ export function dateDocumentOf(
     ends_at: endedAt,
     over_at: replayEndsAt(timing) ?? endedAt,
 
-    artist_id: show?.published?.artist_id ?? null,
+    // The channel's face when the indexer holds it, else the artist the show named.
+    artist_id: artist?.artist_id ?? show?.published?.artist_id ?? null,
+    artist_name: artist?.public_name ?? null,
     category_id: show?.published?.category_id ?? null,
     genre_ids: updatable?.genre_ids ?? [],
     tag_ids: updatable?.tag_ids ?? [],

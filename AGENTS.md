@@ -249,6 +249,7 @@ POST /shows   (with title, synopsis, poster)  → showId
 POST /channels/:channelId/dates               → 201, the date sheet, its publication in draft
 POST /dates/:dateId/publication/transitions   { to, expectedVersion, acknowledgedPromiseCode }
 POST /v1/dates/:dateId/outcome                { outcome, message, rescheduledTo, expectedVersion }
+PATCH /v1/channels/:channelId/identity        { expectedVersion, publicName, slug, biography, categoryId }
 ```
 
 Publishing answers `publication.checklist_incomplete` until ticketing, streaming and chat have
@@ -284,6 +285,16 @@ An outcome was proven on the same stack on 2026-09-27, the indexer, catalog and 
 That last row is a defect the run found: catalog crashed on the first abort, because its listener
 returned the OpenSearch request, a thenable, and Node's `EventTarget` reports a listener's rejected
 thenable as an uncaught exception. Fixed, and held by `search.service.spec.ts`.
+
+A channel's public face was proven the same way on 2026-09-27:
+
+| Check | Result |
+| --- | --- |
+| creating it from version 0 | version 1 at the envelope's root, the slug from the name; replayed under its key |
+| the channel's date pages, the index, a search for the artist's name | the artist named on the card at once; `artist_name` in the document once the indexer read `ArtistUpdated`; `q=port` finds the show (the first call after the start answered no groups, its body not captured) |
+| the artist page through the BFF | 12 ms; the biography, the postponed date among the upcoming, the cancelled one among the past |
+| `/fr/a/compagnie-du-port` resolved | the artist, its canonical URL |
+| its slug from another channel; a stale edit | 409 `artist.slug_taken`; 409 `state.conflict` with the version |
 
 ### Search, the date page and link resolution, from the storefront BFF
 

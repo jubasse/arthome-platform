@@ -60,7 +60,8 @@ export class CatalogClient {
     call: CatalogCall,
     schema: T,
   ): Promise<z.output<T>> {
-    const url = `${this.baseUrl}${path}?${params.toString()}`;
+    const query = params.toString();
+    const url = `${this.baseUrl}${path}${query === '' ? '' : `?${query}`}`;
     // Giving up locally and remotely are the same instant (transport.md §5.3).
     const timeout = AbortSignal.timeout(Math.max(0, call.deadline.getTime() - Date.now()));
     let status: number;

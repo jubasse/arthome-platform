@@ -1,8 +1,9 @@
 # `bff-storefront` — handover
 
 The storefront's BFF (`context-map.md`: one BFF per product, owned by its surfaces). It serves
-`openapi/storefront.yaml` from the services behind it and holds no domain rule. Three routes
-today, all from catalog: `GET /v1/search`, `GET /v1/dates/:dateId` and `GET /v1/resolve`.
+`openapi/storefront.yaml` from the services behind it and holds no domain rule. Four routes
+today, all from catalog: `GET /v1/search`, `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId`
+and `GET /v1/resolve`.
 Written 2026-09-26, the date routes 2026-09-27.
 
 ## 1. What was built
@@ -13,7 +14,7 @@ Written 2026-09-26, the date routes 2026-09-27.
 | `src/search/search-query.schema.ts` | the contract's query parameters, query-string values coerced |
 | `src/search/search-response.schema.ts` | the 200 body, composed from `@arthome/contracts` |
 | `src/catalog/catalog.client.ts` | the one adapter to catalog: deadline, trace, error mapping |
-| `src/dates/dates.controller.ts` | `GET /v1/dates/:dateId` and `GET /v1/resolve`, relayed from catalog |
+| `src/dates/dates.controller.ts` | `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`, relayed from catalog |
 | `src/conditional-get.ts` | the `ETag` and the `onSend` hook that answers a matching `If-None-Match` with 304 |
 | `src/storefront-surface.ts` | the `X-Arthome-Surface` check and the contract's `Vary`, for every route |
 | `src/traceparent.middleware.ts` | a `traceparent` on every request that arrives without a valid one |
