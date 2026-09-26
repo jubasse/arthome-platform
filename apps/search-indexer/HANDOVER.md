@@ -38,6 +38,11 @@ input"; both are marked where they stand.
   additive: `ensureIndices` puts them on the live `-v1`. A document written before them lacks them,
   and catalog's search filters on `over_at`, so such a date is not searchable until recomposed;
   replaying `arthome.catalog.date` does it, since a duplicate rewrites the document.
+- **`DateOutcomeDeclared` and `DateRescheduled` are read too** (2026-09-27): the outcome, versioned
+  by its `declared_at`, and the start a postponement moved the date to, versioned by its
+  `occurred_at`, each guarded like the other facts. The document carries `outcome` and
+  `rescheduled_to`, and its `starts_at`, `ends_at` and `over_at` follow the move. A move that
+  overtakes `DateScheduled` is kept and applied when the date is scheduled.
 
 ## 1. What was built
 

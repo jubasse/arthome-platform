@@ -22,6 +22,8 @@ export function publicDate(overrides: Partial<PublicDate> = {}): PublicDate {
     slug_fr: 'nuit-blanche-2026-11-04',
     slug_en: 'white-night-2026-11-04',
     publication_state: PublicationState.SCHEDULED,
+    outcome: null,
+    rescheduled_to: null,
     category_id: 'theatre',
     genre_ids: ['contemporary'],
     tag_ids: [],

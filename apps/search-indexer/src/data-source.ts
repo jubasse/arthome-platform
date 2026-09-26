@@ -6,6 +6,7 @@ import { ShowProjection } from './consumer/show-projection.entity.js';
 import { env } from './env.js';
 import { Initial1758700400000 } from './migrations/1758700400000-initial.js';
 import { ReadModel1790430000000 } from './migrations/1790430000000-read-model.js';
+import { DateOutcome1790430100000 } from './migrations/1790430100000-date-outcome.js';
 
 /** Used by the application AND by the migration CLI. */
 export const dataSource: DataSource = new DataSource({
@@ -13,7 +14,7 @@ export const dataSource: DataSource = new DataSource({
   // 55432, not 5432 — see compose.yaml, and AGENTS.md for why.
   url: env.DATABASE_URL,
   entities: [ProcessedMessage, ShowProjection, DateProjection],
-  migrations: [Initial1758700400000, ReadModel1790430000000],
+  migrations: [Initial1758700400000, ReadModel1790430000000, DateOutcome1790430100000],
   applicationName: 'search-indexer',
 
   // `poolSize` × replicas, plus one replication connection per connector, must stay

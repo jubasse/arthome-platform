@@ -2,6 +2,7 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
 import type {
   Bilingual,
+  DateOutcome,
   LanguageDependency,
   MediaSet,
   PublicationState,
@@ -65,6 +66,12 @@ export class DateDetailPublic {
 
   @Column('text')
   publication_state!: PublicationState;
+
+  @Column('text', { nullable: true })
+  outcome!: DateOutcome | null;
+
+  @Column('timestamptz', { nullable: true })
+  rescheduled_to!: Date | null;
 
   @Column('text')
   artist_id!: string;

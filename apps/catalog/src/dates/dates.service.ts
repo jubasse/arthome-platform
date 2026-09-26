@@ -17,7 +17,6 @@ import {
   PublicationPromise,
   PublicationState,
   assertCommandedTransition,
-  isDomainError,
   publicationReadiness,
   worldwideRights,
   type Clock,
@@ -25,6 +24,7 @@ import {
 } from '@arthome/core';
 
 import { announcePublication } from './announce-publication.js';
+import { asConflict, stateConflict } from './conflict.js';
 import {
   dateSheet,
   publicationView,
@@ -33,6 +33,11 @@ import {
   type DateSheet,
   type PublicationView,
 } from './date-sheet.js';
+import {
+  declareOutcomeIn,
+  type DeclareOutcomeCommand,
+  type DeclaredOutcome,
+} from './declare-outcome.js';
 import { PerformanceDate } from './performance-date.entity.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { Publication } from './publication.entity.js';
@@ -87,6 +92,28 @@ export class DatesService {
   ): Promise<MemorisedResponse<PublicationView>> {
     return this.dataSource.transaction((manager) =>
       runIdempotently(manager, idempotency, this.clock, () => this.transitionIn(manager, command)),
+    );
+  }
+
+  /**
+   * Conditioned on the publication's version, the one the studio's sheet serves, and bumping it:
+   *   a screen that did not see the outcome is stale like any other.
+   */
+  public declareOutcome(
+    command: DeclareOutcomeCommand,
+    idempotency: IdempotentRequest,
+  ): Promise<MemorisedResponse<DeclaredOutcome>> {
+    return this.dataSource.transaction((manager) =>
+      runIdempotently(manager, idempotency, this.clock, async () => {
+        const records = await dateRecordsOf(manager, command.dateId);
+        const [, updated] = await manager.query<[unknown, number]>(
+          `UPDATE publication SET version = version + 1, updated_at = now()
+            WHERE date_id = $1 AND version = $2`,
+          [command.dateId, command.expectedVersion],
+        );
+        if (updated !== 1) throw stateConflict(records.publication);
+        return declareOutcomeIn(manager, records, command, this.clock.now());
+      }),
     );
   }
 
@@ -287,26 +314,4 @@ export async function dateRecordsOf(manager: EntityManager, dateId: string): Pro
     venue: await manager.findOneByOrFail(Venue, { id: date.venue_id }),
     projectedFacts: await manager.findBy(PublicationChecklistFact, { date_id: dateId }),
   };
-}
-
-/** The publication path answers its refusals 409, as the contract's `moveDatePublicationState`. */
-function asConflict<T>(decide: () => T): T {
-  try {
-    return decide();
-  } catch (error) {
-    if (!isDomainError(error)) throw error;
-    throw new RefusalException(HttpStatus.CONFLICT, {
-      code: error.code,
-      params: error.params,
-      nature: error.nature,
-    });
-  }
-}
-
-function stateConflict(current: Publication): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, {
-    code: DomainErrorCode.STATE_CONFLICT,
-    params: { state: current.state, version: current.version },
-    nature: FailureNature.REFUSED,
-  });
 }

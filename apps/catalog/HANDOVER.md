@@ -65,6 +65,28 @@ indexer. The shapes served are `@arthome/contracts`': `ShowGroup`, `Facet`, the 
   (`z.ZodObject<z.ZodRawShape>`), so `seriesDates` reads as `{}` in TypeScript; the wire is right,
   the static type is not.
 
+## 0c. A date's outcome, `POST /v1/dates/:dateId/outcome` (2026-09-27)
+
+The studio's `decideDateOutcome`: `postponed`, `cancelled` or `interrupted`, with the run desk's
+message in the language it was written in, an `Idempotency-Key`, and `expectedVersion`.
+
+- **`expectedVersion` is the publication's**, the only version the studio's sheet serves, and
+  declaring an outcome bumps it: a screen that did not see the outcome is stale like any other
+  (409 `state.conflict` with the current state and version).
+- **When each outcome fits is core's** (`assertOutcomeDeclarable`): once, on a public date,
+  `postponed` before the show and to a later instant, `interrupted` once it started, `cancelled`
+  until it ends. A refusal is 409 `state.conflict` naming what decided it (`outcome`, `state` or
+  `startsAt`). `rescheduledTo` is required for `postponed` and refused otherwise (400).
+- **A postponement moves the date** (arthome-core D-074): `starts_at` becomes `rescheduled_to` in
+  the same transaction, and `DateRescheduled` follows `DateOutcomeDeclared` on the date's key.
+  The slugs and canonical URL do not move: they are identifiers, set once. `displayState` shows
+  `postponed` until the room opens at the new time, then the time axis again.
+- `date_detail_public` takes the outcome and the new start in the same transaction; the page and
+  the search cards show `outcome` and `rescheduledTo`.
+- **Not served**: `moneyEffectCode` and `affectedSeats`, which are ticketing's to compute. A second
+  postponement, or cancelling a postponed date, is refused: the never-rewritten invariant as
+  data-model.md §2.2 writes it (D-074 notes it may need its own arbitration).
+
 ## 1. What was built
 
 | File | What it is |
@@ -576,7 +598,8 @@ both exist.
   retrying and dead-lettering on `arthome.catalog.retry` / `.dlq`.
 - **Dates and publication, partly.** Built on 2026-09-26: `Date`, `Publication` (the commanded
   transitions, the version condition, the checklist gate), `Venue`, and the events `DateDrafted`,
-  `PublicationStateChanged`, `DateScheduled`, `PublicationEngaged` and `ShowUpdated`. Still owed:
-  `DateRescheduled`, `DateOutcomeDeclared`, `DateReplayPolicySet`, `DateRightsChanged`, the two
+  `PublicationStateChanged`, `DateScheduled`, `PublicationEngaged` and `ShowUpdated`, then on
+  2026-09-27 `DateOutcomeDeclared` and `DateRescheduled` (§0c). Still owed:
+  `DateReplayPolicySet`, `DateRightsChanged`, a reschedule without an outcome, the two
   transitions `streaming` causes (`technical -> live`, `live -> ended`), and `Artist`, `Taxonomy`,
   `SavedSearch`.

@@ -35,9 +35,9 @@ export function showDocumentOf(show: ShowProjection, indexedAt: Date): ShowDocum
  * An unknown replay policy reads as none: the date leaves search when its live show ends
  *   rather than lingering for a replay nobody promised.
  */
-function timingOf(scheduled: ScheduledDateFields): DateTiming {
+function timingOf(scheduled: ScheduledDateFields, startsAt: string): DateTiming {
   return {
-    startsAt: scheduled.starts_at,
+    startsAt,
     runtimeMin: scheduled.runtime_min,
     roomOpensBeforeMin: DomainConstant.ROOM_OPENS_MINUTES_BEFORE,
     replayPolicy: scheduled.replay_policy ?? ReplayPolicy.NONE,
@@ -52,14 +52,16 @@ export function dateDocumentOf(
 ): DateDocument {
   const { scheduled } = date;
   const updatable = show?.updatable ?? null;
-  const timing = timingOf(scheduled);
+  // A postponement moved the date: DateRescheduled's start replaces DateScheduled's.
+  const startsAt = date.moved_starts_at?.toISOString() ?? scheduled.starts_at;
+  const timing = timingOf(scheduled, startsAt);
   const endedAt = endsAt(timing);
   return {
     date_id: date.date_id,
     show_id: scheduled.show_id,
     channel_id: scheduled.channel_id,
     venue_id: scheduled.venue_id,
-    starts_at: scheduled.starts_at,
+    starts_at: startsAt,
     venue_timezone: scheduled.venue_timezone,
     venue_city: scheduled.venue_city,
     venue_country: scheduled.venue_country,
@@ -72,6 +74,8 @@ export function dateDocumentOf(
     slug_fr: scheduled.slug_fr,
     slug_en: scheduled.slug_en,
     publication_state: date.publication_state,
+    outcome: date.outcome,
+    rescheduled_to: date.outcome_rescheduled_to?.toISOString() ?? null,
     ends_at: endedAt,
     over_at: replayEndsAt(timing) ?? endedAt,
 

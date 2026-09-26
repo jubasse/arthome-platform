@@ -1,6 +1,7 @@
 import type { Types } from '@opensearch-project/opensearch';
 
 import type {
+  DateOutcome,
   LanguageDependency,
   PublicationState,
   ReplayPolicy,
@@ -33,6 +34,9 @@ export interface DateDocument {
   readonly slug_fr: string;
   readonly slug_en: string;
   readonly publication_state: PublicationState | null;
+  /** `DateOutcomeDeclared`'s, null until one is declared; a postponement also moves `starts_at`. */
+  readonly outcome: DateOutcome | null;
+  readonly rescheduled_to: string | null;
   /**
    * Computed by `@arthome/core` when the document is composed, so a query compares instants
    * instead of re-deriving them: the end of the live show, and the end of its replay window, or
@@ -79,6 +83,8 @@ export const DATE_INDEX_PROPERTIES: Record<string, Types.Common_Mapping.Property
   slug_fr: { type: 'keyword', index: false, doc_values: false },
   slug_en: { type: 'keyword', index: false, doc_values: false },
   publication_state: { type: 'keyword' },
+  outcome: { type: 'keyword' },
+  rescheduled_to: { type: 'date' },
   ends_at: { type: 'date' },
   over_at: { type: 'date' },
 

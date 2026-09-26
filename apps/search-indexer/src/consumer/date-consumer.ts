@@ -1,21 +1,40 @@
-import { DateScheduledSchema, PublicationStateChangedSchema } from '@arthome-platform/events';
+import {
+  DateOutcomeDeclaredSchema,
+  DateRescheduledSchema,
+  DateScheduledSchema,
+  PublicationStateChangedSchema,
+} from '@arthome-platform/events';
 import type { Outcome } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource, EntityManager } from 'typeorm';
 
-import { PublicationState } from '@arthome/core';
+import { PublicationState, type DateOutcome } from '@arthome/core';
 
 import { DateProjection, type ScheduledDateFields } from './date-projection.entity.js';
 import { claimed, decodedOrRefused, incomingOf } from './incoming.js';
 import { ShowProjection } from './show-projection.entity.js';
-import { publicationStateOf, replayPolicyOf, rightsScopeOf, stated } from './wire.js';
+import {
+  dateOutcomeOf,
+  publicationStateOf,
+  replayPolicyOf,
+  rightsScopeOf,
+  stated,
+} from './wire.js';
 import { dateDocumentOf } from '../index/compose.js';
 import type { Indices } from '../index/opensearch-client.js';
 
 const DATE_SCHEDULED = 'catalog.date.scheduled.v1';
 const STATE_CHANGED = 'catalog.publication.state_changed.v1';
+const OUTCOME_DECLARED = 'catalog.date.outcome_declared.v1';
+const RESCHEDULED = 'catalog.date.rescheduled.v1';
+const DATE_TYPES: readonly string[] = [
+  DATE_SCHEDULED,
+  STATE_CHANGED,
+  OUTCOME_DECLARED,
+  RESCHEDULED,
+];
 
 export type DateFact =
   | {
@@ -31,6 +50,21 @@ export type DateFact =
       /** The publication's own version after the transition. */
       readonly version: number;
       readonly state: PublicationState | null;
+    }
+  | {
+      readonly type: typeof OUTCOME_DECLARED;
+      readonly dateId: string;
+      /** `declared_at` in epoch milliseconds. */
+      readonly version: number;
+      readonly outcome: DateOutcome | null;
+      readonly rescheduledTo: Date | null;
+    }
+  | {
+      readonly type: typeof RESCHEDULED;
+      readonly dateId: string;
+      /** `occurred_at` in epoch milliseconds. */
+      readonly version: number;
+      readonly startsAt: Date;
     };
 
 export function dateFactOf(type: string, value: Uint8Array): DateFact {
@@ -60,6 +94,27 @@ export function dateFactOf(type: string, value: Uint8Array): DateFact {
       },
     };
   }
+  if (type === OUTCOME_DECLARED) {
+    const event = fromBinary(DateOutcomeDeclaredSchema, value);
+    return {
+      type: OUTCOME_DECLARED,
+      dateId: event.dateId,
+      version: stated(event.declaredAt, `the outcome of date ${event.dateId}`).getTime(),
+      outcome: dateOutcomeOf(event.outcome),
+      rescheduledTo: event.rescheduledTo === undefined ? null : timestampDate(event.rescheduledTo),
+    };
+  }
+  if (type === RESCHEDULED) {
+    const event = fromBinary(DateRescheduledSchema, value);
+    if (event.newStartsAt === undefined)
+      throw new Error(`date ${event.dateId} moved to no instant`);
+    return {
+      type: RESCHEDULED,
+      dateId: event.dateId,
+      version: stated(event.occurredAt, `the move of date ${event.dateId}`).getTime(),
+      startsAt: timestampDate(event.newStartsAt),
+    };
+  }
   const event = fromBinary(PublicationStateChangedSchema, value);
   return {
     type: STATE_CHANGED,
@@ -70,9 +125,10 @@ export function dateFactOf(type: string, value: Uint8Array): DateFact {
 }
 
 /**
- * The date's facts and its publication's state move independently, each guarded by its own
- * version. DateScheduled sets the state only when none is known: a later transition that
- * overtook it on a retry topic must not be undone. Null when nothing moves.
+ * The date's facts, its publication's state, its outcome and the start it was moved to move
+ * independently, each guarded by its own version. DateScheduled sets the state only when none is
+ * known: a later transition that overtook it on a retry topic must not be undone. Null when
+ * nothing moves.
  */
 export function dateAfter(row: DateProjection, fact: DateFact): DateProjection | null {
   const takes = (version: string | null): boolean =>
@@ -87,8 +143,22 @@ export function dateAfter(row: DateProjection, fact: DateFact): DateProjection |
       publication_state: row.publication_state ?? PublicationState.SCHEDULED,
     };
   }
-  if (!takes(row.publication_version)) return null;
-  return { ...row, publication_state: fact.state, publication_version: String(fact.version) };
+  switch (fact.type) {
+    case STATE_CHANGED:
+      if (!takes(row.publication_version)) return null;
+      return { ...row, publication_state: fact.state, publication_version: String(fact.version) };
+    case OUTCOME_DECLARED:
+      if (!takes(row.outcome_version)) return null;
+      return {
+        ...row,
+        outcome: fact.outcome,
+        outcome_rescheduled_to: fact.rescheduledTo,
+        outcome_version: String(fact.version),
+      };
+    case RESCHEDULED:
+      if (!takes(row.moved_version)) return null;
+      return { ...row, moved_starts_at: fact.startsAt, moved_version: String(fact.version) };
+  }
 }
 
 async function lockedDate(manager: EntityManager, dateId: string): Promise<DateProjection> {
@@ -113,7 +183,7 @@ export async function applyDateMessage(
 ): Promise<Outcome> {
   const incoming = incomingOf(payload);
   const { type } = incoming;
-  if (type !== DATE_SCHEDULED && type !== STATE_CHANGED) return 'ignored';
+  if (type === null || !DATE_TYPES.includes(type)) return 'ignored';
   const fact = decodedOrRefused(payload, incoming, (value) => dateFactOf(type, value));
 
   const result = await dataSource.transaction(async (manager) => {

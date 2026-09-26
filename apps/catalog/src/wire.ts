@@ -2,6 +2,7 @@
 // vocabulary share each name, and they are a number and a string.
 import {
   BlackoutReason as WireBlackoutReason,
+  DateOutcome as WireDateOutcome,
   LanguageDependency as WireLanguageDependency,
   PublicationState as WirePublicationState,
   ReplayPolicy as WireReplayPolicy,
@@ -10,6 +11,7 @@ import {
 
 import {
   BlackoutReason,
+  DateOutcome,
   LanguageDependency,
   Locale,
   PublicationState,
@@ -43,6 +45,12 @@ export const WIRE_RIGHTS_SCOPE = {
   [RightsScope.WORLDWIDE]: WireRightsScope.WORLDWIDE,
   [RightsScope.RESTRICTED]: WireRightsScope.RESTRICTED,
 } satisfies Record<RightsScope, WireRightsScope>;
+
+export const WIRE_DATE_OUTCOME = {
+  [DateOutcome.POSTPONED]: WireDateOutcome.POSTPONED,
+  [DateOutcome.CANCELLED]: WireDateOutcome.CANCELLED,
+  [DateOutcome.INTERRUPTED]: WireDateOutcome.INTERRUPTED,
+} satisfies Record<DateOutcome, WireDateOutcome>;
 
 export const WIRE_BLACKOUT_REASON = {
   [BlackoutReason.CO_PRODUCTION]: WireBlackoutReason.CO_PRODUCTION,

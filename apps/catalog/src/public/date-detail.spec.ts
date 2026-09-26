@@ -38,6 +38,8 @@ function row(
     slug_fr: `nuit-blanche-${dateId}`,
     slug_en: `white-night-${dateId}`,
     publication_state: PublicationState.SCHEDULED,
+    outcome: null,
+    rescheduled_to: null,
     artist_id: 'artist-1',
     category_id: 'theatre',
     genre_ids: [],

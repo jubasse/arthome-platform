@@ -1,4 +1,7 @@
 import {
+  DateOutcome as WireDateOutcome,
+  DateOutcomeDeclaredSchema,
+  DateRescheduledSchema,
   DateScheduledSchema,
   LanguageDependency as WireLanguageDependency,
   PublicationState as WirePublicationState,
@@ -22,7 +25,7 @@ import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { Locale, PublicationState } from '@arthome/core';
+import { DateOutcome, Locale, PublicationState } from '@arthome/core';
 
 import { applyDateMessage } from './date-consumer.js';
 import { DateProjection } from './date-projection.entity.js';
@@ -36,6 +39,7 @@ import {
 } from '../index/opensearch-client.js';
 import { Initial1758700400000 } from '../migrations/1758700400000-initial.js';
 import { ReadModel1790430000000 } from '../migrations/1790430000000-read-model.js';
+import { DateOutcome1790430100000 } from '../migrations/1790430100000-date-outcome.js';
 
 /**
  * The indexer against a real OpenSearch and a real Postgres. What is proved here and nowhere
@@ -134,6 +138,29 @@ function dateScheduled(dateId: string, showId: string) {
   });
 }
 
+function postponed(dateId: string, to: string) {
+  return message(
+    'arthome.catalog.date',
+    'catalog.date.outcome_declared.v1',
+    DateOutcomeDeclaredSchema,
+    {
+      dateId,
+      outcome: WireDateOutcome.POSTPONED,
+      rescheduledTo: at(to),
+      declaredAt: at('2026-09-27T09:00:00.000Z'),
+    },
+  );
+}
+
+function moved(dateId: string, to: string) {
+  return message('arthome.catalog.date', 'catalog.date.rescheduled.v1', DateRescheduledSchema, {
+    dateId,
+    previousStartsAt: at('2026-11-04T19:30:00.000Z'),
+    newStartsAt: at(to),
+    occurredAt: at('2026-09-27T09:00:00.000Z'),
+  });
+}
+
 function stateChanged(dateId: string, to: WirePublicationState, version: number) {
   return message(
     'arthome.catalog.date',
@@ -168,7 +195,7 @@ beforeAll(async () => {
   const database = await createDatabase(stack.postgres, 'search_itest');
   dataSource = await applyMigrations(database, {
     entities: [ProcessedMessage, ShowProjection, DateProjection],
-    migrations: [Initial1758700400000, ReadModel1790430000000],
+    migrations: [Initial1758700400000, ReadModel1790430000000, DateOutcome1790430100000],
   });
   openSearchUrl = stack.opensearch.url;
   const client = createOpenSearchClient(openSearchUrl);
@@ -368,6 +395,47 @@ describe('the date index', () => {
         'applied',
       );
       expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toBeNull();
+    },
+    CASE_MS,
+  );
+});
+
+describe('a postponed date in the index', () => {
+  it(
+    'moves the document to its new time and carries the outcome',
+    async () => {
+      const showId = nextId('c1');
+      const dateId = nextId('c2');
+      await applyShow(showPublished(showId));
+      await applyDate(dateScheduled(dateId, showId));
+
+      expect(await applyDate(postponed(dateId, '2026-11-12T19:30:00.000Z'))).toBe('applied');
+      expect(await applyDate(moved(dateId, '2026-11-12T19:30:00.000Z'))).toBe('applied');
+
+      expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toMatchObject({
+        outcome: DateOutcome.POSTPONED,
+        rescheduled_to: '2026-11-12T19:30:00.000Z',
+        starts_at: '2026-11-12T19:30:00.000Z',
+        ends_at: '2026-11-12T21:05:00.000Z',
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'keeps a move that overtook DateScheduled, and indexes the date at its new time',
+    async () => {
+      const showId = nextId('c3');
+      const dateId = nextId('c4');
+      await applyShow(showPublished(showId));
+
+      expect(await applyDate(moved(dateId, '2026-11-20T19:30:00.000Z'))).toBe('applied');
+      expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toBeNull();
+      await applyDate(dateScheduled(dateId, showId));
+
+      expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toMatchObject({
+        starts_at: '2026-11-20T19:30:00.000Z',
+      });
     },
     CASE_MS,
   );

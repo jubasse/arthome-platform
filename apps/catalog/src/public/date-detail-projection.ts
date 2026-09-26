@@ -1,6 +1,6 @@
 import type { EntityManager } from 'typeorm';
 
-import type { PublicationState } from '@arthome/core';
+import type { DateOutcome, PublicationState } from '@arthome/core';
 
 import { DateDetailPublic } from './date-detail-public.entity.js';
 import type { Show } from '../catalog/show.entity.js';
@@ -79,6 +79,25 @@ export async function projectShowCopy(
       media: show.media,
       title: show.title,
       synopsis: show.synopsis,
+      ...APPLIED,
+    },
+  );
+}
+
+/** An outcome on a public date; a postponement moves it, so its start moves with it. */
+export async function projectOutcome(
+  manager: EntityManager,
+  dateId: string,
+  outcome: DateOutcome,
+  rescheduledTo: Date | null,
+): Promise<void> {
+  await manager.update(
+    DateDetailPublic,
+    { date_id: dateId },
+    {
+      outcome,
+      rescheduled_to: rescheduledTo,
+      ...(rescheduledTo !== null && { starts_at: rescheduledTo }),
       ...APPLIED,
     },
   );

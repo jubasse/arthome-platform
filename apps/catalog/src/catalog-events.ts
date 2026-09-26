@@ -13,6 +13,8 @@ export const CATALOG_EVENT_TOPICS = {
   'catalog.date.scheduled.v1': 'catalog.date',
   'catalog.publication.state_changed.v1': 'catalog.date',
   'catalog.publication.engaged.v1': 'catalog.date',
+  'catalog.date.outcome_declared.v1': 'catalog.date',
+  'catalog.date.rescheduled.v1': 'catalog.date',
 } as const;
 
 export type CatalogEventType = keyof typeof CATALOG_EVENT_TOPICS;

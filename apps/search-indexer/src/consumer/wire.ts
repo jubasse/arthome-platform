@@ -1,4 +1,5 @@
 import {
+  DateOutcome as WireDateOutcome,
   LanguageDependency as WireLanguageDependency,
   PublicationState as WirePublicationState,
   ReplayPolicy as WireReplayPolicy,
@@ -10,6 +11,7 @@ import type { IndexedRendition } from '@arthome-platform/search-index';
 import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
 
 import {
+  DateOutcome,
   LanguageDependency,
   Locale,
   PublicationState,
@@ -45,6 +47,12 @@ const PUBLICATION_STATE: Readonly<Partial<Record<WirePublicationState, Publicati
   [WirePublicationState.REPLAY_ONLINE]: PublicationState.REPLAY_ONLINE,
 };
 
+const DATE_OUTCOME: Readonly<Partial<Record<WireDateOutcome, DateOutcome>>> = {
+  [WireDateOutcome.POSTPONED]: DateOutcome.POSTPONED,
+  [WireDateOutcome.CANCELLED]: DateOutcome.CANCELLED,
+  [WireDateOutcome.INTERRUPTED]: DateOutcome.INTERRUPTED,
+};
+
 const RIGHTS_SCOPE: Readonly<Partial<Record<WireRightsScope, RightsScope>>> = {
   [WireRightsScope.WORLDWIDE]: RightsScope.WORLDWIDE,
   [WireRightsScope.RESTRICTED]: RightsScope.RESTRICTED,
@@ -56,6 +64,8 @@ export const replayPolicyOf = (wire: WireReplayPolicy): ReplayPolicy | null =>
   REPLAY_POLICY[wire] ?? null;
 export const publicationStateOf = (wire: WirePublicationState): PublicationState | null =>
   PUBLICATION_STATE[wire] ?? null;
+export const dateOutcomeOf = (wire: WireDateOutcome): DateOutcome | null =>
+  DATE_OUTCOME[wire] ?? null;
 export const rightsScopeOf = (wire: WireRightsScope): RightsScope | null =>
   RIGHTS_SCOPE[wire] ?? null;
 

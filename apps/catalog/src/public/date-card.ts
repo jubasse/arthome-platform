@@ -8,6 +8,7 @@ import {
   replayEndsAt,
   roomOpensAt,
   type DateTiming,
+  type DateOutcome,
   type Instant,
   type LanguageDependency,
   type MediaSet,
@@ -42,6 +43,8 @@ export interface PublicDate {
   readonly slug_fr: string;
   readonly slug_en: string;
   readonly publication_state: PublicationState;
+  readonly outcome: DateOutcome | null;
+  readonly rescheduled_to: Instant | null;
   readonly category_id: string | null;
   readonly genre_ids: readonly string[];
   readonly tag_ids: readonly string[];
@@ -69,15 +72,14 @@ export function servedInFrench(date: PublicDate): boolean {
 /**
  * The public card, anonymous: no per-viewer overlay, and the title, slug and canonical URL in
  *   the title's own language, because a public read has no viewer language to choose another.
- * Run state and outcome are passed as unknown: `streaming` does not publish yet, and no command
- *   declares an outcome.
+ * The run state is passed as unknown: `streaming` does not publish yet.
  */
 export function dateCardOf(date: PublicDate, now: Instant): DateCard {
   const timing = timingOf(date);
   const display = publicDisplayStateOf({
     publicationState: date.publication_state,
     runState: null,
-    outcome: null,
+    outcome: date.outcome,
     timing,
     now,
   });
@@ -109,6 +111,8 @@ export function dateCardOf(date: PublicDate, now: Instant): DateCard {
     roomOpensAt: roomOpensAt(timing),
     displayState: display.state,
     displayStateValidUntil: display.validUntil,
+    ...(date.outcome !== null && { outcome: date.outcome }),
+    ...(date.rescheduled_to !== null && { rescheduledTo: date.rescheduled_to }),
     replay: {
       policy: date.replay_policy,
       windowHours: date.replay_window_hours,

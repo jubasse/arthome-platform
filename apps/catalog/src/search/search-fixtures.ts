@@ -22,6 +22,8 @@ export function dateDocument(overrides: Partial<ServableDateDocument> = {}): Ser
     slug_fr: 'nuit-blanche-2026-11-04',
     slug_en: 'white-night-2026-11-04',
     publication_state: PublicationState.SCHEDULED,
+    outcome: null,
+    rescheduled_to: null,
     ends_at: '2026-11-04T21:05:00.000Z',
     over_at: '2026-11-07T21:05:00.000Z',
     artist_id: '01a0e400-0000-7000-8000-0000000000b1',

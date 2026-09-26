@@ -52,7 +52,16 @@ export class SearchService {
       { index: DATE_INDEX_ALIAS, body: searchBodyOf(query, offset, now) },
       { requestTimeout: remainingMs },
     );
-    callerLeft.addEventListener('abort', () => request.abort(), { once: true });
+    // A block, not `() => request.abort()`: `abort()` returns the request, a thenable, and Node's
+    // EventTarget turns a listener's rejected thenable into an uncaught exception. Measured: the
+    // BFF giving up on a cold search took catalog down with a RequestAbortedError.
+    callerLeft.addEventListener(
+      'abort',
+      () => {
+        request.abort();
+      },
+      { once: true },
+    );
     let body: SearchResponseBody;
     try {
       body = (await request).body as unknown as SearchResponseBody;

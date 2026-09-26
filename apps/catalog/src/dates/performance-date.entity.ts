@@ -1,6 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
-import type { ReplayPolicy, TerritoryRights } from '@arthome/core';
+import type { DateOutcome, ReplayPolicy, TerritoryRights } from '@arthome/core';
 
 /** data-model.md §2.2's `Date`, named apart from the global it would shadow. */
 @Entity('date')
@@ -40,6 +40,21 @@ export class PerformanceDate {
 
   @Column('text', { nullable: true })
   slug_en!: string | null;
+
+  /** A fact, never rewritten nor erased (§2.2). */
+  @Column('text', { nullable: true })
+  outcome!: DateOutcome | null;
+
+  /** Where a postponement moved the date: `starts_at` took this value in the same act. */
+  @Column('timestamptz', { nullable: true })
+  rescheduled_to!: Date | null;
+
+  @Column('timestamptz', { nullable: true })
+  outcome_declared_at!: Date | null;
+
+  /** The run desk's message: content, in the language it was written in. */
+  @Column('jsonb', { nullable: true })
+  outcome_message!: { readonly contentLanguage: string; readonly text: string } | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;

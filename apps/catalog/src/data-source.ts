@@ -16,6 +16,7 @@ import { ChecklistProjection1790420300000 } from './migrations/1790420300000-che
 import { DateSlugs1790420400000 } from './migrations/1790420400000-date-slugs.js';
 import { IdempotencyResponseAsJson1790420500000 } from './migrations/1790420500000-idempotency-response-as-json.js';
 import { DateDetailPublic1790420600000 } from './migrations/1790420600000-date-detail-public.js';
+import { DateOutcome1790420700000 } from './migrations/1790420700000-date-outcome.js';
 import { DateDetailPublic } from './public/date-detail-public.entity.js';
 import { Venue } from './venues/venue.entity.js';
 
@@ -47,6 +48,7 @@ export const dataSource: DataSource = new DataSource({
     DateSlugs1790420400000,
     IdempotencyResponseAsJson1790420500000,
     DateDetailPublic1790420600000,
+    DateOutcome1790420700000,
   ],
   applicationName: Service.CATALOG,
 

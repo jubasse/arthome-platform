@@ -2,6 +2,8 @@ import {
   ChatMode,
   DateChatPolicyChangedSchema,
   DateDraftedSchema,
+  DateOutcomeDeclaredSchema,
+  DateRescheduledSchema,
   DateSalesCapacitySetSchema,
   DateScheduledSchema,
   PublicationEngagedSchema,
@@ -35,6 +37,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
+  DateOutcome,
   DisplayState,
   DomainErrorCode,
   FixedClock,
@@ -62,6 +65,7 @@ import { ChecklistProjection1790420300000 } from '../migrations/1790420300000-ch
 import { DateSlugs1790420400000 } from '../migrations/1790420400000-date-slugs.js';
 import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500000-idempotency-response-as-json.js';
 import { DateDetailPublic1790420600000 } from '../migrations/1790420600000-date-detail-public.js';
+import { DateOutcome1790420700000 } from '../migrations/1790420700000-date-outcome.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';
 import { PublicDatesService } from '../public/public-dates.service.js';
 import { Venue } from '../venues/venue.entity.js';
@@ -213,6 +217,7 @@ beforeAll(async () => {
       DateSlugs1790420400000,
       IdempotencyResponseAsJson1790420500000,
       DateDetailPublic1790420600000,
+      DateOutcome1790420700000,
     ],
   });
   await dataSource.getRepository(Show).insert({
@@ -790,6 +795,124 @@ describe('the public date page', () => {
           tag_ids,
         ]),
       );
+    },
+    CASE_MS,
+  );
+});
+
+describe('a date outcome', () => {
+  const ORIGIN = 'https://arthome.test';
+  const MESSAGE = {
+    contentLanguage: Locale.FR,
+    text: 'Report au 12 novembre. Vos places restent valables.',
+  };
+  const publicDates = (): PublicDatesService =>
+    new PublicDatesService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'), ORIGIN);
+
+  async function published(dateId: string): Promise<void> {
+    await draft(dateId);
+    await satisfyProjectedItems(dateId);
+    await move(dateId, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
+  }
+
+  function declare(
+    dateId: string,
+    outcome: DateOutcome,
+    expectedVersion: number,
+    rescheduledTo: string | null = null,
+  ) {
+    return dates.declareOutcome(
+      { dateId, outcome, message: MESSAGE, rescheduledTo, expectedVersion, traceparent: null },
+      idempotency(`${dateId}:${outcome}:${expectedVersion}`),
+    );
+  }
+
+  it(
+    'postpones a date by moving it, then says so on its page until its new room opens',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-0000000005a1';
+      await published(dateId);
+
+      const response = await declare(dateId, DateOutcome.POSTPONED, 2, '2026-11-12T19:30:00.000Z');
+      expect(response.envelope.data).toEqual({
+        outcome: DateOutcome.POSTPONED,
+        declaredAt: '2026-09-26T10:00:00.000Z',
+      });
+
+      const date = await dataSource.getRepository(PerformanceDate).findOneByOrFail({ id: dateId });
+      expect(date).toMatchObject({ outcome: DateOutcome.POSTPONED, outcome_message: MESSAGE });
+      expect(date.starts_at.toISOString()).toBe('2026-11-12T19:30:00.000Z');
+      const publication = await dataSource
+        .getRepository(Publication)
+        .findOneByOrFail({ date_id: dateId });
+      expect(publication.version).toBe(3);
+
+      const rows = (await outboxRowsFor(dateId)).slice(-2);
+      expect(rows.map((row) => [row.aggregatetype, row.type])).toEqual([
+        ['catalog.date', 'catalog.date.outcome_declared.v1'],
+        ['catalog.date', 'catalog.date.rescheduled.v1'],
+      ]);
+      const declared = fromBinary(DateOutcomeDeclaredSchema, rows[0]?.payload ?? new Uint8Array());
+      expect(declared.message).toMatchObject(MESSAGE);
+      const rescheduled = fromBinary(DateRescheduledSchema, rows[1]?.payload ?? new Uint8Array());
+      expect(rescheduled.previousStartsAt?.seconds).toBe(
+        BigInt(Date.parse('2026-11-04T19:30:00.000Z') / 1000),
+      );
+      expect(rescheduled.newVenueClock).toMatchObject({
+        venueTimezone: 'Europe/Paris',
+        venueUtcOffsetMin: 60,
+      });
+
+      const page = await publicDates().detail(dateId);
+      expect(page.data).toMatchObject({
+        displayState: DisplayState.POSTPONED,
+        displayStateValidUntil: '2026-11-12T19:00:00.000Z',
+        outcome: DateOutcome.POSTPONED,
+        rescheduledTo: '2026-11-12T19:30:00.000Z',
+        startsAt: '2026-11-12T19:30:00.000Z',
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'never rewrites an outcome, and refuses a screen that did not see it',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-0000000005a1';
+
+      const stale = await refusalOf(declare(dateId, DateOutcome.CANCELLED, 2));
+      expect(stale.refusal).toMatchObject({
+        code: DomainErrorCode.STATE_CONFLICT,
+        params: { state: PublicationState.SCHEDULED, version: 3 },
+      });
+      const again = await refusalOf(declare(dateId, DateOutcome.CANCELLED, 3));
+      expect(again.getStatus()).toBe(409);
+      expect(again.refusal.params).toEqual({ outcome: DateOutcome.POSTPONED });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'cancels a date for good, and refuses to interrupt one that has not started',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-0000000005a2';
+      await published(dateId);
+
+      const early = await refusalOf(declare(dateId, DateOutcome.INTERRUPTED, 2));
+      expect(early.refusal).toMatchObject({
+        code: DomainErrorCode.STATE_CONFLICT,
+        params: { startsAt: '2026-11-04T19:30:00.000Z' },
+      });
+
+      await declare(dateId, DateOutcome.CANCELLED, 2);
+      const types = (await outboxRowsFor(dateId)).map((row) => row.type);
+      expect(types.at(-1)).toBe('catalog.date.outcome_declared.v1');
+      expect(types).not.toContain('catalog.date.rescheduled.v1');
+      expect((await publicDates().detail(dateId)).data).toMatchObject({
+        displayState: DisplayState.CANCELLED,
+        displayStateValidUntil: null,
+        outcome: DateOutcome.CANCELLED,
+      });
     },
     CASE_MS,
   );

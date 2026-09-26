@@ -248,6 +248,7 @@ POST /venues                                  → venueId
 POST /shows   (with title, synopsis, poster)  → showId
 POST /channels/:channelId/dates               → 201, the date sheet, its publication in draft
 POST /dates/:dateId/publication/transitions   { to, expectedVersion, acknowledgedPromiseCode }
+POST /v1/dates/:dateId/outcome                { outcome, message, rescheduledTo, expectedVersion }
 ```
 
 Publishing answers `publication.checklist_incomplete` until ticketing, streaming and chat have
@@ -268,6 +269,21 @@ Proven on the running stack on 2026-09-26:
 
 The same run found two defects, both fixed and now held by tests: a draft served `…/d/undefined` as
 its canonical URL, and a replay came back with its keys reordered, because `jsonb` reorders them.
+
+An outcome was proven on the same stack on 2026-09-27, the indexer, catalog and the BFF running:
+
+| Check | Result |
+| --- | --- |
+| postponing a published date to 15 December | 200; replayed under its key with `Idempotency-Replayed: true`; `outcome_declared` then `rescheduled` on the date's topic |
+| its page through the BFF | `postponed` until 18:30 on 15 December, the new `startsAt` and `rescheduledTo` |
+| the index and the search | the document moved to the new time with `outcome: postponed`; the show's group led by it |
+| cancelling the other date | its page `cancelled` with no `displayStateValidUntil`, the index following |
+| a second outcome; a draft; `postponed` without `rescheduledTo` | 409 naming `outcome`; 409 naming `state`; 400 naming `rescheduledTo` |
+| the BFF giving up on a frozen index | 504 in 208 ms, and catalog still up |
+
+That last row is a defect the run found: catalog crashed on the first abort, because its listener
+returned the OpenSearch request, a thenable, and Node's `EventTarget` reports a listener's rejected
+thenable as an uncaught exception. Fixed, and held by `search.service.spec.ts`.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

@@ -1,4 +1,7 @@
 import {
+  DateOutcome as WireDateOutcome,
+  DateOutcomeDeclaredSchema,
+  DateRescheduledSchema,
   DateScheduledSchema,
   PublicationState as WirePublicationState,
   PublicationStateChangedSchema,
@@ -9,7 +12,7 @@ import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { describe, expect, it } from 'vitest';
 
-import { PublicationState, ReplayPolicy, RightsScope } from '@arthome/core';
+import { DateOutcome, PublicationState, ReplayPolicy, RightsScope } from '@arthome/core';
 
 import { dateAfter, dateFactOf } from './date-consumer.js';
 import type { DateProjection } from './date-projection.entity.js';
@@ -59,12 +62,42 @@ function emptyRow(): DateProjection {
     scheduled_version: null,
     publication_state: null,
     publication_version: null,
+    outcome: null,
+    outcome_rescheduled_to: null,
+    outcome_version: null,
+    moved_starts_at: null,
+    moved_version: null,
     doc_version: '0',
     indexed_at: new Date(),
   };
 }
 
+function outcomeDeclared(declaredAt: string): Uint8Array {
+  return toBinary(
+    DateOutcomeDeclaredSchema,
+    create(DateOutcomeDeclaredSchema, {
+      dateId: DATE_ID,
+      outcome: WireDateOutcome.POSTPONED,
+      rescheduledTo: timestampFromDate(new Date('2026-11-12T19:30:00.000Z')),
+      declaredAt: timestampFromDate(new Date(declaredAt)),
+    }),
+  );
+}
+
+function rescheduled(occurredAt: string, to: string): Uint8Array {
+  return toBinary(
+    DateRescheduledSchema,
+    create(DateRescheduledSchema, {
+      dateId: DATE_ID,
+      newStartsAt: timestampFromDate(new Date(to)),
+      occurredAt: timestampFromDate(new Date(occurredAt)),
+    }),
+  );
+}
+
 const SCHEDULED = 'catalog.date.scheduled.v1';
+const OUTCOME_DECLARED = 'catalog.date.outcome_declared.v1';
+const RESCHEDULED = 'catalog.date.rescheduled.v1';
 const STATE_CHANGED = 'catalog.publication.state_changed.v1';
 
 describe('dateFactOf', () => {
@@ -117,5 +150,32 @@ describe('dateAfter', () => {
     if (current === null) throw new Error('the state should apply');
     const older = dateFactOf(STATE_CHANGED, stateChanged(WirePublicationState.SCHEDULED, 3));
     expect(dateAfter(current, older)).toBeNull();
+  });
+});
+
+describe('an outcome and a move', () => {
+  it('reads the outcome in the domain’s vocabulary, versioned by its declaration', () => {
+    expect(dateFactOf(OUTCOME_DECLARED, outcomeDeclared('2026-09-27T09:00:00.000Z'))).toEqual({
+      type: OUTCOME_DECLARED,
+      dateId: DATE_ID,
+      version: Date.parse('2026-09-27T09:00:00.000Z'),
+      outcome: DateOutcome.POSTPONED,
+      rescheduledTo: new Date('2026-11-12T19:30:00.000Z'),
+    });
+  });
+
+  it('keeps the newest move when an older one arrives after it, off a retry topic', () => {
+    const newer = dateFactOf(
+      RESCHEDULED,
+      rescheduled('2026-09-27T10:00:00.000Z', '2026-11-20T19:30:00.000Z'),
+    );
+    const older = dateFactOf(
+      RESCHEDULED,
+      rescheduled('2026-09-27T09:00:00.000Z', '2026-11-12T19:30:00.000Z'),
+    );
+
+    const moved = dateAfter(emptyRow(), newer);
+    expect(moved?.moved_starts_at?.toISOString()).toBe('2026-11-20T19:30:00.000Z');
+    expect(moved === null ? null : dateAfter(moved, older)).toBeNull();
   });
 });

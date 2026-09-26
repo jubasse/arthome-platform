@@ -1,6 +1,6 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
-import type { PublicationState, ReplayPolicy, RightsScope } from '@arthome/core';
+import type { DateOutcome, PublicationState, ReplayPolicy, RightsScope } from '@arthome/core';
 
 /** What DateScheduled states about a date. */
 export interface ScheduledDateFields {
@@ -47,6 +47,23 @@ export class DateProjection {
   /** PublicationStateChanged's own `version`, the publication's, monotonic by construction. */
   @Column('bigint', { nullable: true })
   publication_version!: string | null;
+
+  /** DateOutcomeDeclared's, versioned by its `declared_at` in epoch milliseconds. */
+  @Column('text', { nullable: true })
+  outcome!: DateOutcome | null;
+
+  @Column('timestamptz', { nullable: true })
+  outcome_rescheduled_to!: Date | null;
+
+  @Column('bigint', { nullable: true })
+  outcome_version!: string | null;
+
+  /** DateRescheduled's new start, which replaces DateScheduled's; versioned by `occurred_at`. */
+  @Column('timestamptz', { nullable: true })
+  moved_starts_at!: Date | null;
+
+  @Column('bigint', { nullable: true })
+  moved_version!: string | null;
 
   /**
    * Bumped under the row lock each time the document is recomposed, whichever input changed:

@@ -6,6 +6,8 @@ import { DateIdSchema } from '@arthome/core/schema';
 
 import type { DateSheet, PublicationView } from './date-sheet.js';
 import { DatesService } from './dates.service.js';
+import type { DeclaredOutcome } from './declare-outcome.js';
+import { DeclareOutcomeSchema, type DeclareOutcomeBody } from './declare-outcome.schema.js';
 import { DraftDateSchema, type DraftDateBody } from './draft-date.schema.js';
 import {
   TransitionPublicationSchema,
@@ -63,6 +65,27 @@ export class DatesController {
         key: idempotencyKeyOf(idempotencyKey),
         accountId: null,
         fingerprint: fingerprintOf('POST', `/dates/${dateId}/publication/transitions`, body),
+        statusCode: 200,
+      },
+    );
+  }
+
+  @Post('v1/dates/:dateId/outcome')
+  @HttpCode(200)
+  @Header('cache-control', 'no-store')
+  public declareOutcome(
+    @Param('dateId', { schema: DateIdSchema }) dateId: string,
+    @Body({ schema: DeclareOutcomeSchema }) body: DeclareOutcomeBody,
+    @Headers('idempotency-key') idempotencyKey?: string,
+    @Headers('traceparent') traceparent?: string,
+  ): Promise<MemorisedResponse<DeclaredOutcome>> {
+    const trace = parseTraceparent(traceparent);
+    return this.dates.declareOutcome(
+      { dateId, ...body, traceparent: trace === null ? null : trace.traceparent },
+      {
+        key: idempotencyKeyOf(idempotencyKey),
+        accountId: null,
+        fingerprint: fingerprintOf('POST', `/v1/dates/${dateId}/outcome`, body),
         statusCode: 200,
       },
     );

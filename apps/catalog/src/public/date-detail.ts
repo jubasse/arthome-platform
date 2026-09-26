@@ -25,6 +25,7 @@ export function publicDateOfRow(row: DateDetailPublic, origin: string): PublicDa
   return {
     ...row,
     starts_at: row.starts_at.toISOString(),
+    rescheduled_to: row.rescheduled_to?.toISOString() ?? null,
     rights_scope: row.rights.scope,
     blackout_countries: row.rights.blackoutCountries,
     canonical_url: canonicalUrlOf(origin, row.title, row) ?? '',

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { PublicationState, ReplayPolicy, RightsScope } from '@arthome/core';
+import { DateOutcome, PublicationState, ReplayPolicy, RightsScope } from '@arthome/core';
 
 import { dateDocumentOf } from './compose.js';
-import type { ScheduledDateFields } from '../consumer/date-projection.entity.js';
+import type { DateProjection, ScheduledDateFields } from '../consumer/date-projection.entity.js';
 
 const scheduled: ScheduledDateFields = {
   show_id: 'show-1',
@@ -23,7 +23,12 @@ const scheduled: ScheduledDateFields = {
   slug_en: 'white-night-2026-11-04',
 };
 
-function documentFor(fields: ScheduledDateFields) {
+function documentFor(
+  fields: ScheduledDateFields,
+  moved: Partial<
+    Pick<DateProjection, 'outcome' | 'outcome_rescheduled_to' | 'moved_starts_at'>
+  > = {},
+) {
   return dateDocumentOf(
     {
       date_id: 'date-1',
@@ -32,8 +37,14 @@ function documentFor(fields: ScheduledDateFields) {
       scheduled_version: '1',
       publication_state: PublicationState.SCHEDULED,
       publication_version: null,
+      outcome: null,
+      outcome_rescheduled_to: null,
+      outcome_version: null,
+      moved_starts_at: null,
+      moved_version: null,
       doc_version: '1',
       indexed_at: new Date(),
+      ...moved,
     },
     null,
     new Date('2026-09-26T10:00:00.000Z'),
@@ -55,5 +66,23 @@ describe('dateDocumentOf — the instants a search compares', () => {
         over_at: '2026-11-04T21:05:00.000Z',
       });
     }
+  });
+});
+
+describe('dateDocumentOf — a postponed date', () => {
+  it('moves the date, and every instant a search compares moves with it', () => {
+    const document = documentFor(scheduled, {
+      outcome: DateOutcome.POSTPONED,
+      outcome_rescheduled_to: new Date('2026-11-12T19:30:00.000Z'),
+      moved_starts_at: new Date('2026-11-12T19:30:00.000Z'),
+    });
+
+    expect(document).toMatchObject({
+      starts_at: '2026-11-12T19:30:00.000Z',
+      ends_at: '2026-11-12T21:05:00.000Z',
+      over_at: '2026-11-15T21:05:00.000Z',
+      outcome: DateOutcome.POSTPONED,
+      rescheduled_to: '2026-11-12T19:30:00.000Z',
+    });
   });
 });
