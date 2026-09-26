@@ -19,7 +19,7 @@ describe('the vendored @arthome/* chain', () => {
   });
 
   it('runs ONE copy of zod, not two', () => {
-    // ⚠ Two copies of zod in one node_modules make every schema fail every
+    // Two copies of zod in one node_modules make every schema fail every
     //   `instanceof` against the other copy, and the symptom is "this is not a
     //   zod schema" about something that plainly is.
     expect(StorefrontErrorSchema instanceof z.ZodType).toBe(true);

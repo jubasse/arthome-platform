@@ -75,7 +75,7 @@ describe('checkPublicationScope', () => {
     expect((await checkPublicationScope(ds, 'arthome_identity_outbox')).status).toBe('up');
   });
 
-  /** ⚠ The state found live on 2026-09-26. */
+  /** The state found live on 2026-09-26. */
   it('is degraded when created FOR ALL TABLES', async () => {
     const ds = dataSourceAnswering({
       'FROM pg_publication WHERE': [{ puballtables: true }],

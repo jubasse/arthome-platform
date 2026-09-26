@@ -36,7 +36,7 @@ describe('purgeOutbox is gated on the connector, not on the clock', () => {
   });
 
   /**
-   * ⚠ The case the guard exists for: a stopped connector. Deleting here destroys a committed
+   * The case the guard exists for: a stopped connector. Deleting here destroys a committed
    *   fact that was never published, and nothing reads this table back to notice.
    */
   it('refuses when the slot is inactive', async () => {
@@ -90,7 +90,7 @@ describe('purgeProcessedMessages', () => {
     expect(await purgeProcessedMessages(dataSourceWith(undefined, 7))).toBe(7);
   });
 
-  /** ⚠ 30 days must stay above every DLQ topic retention, or a replay stops deduplicating. */
+  /** 30 days must stay above every DLQ topic retention, or a replay stops deduplicating. */
   it('defaults to a horizon longer than the brokers’ 168-hour default', async () => {
     const ds = dataSourceWith(undefined);
     await purgeProcessedMessages(ds);

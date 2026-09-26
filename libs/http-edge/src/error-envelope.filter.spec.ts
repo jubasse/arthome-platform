@@ -28,7 +28,7 @@ const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
  * A stand-in shaped like `identity`'s table — the only real one, since `account` has
  * two `citext unique` columns and `catalog`'s `show` has none.
  *
- * ⚠ NOT THE SOURCE OF TRUTH, and copying it here is why this suite stayed green while
+ * NOT THE SOURCE OF TRUTH, and copying it here is why this suite stayed green while
  *   the service passed no table at all. What identity actually binds is guarded by
  *   `apps/identity/src/unique-violations.spec.ts`, against its migrations.
  */
@@ -45,7 +45,7 @@ interface Sent {
 /**
  * What the filter wrote to the log, captured rather than printed.
  *
- * ⚠ RECORDED BECAUSE HALF OF `nestjs-request-pipeline` RULE 6 IS ABOUT THE LOG, not
+ * RECORDED BECAUSE HALF OF `nestjs-request-pipeline` RULE 6 IS ABOUT THE LOG, not
  *   the response: an unknown error must be LOGGED and answered generically. A suite
  *   that only asserts the response proves the silence and not the record, and a
  *   filter that swallowed everything would pass it. Capturing also keeps the run
@@ -113,7 +113,7 @@ const handleCollision = (): Error =>
 
 describe('ErrorEnvelopeFilter', () => {
   it('answers an email collision with 409 and the code that names it', () => {
-    // ⚠ THE CODE NAMES THE SPECIFIC REFUSAL, which is the published contract's 409
+    // THE CODE NAMES THE SPECIFIC REFUSAL, which is the published contract's 409
     //   design: its 18 `Conflict` responses share one description reading "Definitive
     //   business refusal. The `code` says which one". Collapsing both columns into one
     //   generic code was the defect — a client could then tell a 409 from a 400 only
@@ -153,7 +153,7 @@ describe('ErrorEnvelopeFilter', () => {
   });
 
   it('never serves the constraint name, the column or the value that collided', () => {
-    // ⚠ THE SECURITY ASSERTION OF THIS FILE. `QueryFailedError` copies the driver
+    // THE SECURITY ASSERTION OF THIS FILE. `QueryFailedError` copies the driver
     //   error's properties onto itself, so its `message` is pg's "duplicate key value
     //   violates unique constraint …" and its `detail` is
     //   "Key (email)=(marie@example.test) already exists" — the column AND the
@@ -182,7 +182,7 @@ describe('ErrorEnvelopeFilter', () => {
   });
 
   it('answers 500 and says so loudly when a unique violation has no declared code', () => {
-    // ⚠ `catalog` PASSES NO TABLE, BECAUSE `show` HAS NO UNIQUE CONSTRAINT. A generic
+    // `catalog` PASSES NO TABLE, BECAUSE `show` HAS NO UNIQUE CONSTRAINT. A generic
     //   409 code was ruled out — the contract requires the code to name the refusal —
     //   so an unmapped violation is a gap in the service's own declaration, and the log
     //   line is what gets it written rather than discovered during an incident.
@@ -282,7 +282,7 @@ describe('ErrorEnvelopeFilter', () => {
   });
 
   it('distinguishes 503 from 500, which one substitute code used to collapse', () => {
-    // ⚠ THE DISTINCTION IS THE ONE A CALLER ACTS ON: 503 is retryable and 500 is not.
+    // THE DISTINCTION IS THE ONE A CALLER ACTS ON: 503 is retryable and 500 is not.
     //   Both answered `api.upstream_unavailable` until `api.internal` and
     //   `api.service_unavailable` were published, and that code means "a service behind
     //   the BFF failed" — false on our own crash, and it destroyed the distinction.

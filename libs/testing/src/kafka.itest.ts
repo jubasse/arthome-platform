@@ -1,7 +1,7 @@
 /**
  * The Kafka helpers, proved against a real broker.
  *
- * ⚠ NAMED `.itest.ts` AND NOT `.spec.ts`, for the reason given in `index.ts`:
+ * NAMED `.itest.ts` AND NOT `.spec.ts`, for the reason given in `index.ts`:
  *   `pnpm run verify` ends in `vitest run`, and a container start inside the
  *   commit gate is how the gate stops being run.
  *
@@ -119,7 +119,7 @@ describe('the Kafka helpers, against a real broker', () => {
               headers: {
                 'message-id': messageId,
                 type: 'harness.probe.happened.v1',
-                // ⚠ THIS IS WHAT DEBEZIUM PUTS ON THE WIRE for a NULL column:
+                // THIS IS WHAT DEBEZIUM PUTS ON THE WIRE for a NULL column:
                 //   the four characters `null`, not an absent header. Kept, it
                 //   is how a trace id becomes the word "null" in a database.
                 traceparent: 'null',

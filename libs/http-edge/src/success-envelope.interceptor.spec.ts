@@ -27,7 +27,7 @@ describe('the success envelope', () => {
     expect(sent).toEqual({ servedAt: SERVED_AT, data: { publicHandle: 'ada' } });
   });
 
-  /** ⚠ A global interceptor reaches WS and RPC, and neither carries this envelope. */
+  /** A global interceptor reaches WS and RPC, and neither carries this envelope. */
   it.each(['ws', 'rpc', 'graphql'])('leaves a %s payload untouched', async (type) => {
     const interceptor = new SuccessEnvelopeInterceptor(new FixedClock(SERVED_AT));
 
@@ -48,7 +48,7 @@ describe('the success envelope', () => {
     expect(sent).toEqual({ servedAt: SERVED_AT, data: null });
   });
 
-  /** ⚠ §5.5 makes `validUntil` conditional, so its absence is the contract, not an omission. */
+  /** §5.5 makes `validUntil` conditional, so its absence is the contract, not an omission. */
   it('does not invent validUntil', async () => {
     const interceptor = new SuccessEnvelopeInterceptor(new FixedClock(SERVED_AT));
 

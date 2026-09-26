@@ -54,7 +54,7 @@ describe('CatalogController', () => {
   });
 
   it('publishes anyway when the traceparent is malformed, carrying none', async () => {
-    // ⚠ BOTH HALVES MATTER, AND THE FIRST IS THE DECIDED ONE: a broken trace is an
+    // BOTH HALVES MATTER, AND THE FIRST IS THE DECIDED ONE: a broken trace is an
     //   observability fault, never a business one, so the publication MUST still
     //   happen. The second is why the check exists — the value would otherwise
     //   reach `outbox_event.tracecontext`, the one outbox column with no CHECK

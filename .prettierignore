@@ -9,7 +9,7 @@
 **/*.md
 
 # ── Not ours to reformat ──────────────────────────────────────────────────────
-# ⚠ docs/arthome/ is a PROJECTION of arthome-core, rewritten by
+# docs/arthome/ is a PROJECTION of arthome-core, rewritten by
 #   `arthome-sync-agent-docs` on every install. Reformatting it here would put a
 #   diff into `git status` at every install and destroy the one freshness signal
 #   this design has: that a stale copy is the only thing that shows up there.

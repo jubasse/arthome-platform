@@ -3,7 +3,7 @@ packages:
   - "libs/*"
   - "tools/*"
 
-# ⚠ THE GATES READ THIS LIST (D-071). `@arthome/tooling`'s checks used to glob a
+# THE GATES READ THIS LIST (D-071). `@arthome/tooling`'s checks used to glob a
 #   hand-kept set of layouts, and each one guessed differently — none knew
 #   `libs/*`, and `check-enums` knew neither of the two used here. It would have
 #   swept an empty set and exited 0, in the repository where duplicated domain
@@ -84,7 +84,7 @@ allowBuilds:
   # worth refusing by default.
   protobufjs: false
 
-# ⚠ `libs/messaging` and `libs/testing` import each other, so pnpm refuses to order
+# `libs/messaging` and `libs/testing` import each other, so pnpm refuses to order
 #   their builds. The cycle is test-only — messaging reaches testing from
 #   `consume.itest.ts` alone, which `tsconfig.build.json` excludes — and the order is
 #   genuinely arbitrary: both tsconfigs resolve a workspace dependency through

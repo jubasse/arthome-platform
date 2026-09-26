@@ -8,11 +8,11 @@ import { ProcessedMessage } from './processed-message.entity.js';
 import { WelcomeEmail } from './welcome-email.entity.js';
 
 /**
- * ⚠ The dedup insert and the business write share one transaction and one manager.
+ * The dedup insert and the business write share one transaction and one manager.
  *   `orIgnore().returning('id')` returns no row when the identifier is already there, and
  *   that is the signal to skip — not a prior SELECT, which would leave a window in which two
  *   consumers both see nothing.
- * ⚠ A missing `message-id` is a permanent error, never a generated default: inventing one
+ * A missing `message-id` is a permanent error, never a generated default: inventing one
  *   would make the message undeduplicable and silently reprocessable for ever (§1.3).
  */
 export async function applyMessage(
@@ -55,11 +55,11 @@ export async function applyMessage(
     if ((claimed.raw as unknown[]).length === 0) return 'duplicate';
 
     /**
-     * ⚠ `orIgnore()` because the two guards answer different questions: the dedup insert above
+     * `orIgnore()` because the two guards answer different questions: the dedup insert above
      *   answers "have I seen this MESSAGE", `welcome_email`'s primary key answers "does this
      *   ACCOUNT already have one". Two `message-id`s carrying one account pass the first and
      *   violate the second.
-     * ⚠ Measured against Postgres 18: a bare insert raises 23505 and poisons the whole
+     * Measured against Postgres 18: a bare insert raises 23505 and poisons the whole
      *   transaction, dedup claim included — every later statement gets `current transaction is
      *   aborted`, so the `message-id` is never recorded and each retry redoes all of it.
      *   `ON CONFLICT DO NOTHING RETURNING` returns no row and leaves the transaction usable.

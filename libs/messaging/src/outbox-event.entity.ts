@@ -3,9 +3,9 @@ import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 /**
  * The contract between this service and the Debezium outbox router.
  *
- * ⚠ The column names are the router's, not ours — lowercase and unseparated (§7.3). Renaming
+ * The column names are the router's, not ours — lowercase and unseparated (§7.3). Renaming
  *   one to something more readable does not fail a test; it fails the connector, silently.
- * ⚠ The application only ever INSERTS; CDC reads the write-ahead log. That is what makes
+ * The application only ever INSERTS; CDC reads the write-ahead log. That is what makes
  *   `REPLICA IDENTITY DEFAULT` sufficient, and why there is no `status` column.
  */
 @Entity('outbox_event')
@@ -31,7 +31,7 @@ export class OutboxEvent {
   payload!: Buffer;
 
   /**
-   * ⚠ Injected here, at write time: the relay runs outside the request that caused the fact,
+   * Injected here, at write time: the relay runs outside the request that caused the fact,
    *   so injecting later injects a context that no longer exists and the link between the
    *   command and everything it causes is lost for good (events.md §1.3).
    */

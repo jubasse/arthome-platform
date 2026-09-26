@@ -14,11 +14,11 @@ export const dataSource: DataSource = new DataSource({
   migrations: [Initial1758700400000],
   applicationName: 'search-indexer',
 
-  // ⚠ `poolSize` × replicas, plus one replication connection per connector, must stay
+  // `poolSize` × replicas, plus one replication connection per connector, must stay
   //   under Postgres's `max_connections` — default 100.
   poolSize: 10,
 
-  // ⚠ pg waits FOR EVER by default: a service started against a dead Postgres hung in
+  // pg waits FOR EVER by default: a service started against a dead Postgres hung in
   //   `initialize()` with nothing to restart it. The statement and idle-in-transaction
   //   timeouts live in `infra/postgres/init-databases.sql`, out of the backfill's way.
   extra: { connectionTimeoutMillis: 10_000 },
@@ -27,4 +27,4 @@ export const dataSource: DataSource = new DataSource({
   logging: false,
 });
 
-// ⚠ One export only: TypeORM's CLI refuses "more than one export of DataSource".
+// One export only: TypeORM's CLI refuses "more than one export of DataSource".

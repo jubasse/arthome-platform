@@ -2,7 +2,7 @@
  * `startStack` itself: both containers at once, which is the shape a service's
  * own integration test will have.
  *
- * ⚠ NAMED `.itest.ts`, for the reason given in `index.ts`: `pnpm run verify`
+ * NAMED `.itest.ts`, for the reason given in `index.ts`: `pnpm run verify`
  *   collects `*.spec.*` and `*.test.*`, and a container start inside the commit
  *   gate is how the gate stops being run.
  */
@@ -94,7 +94,7 @@ describe('startStack, asked for one container only', () => {
       const only = await startStack({ postgres: true, startupTimeoutMs: STARTUP_BUDGET_MS });
       try {
         expect(only.postgres.port).toBeGreaterThan(0);
-        // ⚠ The alternative is a nullable field, and a test that forgot to ask
+        // The alternative is a nullable field, and a test that forgot to ask
         //   would then build a connection string containing the word
         //   "undefined" and fail on a DNS error. This names the mistake.
         expect(() => only.kafka).toThrow(/was not asked for kafka/);

@@ -7,7 +7,7 @@ import { composeImage } from './stack.js';
  * the harness that can return the WRONG service's image and still let everything
  * start.
  *
- * ⚠ The tags are not written down here. Asserting `postgres:18-alpine` would put
+ * The tags are not written down here. Asserting `postgres:18-alpine` would put
  *   the version in two places — the parallel literal table this test exists to
  *   prevent.
  */

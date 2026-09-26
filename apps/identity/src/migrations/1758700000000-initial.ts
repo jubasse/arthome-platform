@@ -1,7 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * ⚠ ADDITIVE MIGRATIONS ONLY ON `outbox_event` from here on: the publication references
+ * ADDITIVE MIGRATIONS ONLY ON `outbox_event` from here on: the publication references
  *   the columns by name, and a rename breaks replication or loses the column in silence
  *   (data-model.md §7.4).
  */

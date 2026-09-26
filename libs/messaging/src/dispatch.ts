@@ -26,7 +26,7 @@ export function header(payload: EachMessagePayload, name: string): string | null
   const raw = payload.message.headers?.[name];
   if (raw === undefined || raw === null) return null;
   const value = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw);
-  // ⚠ Debezium renders a NULL column as the four characters `null`, not as an
+  // Debezium renders a NULL column as the four characters `null`, not as an
   //   absent header. Storing that is how a trace id becomes the word "null".
   return value === 'null' ? null : value;
 }
@@ -49,12 +49,12 @@ function forwarded(payload: EachMessagePayload): IHeaders {
 /**
  * Apply a message, and put it where it belongs when that fails.
  *
- * ⚠ THE FAILURE PATH PUBLISHES BEFORE IT RETURNS, and returning normally is what
+ * THE FAILURE PATH PUBLISHES BEFORE IT RETURNS, and returning normally is what
  *   lets the offset advance. A consumer that rethrows here would make KafkaJS
  *   redeliver the same message immediately and for ever — a hot loop that reads
  *   like a working retry until you look at the broker's traffic.
  *
- * ⚠ IF THE REPUBLISH ITSELF FAILS, THE ERROR ESCAPES ON PURPOSE. No commit, so
+ * IF THE REPUBLISH ITSELF FAILS, THE ERROR ESCAPES ON PURPOSE. No commit, so
  *   the message is redelivered rather than lost. That makes republish-then-commit
  *   a dual write, and a crash between them duplicates — which is exactly what
  *   the handler's deduplication absorbs.

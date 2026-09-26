@@ -28,7 +28,7 @@ fi
 #    is a property worth protecting, and the reason the integration tests are
 #    named `*.itest.ts` and live behind their own command.
 #
-#    ⚠ `git commit --no-verify` skips this. That is git's design and not a hole
+#    `git commit --no-verify` skips this. That is git's design and not a hole
 #      to plug: a hook is a reflex, not an authority. What it removes is the
 #      accident.
 if ! pnpm run verify; then

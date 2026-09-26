@@ -29,7 +29,7 @@ import { Initial1758700400000 } from '../migrations/1758700400000-initial.js';
 /**
  * The indexer against REAL OpenSearch and REAL Postgres.
  *
- * ⚠ THIS IS THE SEGMENT THE UNIT TESTS CANNOT REACH. `show-consumer.spec.ts`
+ * THIS IS THE SEGMENT THE UNIT TESTS CANNOT REACH. `show-consumer.spec.ts`
  *   drives the handler with a fake `ShowIndex`, which proves the handler's logic
  *   and nothing about the index: a mapping that rejects the document, a
  *   normalizer that does not lower-case, and an `external_gte` version that does
@@ -163,7 +163,7 @@ describe('the indexer against a real index', () => {
       const messageId = '01a0d55c-0000-7000-8000-000000000201';
       expect(await applyMessage(dataSource, index, message(messageId))).toBe('applied');
 
-      // ⚠ DROP THE WHOLE INDEX, NOT THE DOCUMENT — and the difference is a real
+      // DROP THE WHOLE INDEX, NOT THE DOCUMENT — and the difference is a real
       //   operational fact, found by writing this test the other way first.
       //
       //   Deleting one document leaves a TOMBSTONE carrying its version, kept
@@ -176,7 +176,7 @@ describe('the indexer against a real index', () => {
       //
       //   Losing an index — the disaster the rebuild path exists for — resets
       //   versioning with it, and that is what is reproduced here.
-      //   ⚠ BY ITS CONCRETE NAME, NOT BY THE ALIAS. OpenSearch refuses to delete
+      //   BY ITS CONCRETE NAME, NOT BY THE ALIAS. OpenSearch refuses to delete
       //     an index named through an alias — "specify the corresponding
       //     concrete indices instead" — and the refusal is a 400 body, not a
       //     thrown error. Written the short way first, this test then asserted a
@@ -221,7 +221,7 @@ describe('the indexer against a real index', () => {
       ).toBe('applied');
       expect((await readDocument(OTHER_SHOW_ID))?.runtime_min).toBe(120);
 
-      // ⚠ THE GUARD THAT A FAKE INDEX CANNOT PROVE. A retry topic reorders one
+      // THE GUARD THAT A FAKE INDEX CANNOT PROVE. A retry topic reorders one
       //   key's events: a message that waited five minutes comes back behind
       //   later ones for the same show. `version_type: external_gte` is what
       //   makes the late arrival lose instead of overwriting.

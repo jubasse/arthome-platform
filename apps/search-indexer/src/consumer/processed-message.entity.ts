@@ -2,7 +2,7 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 /**
  * The deduplication key, inserted inside the business transaction so dedup state cannot
- * roll back separately from the effect. ⚠ A row means "the OpenSearch write was observed
+ * roll back separately from the effect. A row means "the OpenSearch write was observed
  * to succeed"; its absence means "not known to have succeeded", never "known not to
  * have" — the asymmetry that makes replaying the topic safe.
  */

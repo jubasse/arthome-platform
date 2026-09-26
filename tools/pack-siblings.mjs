@@ -10,7 +10,7 @@
 //   even if the package were shipping nothing, and the three documents would be
 //   proven by an accident of the local filesystem.
 //
-//   ⚠ THAT IS NOT HYPOTHETICAL. The first tarball packed for this repository
+//   THAT IS NOT HYPOTHETICAL. The first tarball packed for this repository
 //     carried `bin/` and no `docs/` at all, and the hook reported success over
 //     it. A symlink would have hidden that; a tarball is what found it. Only a
 //     real pack exercises `files`, `bin` and `prepack` — the three things that
@@ -21,7 +21,7 @@
 //   that change in one place. Everything here has to be verifiable locally with
 //   no service running.
 //
-// ⚠ CONTENT-ADDRESSED FILENAMES, AND A STABLE NAME WAS TRIED FIRST AND FAILED
+// CONTENT-ADDRESSED FILENAMES, AND A STABLE NAME WAS TRIED FIRST AND FAILED
 //   SILENTLY — which is the worst way for a build to be wrong.
 //
 //   With `vendor/arthome-tooling.tgz` fixed, a fix made in arthome-core is
@@ -149,7 +149,7 @@ function main() {
 
     // Older builds of the same package go, or vendor/ accumulates tarballs that
     // nothing references and the next reader cannot tell which one is live.
-    // ⚠ AFTER the rename, never before: the file pnpm just produced is called
+    // AFTER the rename, never before: the file pnpm just produced is called
     //   `arthome-<name>-<version>.tgz`, which matches this very prefix — sweeping
     //   first deleted the thing about to be renamed.
     for (const old of fs.readdirSync(VENDOR)) {

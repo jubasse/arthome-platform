@@ -15,7 +15,7 @@ export class IdentityController {
     @Body({ schema: RegisterAccountSchema }) body: RegisterAccountBody,
     @Headers('traceparent') traceparent?: string,
   ): Promise<{ publicHandle: string }> {
-    // ⚠ By hand because no pipe reaches a header (see `traceparent.ts`). A malformed one is
+    // By hand because no pipe reaches a header (see `traceparent.ts`). A malformed one is
     //   dropped rather than refused — a broken trace is not a business fault.
     const trace = parseTraceparent(traceparent);
 
@@ -27,7 +27,7 @@ export class IdentityController {
       traceparent: trace === null ? null : trace.traceparent,
     });
 
-    // ⚠ Never the account id: a UUIDv7 reveals its own creation instant and is orderable
+    // Never the account id: a UUIDv7 reveals its own creation instant and is orderable
     //   (data-model.md §7.1). `public_handle` is what a surface is given.
     return { publicHandle: body.publicHandle };
   }

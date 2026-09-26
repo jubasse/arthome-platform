@@ -66,7 +66,7 @@ describe('the POST /accounts body', () => {
   });
 
   it('refuses an unknown field WITHOUT naming it, and that is a limit of the pipe rather than a choice', async () => {
-    // ⚠ MEASURED: zod reports this as `{ code: 'unrecognized_keys', keys: ['isAdmin'],
+    // MEASURED: zod reports this as `{ code: 'unrecognized_keys', keys: ['isAdmin'],
     //   path: [] }`, and `params.fields` is built from `path`. The key is in `keys`, which
     //   Standard Schema's `Issue` type does not declare, so no validator can name it.
     const refusal = await refusalFor({ ...body, isAdmin: true });

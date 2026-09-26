@@ -37,7 +37,7 @@ import { dataSource } from './data-source.js';
   imports: [TypeOrmModule.forRoot(dataSource.options), CatalogModule],
   providers: [
     /**
-     * ⚠ A schema on a `@Body()` parameter is metadata: without this pipe reading it, nothing
+     * A schema on a `@Body()` parameter is metadata: without this pipe reading it, nothing
      *   validates. Global rather than `@UsePipes` on a method, where the schema would run on
      *   every parameter of the handler, `@Param('id')` included.
      */
@@ -46,7 +46,7 @@ import { dataSource } from './data-source.js';
       useValue: new StandardSchemaValidationPipe({ exceptionFactory: schemaInvalidException }),
     },
     /**
-     * ⚠ `useFactory` rather than `useGlobalFilters`, which cannot inject the `HttpAdapterHost`
+     * `useFactory` rather than `useGlobalFilters`, which cannot inject the `HttpAdapterHost`
      *   this filter replies through. Adding a `UNIQUE` to this schema means adding its code
      *   here too, or the violation answers 500.
      */
@@ -63,7 +63,7 @@ import { dataSource } from './data-source.js';
       useFactory: (): SuccessEnvelopeInterceptor =>
         new SuccessEnvelopeInterceptor(new SystemClock()),
     },
-    /** ⚠ It refuses EVERY route, so a liveness probe will need an exemption. */
+    /** It refuses EVERY route, so a liveness probe will need an exemption. */
     {
       provide: APP_GUARD,
       inject: [Reflector],

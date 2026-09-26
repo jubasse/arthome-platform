@@ -2,11 +2,11 @@ import { outboxTableDdl } from '@arthome-platform/messaging';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * ⚠ The outbox comes from `outboxTableDdl()`, guards included, in one step. The helper
+ * The outbox comes from `outboxTableDdl()`, guards included, in one step. The helper
  *   carries the columns the router requires AND the four constraints that make a
  *   connector-killing row impossible to commit; writing the DDL out here would be a seventh
  *   copy of a contract that belongs to Debezium, where drift is silent until it is not.
- * ⚠ Additive migrations only on `outbox_event` from here on: the publication references the
+ * Additive migrations only on `outbox_event` from here on: the publication references the
  *   columns by name, so renaming one breaks replication and the connector either fails or
  *   loses the column in silence (§7.4). A rename is four steps across two versions.
  */
@@ -14,7 +14,7 @@ export class Initial1758800000000 implements MigrationInterface {
   name = 'Initial1758800000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // ⚠ `show` is quoted deliberately: `SHOW` is a Postgres command word, and TypeORM quotes
+    // `show` is quoted deliberately: `SHOW` is a Postgres command word, and TypeORM quotes
     //   the identifier in every statement it generates from `@Entity('show')`, so an unquoted
     //   table here would be the one spelling that differs.
     await queryRunner.query(`
@@ -41,7 +41,7 @@ export class Initial1758800000000 implements MigrationInterface {
 
     await queryRunner.query(outboxTableDdl());
 
-    // ⚠ Not part of `outboxTableDdl()`, and it should be — every service has to remember it
+    // Not part of `outboxTableDdl()`, and it should be — every service has to remember it
     //   separately, which is how one of them will not (recorded in HANDOVER.md). Used by the
     //   cleanup job only: the application never reads this table, CDC reads the WAL.
     await queryRunner.query(

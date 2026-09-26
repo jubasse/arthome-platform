@@ -9,11 +9,11 @@ export interface PurgeOutcome {
 }
 
 /**
- * ⚠ GATED ON THE CONNECTOR, NOT ON THE CLOCK (§7.5). Deleting a row Debezium has not read
+ * GATED ON THE CONNECTOR, NOT ON THE CLOCK (§7.5). Deleting a row Debezium has not read
  *   destroys a committed business fact that was never published, and the application never
  *   reads this table back, so nothing notices — ever.
  *
- * ⚠ A row carries no LSN, so "has the connector passed this row" is not directly askable.
+ * A row carries no LSN, so "has the connector passed this row" is not directly askable.
  *   The lag is the proxy that makes it safe: a row older than the retention whose insert is
  *   still unconfirmed means the connector is behind by at least the retention, which a lag
  *   far under a gigabyte cannot be. An inactive slot refuses outright — a stopped connector
@@ -49,13 +49,13 @@ export async function purgeOutbox(
 }
 
 /**
- * ⚠ THE HORIZON MUST OUTLIVE EVERY WAY A MESSAGE CAN COME BACK (§7.5), which is the retry
+ * THE HORIZON MUST OUTLIVE EVERY WAY A MESSAGE CAN COME BACK (§7.5), which is the retry
  *   budget — 5 s, 30 s, 5 min — plus however long a dead-lettered message sits before
  *   somebody replays it. Purged sooner it stops deduplicating precisely the replays it
  *   exists for: the message returns, finds no row, and the effect is applied twice in
  *   silence.
  *
- * ⚠ 30 days is chosen against a real bound, not a feeling: past the DLQ topic's retention
+ * 30 days is chosen against a real bound, not a feeling: past the DLQ topic's retention
  *   the message cannot come back at all, and no topic in `infra/kafka/topics.json` sets one,
  *   so Kafka's 168 h default applies. **Raising a DLQ retention past 30 days requires raising
  *   this**, and nothing checks that coupling.

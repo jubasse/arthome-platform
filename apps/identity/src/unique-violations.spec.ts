@@ -19,7 +19,7 @@ function columnsDeclaredUniqueByTheMigrations(): readonly string[] {
 }
 
 /**
- * ⚠ THE FILTER'S OWN SUITE CANNOT CATCH THIS, AND DID NOT. It tests the mechanism
+ * THE FILTER'S OWN SUITE CANNOT CATCH THIS, AND DID NOT. It tests the mechanism
  *   against a fixture that copies this table, so it stayed green for a week while the
  *   service passed no table at all and every duplicate email answered 500. The
  *   mechanism being right is not the same fact as the service using it.

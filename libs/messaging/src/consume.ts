@@ -20,7 +20,7 @@ const REBALANCE_TIMEOUT_MS = 60_000;
 const HEARTBEAT_INTERVAL_MS = 3_000;
 
 /**
- * ⚠ KafkaJS consumes one message at a time by default (`partitionsConsumedConcurrently` is
+ * KafkaJS consumes one message at a time by default (`partitionsConsumedConcurrently` is
  *   1), so a 12-partition topic drains serially. Order still holds per partition, which is
  *   the only guarantee the event path rests on.
  */
@@ -37,7 +37,7 @@ export interface ConsumerSetup {
 }
 
 /**
- * ⚠ This replaced a `pause()` + `setTimeout` + `seek()` that LOST MESSAGES, and the mechanism
+ * This replaced a `pause()` + `setTimeout` + `seek()` that LOST MESSAGES, and the mechanism
  *   is worth stating because it looked correct. KafkaJS resolves the offset unconditionally
  *   as soon as `eachMessage` returns (`runner.js`: `resolveOffset` at :254, the pause only
  *   breaks the loop at :258), storing `offset + 1` — so returning early committed past a
@@ -46,7 +46,7 @@ export interface ConsumerSetup {
  *   committed business fact silently: `seek` is a no-op once the partition has left the
  *   assignment. Waiting here resolves the offset only after the message has been handled,
  *   holding the retry partition for the duration — which is what a retry topic is for.
- * ⚠ On shutdown it throws rather than returning: returning would commit the offset and lose
+ * On shutdown it throws rather than returning: returning would commit the offset and lose
  *   the message. `not-before` is absolute, so the replacement computes what remains.
  */
 async function waitUntilDue(
@@ -71,12 +71,12 @@ async function waitUntilDue(
 /**
  * Subscribe a service to its topics and to its own retry topic.
  *
- * ⚠ The retry topic gets its own consumer and its own group: honouring a delay means BLOCKING
+ * The retry topic gets its own consumer and its own group: honouring a delay means BLOCKING
  *   the handler for up to five minutes, and doing that on the main consumer would stall live
  *   traffic behind a message that is deliberately waiting.
- * ⚠ One group per service, never one shared across services — a shared group makes the leader
+ * One group per service, never one shared across services — a shared group makes the leader
  *   assign only its own topics and the others go unconsumed, silently (events.md §1.4).
- * ⚠ The returned `stop` must be called: a consumer killed without disconnecting stays a member
+ * The returned `stop` must be called: a consumer killed without disconnecting stays a member
  *   until its session times out, and the group sits in PreparingRebalance for that whole time
  *   while its replacement consumes nothing. In a rolling deploy that is a stall at every pod,
  *   and it looks like a broker problem rather than a missing call.
@@ -132,7 +132,7 @@ export async function runConsumers(setup: ConsumerSetup): Promise<() => Promise<
     });
   };
 
-  // ⚠ One consumer for ALL the sources, not one per topic. Several members of one group with
+  // One consumer for ALL the sources, not one per topic. Several members of one group with
   //   disjoint subscriptions is the trap events.md §1.4 names: KafkaJS assigns with the
   //   LEADER's own subscription (`consumerGroup.js`: `assigner.assign({ members, topics:
   //   topicsSubscribed })`), so later topics get no assignment and go unconsumed, silently.

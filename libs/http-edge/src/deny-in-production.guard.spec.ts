@@ -48,7 +48,7 @@ describe('DenyInProductionGuard', () => {
     expect(guard.canActivate(contextFor(WriteRoutes, 'register'))).toBe(true);
   });
 
-  /** ⚠ Not authentication: every write route binds on 0.0.0.0 unguarded, so it ships reachable. */
+  /** Not authentication: every write route binds on 0.0.0.0 unguarded, so it ships reachable. */
   it('refuses an unexempted route in production', () => {
     const guard = new DenyInProductionGuard(true, reflector);
     expect(() => guard.canActivate(contextFor(WriteRoutes, 'register'))).toThrow(RefusalException);

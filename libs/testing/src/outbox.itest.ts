@@ -94,7 +94,7 @@ describe('the outbox, against a real Postgres', () => {
       const rows = await dataSource.getRepository(OutboxEvent).find();
       expect(rows).toHaveLength(1);
       expect(rows[0]?.id).toBe(messageId);
-      // ⚠ The message id is NOT the aggregate's: reused, a second event about the
+      // The message id is NOT the aggregate's: reused, a second event about the
       //   same object looks like a duplicate and every consumer drops it.
       expect(rows[0]?.id).not.toBe(aggregateId);
       expect(rows[0]?.aggregateid).toBe(aggregateId);
@@ -162,7 +162,7 @@ describe('the outbox, against a real Postgres', () => {
       await truncateAll(dataSource);
 
       expect(await dataSource.getRepository(OutboxEvent).count()).toBe(0);
-      // ⚠ Truncated, it tells TypeORM nothing has ever run and the next
+      // Truncated, it tells TypeORM nothing has ever run and the next
       //   `runMigrations` replays CREATE TABLE against the tables it left.
       const applied = await dataSource.query<{ name: string }[]>('SELECT name FROM migrations');
       expect(applied.map((row) => row.name)).toContain('OutboxOnly1758700000000');

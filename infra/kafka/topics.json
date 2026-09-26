@@ -2,7 +2,7 @@
   "_comment": [
     "The topics this repository owns, with the partition counts events.md §3 fixes.",
     "",
-    "⚠ NEVER RELY ON AUTO-CREATION. A topic created by a producer takes the broker's",
+    "NEVER RELY ON AUTO-CREATION. A topic created by a producer takes the broker's",
     "  default partition count — one — and events.md's numbers are not decoration:",
     "  they are the headroom that lets replicas be added without repartitioning.",
     "  Partitions cannot be reduced afterwards, and raising them re-hashes every",

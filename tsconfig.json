@@ -9,7 +9,7 @@
     // into the program that checks it would let a Node API in unnoticed. This
     // repository is nothing but Node: services, configuration and tools.
     "types": ["node"],
-    // ⚠ THE ROOT PROGRAM CHECKS THE SAME FILES THE SERVICES DO, so it needs the
+    // THE ROOT PROGRAM CHECKS THE SAME FILES THE SERVICES DO, so it needs the
     //   same two switches. Setting them only in apps/*/tsconfig.json made
     //   `pnpm run typecheck` fail with TS1240 on every entity — "unable to
     //   resolve signature of property decorator" — while each service's own

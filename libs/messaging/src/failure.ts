@@ -1,11 +1,11 @@
 /**
- * ⚠ Two reject mechanisms, never conflated (events.md §1.4): Kafka Connect's own
+ * Two reject mechanisms, never conflated (events.md §1.4): Kafka Connect's own
  *   dead-letter queue takes CONNECTOR failures, this takes CONSUMER ones. One
  *   topic for both loses the distinction — pipeline broken versus message broken.
  */
 
 /**
- * ⚠ Throwing this DISCARDS the message: dead-letter queue, no replay. Anything
+ * Throwing this DISCARDS the message: dead-letter queue, no replay. Anything
  *   unrecognised is transient instead — retrying a permanent failure costs three
  *   attempts, discarding a transient one loses the fact for good.
  */
@@ -17,7 +17,7 @@ export class PermanentError extends Error {
 export const RETRY_DELAYS_MS: readonly number[] = [5_000, 30_000, 300_000];
 
 /**
- * ⚠ Without it, everything that failed together retries together: a dependency
+ * Without it, everything that failed together retries together: a dependency
  *   down ten seconds fails a thousand messages, and a fixed delay sends all
  *   thousand back at once, onto a dependency that has just come up.
  */
@@ -49,11 +49,11 @@ export function routeFailure(
 }
 
 /**
- * ⚠ Retry at ONE layer: a client retry, the broker's redelivery and this budget
+ * Retry at ONE layer: a client retry, the broker's redelivery and this budget
  *   MULTIPLY — three of each is twenty-seven attempts, turning an outage into an
  *   overload. KafkaJS's own `retry` stays at its default, for connection faults.
  *
- * ⚠ A retry topic reorders one key's events. `search-indexer` guards it with
+ * A retry topic reorders one key's events. `search-indexer` guards it with
  *   `version_type: external_gte`; `notifications` handles one type keyed by
  *   account and needs none. The next consumer applying two ordered events owes one.
  *

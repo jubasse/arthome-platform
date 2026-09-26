@@ -1,7 +1,7 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
 /**
- * ⚠ The wave 1 slice, not the whole aggregate: authentication belongs to better-auth's
+ * The wave 1 slice, not the whole aggregate: authentication belongs to better-auth's
  *   own schema (`adr-auth.md`), and `status` is absent until the account lifecycle has a
  *   published vocabulary and a contract to serve it.
  */

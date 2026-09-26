@@ -1,4 +1,4 @@
-// ⚠ Aliased because `@arthome-platform/events` is a flat barrel: the wire enum and
+// Aliased because `@arthome-platform/events` is a flat barrel: the wire enum and
 //   `@arthome/core`'s domain vocabulary share the name `LanguageDependency`, and they are a
 //   number and a string. The map below exists so the two are never confused.
 import {
@@ -40,10 +40,10 @@ export interface PublishedShow {
 /**
  * The domain's member → the wire's number.
  *
- * ⚠ An encoding, not a parallel literal table (§5.2): there is one spelling — core's, which
+ * An encoding, not a parallel literal table (§5.2): there is one spelling — core's, which
  *   is also the wire's — plus a Protobuf number that cannot be avoided, only written once
  *   from the two generated sides. No string literal on either side.
- * ⚠ `satisfies` points at the domain on purpose: a fourth member of `LANGUAGE_DEPENDENCIES`
+ * `satisfies` points at the domain on purpose: a fourth member of `LANGUAGE_DEPENDENCIES`
  *   fails this build, because the domain leads. The reverse is deliberately not checked —
  *   the proto's `UNSPECIFIED = 0` has no domain member and must not acquire one.
  */
@@ -58,10 +58,10 @@ export class PublishShowService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   /**
-   * ⚠ The transaction is the feature. Never `save()` then `emit()`: a crash between the two
+   * The transaction is the feature. Never `save()` then `emit()`: a crash between the two
    *   loses the event and a rollback after the emission invents one. Both writes go through
    *   the same `manager`.
-   * ⚠ `traceparent` is injected here, not when the message is published: the relay runs
+   * `traceparent` is injected here, not when the message is published: the relay runs
    *   outside this request, so by the time Debezium reads the row the causing context is
    *   gone (events.md §1.3).
    */
@@ -114,7 +114,7 @@ export class PublishShowService {
           // Serialised here, by the producer; Debezium transports the bytes and reads none.
           payload: toBinary(ShowPublishedSchema, event),
           traceparent: command.traceparent,
-          // ⚠ Null because this slice has no VERIFIED actor: JWKS token verification is not
+          // Null because this slice has no VERIFIED actor: JWKS token verification is not
           //   built, and reading a name out of a request header is the `x-user-id` that
           //   critical-rules #4 forbids. An unverified actor in a journal that decides
           //   thousands of euros is worse than an absent one.

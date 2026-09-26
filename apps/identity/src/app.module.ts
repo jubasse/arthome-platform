@@ -37,7 +37,7 @@ import { UNIQUE_VIOLATION_CODES } from './unique-violations.js';
   controllers: [HealthController],
   imports: [TypeOrmModule.forRoot(dataSource.options), IdentityModule],
   providers: [
-    // ⚠ Global, not `@UsePipes`: a schema on `@Body()` is inert without this pipe, and per
+    // Global, not `@UsePipes`: a schema on `@Body()` is inert without this pipe, and per
     //   method it would run on every parameter of the handler.
     {
       provide: APP_PIPE,
@@ -57,7 +57,7 @@ import { UNIQUE_VIOLATION_CODES } from './unique-violations.js';
       useFactory: (): SuccessEnvelopeInterceptor =>
         new SuccessEnvelopeInterceptor(new SystemClock()),
     },
-    // ⚠ It refuses EVERY route, so a liveness probe will need an exemption.
+    // It refuses EVERY route, so a liveness probe will need an exemption.
     {
       provide: APP_GUARD,
       inject: [Reflector],

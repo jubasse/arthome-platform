@@ -15,15 +15,15 @@ export const dataSource: DataSource = new DataSource({
   migrations: [Initial1758700000000, OutboxGuards1758700200000],
   applicationName: Service.IDENTITY,
 
-  // ⚠ `poolSize` × replicas, plus one replication connection per connector, must stay under Postgres's `max_connections` (100).
+  // `poolSize` × replicas, plus one replication connection per connector, must stay under Postgres's `max_connections` (100).
   poolSize: 10,
 
-  // ⚠ pg waits FOR EVER by default: a service started against a dead Postgres hung in `initialize()`.
+  // pg waits FOR EVER by default: a service started against a dead Postgres hung in `initialize()`.
   extra: { connectionTimeoutMillis: 10_000 },
 
-  // ⚠ true would drop and recreate columns to match the entities, breaking the connector with no migration to review.
+  // true would drop and recreate columns to match the entities, breaking the connector with no migration to review.
   synchronize: false,
   logging: env.NODE_ENV === 'development',
 });
 
-// ⚠ One export only: TypeORM's CLI refuses "more than one export of DataSource".
+// One export only: TypeORM's CLI refuses "more than one export of DataSource".

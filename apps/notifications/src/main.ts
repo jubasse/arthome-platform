@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   await dataSource.initialize();
 
   const kafka = new Kafka({
-    // ⚠ NAMED FROM THE DOMAIN, not from a literal. `check-enums` caught both of
+    // NAMED FROM THE DOMAIN, not from a literal. `check-enums` caught both of
     //   these as copies of SERVICES, and it was right: a service's own name is a
     //   domain fact, and a typo in a groupId does not fail — it silently forms a
     //   second consumer group that reads everything again from the beginning.
@@ -38,7 +38,7 @@ async function main(): Promise<void> {
     onDisposition: (topic, disposition) => console.log(`${topic} ${disposition}`),
   });
 
-  // ⚠ An orchestrator sends SIGTERM and then, past its grace period, again — and a
+  // An orchestrator sends SIGTERM and then, past its grace period, again — and a
   //   person pressing ctrl-c twice does the same. Without this the second signal
   //   re-enters and calls stop() and disconnect() on clients already closing, which
   //   is how a clean shutdown ends in a rejection nobody reads.

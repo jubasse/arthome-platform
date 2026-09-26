@@ -20,7 +20,7 @@ describe('the inbound traceparent', () => {
   });
 
   it('drops a malformed header instead of failing the request', () => {
-    // ⚠ THE DECISION THIS FUNCTION EXISTS TO KEEP. A broken trace is an
+    // THE DECISION THIS FUNCTION EXISTS TO KEEP. A broken trace is an
     //   observability fault, never a business one, so every one of these becomes
     //   `null` and the registration proceeds. Throwing here would refuse a
     //   registration over a header, which is settled and not reopened.

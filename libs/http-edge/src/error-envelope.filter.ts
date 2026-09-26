@@ -44,9 +44,9 @@ interface ErrorEnvelope {
  * The single place an error becomes a response — a library rather than a file per service,
  * because two copies of one envelope is critical-rules #2.
  *
- * ⚠ It replies through `httpAdapter.reply`, not `response.status().json()`: on
+ * It replies through `httpAdapter.reply`, not `response.status().json()`: on
  *   `@nestjs/platform-fastify` the Express idiom throws "response.status is not a function".
- * ⚠ `@Catch()` with no argument, and the only filter. A catch-all must be registered BEFORE
+ * `@Catch()` with no argument, and the only filter. A catch-all must be registered BEFORE
  *   any specific one — NestJS reverses the list and the first match wins — so the status
  *   mapping is a lookup inside it rather than a second filter with an order to get wrong.
  */
@@ -77,7 +77,7 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
         code: refusal.code,
         nature: refusal.nature,
         params: refusal.params,
-        // ⚠ Omitted rather than empty: `ErrorSchema.traceId` is `z.string().min(1)`, so an
+        // Omitted rather than empty: `ErrorSchema.traceId` is `z.string().min(1)`, so an
         //   empty string would satisfy the field's presence and lead a reader to a log line
         //   that does not exist. `exactOptionalPropertyTypes` is why this is a spread.
         ...(trace === null ? {} : { traceId: trace.traceId }),
@@ -96,7 +96,7 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
       return { status: exception.getStatus(), refusal: exception.refusal };
     }
 
-    // ⚠ No translation table needed: `DomainError` already carries `code`, `params` and
+    // No translation table needed: `DomainError` already carries `code`, `params` and
     //   `nature`. The domain throws these rather than `HttpException`s because a rule in
     //   `@arthome/core` is reachable from seven services and must not know its transport.
     if (isDomainError(exception)) {
@@ -125,7 +125,7 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
       };
     }
 
-    // ⚠ An unknown error's message carries SQL, connection strings and stack frames, so it
+    // An unknown error's message carries SQL, connection strings and stack frames, so it
     //   may not be echoed. `Logger.error` takes the error so the stack survives.
     this.logger.error('Unhandled error; answered 500.', exception);
     return {
@@ -135,13 +135,13 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
   }
 
   /**
-   * ⚠ The constraint name is read, logged, never served: `QueryFailedError` copies the driver
+   * The constraint name is read, logged, never served: `QueryFailedError` copies the driver
    *   error's properties, so `detail` reads "Key (email)=(someone@example.test) already
    *   exists" — the column and the value. Only the code leaves.
-   * ⚠ It matches the column INSIDE the name, not the whole name: Postgres names inline
+   * It matches the column INSIDE the name, not the whole name: Postgres names inline
    *   `UNIQUE`s `{table}_{column}_key`, so a hand-named `UQ_account_email` would break an
    *   exact match while meaning the same thing. Not verified against a running Postgres.
-   * ⚠ `detail` names the column too and is not used for it: pg translates it under
+   * `detail` names the column too and is not used for it: pg translates it under
    *   `lc_messages`, while constraint names are never translated.
    */
   private resolveUniqueViolation(constraint: string | null): { status: number; refusal: Refusal } {
@@ -169,7 +169,7 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
 }
 
 /**
- * ⚠ The per-code table §5.5 calls for does not exist and is not invented here: it belongs
+ * The per-code table §5.5 calls for does not exist and is not invented here: it belongs
  *   "single, in `@arthome/contracts`" and neither service depends on that package. Nature
  *   alone cannot choose — `refused` covers 400, 401, 403, 404, 409 and 410 — and 400 is the
  *   least wrong default for a refusal the caller's own input provoked.
@@ -181,7 +181,7 @@ function statusForDomainError(error: DomainError): number {
 }
 
 /**
- * ⚠ Duck-typed rather than `instanceof QueryFailedError`, so the transport layer does not
+ * Duck-typed rather than `instanceof QueryFailedError`, so the transport layer does not
  *   depend on the ORM for one `instanceof`. TypeORM 1.1.1 keeps the pg error on `driverError`
  *   and also copies its enumerable properties onto the wrapper; `driverError` is read first
  *   because it is authoritative — a version that stopped copying would silently turn every

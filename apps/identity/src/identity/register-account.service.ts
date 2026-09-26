@@ -27,10 +27,10 @@ export class RegisterAccountService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   /**
-   * ⚠ ONE transaction, and that is the feature: `save()` then `emit()` loses the event on
+   * ONE transaction, and that is the feature: `save()` then `emit()` loses the event on
    *   a crash between them and invents one on a rollback after.
    *
-   * ⚠ `traceparent` is injected here, not at publication: the relay runs outside this
+   * `traceparent` is injected here, not at publication: the relay runs outside this
    *   request, and by then the context that caused the row is gone (events.md §1.3).
    */
   async register(command: RegisterAccountCommand): Promise<RegisteredAccount> {

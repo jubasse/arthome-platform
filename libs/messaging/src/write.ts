@@ -18,11 +18,11 @@ export interface OutboxFact {
 }
 
 /**
- * ⚠ The `manager` argument is the whole guarantee, and it is why this takes one rather than a
+ * The `manager` argument is the whole guarantee, and it is why this takes one rather than a
  *   repository of its own: it must be the manager of the transaction writing the business
  *   row. Never `save()` then `emit()` — a crash between the two loses the event, a rollback
  *   after the emission invents one.
- * ⚠ The returned id is the MESSAGE's, not the aggregate's. It becomes the `message-id` header
+ * The returned id is the MESSAGE's, not the aggregate's. It becomes the `message-id` header
  *   and hence every consumer's dedup key: reusing the aggregate id would make a second event
  *   about the same object look like a duplicate of the first, and consumers would drop it.
  */

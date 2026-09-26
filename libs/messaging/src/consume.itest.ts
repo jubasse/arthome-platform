@@ -9,7 +9,7 @@ import { retryTopic } from './failure.js';
 /**
  * The retry backoff, against a real broker.
  *
- * ⚠ THIS FILE EXISTS BECAUSE `consume.ts` HAD NO TEST AT ALL, and a blocker lived
+ * THIS FILE EXISTS BECAUSE `consume.ts` HAD NO TEST AT ALL, and a blocker lived
  *   in it: the delayed message's offset was committed before its backoff elapsed,
  *   so any restart inside the wait dropped a committed business fact. Unit tests
  *   could not have caught it — the defect is in KafkaJS's offset bookkeeping, not
@@ -101,7 +101,7 @@ describe('the retry backoff', () => {
         await new Promise((resolve) => setTimeout(resolve, 8_000));
         expect(seen).toEqual([]);
 
-        // ⚠ THE ASSERTION THAT WOULD HAVE CAUGHT THE BLOCKER. With the old
+        // THE ASSERTION THAT WOULD HAVE CAUGHT THE BLOCKER. With the old
         //   pause/seek/setTimeout, `eachMessage` had already returned, so KafkaJS
         //   had resolved and auto-committed `offset + 1` — and a restart here
         //   dropped the message. Holding inside the handler means nothing is

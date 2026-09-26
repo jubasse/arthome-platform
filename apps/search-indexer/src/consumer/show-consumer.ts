@@ -18,7 +18,7 @@ import type { IndexedRendition, ShowDocument } from '../index/show-document.js';
 const SHOW_PUBLISHED = 'catalog.show.published.v1';
 
 /**
- * ⚠ `UNSPECIFIED` maps to `null`, not to `NONE`: protobuf's zero value is what an older
+ * `UNSPECIFIED` maps to `null`, not to `NONE`: protobuf's zero value is what an older
  *   producer sends when it has nothing to say, and `NONE` would assert a fact nobody stated.
  */
 const DOMAIN_LANGUAGE_DEPENDENCY: Readonly<
@@ -31,7 +31,7 @@ const DOMAIN_LANGUAGE_DEPENDENCY: Readonly<
 };
 
 /**
- * ⚠ An unknown member — a producer one version ahead — is dropped, not refused: a field
+ * An unknown member — a producer one version ahead — is dropped, not refused: a field
  *   that decides a badge must not take a whole show out of the catalogue.
  */
 function domainLanguageDependency(wire: WireLanguageDependency): LanguageDependency | null {
@@ -47,11 +47,11 @@ function indexedRendition(source: {
 }
 
 /**
- * ⚠ Pure, and that is what licenses re-indexing on a replay. The day this reads the
+ * Pure, and that is what licenses re-indexing on a replay. The day this reads the
  *   current document, the ordering decided in `applyMessage` has to be revisited.
  */
 export function projectShow(event: ShowPublished, indexedAt: Date): ShowDocument {
-  // ⚠ Absent media is empty media, not a refusal: a show published before its images
+  // Absent media is empty media, not a refusal: a show published before its images
   //   were uploaded is still one somebody must be able to find.
   const media = event.media;
 
@@ -77,7 +77,7 @@ export function projectShow(event: ShowPublished, indexedAt: Date): ShowDocument
 }
 
 /**
- * ⚠ Protobuf makes every field optional, so a message with no timestamp decodes happily
+ * Protobuf makes every field optional, so a message with no timestamp decodes happily
  *   and would index at version 0 — losing to every later write, for ever and silently.
  */
 function occurredAt(event: ShowPublished): NonNullable<ShowPublished['occurredAt']> {
@@ -91,7 +91,7 @@ function occurredAt(event: ShowPublished): NonNullable<ShowPublished['occurredAt
 }
 
 /**
- * ⚠ THE INDEX WRITE COMES BEFORE THE `processed_message` COMMIT, AND THE ORDER IS THE
+ * THE INDEX WRITE COMES BEFORE THE `processed_message` COMMIT, AND THE ORDER IS THE
  *   DECISION. The two cannot commit together: crashing between them either repeats an
  *   idempotent index write (chosen) or leaves the show missing from search for ever
  *   behind a row claiming it was processed. Indexing before the dedup check is also what
@@ -105,7 +105,7 @@ export async function applyMessage(
 ): Promise<Outcome> {
   const messageId = header(payload, 'message-id');
   if (messageId === null) {
-    // ⚠ A generated id would make the message undeduplicable and reprocessable for ever.
+    // A generated id would make the message undeduplicable and reprocessable for ever.
     throw new PermanentError(
       `message on ${payload.topic} has no message-id header — permanent, not a default`,
     );
@@ -129,7 +129,7 @@ export async function applyMessage(
   const version = timestampMs(occurredAt(event));
   const document = projectShow(event, now);
 
-  // ⚠ The data path treats `indexed` and `superseded` alike — either way the index holds this show
+  // The data path treats `indexed` and `superseded` alike — either way the index holds this show
   //   at a version at least this new, and the ledger row must still be written. Only the reported
   //   outcome differs: logging `applied` for an older event that changed nothing misleads whoever
   //   is chasing an ordering problem. Found by running one on 2026-09-26.
@@ -149,7 +149,7 @@ export async function applyMessage(
 
     if ((claimed.raw as unknown[]).length === 0) return 'duplicate';
 
-    // ⚠ THE `WHERE` IS THE REASON FOR THE RAW SQL — TypeORM's `orUpdate` carries no
+    // THE `WHERE` IS THE REASON FOR THE RAW SQL — TypeORM's `orUpdate` carries no
     //   condition. A message off the retry topic can arrive after a newer one for the
     //   same show; OpenSearch refuses that write (`external_gte`), so the ledger must
     //   refuse it too, or the table an operator consults goes backwards.

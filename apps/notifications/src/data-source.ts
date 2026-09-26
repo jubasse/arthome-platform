@@ -14,11 +14,11 @@ export const dataSource: DataSource = new DataSource({
   migrations: [Initial1758700100000],
   applicationName: Service.NOTIFICATIONS,
 
-  // ⚠ `poolSize` × replicas, plus one replication connection per registered
+  // `poolSize` × replicas, plus one replication connection per registered
   //   connector, must stay under Postgres's `max_connections` — default 100.
   poolSize: 10,
 
-  // ⚠ pg waits FOR EVER by default: a service started against a dead Postgres hung
+  // pg waits FOR EVER by default: a service started against a dead Postgres hung
   //   in `initialize()` with nothing to restart it. The statement and
   //   idle-in-transaction timeouts live in `infra/postgres/init-databases.sql`, since
   //   the migration CLI shares this DataSource and they would kill a backfill.

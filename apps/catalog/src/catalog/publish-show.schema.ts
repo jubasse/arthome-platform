@@ -4,11 +4,11 @@ import { LANGUAGE_DEPENDENCIES } from '@arthome/core';
 import { SlugSchema, vocabularyIn } from '@arthome/core/schema';
 
 /**
- * ⚠ Measured: `"genreIds": "abc"` published and indexed three genres nobody sent — the service
+ * Measured: `"genreIds": "abc"` published and indexed three genres nobody sent — the service
  *   spreads the value into event and row, and spreading a string yields its characters.
- * ⚠ Measured: the numeric fields were already safe and the string ones were not —
+ * Measured: the numeric fields were already safe and the string ones were not —
  *   `assertUInt32` throws inside the transaction, while the writer's `string` coerces.
- * ⚠ It stays here, not in `@arthome/contracts`: `POST /shows` is in no OpenAPI document.
+ * It stays here, not in `@arthome/contracts`: `POST /shows` is in no OpenAPI document.
  */
 
 /**
@@ -18,7 +18,7 @@ import { SlugSchema, vocabularyIn } from '@arthome/core/schema';
 const UINT32_MAX = 2 ** 32 - 1;
 
 /**
- * ⚠ Shape only: `@arthome/core`'s `rendition()` owns the rule and already refuses an empty
+ * Shape only: `@arthome/core`'s `rendition()` owns the rule and already refuses an empty
  *   url (`media.url_empty`) and a non-positive dimension (`media.size_invalid`). `.url()` or
  *   `.positive()` here would be a second implementation of it.
  */
@@ -30,7 +30,7 @@ const RenditionIn = z.strictObject({
 
 export const PublishShowSchema = z.strictObject({
   /**
-   * ⚠ `ChannelIdSchema` was declined: these columns are `text` and the fixtures in use are
+   * `ChannelIdSchema` was declined: these columns are `text` and the fixtures in use are
    *   `channel-1`, so pinning UUIDv7 would refuse, on a guess, bodies that work today.
    */
   channelId: z.string().min(1),
@@ -46,14 +46,14 @@ export const PublishShowSchema = z.strictObject({
   runtimeMin: z.int().min(0).max(UINT32_MAX),
 
   /**
-   * ⚠ Member-strict because it is a Protobuf enum: an unknown member has no number, so the
+   * Member-strict because it is a Protobuf enum: an unknown member has no number, so the
    *   silent outcome is `LANGUAGE_DEPENDENCY_UNSPECIFIED` — a published fact saying nothing
    *   about the field `hasLanguageBarrier` reads, with nothing failing anywhere.
    */
   languageDependency: vocabularyIn(LANGUAGE_DEPENDENCIES),
 
   /**
-   * ⚠ BCP 47, not `LocaleIn`: `LOCALES` is the display locale `['fr','en']`, and a show
+   * BCP 47, not `LocaleIn`: `LOCALES` is the display locale `['fr','en']`, and a show
    *   performed in German is a real show.
    */
   spokenLanguages: z.array(z.string().min(1)),

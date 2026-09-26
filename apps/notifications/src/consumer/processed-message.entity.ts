@@ -4,7 +4,7 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
  * The deduplication key of every consumer in this repository. Delivery is at least once,
  * always: the relay can crash between publishing and marking, CDC replays, a retry duplicates.
  *
- * ⚠ The row is inserted INSIDE the business transaction, and that placement is the guarantee:
+ * The row is inserted INSIDE the business transaction, and that placement is the guarantee:
  *   a check-then-write outside it loses the effect on one ordering and doubles it on the
  *   other, and a Redis `SET NX` cannot roll back with the database (events.md §1.4).
  */

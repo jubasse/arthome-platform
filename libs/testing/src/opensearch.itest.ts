@@ -18,7 +18,7 @@ describe('startOpenSearch', () => {
 
       const { url } = opensearch.endpoint;
 
-      // ⚠ A single-node cluster reports `yellow`, never `green`: it has no
+      // A single-node cluster reports `yellow`, never `green`: it has no
       //   second node to place a replica on. A harness that waited for green
       //   would wait until its timeout on a perfectly healthy container.
       const health = (await (await fetch(`${url}/_cluster/health`)).json()) as {

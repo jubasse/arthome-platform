@@ -9,7 +9,7 @@ import { env } from './env.js';
 import { createOpenSearchClient, ensureShowIndex, showIndex } from './index/opensearch-client.js';
 
 /**
- * ⚠ The consumer group and topic stem, owned by `infra/kafka/topics.json` and
+ * The consumer group and topic stem, owned by `infra/kafka/topics.json` and
  *   `infra/postgres/init-databases.sql`: changing it here alone names a retry topic and
  *   a database that do not exist.
  */
@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   await dataSource.initialize();
 
   const opensearch = createOpenSearchClient(env.OPENSEARCH_URL);
-  // ⚠ Before the first message, never lazily: a write to a missing index auto-creates it
+  // Before the first message, never lazily: a write to a missing index auto-creates it
   //   with a mapping OpenSearch guesses from the first document.
   await ensureShowIndex(opensearch);
 
@@ -47,9 +47,9 @@ async function main(): Promise<void> {
     onDisposition: (topic, disposition) => console.log(`${topic} ${disposition}`),
   });
 
-  // ⚠ THE CONSUMERS STOP FIRST. Closing the database or the index client under a
+  // THE CONSUMERS STOP FIRST. Closing the database or the index client under a
   //   mid-message handler dead-letters the work a clean shutdown was meant to spare.
-  // ⚠ The guard matters because SIGTERM arrives twice — an orchestrator past its grace
+  // The guard matters because SIGTERM arrives twice — an orchestrator past its grace
   //   period, or ctrl-c twice — and the second re-enters into clients already closing.
   let shuttingDown = false;
   const shutdown = async (): Promise<void> => {

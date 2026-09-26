@@ -5,7 +5,7 @@ import type { LanguageDependency, MediaSet } from '@arthome/core';
 /**
  * The root aggregate of `catalog` (data-model.md §2.1), sliced to what `ShowPublished` carries.
  *
- * ⚠ The column is `category_id` where the domain document says "discipline". The wire decides
+ * The column is `category_id` where the domain document says "discipline". The wire decides
  *   (code-conventions.md §5.2) and `ShowPublished.category_id` is published and stable, so
  *   renaming it here puts a second name on one concept at the boundary where the two must agree.
  */
@@ -36,7 +36,7 @@ export class Show {
   @Column('integer')
   runtime_min!: number;
 
-  /** ⚠ The domain's spelling, never the Protobuf number: unreadable in psql and wrong the day the proto renumbers. */
+  /** The domain's spelling, never the Protobuf number: unreadable in psql and wrong the day the proto renumbers. */
   @Column('text')
   language_dependency!: LanguageDependency;
 

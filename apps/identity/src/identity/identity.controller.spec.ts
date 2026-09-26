@@ -28,7 +28,7 @@ const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 
 describe('IdentityController', () => {
   it('returns the public handle and never the internal account id', async () => {
-    // ⚠ `account.entity.ts` SAYS OF THE PRIMARY KEY "UUIDv7, never exposed", AND
+    // `account.entity.ts` SAYS OF THE PRIMARY KEY "UUIDv7, never exposed", AND
     //   THE ROUTE RETURNED IT. `data-model.md` §7.1 gives the cost: a UUIDv7
     //   reveals its own creation instant and is orderable, so a caller holding two
     //   can order the population and date every account. The service still
@@ -56,7 +56,7 @@ describe('IdentityController', () => {
   });
 
   it('registers the account anyway when the traceparent is malformed, carrying none', async () => {
-    // ⚠ BOTH HALVES MATTER, AND THE FIRST IS THE DECIDED ONE. A broken trace is an
+    // BOTH HALVES MATTER, AND THE FIRST IS THE DECIDED ONE. A broken trace is an
     //   observability fault, never a business one, so the registration MUST still
     //   happen — refusing it here would reopen a settled decision. The second half
     //   is why the check exists at all: the value would otherwise reach

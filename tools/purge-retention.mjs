@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The retention job data-model.md §7.5 specifies and nothing ran.
 //
-// ⚠ IT IS A COMMAND, NOT A SCHEDULE. There is no job runner in this repository, so this is
+// IT IS A COMMAND, NOT A SCHEDULE. There is no job runner in this repository, so this is
 //   what a cron entry or a Kubernetes CronJob invokes once the deployment exists. Leaving it
 //   unscheduled is visible; leaving it unwritten was not.
 //
@@ -28,7 +28,7 @@ await dataSource.initialize();
 
 try {
   if (PUBLISHERS.has(service)) {
-    // ⚠ The slot name is the connector's, from data-model.md §7.4. A different one reads as
+    // The slot name is the connector's, from data-model.md §7.4. A different one reads as
     //   "no connector has ever published this", and the purge refuses — which is the safe way
     //   round for a typo.
     const slot = `arthome_${service}_outbox`;

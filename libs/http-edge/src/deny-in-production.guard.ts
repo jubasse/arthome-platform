@@ -9,10 +9,10 @@ import { RefusalException } from './refusal.js';
 /**
  * Refuses every request when the service runs in production.
  *
- * ⚠ Not authentication — `adr-auth.md` defers that. What is fixed is narrower: every write
+ * Not authentication — `adr-auth.md` defers that. What is fixed is narrower: every write
  *   route here binds on `0.0.0.0` with no guard, so it SHIPS REACHABLE. critical-rules #5
  *   forbids the "only the BFF calls me" argument.
- * ⚠ It takes a boolean, not the environment: a guard reading `process.env` would be
+ * It takes a boolean, not the environment: a guard reading `process.env` would be
  *   untestable without mutating the process.
  */
 @Injectable()
@@ -34,7 +34,7 @@ export class DenyInProductionGuard implements CanActivate {
     ) {
       return true;
     }
-    // ⚠ Thrown, not `return false`: a `false` yields NestJS's own 403 with an English message
+    // Thrown, not `return false`: a `false` yields NestJS's own 403 with an English message
     //   and no code, which critical-rules #8 forbids.
     throw new RefusalException(HttpStatus.FORBIDDEN, {
       code: ApiErrorCode.FORBIDDEN,

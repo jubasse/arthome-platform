@@ -46,7 +46,7 @@ describe('the POST /shows body', () => {
   });
 
   it('refuses genreIds sent as a string, which used to invent three genres nobody sent', async () => {
-    // ⚠ THE CASE THIS FILE EXISTS FOR. `publish-show.service.ts` spreads the value
+    // THE CASE THIS FILE EXISTS FOR. `publish-show.service.ts` spreads the value
     //   twice — once into the event, once into the row — and spreading `'abc'`
     //   yields `['a','b','c']`. Three genre ids the caller never sent were
     //   committed, published in `ShowPublished.genre_ids`, and indexed, with no
@@ -81,7 +81,7 @@ describe('the POST /shows body', () => {
   });
 
   it('refuses a runtime the wire cannot carry, turning a rollback into a refusal', async () => {
-    // ⚠ MEASURED, AND IT CORRECTS WHAT HANDOVER.md USED TO CLAIM. `runtime_min` is
+    // MEASURED, AND IT CORRECTS WHAT HANDOVER.md USED TO CLAIM. `runtime_min` is
     //   `uint32`, and `assertUInt32` throws on a negative, a non-integer and a
     //   non-number — inside the transaction, so `-1` already rolled back with a 500
     //   and published nothing. The fix is not that it was silent; it is that a 500

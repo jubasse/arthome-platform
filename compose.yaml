@@ -1,6 +1,6 @@
 # The infrastructure the event path needs, and nothing else yet.
 #
-# ⚠ THIS FILE IS NOT A MINIATURE OF PRODUCTION and does not pretend to be.
+# THIS FILE IS NOT A MINIATURE OF PRODUCTION and does not pretend to be.
 #   One broker, one connector, no replication, no TLS, no schema registry yet.
 #   What it does reproduce faithfully is the part the code depends on: logical
 #   decoding, one replication slot per service, and the Debezium outbox router's
@@ -11,7 +11,7 @@ name: arthome
 services:
   postgres:
     image: postgres:18-alpine
-    # ⚠ wal_level=logical IS THE WHOLE POINT, and it needs a restart on a real
+    # wal_level=logical IS THE WHOLE POINT, and it needs a restart on a real
     #   server (data-model.md §7.4). Debezium reads the WAL; on the default
     #   `replica` level there is nothing to read and the connector fails at
     #   startup with a message that does not say this.
@@ -32,7 +32,7 @@ services:
       # makes it run again.
       - ./infra/postgres/init-databases.sql:/docker-entrypoint-initdb.d/10-databases.sql:ro
     ports:
-      # ⚠ 55432, NOT 5432. The conventional port was already held by another
+      # 55432, NOT 5432. The conventional port was already held by another
       #   project on this machine, and taking it would have stopped that one.
       #   A development stack that fights for well-known ports is a stack you
       #   cannot run beside anything else.
@@ -94,7 +94,7 @@ services:
   opensearch:
     image: opensearchproject/opensearch:2.18.0
     environment:
-      # ⚠ SINGLE NODE AND NO SECURITY PLUGIN: this is a development stack, and
+      # SINGLE NODE AND NO SECURITY PLUGIN: this is a development stack, and
       #   saying so in the configuration is better than a README nobody reads.
       #   A cluster, TLS and real credentials are a deployment concern.
       discovery.type: single-node

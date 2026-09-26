@@ -1,6 +1,6 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 
-/** ⚠ Exactly one row per account, however many times the message is delivered. */
+/** Exactly one row per account, however many times the message is delivered. */
 @Entity('welcome_email')
 export class WelcomeEmail {
   @PrimaryColumn('uuid')

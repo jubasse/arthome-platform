@@ -1,12 +1,12 @@
 /**
- * ⚠ No pipe can validate this: `@Headers` is `(property?: string) => ParameterDecorator` in
+ * No pipe can validate this: `@Headers` is `(property?: string) => ParameterDecorator` in
  *   `@nestjs/common` 12.0.3 — no options object, so no `schema` for
  *   `StandardSchemaValidationPipe` to find. A header is validated by hand or not at all.
- * ⚠ Worth validating because of where it ends up: `outbox_event.tracecontext`, then a Kafka
+ * Worth validating because of where it ends up: `outbox_event.tracecontext`, then a Kafka
  *   header, then every consumer of that topic. It is also the one outbox column with no CHECK
  *   constraint, so the guards on `aggregatetype`, `aggregateid`, `type` and `payload` have no
  *   counterpart here.
- * ⚠ A malformed one must NOT fail the request — decided. Hence `null` rather than a throw: a
+ * A malformed one must NOT fail the request — decided. Hence `null` rather than a throw: a
  *   broken trace is an observability fault, never a business one.
  */
 
@@ -17,7 +17,7 @@
  * an all-zero trace-id and parent-id INVALID, and both are what a half-initialised tracer
  * emits — they have the shape of a trace and link to nothing.
  *
- * ⚠ Only `00` is accepted: it is the only version defined and `ff` is invalid by the
+ * Only `00` is accepted: it is the only version defined and `ff` is invalid by the
  *   specification. The day `01` exists, widen this rather than relax it — the trace-id is read
  *   here to serve as the error envelope's `traceId`.
  */

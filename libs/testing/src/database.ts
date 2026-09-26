@@ -1,5 +1,5 @@
 /**
- * ⚠ The schema comes from the migrations, never from `synchronize`: on a
+ * The schema comes from the migrations, never from `synchronize`: on a
  *   CDC-captured table `synchronize` drops and recreates columns, breaking
  *   replication with no migration to review (data-model.md §7.4), and it leaves
  *   the migrations — the files that run against production — untested.
@@ -21,7 +21,7 @@ const MIGRATIONS_TABLE = 'migrations';
 const DATABASE_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
 
 /**
- * ⚠ Dropped first, and `WITH (FORCE)`: after a crashed test the database is
+ * Dropped first, and `WITH (FORCE)`: after a crashed test the database is
  *   still there and still connected to, and plain `DROP DATABASE` fails with "is
  *   being accessed by other users", which reads like a permissions problem.
  */
@@ -62,7 +62,7 @@ export async function createDatabase(
 }
 
 /**
- * ⚠ The caller owns the returned `DataSource` and must `destroy()` it: a live
+ * The caller owns the returned `DataSource` and must `destroy()` it: a live
  *   pool keeps Node alive, and a runner that will not exit looks like a hang.
  *
  * `transaction: 'each'`: a migration that cannot run inside one — `CREATE INDEX
@@ -86,7 +86,7 @@ export async function applyMigrations(
 }
 
 /**
- * ⚠ The migrations table is spared: emptied, it tells TypeORM nothing has ever
+ * The migrations table is spared: emptied, it tells TypeORM nothing has ever
  *   run, and the next `runMigrations` replays `CREATE TABLE` against a schema
  *   that still holds every table — failing in a different test from this one.
  *

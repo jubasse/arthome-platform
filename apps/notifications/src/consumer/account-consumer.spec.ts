@@ -41,7 +41,7 @@ function message(headers: Record<string, string>): EachMessagePayload {
  * `claimed` decides whether the dedup insert reports a fresh identifier;
  * `accountAlreadyHasOne` whether `welcome_email`'s primary key already holds the row.
  *
- * ⚠ BOTH WRITES ARE `orIgnore()` QUERY BUILDERS NOW, so the double has to tell them
+ * BOTH WRITES ARE `orIgnore()` QUERY BUILDERS NOW, so the double has to tell them
  *   apart by the table they target — the business write returning no row is a distinct
  *   outcome from the dedup write returning none, and a double that conflated them
  *   could not see the defect the second guard exists for.
@@ -145,7 +145,7 @@ describe('applyMessage', () => {
   });
 
   /**
-   * ⚠ THE TWO GUARDS ANSWER DIFFERENT QUESTIONS, and this is the gap between them.
+   * THE TWO GUARDS ANSWER DIFFERENT QUESTIONS, and this is the gap between them.
    *   A second `message-id` carrying an account that already has its email passes the
    *   dedup insert and meets `welcome_email`'s primary key. Before `orIgnore()` on the
    *   business write that was a 23505 — not a `PermanentError`, so retried three times

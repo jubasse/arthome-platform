@@ -22,7 +22,7 @@ export class HealthController {
     @Inject(READINESS_CHECKS) private readonly checks: readonly ReadinessCheck[],
   ) {}
 
-  // ⚠ No dependency, on purpose: a failing liveness restarts the pod, and a database outage must
+  // No dependency, on purpose: a failing liveness restarts the pod, and a database outage must
   //   not restart every replica of every service at once.
   // `liveness`, not `live`: here `live` is a show on air, a member of two vocabularies.
   @Get('liveness')
@@ -31,7 +31,7 @@ export class HealthController {
   }
 
   /**
-   * ⚠ Only a `down` fails readiness. The operational checks answer `degraded`, which is a 200 with
+   * Only a `down` fails readiness. The operational checks answer `degraded`, which is a 200 with
    *   the detail in the body: a stopped connector must delay publishing, not take the API out of
    *   rotation.
    */

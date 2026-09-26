@@ -3,7 +3,7 @@ import { readHttpServiceEnv, type HttpServiceEnv } from '@arthome-platform/confi
 import { Service } from '@arthome/core';
 
 /**
- * ⚠ Parsed at module load, not in the bootstrap: the migration CLI loads `data-source.ts`
+ * Parsed at module load, not in the bootstrap: the migration CLI loads `data-source.ts`
  *   with no `main()` to run, so a parse inside one would leave the CLI reading an unvalidated
  *   environment — which is how every service ended up reaching for `process.env` directly.
  */

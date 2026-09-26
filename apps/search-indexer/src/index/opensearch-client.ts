@@ -18,7 +18,7 @@ export interface ShowIndex {
 }
 
 /**
- * ⚠ RETRY AT ONE LAYER. The defaults (`maxRetries: 3`, `requestTimeout: 30000`) multiply
+ * RETRY AT ONE LAYER. The defaults (`maxRetries: 3`, `requestTimeout: 30000`) multiply
  *   with `libs/messaging`'s three tiers: 9 attempts, and a dead node holds a partition
  *   90 s before the messaging layer hears about it.
  */
@@ -32,7 +32,7 @@ function statusOf(error: unknown): number | null {
 }
 
 /**
- * ⚠ THE VERSION GUARD A RETRY TOPIC OWES: the index refuses to go backwards, so nothing
+ * THE VERSION GUARD A RETRY TOPIC OWES: the index refuses to go backwards, so nothing
  *   here assumes Kafka's ordering. `external_gte` and not `external`, which demands
  *   strictly greater — two events about one show in the same millisecond would lose one.
  */
@@ -54,7 +54,7 @@ export function showIndex(client: Client): ShowIndex {
         // A replay behind a newer event: its effect is already in the index.
         if (status === 409) return 'superseded';
 
-        // ⚠ Permanent because the document is a pure function of the event. Unclassified
+        // Permanent because the document is a pure function of the event. Unclassified
         //   it would dead-letter as `exhausted`, which means the opposite thing.
         if (status === 400) {
           throw new PermanentError(
@@ -69,7 +69,7 @@ export function showIndex(client: Client): ShowIndex {
 }
 
 /**
- * ⚠ ADDITIVE ONLY, AND OPENSEARCH ENFORCES IT: a field can be added to a live mapping, a
+ * ADDITIVE ONLY, AND OPENSEARCH ENFORCES IT: a field can be added to a live mapping, a
  *   type, a normalizer and the shard count cannot, and `put_mapping` answers 400. That
  *   400 is left to fail the startup — a non-additive change is a reindex behind the
  *   alias, not a deploy.
@@ -88,7 +88,7 @@ export async function ensureShowIndex(client: Client): Promise<void> {
     body: {
       settings: SHOW_INDEX_SETTINGS,
       mappings: SHOW_INDEX_MAPPING,
-      // ⚠ In the same call: created after, there is a window in which every write to
+      // In the same call: created after, there is a window in which every write to
       //   the alias fails against a healthy cluster.
       aliases: { [SHOW_INDEX_ALIAS]: {} },
     },
@@ -96,7 +96,7 @@ export async function ensureShowIndex(client: Client): Promise<void> {
 }
 
 /**
- * ⚠ Only the 404 is caught, because it is the answer: a cluster refusing connections must
+ * Only the 404 is caught, because it is the answer: a cluster refusing connections must
  *   not read as an empty one, or the repair is a second index beside the real one.
  */
 async function indexExists(client: Client, index: string): Promise<boolean> {

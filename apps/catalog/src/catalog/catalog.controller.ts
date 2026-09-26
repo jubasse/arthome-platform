@@ -7,7 +7,7 @@ import { PublishShowSchema, type PublishShowBody } from './publish-show.schema.j
 import { PublishShowService } from './publish-show.service.js';
 
 /**
- * ⚠ It throws a `DomainError`, not an `HttpException`: `ErrorEnvelopeFilter` maps it with no
+ * It throws a `DomainError`, not an `HttpException`: `ErrorEnvelopeFilter` maps it with no
  *   translation table, because a `DomainError` already carries `code`, `params` and `nature`.
  *   It stops at the first bad rendition — collecting would mean reimplementing its checks.
  */
@@ -32,7 +32,7 @@ export class CatalogController {
     @Body({ schema: PublishShowSchema }) body: PublishShowBody,
     @Headers('traceparent') traceparent?: string,
   ): Promise<{ showId: string }> {
-    // ⚠ By hand because no pipe reaches a header (see `traceparent.ts`). A malformed one is
+    // By hand because no pipe reaches a header (see `traceparent.ts`). A malformed one is
     //   dropped and the publication proceeds — decided.
     const trace = parseTraceparent(traceparent);
 

@@ -1,7 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * ⚠ No outbox and no replication slot: this service only consumes, and a slot created
+ * No outbox and no replication slot: this service only consumes, and a slot created
  *   for symmetry then left unread retains the write-ahead log until the disk is full.
  */
 export class Initial1758700400000 implements MigrationInterface {

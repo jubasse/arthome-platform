@@ -312,7 +312,7 @@ describe('applyMessage', () => {
   });
 
   it('marks a message processed, and says superseded, when a newer document already won', async () => {
-    // ⚠ Claimed, not left for a retry: `external_gte` refusing an older write means the index is
+    // Claimed, not left for a retry: `external_gte` refusing an older write means the index is
     //   already correct, and a retry would fail the same way three times and dead-letter it.
     const outcome = await applyMessage(
       fakeDataSource(true),

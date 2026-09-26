@@ -16,7 +16,7 @@ export interface SuccessEnvelope<T> {
 /**
  * transport.md §5.5's success envelope, applied once rather than remembered per route.
  *
- * ⚠ `validUntil` is absent because no route here returns a perishable value. §5.5 makes it
+ * `validUntil` is absent because no route here returns a perishable value. §5.5 makes it
  *   conditional — "as soon as a perishable value is present" — so the first route that serves one
  *   adds it, and inventing the mechanism now would be shape ahead of use.
  */
@@ -25,7 +25,7 @@ export class SuccessEnvelopeInterceptor implements NestInterceptor {
   public constructor(private readonly clock: Clock) {}
 
   public intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    // ⚠ A global interceptor reaches WS messages and RPC handlers too
+    // A global interceptor reaches WS messages and RPC handlers too
     //   (`nestjs-request-pipeline` rule 5), and neither carries this envelope.
     if (context.getType() !== 'http') return next.handle();
 

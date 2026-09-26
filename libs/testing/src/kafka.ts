@@ -36,7 +36,7 @@ export interface WaitForMessageOptions {
 const DEFAULT_WAIT_MS = 30_000;
 
 /**
- * ⚠ Debezium renders a NULL column as the four characters `null`, not as a
+ * Debezium renders a NULL column as the four characters `null`, not as a
  *   missing header. `messaging/dispatch.ts` owns that rule; a second copy here
  *   would diverge invisibly — both versions return a string, one is a trace id.
  */
@@ -61,7 +61,7 @@ function observe(payload: EachMessagePayload): ObservedMessage {
 }
 
 /**
- * ⚠ A topic nobody created is auto-created by the first producer with the
+ * A topic nobody created is auto-created by the first producer with the
  *   broker's default of one partition, where `events.md` §3 fixes 3 or 12 — and
  *   raising them later re-hashes every key. A consumer, meanwhile, cannot
  *   subscribe to a missing topic: KafkaJS says "This server does not host this
@@ -88,11 +88,11 @@ export async function createTopics(kafka: Kafka, topics: readonly TopicSpec[]): 
 }
 
 /**
- * ⚠ A fresh group every time, because KafkaJS honours `fromBeginning` only when
+ * A fresh group every time, because KafkaJS honours `fromBeginning` only when
  *   the group has no committed offset: a reused id resumes after the previous
  *   test's message and waits for ever.
  *
- * ⚠ The consumer is disconnected whatever happens. Dropped without leaving, it
+ * The consumer is disconnected whatever happens. Dropped without leaving, it
  *   stays a member until its session times out, and the next test's consumer is
  *   assigned nothing for that whole time.
  */

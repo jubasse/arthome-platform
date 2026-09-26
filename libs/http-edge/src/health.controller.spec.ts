@@ -28,7 +28,7 @@ describe('HealthController', () => {
   });
 
   /**
-   * ⚠ The rule the whole design turns on: a stopped connector must delay publishing, not pull the
+   * The rule the whole design turns on: a stopped connector must delay publishing, not pull the
    *   API out of rotation. `degraded` answers 200 with the detail in the body.
    */
   it('stays ready when an operational check is degraded', async () => {

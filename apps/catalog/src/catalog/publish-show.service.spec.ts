@@ -32,7 +32,7 @@ function recordingDataSource(inserts: Insert[]): DataSource {
   } as unknown as DataSource;
 }
 
-// ⚠ BUILT FROM `@arthome/core`'s `rendition()`, not from an object literal. The
+// BUILT FROM `@arthome/core`'s `rendition()`, not from an object literal. The
 //   floor forbids hand-building a value the domain can produce (§5.8): that is a
 //   parallel literal table with a fixture's costume.
 const command = {
@@ -114,7 +114,7 @@ describe('PublishShowService', () => {
 
     const payload = inserts[1]?.values.payload as Buffer;
     const decoded = fromBinary(ShowPublishedSchema, new Uint8Array(payload));
-    // ⚠ NOT `UNSPECIFIED`. A member that fails to encode falls to 0 silently, and
+    // NOT `UNSPECIFIED`. A member that fails to encode falls to 0 silently, and
     //   the fact then arrives saying nothing about the field a surface's most
     //   visible language rule reads.
     expect(decoded.languageDependency).toBe(WireLanguageDependency.ESSENTIAL);

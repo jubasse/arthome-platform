@@ -53,7 +53,7 @@ function main() {
       created += 1;
       continue;
     }
-    // ⚠ An existing topic with the wrong partition count is reported, never
+    // An existing topic with the wrong partition count is reported, never
     //   "fixed": raising it re-hashes every key, which breaks the per-aggregate
     //   ordering the key exists to guarantee, and lowering it is impossible.
     const described = kafka(['--describe', '--topic', topic.name]);
