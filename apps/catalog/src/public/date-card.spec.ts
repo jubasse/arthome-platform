@@ -4,13 +4,13 @@ import { DateCardSchema } from '@arthome/contracts/catalog';
 import { DisplayState, PublicationState } from '@arthome/core';
 
 import { dateCardOf } from './date-card.js';
-import { dateDocument } from './search-fixtures.js';
+import { publicDate } from './public-fixtures.js';
 
 const BEFORE_THE_ROOM_OPENS = '2026-11-04T18:00:00.000Z';
 
 describe('dateCardOf', () => {
   it('builds a card the published contract accepts', () => {
-    const card = dateCardOf(dateDocument(), BEFORE_THE_ROOM_OPENS);
+    const card = dateCardOf(publicDate(), BEFORE_THE_ROOM_OPENS);
 
     expect(DateCardSchema.safeParse(card).success).toBe(true);
     expect(card).toMatchObject({
@@ -27,7 +27,7 @@ describe('dateCardOf', () => {
 
   it('shows a date under technical check on the time axis, as the public sees it', () => {
     const card = dateCardOf(
-      dateDocument({ publication_state: PublicationState.TECHNICAL }),
+      publicDate({ publication_state: PublicationState.TECHNICAL }),
       '2026-11-04T19:10:00.000Z',
     );
 
@@ -35,12 +35,15 @@ describe('dateCardOf', () => {
   });
 
   it('serves the title and slug in the language the canonical URL uses', () => {
-    const card = dateCardOf(dateDocument({ title_fr: '' }), BEFORE_THE_ROOM_OPENS);
+    const card = dateCardOf(publicDate({ title_fr: '' }), BEFORE_THE_ROOM_OPENS);
 
     expect(card).toMatchObject({ title: 'White night', slug: 'white-night-2026-11-04' });
   });
 
-  it('refuses to build a card for a date already over, which the query must have excluded', () => {
-    expect(() => dateCardOf(dateDocument(), '2026-11-08T00:00:00.000Z')).toThrow(/ended/);
+  it('holds the state of a date fully over until an event, with no instant to re-run it at', () => {
+    const card = dateCardOf(publicDate(), '2026-11-08T00:00:00.000Z');
+
+    expect(card).toMatchObject({ displayState: DisplayState.ENDED, displayStateValidUntil: null });
+    expect(DateCardSchema.safeParse(card).success).toBe(true);
   });
 });

@@ -37,6 +37,34 @@ indexer. The shapes served are `@arthome/contracts`': `ShowGroup`, `Facet`, the 
   (`/shows`, `/venues`, `/channels/…`, `/dates/…`) predate that reading and have no version segment.
 - Proven in `src/search/search.itest.ts` against a real OpenSearch, through the HTTP edge.
 
+## 0b. The public date page and link resolution (2026-09-27)
+
+`src/public/` serves `GET /v1/dates/:dateId` (`DateDetail`) and `GET /v1/resolve`
+(`resolvePublicLink`), both behind the storefront BFF, both requiring `x-arthome-deadline`.
+
+- **`date_detail_public`** is data-model.md §4's read model: one row per public date, its show and
+  venue copied in, written by catalog's own commands **in their transaction** — publishing inserts
+  the row (`announcePublication`), every transition moves its state, a show update rewrites its
+  copy on every public date of the show. It carries a `version` and `applied_at`. The migration
+  that creates it backfills every date already published (a date has slugs exactly once it is),
+  and an integration case proves the rebuild matches.
+- **The page is one query**: the date's row and its show's other rows. `seriesDates` lists the
+  show's other dates not yet fully over, soonest first, ten at most, and `totalSeriesDates` counts
+  them all. The synopsis is served in the title's language, or the other one when that side is
+  empty. Prices, cast, chapters, suggestions and the shop wait for the services that own them.
+- **A date fully over or with an outcome keeps its page**: `displayStateValidUntil` is `null`
+  there (arthome-core D-073), so a link shared the day after still opens.
+- **`resolve`** reads the link's slug in either column, the link's own language first, and answers
+  the date's current canonical URL and its card. A URL from another origin, another kind of page,
+  or an unknown slug answers 404 `api.not_found`; `kind` other than `date` answers 400 naming
+  `kind` (`show`, `artist` and `category` have no slugs yet); `url` with `kind` or `slug` answers
+  400 naming them.
+- The card is built by one function for both reads, `src/public/date-card.ts`, from a
+  `PublicDate` the index document and the read-model row each map to.
+- `DateDetailSchema`'s declared type in `@arthome/contracts` widens the page's own fields
+  (`z.ZodObject<z.ZodRawShape>`), so `seriesDates` reads as `{}` in TypeScript; the wire is right,
+  the static type is not.
+
 ## 1. What was built
 
 | File | What it is |

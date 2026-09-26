@@ -36,6 +36,14 @@ export class CollectionResponse<T extends object> {
   ) {}
 }
 
+/** A single resource under `data`, with the instant its first perishable value expires (§5.5). */
+export class PerishableResponse<T> {
+  public constructor(
+    public readonly data: T,
+    public readonly validUntil: string | null,
+  ) {}
+}
+
 interface HeaderWriter {
   header(name: string, value: string): unknown;
 }
@@ -60,6 +68,14 @@ export class SuccessEnvelopeInterceptor implements NestInterceptor {
             servedAt: this.clock.now(),
             ...(validUntil !== null && { validUntil }),
             ...fields,
+          };
+        }
+        if (data instanceof PerishableResponse) {
+          const { data: resource, validUntil } = data as PerishableResponse<unknown>;
+          return {
+            servedAt: this.clock.now(),
+            ...(validUntil !== null && { validUntil }),
+            data: resource,
           };
         }
         if (!(data instanceof MemorisedResponse)) return { servedAt: this.clock.now(), data };

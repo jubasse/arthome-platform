@@ -25,12 +25,13 @@ import {
 
 import { SystemClock } from '@arthome/core';
 
+import { DatesModule } from './dates/dates.module.js';
 import { SearchModule } from './search/search.module.js';
 import { TraceparentMiddleware } from './traceparent.middleware.js';
 
 @Module({
   controllers: [HealthController],
-  imports: [SearchModule],
+  imports: [SearchModule, DatesModule],
   providers: [
     {
       provide: APP_PIPE,

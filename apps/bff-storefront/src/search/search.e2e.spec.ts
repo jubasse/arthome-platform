@@ -50,6 +50,13 @@ beforeAll(async () => {
   });
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
+  // Measured: under the full verify's parallel load, the first call through a cold app took
+  // longer than the 200 ms search budget, and the case read a 504 instead of the page.
+  await app.inject({
+    method: 'GET',
+    url: '/v1/search',
+    headers: { 'x-arthome-surface': Surface.STOREFRONT_WEB },
+  });
 });
 
 beforeEach(() => {

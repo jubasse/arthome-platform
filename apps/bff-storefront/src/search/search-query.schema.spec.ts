@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { SearchCriteriaSchema } from '@arthome/contracts/catalog';
 
-import { CRITERIA_SHAPE, SearchQuerySchema, searchParamsOf } from './search-query.schema.js';
+import { CRITERIA_SHAPE, SearchQuerySchema } from './search-query.schema.js';
+import { searchParamsOf } from '../query-string.js';
 
 describe('the storefront search query', () => {
   it('reads every criterion the contract publishes, so a new one fails here first', () => {

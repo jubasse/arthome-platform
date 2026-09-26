@@ -7,12 +7,13 @@ import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import type { EntityManager } from 'typeorm';
 
-import { Locale } from '@arthome/core';
+import { Locale, type PublicationState } from '@arthome/core';
 
 import type { DateRecords } from './date-sheet.js';
 import { PerformanceDate } from './performance-date.entity.js';
 import { canonicalUrlOf, slugCandidates } from './slug.js';
 import { writeCatalogEvent } from '../catalog-events.js';
+import { projectPublishedDate } from '../public/date-detail-projection.js';
 import { venueClockAt } from '../venues/venue-clock.js';
 import { WIRE_BLACKOUT_REASON, WIRE_REPLAY_POLICY, WIRE_RIGHTS_SCOPE } from '../wire.js';
 
@@ -30,13 +31,15 @@ async function freeSlug(
 }
 
 /**
- * What publishing makes public: the slugs are set and the running time frozen (§2.2, §2.7),
- * then DateScheduled carries the date's public facts and PublicationEngaged what is now
- * committed. Engaged after scheduled, on the same key, so no consumer reads the lock first.
+ * What publishing makes public: the slugs are set and the running time frozen (§2.2, §2.7), the
+ * date enters `date_detail_public`, then DateScheduled carries its public facts and
+ * PublicationEngaged what is now committed. Engaged after scheduled, on the same key, so no
+ * consumer reads the lock first.
  */
 export async function announcePublication(
   manager: EntityManager,
   records: DateRecords,
+  state: PublicationState,
   origin: string,
   occurredAt: Date,
   traceparent: string | null,
@@ -54,6 +57,13 @@ export async function announcePublication(
     PerformanceDate,
     { id: date.id },
     { ...slugs, runtime_min: show.runtime_min },
+  );
+  await projectPublishedDate(
+    manager,
+    { ...date, ...slugs, runtime_min: show.runtime_min },
+    show,
+    venue,
+    state,
   );
 
   const venueClock = venueClockAt(venue.time_zone, startsAt);

@@ -63,13 +63,3 @@ export const SearchQuerySchema = z
   })
   .catchall(z.custom(() => false));
 export type SearchQuery = z.infer<typeof SearchQuerySchema>;
-
-/** Back into a query string, repeated keys for lists, for the service behind. */
-export function searchParamsOf(query: SearchQuery): URLSearchParams {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(query)) {
-    if (value === undefined || value === null) continue;
-    for (const item of Array.isArray(value) ? value : [value]) params.append(key, String(item));
-  }
-  return params;
-}

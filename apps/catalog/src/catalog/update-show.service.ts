@@ -11,6 +11,7 @@ import type { Bilingual, Clock, LanguageDependency, MediaSet } from '@arthome/co
 import { Show } from './show.entity.js';
 import { writeCatalogEvent } from '../catalog-events.js';
 import { CLOCK } from '../clock.js';
+import { projectShowCopy } from '../public/date-detail-projection.js';
 import { WIRE_LANGUAGE_DEPENDENCY, wireLocalizedTexts } from '../wire.js';
 
 export interface UpdateShowCommand {
@@ -48,6 +49,7 @@ export class UpdateShowService {
         synopsis: command.synopsis ?? show.synopsis,
       };
       await manager.update(Show, { id: show.id }, next);
+      await projectShowCopy(manager, { id: show.id, ...next });
 
       const occurredAt = new Date(this.clock.now());
       await writeCatalogEvent(

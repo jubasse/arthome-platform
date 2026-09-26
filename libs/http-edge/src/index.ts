@@ -29,6 +29,7 @@ export type { TraceContext } from './traceparent.js';
 export {
   CollectionResponse,
   MemorisedResponse,
+  PerishableResponse,
   SuccessEnvelopeInterceptor,
 } from './success-envelope.interceptor.js';
 export type { SuccessEnvelope } from './success-envelope.interceptor.js';

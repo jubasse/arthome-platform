@@ -8,10 +8,11 @@ import {
 import type { EMPTY_REASONS, StorefrontCursorPageInfoSchema } from '@arthome/contracts/pagination';
 import { DomainConstant, type Instant } from '@arthome/core';
 
-import { dateCardOf, type ServableDateDocument } from './date-card.js';
 import { FACET_FIELDS, MATCHING_DATES, SHOW_COUNT } from './search-body.js';
 import { cursorAt } from './search-cursor.js';
 import type { SearchQuery } from './search-query.schema.js';
+import { publicDateOf, type ServableDateDocument } from './servable-document.js';
+import { dateCardOf, earliestValidUntil } from '../public/date-card.js';
 
 export type ShowGroup = z.output<typeof ShowGroupSchema>;
 export type Facet = z.output<typeof FacetSchema>;
@@ -61,14 +62,6 @@ function facetsOf(aggregations: SearchResponseBody['aggregations']): Facet[] {
   }));
 }
 
-function earliest(instants: readonly Instant[]): Instant | null {
-  return instants.reduce<Instant | null>(
-    (soonest, instant) =>
-      soonest === null || Date.parse(instant) < Date.parse(soonest) ? instant : soonest,
-    null,
-  );
-}
-
 /**
  * The page and the instant its first perishable value expires: the envelope's `validUntil`,
  *   past which a surface re-runs the display rule on what it holds.
@@ -82,7 +75,7 @@ export function searchPageOf(
 ): { readonly page: SearchPage; readonly validUntil: Instant | null } {
   const hits = body.hits.hits.slice(0, query.limit);
   const groups = hits.map((hit): ShowGroup => {
-    const representativeDate = dateCardOf(hit._source, now);
+    const representativeDate = dateCardOf(publicDateOf(hit._source), now);
     return {
       showId: hit._source.show_id,
       title: representativeDate.title,
@@ -108,6 +101,6 @@ export function searchPageOf(
 
   return {
     page: { groups, facets: facetsOf(body.aggregations), page },
-    validUntil: earliest(groups.map((group) => group.representativeDate.displayStateValidUntil)),
+    validUntil: earliestValidUntil(groups.map((group) => group.representativeDate)),
   };
 }

@@ -19,11 +19,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ApiErrorCode, DisplayState, FixedClock, ReplayPolicy } from '@arthome/core';
 
-import type { ServableDateDocument } from './date-card.js';
 import { dateDocument } from './search-fixtures.js';
 import { SearchSort, SearchTab } from './search-query.schema.js';
 import { SearchModule } from './search.module.js';
 import { OPENSEARCH } from './search.service.js';
+import type { ServableDateDocument } from './servable-document.js';
 import { CLOCK } from '../clock.js';
 
 /**

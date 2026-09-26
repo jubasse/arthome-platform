@@ -40,6 +40,7 @@ import { Show } from '../catalog/show.entity.js';
 import { writeCatalogEvent } from '../catalog-events.js';
 import { CLOCK } from '../clock.js';
 import { runIdempotently, type IdempotentRequest } from '../idempotency/idempotency.js';
+import { projectPublicationState } from '../public/date-detail-projection.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { Venue } from '../venues/venue.entity.js';
 import { WIRE_PUBLICATION_STATE } from '../wire.js';
@@ -232,6 +233,7 @@ export class DatesService {
       throw stateConflict(current);
     }
 
+    await projectPublicationState(manager, command.dateId, next.state);
     await writeCatalogEvent(
       manager,
       {
@@ -258,6 +260,7 @@ export class DatesService {
       await announcePublication(
         manager,
         records,
+        next.state,
         this.publicWebOrigin,
         occurredAt,
         command.traceparent,

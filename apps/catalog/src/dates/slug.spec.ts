@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Locale } from '@arthome/core';
 import { SlugSchema } from '@arthome/core/schema';
 
-import { canonicalUrl, slugCandidates, slugify } from './slug.js';
+import { canonicalUrl, dateLinkOf, slugCandidates, slugify } from './slug.js';
 
 describe('slugify', () => {
   it('drops accents and ligatures and hyphenates the rest', () => {
@@ -56,5 +56,30 @@ describe('canonicalUrl', () => {
     expect(canonicalUrl('https://arthome.fr', Locale.FR, 'nuit-blanche-2026-09-21')).toBe(
       'https://arthome.fr/fr/d/nuit-blanche-2026-09-21',
     );
+  });
+});
+
+describe('dateLinkOf', () => {
+  const origin = 'https://arthome.test';
+
+  it('reads back the language and slug canonicalUrl wrote', () => {
+    const url = canonicalUrl(origin, Locale.EN, 'white-night-2026-11-04');
+
+    expect(dateLinkOf(origin, url)).toEqual({
+      language: Locale.EN,
+      slug: 'white-night-2026-11-04',
+    });
+  });
+
+  it('refuses a link another origin issued, another kind of page, or a language not served', () => {
+    for (const url of [
+      'https://elsewhere.test/fr/d/nuit-blanche-2026-11-04',
+      `${origin}/fr/a/compagnie-verticale`,
+      `${origin}/de/d/nuit-blanche-2026-11-04`,
+      `${origin}/fr/d/nuit-blanche-2026-11-04/extra`,
+      'not a url',
+    ]) {
+      expect(dateLinkOf(origin, url)).toBeNull();
+    }
   });
 });

@@ -7,6 +7,7 @@ import { FixedClock } from '@arthome/core';
 import {
   CollectionResponse,
   MemorisedResponse,
+  PerishableResponse,
   SuccessEnvelopeInterceptor,
 } from './success-envelope.interceptor.js';
 
@@ -72,6 +73,22 @@ describe('the success envelope', () => {
       page,
     });
     expect(lasting).toEqual({ servedAt: SERVED_AT, items: [], page });
+  });
+
+  it('serves a perishable resource under `data`, with `validUntil` only when it expires', async () => {
+    const interceptor = new SuccessEnvelopeInterceptor(new FixedClock(SERVED_AT));
+    const send = (response: PerishableResponse<object>) =>
+      lastValueFrom(interceptor.intercept(contextOfType('http'), handlerReturning(response)));
+
+    expect(await send(new PerishableResponse({ id: 'd1' }, '2026-09-25T10:30:00.000Z'))).toEqual({
+      servedAt: SERVED_AT,
+      validUntil: '2026-09-25T10:30:00.000Z',
+      data: { id: 'd1' },
+    });
+    expect(await send(new PerishableResponse({ id: 'd2' }, null))).toEqual({
+      servedAt: SERVED_AT,
+      data: { id: 'd2' },
+    });
   });
 
   /** A global interceptor reaches WS and RPC, and neither carries this envelope. */

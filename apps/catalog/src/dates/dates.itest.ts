@@ -35,6 +35,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
+  DisplayState,
   DomainErrorCode,
   FixedClock,
   LanguageDependency,
@@ -60,6 +61,9 @@ import { DateAndPublication1790420200000 } from '../migrations/1790420200000-dat
 import { ChecklistProjection1790420300000 } from '../migrations/1790420300000-checklist-projection.js';
 import { DateSlugs1790420400000 } from '../migrations/1790420400000-date-slugs.js';
 import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500000-idempotency-response-as-json.js';
+import { DateDetailPublic1790420600000 } from '../migrations/1790420600000-date-detail-public.js';
+import { DateDetailPublic } from '../public/date-detail-public.entity.js';
+import { PublicDatesService } from '../public/public-dates.service.js';
 import { Venue } from '../venues/venue.entity.js';
 
 /**
@@ -196,6 +200,7 @@ beforeAll(async () => {
       PerformanceDate,
       Publication,
       PublicationChecklistFact,
+      DateDetailPublic,
       ProcessedMessage,
       OutboxEvent,
     ],
@@ -207,6 +212,7 @@ beforeAll(async () => {
       ChecklistProjection1790420300000,
       DateSlugs1790420400000,
       IdempotencyResponseAsJson1790420500000,
+      DateDetailPublic1790420600000,
     ],
   });
   await dataSource.getRepository(Show).insert({
@@ -650,6 +656,140 @@ describe('a show update', () => {
         }),
       );
       expect(refusal.getStatus()).toBe(404);
+    },
+    CASE_MS,
+  );
+});
+
+describe('the public date page', () => {
+  const ORIGIN = 'https://arthome.test';
+  const publicDates = (): PublicDatesService =>
+    new PublicDatesService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'), ORIGIN);
+  const rowOf = (dateId: string) =>
+    dataSource.getRepository(DateDetailPublic).findOneBy({ date_id: dateId });
+
+  it(
+    'enters the read model when published, and follows each transition after that',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-0000000004a1';
+      await draft(dateId);
+      await satisfyProjectedItems(dateId);
+      expect(await rowOf(dateId)).toBeNull();
+
+      await move(dateId, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
+      expect(await rowOf(dateId)).toMatchObject({
+        publication_state: PublicationState.SCHEDULED,
+        venue_name: 'Théâtre de la Ville',
+        slug_fr: expect.stringMatching(/^nuit-blanche-2026-11-04/) as unknown,
+        version: '1',
+      });
+
+      await move(dateId, PublicationState.TECHNICAL, 2);
+      expect(await rowOf(dateId)).toMatchObject({
+        publication_state: PublicationState.TECHNICAL,
+        version: '2',
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'serves the page with the show’s copy and its other public dates, and 404 for a draft',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-0000000004a1';
+      const { data } = await publicDates().detail(dateId);
+
+      expect(data).toMatchObject({
+        id: dateId,
+        title: 'Nuit blanche',
+        displayState: DisplayState.SCHEDULED,
+        synopsis: { contentLanguage: Locale.FR, text: 'Une autre nuit.' },
+        spokenLanguages: ['fr-FR'],
+        venue: { name: 'Théâtre de la Ville', city: 'Paris' },
+      });
+      const others = await dataSource.getRepository(DateDetailPublic).countBy({ show_id: SHOW_ID });
+      expect(data.totalSeriesDates).toBe(others - 1);
+      // `DateDetailSchema`'s declared type widens the page's own fields: read them as the wire has them.
+      const series = data.seriesDates as readonly { readonly id: string }[];
+      expect(series.map((card) => card.id)).not.toContain(dateId);
+
+      const draftOnly = '01a0e100-0000-7000-8000-0000000004a2';
+      await draft(draftOnly);
+      expect((await refusalOf(publicDates().detail(draftOnly))).getStatus()).toBe(404);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'carries a show update onto every public date of the show',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-0000000004a1';
+      const before = await rowOf(dateId);
+      await new UpdateShowService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z')).update({
+        showId: SHOW_ID,
+        tagIds: ['late-night'],
+        traceparent: null,
+      });
+
+      const after = await rowOf(dateId);
+      expect(after?.tag_ids).toEqual(['late-night']);
+      expect(Number(after?.version)).toBe(Number(before?.version) + 1);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'resolves a canonical URL or a slug to the date, and nothing else',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-0000000004a1';
+      const url = (await dates.sheet(dateId)).canonicalUrl ?? '';
+      const slug = url.split('/').at(-1) ?? '';
+
+      const byUrl = await publicDates().resolve({ url });
+      const bySlug = await publicDates().resolve({ kind: 'date', slug });
+      expect(byUrl.data).toMatchObject({ kind: 'date', id: dateId, canonicalUrl: url });
+      expect(bySlug.data.id).toBe(dateId);
+
+      for (const dead of [
+        { url: url.replace(ORIGIN, 'https://elsewhere.test') },
+        { url: `${url}-x` },
+      ]) {
+        expect((await refusalOf(publicDates().resolve(dead))).getStatus()).toBe(404);
+      }
+      const both = await refusalOf(publicDates().resolve({ url, kind: 'date', slug }));
+      expect(both.refusal).toMatchObject({
+        code: ApiErrorCode.SCHEMA_INVALID,
+        params: { fields: ['kind', 'slug'] },
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'is rebuilt by its migration from every date already published',
+    async () => {
+      const rows = await dataSource
+        .getRepository(DateDetailPublic)
+        .find({ order: { date_id: 'ASC' } });
+      await dataSource.undoLastMigration();
+      await dataSource.runMigrations();
+      const rebuilt = await dataSource
+        .getRepository(DateDetailPublic)
+        .find({ order: { date_id: 'ASC' } });
+
+      expect(
+        rebuilt.map(({ date_id, publication_state, tag_ids }) => [
+          date_id,
+          publication_state,
+          tag_ids,
+        ]),
+      ).toEqual(
+        rows.map(({ date_id, publication_state, tag_ids }) => [
+          date_id,
+          publication_state,
+          tag_ids,
+        ]),
+      );
     },
     CASE_MS,
   );

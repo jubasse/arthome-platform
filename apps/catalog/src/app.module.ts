@@ -32,6 +32,7 @@ import { Service, SystemClock } from '@arthome/core';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { dataSource } from './data-source.js';
 import { DatesModule } from './dates/dates.module.js';
+import { PublicModule } from './public/public.module.js';
 import { SearchModule } from './search/search.module.js';
 import { VenuesModule } from './venues/venues.module.js';
 
@@ -42,6 +43,7 @@ import { VenuesModule } from './venues/venues.module.js';
     CatalogModule,
     VenuesModule,
     DatesModule,
+    PublicModule,
     SearchModule,
   ],
   providers: [
