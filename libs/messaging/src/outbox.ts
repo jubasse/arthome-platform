@@ -12,16 +12,16 @@ const TOPIC_SEGMENT = String.raw`^[a-zA-Z0-9._-]+$`;
 const VERSIONED_TYPE = String.raw`^[a-zA-Z0-9._-]+\.v[0-9]+$`;
 
 /**
- * ⚠ The CHECK constraints are the point, and they were written after measuring what happens
- *   without them: one row whose `aggregatetype` contained a space produced
- *   `InvalidTopicException`, and Kafka Connect's answer was "Task is being killed and will not
- *   recover until manually restarted." That is the worst failure on this path — it is not
- *   per-record, so every later event from that service stops; the replication slot then
- *   retains the write-ahead log until the disk fills; and restarting reads the same row and
- *   dies again, so THE ONLY RECOVERY IS DELETING AN ALREADY-COMMITTED BUSINESS FACT. No
- *   Connect setting reaches it — the failure is raised in the producer's send callback, past
- *   `errors.tolerance` and past a dead-letter queue a source connector does not have. So it
- *   is made impossible upstream, inside the transaction, where a human can still be refused.
+ * The CHECK constraints are the point, and they were written after measuring what happens
+ * without them: one row whose `aggregatetype` contained a space produced
+ * `InvalidTopicException`, and Kafka Connect's answer was "Task is being killed and will not
+ * recover until manually restarted." That is the worst failure on this path — it is not
+ * per-record, so every later event from that service stops; the replication slot then
+ * retains the write-ahead log until the disk fills; and restarting reads the same row and
+ * dies again, so THE ONLY RECOVERY IS DELETING AN ALREADY-COMMITTED BUSINESS FACT. No
+ * Connect setting reaches it — the failure is raised in the producer's send callback, past
+ * `errors.tolerance` and past a dead-letter queue a source connector does not have. So it
+ * is made impossible upstream, inside the transaction, where a human can still be refused.
  */
 export function outboxTableDdl(table = 'outbox_event'): string {
   return `
@@ -82,4 +82,12 @@ export function outboxConstraints(table = 'outbox_event'): string[] {
 
 export function outboxConstraintNames(table = 'outbox_event'): string[] {
   return outboxChecks(table).map(({ name }) => name);
+}
+
+/**
+ * The Debezium router's `route.topic.replacement`, `arthome.${routedByValue}`, applied to an
+ * `aggregatetype`. `connector-config.spec.ts` holds the two to each other.
+ */
+export function outboxTopic(aggregateType: string): string {
+  return `arthome.${aggregateType}`;
 }

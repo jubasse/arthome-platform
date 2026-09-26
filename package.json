@@ -31,9 +31,11 @@
     "gen:events": "node tools/generate-events.mjs",
     "provision:topics": "node tools/provision-topics.mjs",
     "purge:retention": "node tools/purge-retention.mjs",
-    "ops:check": "node tools/ops-check.mjs"
+    "ops:check": "node tools/ops-check.mjs",
+    "republish:outbox": "node tools/republish-outbox.mjs"
   },
   "devDependencies": {
+    "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome/tooling": "file:./vendor/arthome-tooling-454ab8535c57.tgz",
     "@bufbuild/buf": "1.73.0",

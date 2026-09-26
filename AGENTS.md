@@ -30,7 +30,7 @@ debugging NestJS code, load `nestjs-how-to` and the skills it routes to.** Alway
 Project decisions — the ADRs and `DECISIONS.md` in arthome-core — take precedence over these
 community defaults, and a recorded decision is never reopened.
 
-⚠ **THIS BLOCK EXISTS BECAUSE THE SKILLS WERE NOT LOADED.** `identity`, `notifications` and
+**THIS BLOCK EXISTS BECAUSE THE SKILLS WERE NOT LOADED.** `identity`, `notifications` and
 `catalog` were all written without them; only `nestjs-event-driven` was opened, and late, at which
 point it corrected two real defects that were already in the code — no jitter on retries, and no
 guard against a retry topic reordering one aggregate's events. The rule the router states is
@@ -51,10 +51,11 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 
 - **Comment the why and the failure, never the what.** A comment earns its place by saying something
   the code cannot: a measured failure, a constraint that is not visible locally, a decision and its
-  reason, a `⚠` where the obvious change is the wrong one. Cut anything that restates the code or
+  reason, a warning in words where the obvious change is the wrong one — never a `⚠`, an emoji or
+  another pictographic symbol. Cut anything that restates the code or
   explains a well-named function. Past roughly a quarter of a file, the code is probably unclear
   rather than under-explained — measured here on 2026-09-25, three `libs/messaging` files stood at
-  59 %, 55 % and 40 %. ⚠ Never delete a recorded reason to satisfy a ratio: shorten the prose, keep
+  59 %, 55 % and 40 %. Never delete a recorded reason to satisfy a ratio: shorten the prose, keep
   the fact. **Shrink as you go** — any file you read or modify is one you may tighten, and that is the
   only way this reaches code written before the rule. Full text: `code-conventions.md` §5.10.
 
@@ -69,7 +70,7 @@ NestJS skips them; this block is what makes loading systematic rather than remem
   config it loaded at startup and goes on reporting rules that no longer exist. In VS Code:
   **`ESLint: Restart ESLint Server`**.
 
-  ⚠ **When the editor and the CLI disagree, believe the CLI and check before editing code.** It
+  **When the editor and the CLI disagree, believe the CLI and check before editing code.** It
   recomputes everything on each run; the editor holds state. This has now bitten twice here for two
   different reasons — a stale ESLint server, and the editor resolving types through `dist` — and
   both times the code was already correct. One command settles it:
@@ -96,6 +97,7 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 | `pnpm run fix` | Prettier, then ESLint `--fix`, then Prettier again |
 | `pnpm run purge:retention <service>` | what the retention job would delete; `--apply` to do it |
 | `pnpm run ops:check <service>` | the operational checks; exits 1 when anything is degraded |
+| `pnpm run republish:outbox <service>` | outbox rows never published to their topic; `--apply` republishes them |
 
 ## Running the event path
 
@@ -118,7 +120,7 @@ for c in identity catalog; do
 done
 ```
 
-⚠ **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
+**`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
 anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`,
 `OPENSEARCH_URL` — is filled from a local default **only outside production**, and `NODE_ENV` is
 what selects that. Defaulting it to `development` would make an unset variable open the
@@ -130,7 +132,7 @@ No service reads `process.env` any more. `libs/config` parses once, at module lo
 protocol asserted — `postgres:` for the database, `http:`/`https:` for the index — because a bare
 URL check accepts `localhost:29092` as a URL whose scheme is `localhost:`.
 
-⚠ **`/health/liveness` AND `/health/readiness` ARE SPLIT, AND ONLY THE DATABASE FAILS READINESS.**
+**`/health/liveness` AND `/health/readiness` ARE SPLIT, AND ONLY THE DATABASE FAILS READINESS.**
 Liveness touches no dependency: a failing one restarts the pod, and a database outage must not restart
 every replica at once. Readiness answers 503 only when the database is unreachable. The replication
 slot, the publication's scope and the outbox retention answer `degraded` — a 200 with the detail in
@@ -139,27 +141,28 @@ Proven on the running stack: with `connect` stopped, readiness stays 200 and a r
 answers 201. Both routes are exempt from `DenyInProductionGuard`; nothing else is.
 
 The two consumers serve no HTTP, so their checks — dead-letter depth and `processed_message`
-retention — run through `pnpm run ops:check`. The first run found a message sitting in
+retention — run through `pnpm run ops:check`, as does the publishers' `unpublished_outbox`, which
+reads whole topics and so stays off readiness. The first run found a message sitting in
 `arthome.notifications.dlq` that nothing had ever reported.
 
-⚠ **THE RETENTION JOB IS A COMMAND, NOT A SCHEDULE.** `data-model.md` §7.5 owes `outbox_event` a
+**THE RETENTION JOB IS A COMMAND, NOT A SCHEDULE.** `data-model.md` §7.5 owes `outbox_event` a
 7-day purge and `processed_message` a horizon; neither existed. `libs/messaging` now has
 `purgeOutbox` and `purgeProcessedMessages`, and `pnpm run purge:retention <service>` runs them.
 There is no job runner here, so nothing calls it on a timer — that is a deployment concern, and it
 is visible rather than missing.
 
-  ⚠ **The outbox purge is gated on the connector, not on the clock.** It reads the slot's
+  **The outbox purge is gated on the connector, not on the clock.** It reads the slot's
   `confirmed_flush_lsn` and refuses when the slot is inactive or lagging past §7.4's own
   one-gigabyte alert threshold, because deleting a row Debezium has not read destroys a committed
   fact that was never published and nothing reads that table back to notice. Proven both ways on
   the running stack: it purges with the connector up, and answers `REFUSED` with it stopped.
 
-  ⚠ **`processed_message`'s 30 days must stay above every DLQ topic's retention.** Past that a
+  **`processed_message`'s 30 days must stay above every DLQ topic's retention.** Past that a
   message cannot come back at all; below it, a replay finds no row and the effect applies twice in
   silence. No topic in `infra/kafka/topics.json` sets a retention, so the broker's 168 h default
   applies today, and nothing checks the coupling.
 
-⚠ **`migration:generate` OUTPUT IS NOT TRUSTWORTHY ON `outbox_event`, AND THE DAMAGE IT PROPOSES IS
+**`migration:generate` OUTPUT IS NOT TRUSTWORTHY ON `outbox_event`, AND THE DAMAGE IT PROPOSES IS
 REAL.** Run against a migrated identity or catalog database it emits a migration that DROPS and
 re-adds all four outbox CHECK constraints with identical definitions — `payload_not_empty`,
 `type_is_versioned`, `aggregateid_present`, `aggregatetype_is_topic_safe`. They live as SQL strings in
@@ -173,7 +176,7 @@ EXCLUSIVE and scans the whole table — on the table every write inserts into.
   gates preventing — so the generator stays untrustworthy here by choice, and this note is the
   mitigation.
 
-⚠ **NEVER DROP A PUBLICATION UNDER A LIVE SLOT, AND DELETING A CONNECTOR DOES NOT CLEAR ITS
+**NEVER DROP A PUBLICATION UNDER A LIVE SLOT, AND DELETING A CONNECTOR DOES NOT CLEAR ITS
 OFFSETS.** Both learned the hard way on 2026-09-26, and together they lose events.
 
   The publication had been created `FOR ALL TABLES` by a connector registered before
@@ -186,14 +189,25 @@ OFFSETS.** Both learned the hard way on 2026-09-26, and together they lose event
   the new slot's start: Kafka Connect keeps a deleted connector's offsets under its name, so the
   connector resumes at an LSN whose WAL the new slot never covered, and the log says
   `no snapshot will be executed`. **The row stays in `outbox_event`, unpublished, and nothing reads
-  that table back to notice** — the §7.5 hazard arriving from the other direction, and there is no
-  republish path today.
+  that table back to notice** — the §7.5 hazard arriving from the other direction, found and put back
+  by `republish:outbox` below.
 
   So: to change a publication, delete the connector, drop the publication, **and** drop the slot,
   then verify `pg_publication_tables` returns exactly one row before producing anything you care
   about. Do it on an empty outbox.
 
-⚠ **`provision:topics` is not a convenience.** A topic auto-created by the first producer takes the
+**A row committed but never published is found and put back by command.** `ops:check` on a
+publisher reports `unpublished_outbox`: the rows whose id appears in no `message-id` header on their
+topic, older than five minutes (in flight otherwise) and younger than six days (inside the topics'
+seven-day retention). Slot positions cannot find them: the slot never saw the row.
+`pnpm run republish:outbox <service>` lists them, and `--apply` deletes and reinserts each row in one
+transaction, id included. The router routes inserts and drops the delete without a tombstone, so the
+fact goes out again under its original `message-id` and every consumer's ledger absorbs a second
+copy. Proven on the running stack on 2026-09-26: a show written with the connector stopped and the
+slot advanced past it was reported, republished and indexed at its original `occurred_at`;
+republished again, the indexer answered `duplicate`.
+
+**`provision:topics` is not a convenience.** A topic auto-created by the first producer takes the
 broker's default partition count — **one** — while `events.md` §3 fixes 3 or 12 depending on the
 topic. Those numbers are the headroom that lets replicas be added without repartitioning, and
 partitions cannot be reduced afterwards while raising them re-hashes every key, breaking the
@@ -233,13 +247,13 @@ Two reject paths, and they answer different questions.
 Anything unrecognised is treated as **transient**, deliberately: retrying a permanent failure costs
 three attempts, while discarding a transient one loses the fact for good.
 
-The retry and dead-letter topics are declared in `infra/kafka/topics.json`; `pnpm run provision:topics` creates them at the partition counts `events.md` §3 fixes. ⚠ Not by hand and not by auto-creation — a second, hand-maintained source for the same fact is the parallel table this repository's own gate exists to refuse.
+The retry and dead-letter topics are declared in `infra/kafka/topics.json`; `pnpm run provision:topics` creates them at the partition counts `events.md` §3 fixes. Not by hand and not by auto-creation — a second, hand-maintained source for the same fact is the parallel table this repository's own gate exists to refuse.
 
-⚠ **Retry at ONE layer.** A client retry, the broker's own redelivery and this budget multiply:
+**Retry at ONE layer.** A client retry, the broker's own redelivery and this budget multiply:
 three of each is twenty-seven attempts for one message, and an outage becomes an overload caused by
 the retries. `@arthome-platform/messaging` is the single owner for business failures.
 
-⚠ **A retry topic reorders one key's events.** Kafka's ordering holds per partition, and a message
+**A retry topic reorders one key's events.** Kafka's ordering holds per partition, and a message
 that waits five minutes comes back behind later events for the same aggregate.
 
 **`search-indexer` guards this.** `version_type: external_gte` on the OpenSearch write, with the
@@ -252,7 +266,7 @@ document's `_version` and fields untouched, and the consumer reports it as `supe
 and its effect is one row keyed by `account_id`, so there is no second event to arrive out of order.
 The guard is owed by the next consumer that applies two events whose order matters.
 
-⚠ **The wait is held INSIDE the handler, and that is not an implementation detail.** KafkaJS resolves
+**The wait is held INSIDE the handler, and that is not an implementation detail.** KafkaJS resolves
 a message's offset as soon as `eachMessage` **returns** — unconditionally, storing `offset + 1`. So
 any mechanism that returns early and arranges to come back later (pause + `setTimeout` + `seek` is
 the obvious one, and was here) commits past a message whose only copy is that retry record. A
@@ -263,13 +277,13 @@ window an incident creates. `waitUntilDue` therefore blocks in the handler, hear
 **throws** on shutdown so the message is redelivered rather than committed and lost. The cost is
 intended: the retry partition is held for the duration, which is what a retry topic is for.
 
-⚠ **There is no dead-letter queue on the connector, and the logs will suggest otherwise.** Kafka
+**There is no dead-letter queue on the connector, and the logs will suggest otherwise.** Kafka
 Connect implements `errors.deadletterqueue.*` for sink connectors only; the outbox router is a
 source connector. It accepts the properties and Debezium echoes them back at startup, so the output
 reads as though one were configured — the topic is never created. See
 [`infra/debezium/README.md`](infra/debezium/README.md).
 
-### ⚠ One malformed outbox row kills the connector, and recovery is not obvious
+### One malformed outbox row kills the connector, and recovery is not obvious
 
 Measured, not feared. A row whose `aggregatetype` contained a space produced
 `InvalidTopicException`, and Connect's answer was *"Task is being killed and will not recover until
@@ -288,7 +302,7 @@ No Connect setting reaches it: the failure is raised in the producer's send call
 **The recovery, in order.** Delete the offending row, then **restart the Connect worker**
 (`docker compose restart connect`) to clear the producer's accumulator.
 
-> ⚠ **Do NOT drop the replication slot.** It looks like the decisive fix and it loses data: Debezium
+> **Do NOT drop the replication slot.** It looks like the decisive fix and it loses data: Debezium
 > then recreates the slot at the CURRENT WAL position and every row not yet published is skipped for
 > ever, sitting in the outbox that nothing reads back. Done here by accident, and the events were
 > gone.
@@ -298,7 +312,7 @@ CHECK constraints — topic-safe `aggregatetype`, non-empty `aggregateid`, versi
 `payload` — so the row cannot be committed in the first place, and the business operation is refused
 inside the transaction, where a request is still waiting to be told.
 
-⚠ **A replication slot nobody consumes retains the write-ahead log.** Stopping the connector and
+**A replication slot nobody consumes retains the write-ahead log.** Stopping the connector and
 leaving it registered makes the disk grow until it is full (`data-model.md` §7.4). `docker compose
 down -v` removes everything, slot included.
 

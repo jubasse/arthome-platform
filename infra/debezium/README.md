@@ -10,10 +10,11 @@ for c in identity catalog; do
 done
 ```
 
-⚠ **The two files differ in four fields and nothing checks that they stay that way:**
-`database.dbname`, `topic.prefix`, `slot.name`, `publication.name`. The slot and publication names
-must equal `outboxSlotName(<service>)` from `@arthome-platform/messaging`, which the readiness checks
-query. Five more connectors are owed; at the third, generate them instead of copying.
+**The two files differ in four fields, and `libs/messaging/src/connector-config.spec.ts` fails when
+they drift:** `database.dbname`, `topic.prefix`, `slot.name`, `publication.name`. It also holds the
+slot and publication names to `outboxSlotName(<service>)`, which the readiness checks query, the
+topic to `outboxTopic()`, which reconciliation reads, and the `filtered`, `none` and `message-id`
+settings below. Five more connectors are owed; at the third, generate them instead of copying.
 
 ⚠ **Registering is not the same as correcting.** A publication or a slot outlives the connector config
 that created it, and Kafka Connect keeps a deleted connector's source offsets under its name. Before
@@ -33,6 +34,10 @@ came up scoped on the first attempt.
 | `actor_id` | the `actor-id` header — the studio journal reads it (`data-model.md` §2.3) |
 | `created_at` | the `occurred-at` header — the instant of the business fact, distinct from publication |
 | `payload` | the value, transported as bytes and read by nobody in between |
+
+A `DELETE` on `outbox_event` produces nothing: the router drops it without failing and emits no
+tombstone (verified on 3.0.0.Final). `republishOutboxRow` relies on that to send a row again under
+its own id.
 
 ## ⚠ There is no dead-letter queue on this connector, and that was verified, not assumed
 

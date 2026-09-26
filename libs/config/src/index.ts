@@ -1,5 +1,6 @@
 export {
   isProductionEnvironment,
+  readKafkaBrokers,
   readConsumerEnv,
   readHttpServiceEnv,
   readSearchIndexerEnv,

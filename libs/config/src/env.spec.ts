@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isProductionEnvironment,
+  readKafkaBrokers,
   readConsumerEnv,
   readHttpServiceEnv,
   readSearchIndexerEnv,
@@ -60,9 +61,9 @@ describe('a broker list is a list, and it is not a URL', () => {
 
 describe('a URL variable asserts its protocol', () => {
   /**
-   * ⚠ `z.url()` ALONE PASSES THIS. The URL constructor reads `localhost:29092` as the
-   *   scheme `localhost:` with the path `29092`, so without the protocol assertion a
-   *   broker list pasted into DATABASE_URL validates and fails at connection time.
+   * `z.url()` ALONE PASSES THIS. The URL constructor reads `localhost:29092` as the
+   * scheme `localhost:` with the path `29092`, so without the protocol assertion a
+   * broker list pasted into DATABASE_URL validates and fails at connection time.
    */
   it('refuses a broker list pasted into DATABASE_URL', () => {
     expect(() =>
@@ -89,9 +90,9 @@ describe('PORT', () => {
   });
 
   /**
-   * ⚠ The migration CLI loads `data-source.ts` and never listens, so a required PORT
-   *   made `migration:run` unrunnable. A wrong port fails loudly, unlike a wrong
-   *   DATABASE_URL, which is why this one variable is defaulted and the rest are not.
+   * The migration CLI loads `data-source.ts` and never listens, so a required PORT
+   * made `migration:run` unrunnable. A wrong port fails loudly, unlike a wrong
+   * DATABASE_URL, which is why this one variable is defaulted and the rest are not.
    */
   it('defaults when the process does not listen', () => {
     expect(readHttpServiceEnv('identity', { NODE_ENV: 'test' }).PORT).toBe(3000);
@@ -112,5 +113,24 @@ describe('isProductionEnvironment', () => {
     expect(isProductionEnvironment({ NODE_ENV: 'test' })).toBe(false);
     expect(isProductionEnvironment({ NODE_ENV: 'production' })).toBe(true);
     expect(() => isProductionEnvironment({ NODE_ENV: 'staging' })).toThrow();
+  });
+});
+
+describe('readKafkaBrokers', () => {
+  it('defaults outside production', () => {
+    expect(readKafkaBrokers({ NODE_ENV: 'development' })).toEqual(['localhost:29092']);
+  });
+
+  it('refuses a production deployment with no broker list instead of using localhost', () => {
+    expect(() => readKafkaBrokers({ NODE_ENV: 'production' })).toThrow(/KAFKA_BROKERS/);
+  });
+
+  it('splits the list, like every other reader', () => {
+    expect(
+      readKafkaBrokers({
+        NODE_ENV: 'production',
+        KAFKA_BROKERS: 'a.internal:9092,b.internal:9092',
+      }),
+    ).toEqual(['a.internal:9092', 'b.internal:9092']);
   });
 });

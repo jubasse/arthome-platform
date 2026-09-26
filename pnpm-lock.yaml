@@ -166,6 +166,9 @@ importers:
 
   .:
     devDependencies:
+      '@arthome-platform/config':
+        specifier: workspace:*
+        version: link:libs/config
       '@arthome-platform/messaging':
         specifier: workspace:*
         version: link:libs/messaging

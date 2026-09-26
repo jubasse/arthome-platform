@@ -1,6 +1,7 @@
 import type { Admin } from 'kafkajs';
 import type { DataSource } from 'typeorm';
 
+import { findUnpublishedOutboxRows, type PublishedIdsReader } from './republish.js';
 import { MAX_SLOT_LAG_BYTES, readSlotState } from './slot.js';
 
 export type CheckStatus = 'up' | 'degraded' | 'down';
@@ -16,8 +17,8 @@ export interface CheckResult {
 const CHECK_TIMEOUT_MS = 2_000;
 
 /**
- * ⚠ A failure or a timeout becomes a result, never a throw: a rejection escaping a probe answers
- *   500, which reads as "this process is broken" when the truth was "that dependency is".
+ * A failure or a timeout becomes a result, never a throw: a rejection escaping a probe answers
+ * 500, which reads as "this process is broken" when the truth was "that dependency is".
  */
 export async function boundedCheck(
   name: string,
@@ -66,9 +67,9 @@ export function checkReplicationSlot(
 }
 
 /**
- * ⚠ Found live on 2026-09-26: `FOR ALL TABLES`, carrying `account` and `migrations`, because the
- *   connector was registered before `publication.autocreate.mode: filtered` existed. It needs
- *   superuser, so it passes in development and fails on the first real deployment.
+ * Found live on 2026-09-26: `FOR ALL TABLES`, carrying `account` and `migrations`, because the
+ * connector was registered before `publication.autocreate.mode: filtered` existed. It needs
+ * superuser, so it passes in development and fails on the first real deployment.
  */
 export function checkPublicationScope(
   dataSource: DataSource,
@@ -163,4 +164,36 @@ function rowsPastRetention(
       detail: { retentionDays, rowsPastRetention: past },
     };
   });
+}
+
+/**
+ * Reads whole topics: for `ops:check`, never for a readiness probe polled every few seconds.
+ * Its timeout sits above the reader's own, so a slow read reports the reader's error.
+ */
+export function checkUnpublishedOutbox(
+  dataSource: DataSource,
+  readPublishedIds: PublishedIdsReader,
+): Promise<CheckResult> {
+  return boundedCheck(
+    'unpublished_outbox',
+    'degraded',
+    async () => {
+      const { checked, unpublished } = await findUnpublishedOutboxRows(
+        dataSource,
+        readPublishedIds,
+      );
+      return {
+        status: unpublished.length === 0 ? 'up' : 'degraded',
+        detail: {
+          checked,
+          unpublished: unpublished.length,
+          ids: unpublished
+            .slice(0, 5)
+            .map(({ id }) => id)
+            .join(','),
+        },
+      };
+    },
+    60_000,
+  );
 }
