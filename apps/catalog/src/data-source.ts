@@ -4,10 +4,14 @@ import { DataSource } from 'typeorm';
 import { Service } from '@arthome/core';
 
 import { Show } from './catalog/show.entity.js';
+import { PerformanceDate } from './dates/performance-date.entity.js';
+import { PublicationChecklistFact } from './dates/publication-checklist-fact.entity.js';
+import { Publication } from './dates/publication.entity.js';
 import { env } from './env.js';
 import { Initial1758800000000 } from './migrations/1758800000000-initial.js';
 import { Idempotency1790420000000 } from './migrations/1790420000000-idempotency.js';
 import { ShowCopyAndVenue1790420100000 } from './migrations/1790420100000-show-copy-and-venue.js';
+import { DateAndPublication1790420200000 } from './migrations/1790420200000-date-and-publication.js';
 import { Venue } from './venues/venue.entity.js';
 
 /**
@@ -19,8 +23,13 @@ import { Venue } from './venues/venue.entity.js';
 export const dataSource: DataSource = new DataSource({
   type: 'postgres',
   url: env.DATABASE_URL,
-  entities: [Show, Venue, OutboxEvent],
-  migrations: [Initial1758800000000, Idempotency1790420000000, ShowCopyAndVenue1790420100000],
+  entities: [Show, Venue, PerformanceDate, Publication, PublicationChecklistFact, OutboxEvent],
+  migrations: [
+    Initial1758800000000,
+    Idempotency1790420000000,
+    ShowCopyAndVenue1790420100000,
+    DateAndPublication1790420200000,
+  ],
   applicationName: Service.CATALOG,
 
   // `poolSize` × replicas, plus one replication connection per registered connector, must

@@ -5,7 +5,6 @@ import {
   LanguageDependency as WireLanguageDependency,
   ShowPublishedSchema,
 } from '@arthome-platform/events';
-import { writeOutboxEvent } from '@arthome-platform/messaging';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Injectable } from '@nestjs/common';
@@ -16,6 +15,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { LanguageDependency, type Bilingual, type MediaSet } from '@arthome/core';
 
 import { Show } from './show.entity.js';
+import { writeCatalogEvent } from '../catalog-events.js';
 
 export interface PublishShowCommand {
   readonly channelId: string;
@@ -108,21 +108,14 @@ export class PublishShowService {
         synopsis: command.synopsis,
       });
 
-      messageId = await writeOutboxEvent(
+      messageId = await writeCatalogEvent(
         manager,
         {
-          // `catalog.show` → topic `arthome.catalog.show`, keyed by `show_id` (events.md §3).
-          aggregateType: 'catalog.show',
-          aggregateId: showId,
           type: 'catalog.show.published.v1',
+          key: showId,
           // Serialised here, by the producer; Debezium transports the bytes and reads none.
           payload: toBinary(ShowPublishedSchema, event),
           traceparent: command.traceparent,
-          // Null because this slice has no VERIFIED actor: JWKS token verification is not
-          //   built, and reading a name out of a request header is the `x-user-id` that
-          //   critical-rules #4 forbids. An unverified actor in a journal that decides
-          //   thousands of euros is worse than an absent one.
-          actorId: null,
         },
         occurredAt,
       );
