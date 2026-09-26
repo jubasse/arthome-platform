@@ -25,7 +25,8 @@ debugging NestJS code, load `nestjs-how-to` and the skills it routes to.** Alway
   `nestjs-testing`, `nestjs-http`
 - `nestjs-typeorm` (typeorm, @nestjs/typeorm) · `nestjs-kafka` (kafkajs) · `nestjs-event-driven`
   (the outbox and the idempotent consumers) · `nestjs-performance` (@nestjs/platform-fastify) ·
-  `nestjs-monorepo` (pnpm workspace)
+  `nestjs-monorepo` (pnpm workspace) · `nestjs-search` (@opensearch-project/opensearch) ·
+  `nestjs-bff-gateway` (`apps/bff-storefront`)
 
 Project decisions — the ADRs and `DECISIONS.md` in arthome-core — take precedence over these
 community defaults, and a recorded decision is never reopened.
@@ -267,6 +268,38 @@ Proven on the running stack on 2026-09-26:
 
 The same run found two defects, both fixed and now held by tests: a draft served `…/d/undefined` as
 its canonical URL, and a replay came back with its keys reordered, because `jsonb` reorders them.
+
+### Search, from the storefront BFF to the index
+
+`GET /v1/search` crosses three processes: `bff-storefront` (on `PORT`, `CATALOG_URL` pointing at
+catalog, `http://localhost:3002` by default), catalog's API, which reads `arthome-catalog-date` at
+`OPENSEARCH_URL`, and `search-indexer`, which writes it. Nobody calls the indexer.
+
+```bash
+cd apps/bff-storefront && PORT=3003 node dist/main.js
+curl 'localhost:3003/v1/search?q=nuit&sort=soon' -H 'X-Arthome-Surface: storefront_tv'
+```
+
+The BFF gives catalog a deadline 200 ms out (`x-arthome-deadline`, transport.md §5.9), creates the
+`traceparent` when the surface sent none, relays only `STOREFRONT_RELAYED_CODES`, and turns every
+other failure into `api.upstream_unavailable` (502) or `api.upstream_timeout` (504). Catalog
+refuses a call without a deadline. What catalog serves and refuses is in
+`apps/catalog/HANDOVER.md` §0.
+
+Proven on the running stack on 2026-09-26, with a show published on two dates through the studio
+commands, the indexer, catalog and the BFF running:
+
+| Check | Result |
+| --- | --- |
+| the index's `-v1` at the indexer's start | `slug_fr`, `slug_en`, `ends_at`, `over_at` added in place, no reindex |
+| `q=nuit&sort=soon` | one group, `Nuits blanches`, `matchingDatesCount` 2, the 12 December date first, `scheduled` until the room opens, the envelope's `validUntil` that instant; facets counted in shows; `public, max-age=60` and the `Vary` list |
+| latency through the BFF | 184 ms on the first call, cold; 18 to 38 ms over the next ten |
+| `countryCodes=BE` | no group, `emptyReason: no_match_with_filters` |
+| `priceMaxMinor` and `tab=artists` | catalog's 400 relayed, both fields named, the caller's `traceId` |
+| `tab=concerts`, a studio surface | refused by the BFF, 400, before catalog is called |
+| catalog without a deadline, or a past one | 400 naming `x-arthome-deadline`; 504 `api.deadline_exceeded` |
+| OpenSearch paused | 504 `api.upstream_timeout` in 203 ms, and 200 again once it resumes |
+| catalog stopped | 502 `api.upstream_unavailable` in 3 ms; the refused connection logged by the BFF |
 
 ### When a message cannot be applied
 

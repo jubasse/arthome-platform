@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 /**
  * No pipe can validate this: `@Headers` is `(property?: string) => ParameterDecorator` in
  *   `@nestjs/common` 12.0.3 — no options object, so no `schema` for
@@ -48,4 +50,9 @@ export function parseTraceparent(raw: string | undefined): TraceContext | null {
     return null;
   }
   return { traceparent: raw, traceId };
+}
+
+/** A root context, for the BFF when the surface sent none or a broken one (transport.md §5.2). */
+export function newTraceparent(): string {
+  return `00-${randomBytes(16).toString('hex')}-${randomBytes(8).toString('hex')}-01`;
 }

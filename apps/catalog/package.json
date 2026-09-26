@@ -19,7 +19,7 @@
     "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome-platform/search-index": "workspace:*",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-c7d9163f15e3.tgz",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-f460f3bb1f93.tgz",
     "@arthome/core": "file:../../vendor/arthome-core-5c370f5d4d1a.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "@nestjs/common": "12.0.3",

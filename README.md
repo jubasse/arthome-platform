@@ -23,6 +23,7 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | `apps/identity` | `POST /accounts`, the outbox producer |
 | `apps/catalog` | shows, venues, dates and their publication, the checklist consumer, and `GET /v1/search` over the date index |
 | `apps/notifications` | the idempotent consumer, with retries and dead-lettering |
+| `apps/bff-storefront` | the storefront's BFF: `GET /v1/search`, from catalog, with the deadline and the error mapping |
 | `apps/search-indexer` | the catalog projection into OpenSearch, composed from a read model of its own |
 | `libs/messaging` | the outbox, failure classification, retry, dead-lettering — shared by every service |
 | `libs/events` | the Protobuf wire types, generated from arthome-core's `proto/` |

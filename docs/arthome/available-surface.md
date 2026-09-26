@@ -51,7 +51,7 @@ The right to watch, served per date. It sits below `catalog` and `streaming` bec
 
 The shared response envelope and its meta instants (subpath @arthome/contracts/envelope).
 
-`StorefrontEnvelopeMetaSchema` · `StorefrontErrorEnvelopeSchema` · `StorefrontErrorSchema` · `StudioEnvelopeMetaSchema` · `StudioErrorEnvelopeSchema` · `StudioErrorSchema`
+`STOREFRONT_RELAYED_CODES` · `StorefrontEnvelopeMetaSchema` · `StorefrontErrorEnvelopeSchema` · `StorefrontErrorSchema` · `StudioEnvelopeMetaSchema` · `StudioErrorEnvelopeSchema` · `StudioErrorSchema`
 
 ### `@arthome/contracts/identity`
 
@@ -127,6 +127,6 @@ The boundary schemas (`@arthome/core/schema`); the only part of the package that
 
 ---
 
-550 exported names across 16 subpaths.
+551 exported names across 16 subpaths.
 A name is listed here only if it is reachable through a package’s `exports` map — if it is
 not in this file, a consumer cannot import it, whatever the source says.

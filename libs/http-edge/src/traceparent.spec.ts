@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseTraceparent } from './traceparent.js';
+import { newTraceparent, parseTraceparent } from './traceparent.js';
 
 /** The traceparent `AGENTS.md`'s walkthrough sends, and the one the outbox test asserts. */
 const VALID = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
@@ -63,5 +63,14 @@ describe('the inbound traceparent', () => {
 
   it('refuses two headers joined into one, because two contexts name no single parent', () => {
     expect(parseTraceparent(`${VALID}, ${VALID}`)).toBeNull();
+  });
+});
+
+describe('a traceparent the BFF starts', () => {
+  it('is one the parser accepts, and a new trace each time', () => {
+    const first = newTraceparent();
+
+    expect(parseTraceparent(first)?.traceparent).toBe(first);
+    expect(parseTraceparent(newTraceparent())?.traceId).not.toBe(parseTraceparent(first)?.traceId);
   });
 });

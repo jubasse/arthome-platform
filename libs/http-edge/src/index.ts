@@ -23,7 +23,7 @@ export {
   whenCallerLeaves,
 } from './deadline.js';
 
-export { parseTraceparent } from './traceparent.js';
+export { newTraceparent, parseTraceparent } from './traceparent.js';
 export type { TraceContext } from './traceparent.js';
 
 export {

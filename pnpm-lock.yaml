@@ -173,8 +173,8 @@ importers:
         specifier: workspace:*
         version: link:libs/messaging
       '@arthome/tooling':
-        specifier: file:./vendor/arthome-tooling-b718beb3f1bf.tgz
-        version: file:vendor/arthome-tooling-b718beb3f1bf.tgz(@eslint/js@10.0.1(eslint@10.11.0))(@typescript-eslint/utils@8.70.0(eslint@10.11.0)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.11.0))(eslint@10.11.0)(prettier@3.9.8)(typescript@6.0.3)
+        specifier: file:./vendor/arthome-tooling-65622228bca0.tgz
+        version: file:vendor/arthome-tooling-65622228bca0.tgz(@eslint/js@10.0.1(eslint@10.11.0))(@typescript-eslint/utils@8.70.0(eslint@10.11.0)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.11.0))(eslint@10.11.0)(prettier@3.9.8)(typescript@6.0.3)
       '@bufbuild/buf':
         specifier: 1.73.0
         version: 1.73.0
@@ -206,6 +206,40 @@ importers:
         specifier: 5.0.1
         version: 5.0.1(@types/node@24.13.5)(vite@8.3.0(@types/node@24.13.5)(yaml@2.9.1))
 
+  apps/bff-storefront:
+    dependencies:
+      '@arthome-platform/config':
+        specifier: workspace:*
+        version: link:../../libs/config
+      '@arthome-platform/http-edge':
+        specifier: workspace:*
+        version: link:../../libs/http-edge
+      '@arthome/contracts':
+        specifier: file:../../vendor/arthome-contracts-f460f3bb1f93.tgz
+        version: file:vendor/arthome-contracts-f460f3bb1f93.tgz(@arthome/core@file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5))(zod@4.6.5)
+      '@arthome/core':
+        specifier: file:../../vendor/arthome-core-5c370f5d4d1a.tgz
+        version: file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5)
+      '@nestjs/common':
+        specifier: 12.0.3
+        version: 12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core':
+        specifier: 12.0.3
+        version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/platform-fastify':
+        specifier: 12.0.3
+        version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))
+      reflect-metadata:
+        specifier: 0.2.2
+        version: 0.2.2
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@nestjs/testing':
+        specifier: 12.0.3
+        version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))
+
   apps/catalog:
     dependencies:
       '@arthome-platform/config':
@@ -224,8 +258,8 @@ importers:
         specifier: workspace:*
         version: link:../../libs/search-index
       '@arthome/contracts':
-        specifier: file:../../vendor/arthome-contracts-c7d9163f15e3.tgz
-        version: file:vendor/arthome-contracts-c7d9163f15e3.tgz(@arthome/core@file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5))(zod@4.6.5)
+        specifier: file:../../vendor/arthome-contracts-f460f3bb1f93.tgz
+        version: file:vendor/arthome-contracts-f460f3bb1f93.tgz(@arthome/core@file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
         specifier: file:../../vendor/arthome-core-5c370f5d4d1a.tgz
         version: file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5)
@@ -397,8 +431,8 @@ importers:
   libs/config:
     dependencies:
       '@arthome/contracts':
-        specifier: file:../../vendor/arthome-contracts-c7d9163f15e3.tgz
-        version: file:vendor/arthome-contracts-c7d9163f15e3.tgz(@arthome/core@file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5))(zod@4.6.5)
+        specifier: file:../../vendor/arthome-contracts-f460f3bb1f93.tgz
+        version: file:vendor/arthome-contracts-f460f3bb1f93.tgz(@arthome/core@file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
         specifier: file:../../vendor/arthome-core-5c370f5d4d1a.tgz
         version: file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5)
@@ -484,8 +518,8 @@ importers:
 
 packages:
 
-  '@arthome/contracts@file:vendor/arthome-contracts-c7d9163f15e3.tgz':
-    resolution: {integrity: sha512-9MYMa3ZFUzr+soSTwxpNODA6YWaWjt7/FjYu8lf5Npb/uqmIsSMVMkJhgtPjJPvlirZ2w6953oCPzSh8q1babw==, tarball: file:vendor/arthome-contracts-c7d9163f15e3.tgz}
+  '@arthome/contracts@file:vendor/arthome-contracts-f460f3bb1f93.tgz':
+    resolution: {integrity: sha512-beX3JNuMOyosuFa/jO6a9D3INK4JAxGlTXjfqN4aQPiL304SaC0bBggLHszapwQ2SWKJjMqsXnApeL9WNC/gKw==, tarball: file:vendor/arthome-contracts-f460f3bb1f93.tgz}
     version: 0.1.0
     engines: {node: ^22.22.3 || ^24.15.0 || >=26}
     peerDependencies:
@@ -502,8 +536,8 @@ packages:
       zod:
         optional: true
 
-  '@arthome/tooling@file:vendor/arthome-tooling-b718beb3f1bf.tgz':
-    resolution: {integrity: sha512-N6Nwssx+R1RKZH/+KDkjZzErBoFlolHHSz8PSLMPEmWd+kh+8ER07N92KXJObYp7Xd+tgQaK1dZQ6HDg7RyFJg==, tarball: file:vendor/arthome-tooling-b718beb3f1bf.tgz}
+  '@arthome/tooling@file:vendor/arthome-tooling-65622228bca0.tgz':
+    resolution: {integrity: sha512-t4Y+VazStzBYZC/d/q07lGiSKbe1c2xxb308HpAmIkdP8VqzOo2koGZM9lUvG9XWQEFTmZyTlRa660CiwmRnHQ==, tarball: file:vendor/arthome-tooling-65622228bca0.tgz}
     version: 0.1.0
     engines: {node: ^22.22.3 || ^24.15.0 || >=26}
     hasBin: true
@@ -2608,7 +2642,7 @@ packages:
 
 snapshots:
 
-  '@arthome/contracts@file:vendor/arthome-contracts-c7d9163f15e3.tgz(@arthome/core@file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5))(zod@4.6.5)':
+  '@arthome/contracts@file:vendor/arthome-contracts-f460f3bb1f93.tgz(@arthome/core@file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5))(zod@4.6.5)':
     dependencies:
       '@arthome/core': file:vendor/arthome-core-5c370f5d4d1a.tgz(zod@4.6.5)
       zod: 4.6.5
@@ -2617,7 +2651,7 @@ snapshots:
     optionalDependencies:
       zod: 4.6.5
 
-  '@arthome/tooling@file:vendor/arthome-tooling-b718beb3f1bf.tgz(@eslint/js@10.0.1(eslint@10.11.0))(@typescript-eslint/utils@8.70.0(eslint@10.11.0)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.11.0))(eslint@10.11.0)(prettier@3.9.8)(typescript@6.0.3)':
+  '@arthome/tooling@file:vendor/arthome-tooling-65622228bca0.tgz(@eslint/js@10.0.1(eslint@10.11.0))(@typescript-eslint/utils@8.70.0(eslint@10.11.0)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.11.0))(eslint@10.11.0)(prettier@3.9.8)(typescript@6.0.3)':
     dependencies:
       '@eslint/js': 10.0.1(eslint@10.11.0)
       eslint: 10.11.0
