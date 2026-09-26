@@ -4,12 +4,29 @@ import { describe, expect, it } from 'vitest';
 
 import { FixedClock } from '@arthome/core';
 
-import { SuccessEnvelopeInterceptor } from './success-envelope.interceptor.js';
+import { MemorisedResponse, SuccessEnvelopeInterceptor } from './success-envelope.interceptor.js';
 
 const SERVED_AT = '2026-09-25T10:11:12.000Z';
 
 function contextOfType(type: string): ExecutionContext {
   return { getType: () => type } as unknown as ExecutionContext;
+}
+
+function httpContextRecordingHeaders(): {
+  readonly context: ExecutionContext;
+  readonly headers: Record<string, string>;
+} {
+  const headers: Record<string, string> = {};
+  const reply = {
+    header: (name: string, value: string) => {
+      headers[name] = value;
+    },
+  };
+  const context = {
+    getType: () => 'http',
+    switchToHttp: () => ({ getResponse: () => reply }),
+  } as unknown as ExecutionContext;
+  return { context, headers };
 }
 
 function handlerReturning(value: unknown): CallHandler {
@@ -57,5 +74,31 @@ describe('the success envelope', () => {
     );
 
     expect(Object.keys(sent as object).sort()).toEqual(['data', 'servedAt']);
+  });
+
+  it('sends a memorised envelope as stored, without wrapping it again', async () => {
+    const interceptor = new SuccessEnvelopeInterceptor(new FixedClock(SERVED_AT));
+    const stored = { servedAt: '2026-09-25T09:00:00.000Z', data: { dateId: 'd-1' } };
+    const { context, headers } = httpContextRecordingHeaders();
+
+    const sent = await lastValueFrom(
+      interceptor.intercept(context, handlerReturning(new MemorisedResponse(stored, false))),
+    );
+
+    expect(sent).toBe(stored);
+    expect(headers).toEqual({});
+  });
+
+  it('marks a replay, keeping the first servedAt in the body and stamping the replay in a header', async () => {
+    const interceptor = new SuccessEnvelopeInterceptor(new FixedClock(SERVED_AT));
+    const stored = { servedAt: '2026-09-25T09:00:00.000Z', data: { dateId: 'd-1' } };
+    const { context, headers } = httpContextRecordingHeaders();
+
+    const sent = await lastValueFrom(
+      interceptor.intercept(context, handlerReturning(new MemorisedResponse(stored, true))),
+    );
+
+    expect(sent).toEqual(stored);
+    expect(headers).toEqual({ 'Idempotency-Replayed': 'true', 'x-arthome-served-at': SERVED_AT });
   });
 });

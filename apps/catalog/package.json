@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.mjs",
     "migration:run": "pnpm run build && typeorm migration:run -d dist/data-source.js",
     "migration:revert": "pnpm run build && typeorm migration:revert -d dist/data-source.js"
   },
@@ -17,7 +18,7 @@
     "@arthome-platform/events": "workspace:*",
     "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/core": "file:../../vendor/arthome-core-dac98f7e1f90.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-cff98db11a7d.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "@nestjs/common": "12.0.3",
     "@nestjs/core": "12.0.3",
@@ -28,5 +29,8 @@
     "typeorm": "1.1.1",
     "uuid": "14.0.2",
     "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@arthome-platform/testing": "workspace:*"
   }
 }

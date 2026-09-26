@@ -14,6 +14,21 @@ export interface SuccessEnvelope<T> {
 }
 
 /**
+ * An envelope built inside the command's transaction, so it could be stored with the write it
+ * answers and replayed verbatim, `servedAt` included (transport.md §5.4).
+ */
+export class MemorisedResponse<T> {
+  public constructor(
+    public readonly envelope: SuccessEnvelope<T>,
+    public readonly replayed: boolean,
+  ) {}
+}
+
+interface HeaderWriter {
+  header(name: string, value: string): unknown;
+}
+
+/**
  * transport.md §5.5's success envelope, applied once rather than remembered per route.
  *
  * `validUntil` is absent because no route here returns a perishable value. §5.5 makes it
@@ -31,6 +46,17 @@ export class SuccessEnvelopeInterceptor implements NestInterceptor {
 
     // Through the `Clock` port, never `new Date()`, so a `FixedClock` can assert `servedAt` —
     // the same reason the error filter takes one.
-    return next.handle().pipe(map((data: unknown) => ({ servedAt: this.clock.now(), data })));
+    return next.handle().pipe(
+      map((data: unknown) => {
+        if (!(data instanceof MemorisedResponse)) return { servedAt: this.clock.now(), data };
+        if (data.replayed) {
+          // The body's `servedAt` is the first attempt's; this header says when the replay was.
+          const reply = context.switchToHttp().getResponse<HeaderWriter>();
+          reply.header('Idempotency-Replayed', 'true');
+          reply.header('x-arthome-served-at', this.clock.now());
+        }
+        return data.envelope;
+      }),
+    );
   }
 }
