@@ -263,6 +263,7 @@ Proven on the running stack on 2026-09-26:
 | a stale `expectedVersion` | 409 `state.conflict`, with the current state and version |
 | publishing before the facts | 409 `publication.checklist_incomplete`, the four projected items named |
 | publishing after them | on `arthome.catalog.date`, one partition, in order: `drafted`, two state changes, `date.scheduled` with the venue clock and canonical URL, `publication.engaged` |
+| `search-indexer` running beside them | the date indexed in `arthome-catalog-date` with its show's titles and taxonomy and its venue's city; `nuit` finds `Les Nuits d’été` filtered on `marseille`; a show update and a move to `technical` each recompose it (version 1, 2, 3); a backlog from before the proto change indexed without errors |
 
 The same run found two defects, both fixed and now held by tests: a draft served `…/d/undefined` as
 its canonical URL, and a replay came back with its keys reordered, because `jsonb` reorders them.
