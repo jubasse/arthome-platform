@@ -15,6 +15,7 @@ import { ownChecklistFacts } from './own-checklist.js';
 import type { PerformanceDate } from './performance-date.entity.js';
 import type { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import type { Publication } from './publication.entity.js';
+import { canonicalUrlOf } from './slug.js';
 import type { Show } from '../catalog/show.entity.js';
 import { venueClockAt } from '../venues/venue-clock.js';
 import type { Venue } from '../venues/venue.entity.js';
@@ -57,6 +58,8 @@ export interface DateSheet {
   readonly replayPolicy: ReplayPolicy;
   readonly replayWindowHours: number | null;
   readonly rights: TerritoryRights;
+  /** Null until publication sets the slugs. */
+  readonly canonicalUrl: string | null;
   readonly publication: PublicationView;
 }
 
@@ -111,7 +114,7 @@ export function publicationView(
   };
 }
 
-export function dateSheet(records: DateRecords): DateSheet {
+export function dateSheet(records: DateRecords, origin: string): DateSheet {
   const { date, publication, show, venue, projectedFacts } = records;
   const startsAt = date.starts_at.toISOString();
   return {
@@ -125,6 +128,7 @@ export function dateSheet(records: DateRecords): DateSheet {
     replayPolicy: date.replay_policy,
     replayWindowHours: date.replay_window_hours,
     rights: date.rights,
+    canonicalUrl: canonicalUrlOf(origin, show.title, date),
     publication: publicationView(publication, satisfiedChecklistItems(show, projectedFacts)),
   };
 }

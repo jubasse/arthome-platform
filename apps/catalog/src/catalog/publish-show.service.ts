@@ -1,10 +1,4 @@
-// Aliased because `@arthome-platform/events` is a flat barrel: the wire enum and
-//   `@arthome/core`'s domain vocabulary share the name `LanguageDependency`, and they are a
-//   number and a string. The map below exists so the two are never confused.
-import {
-  LanguageDependency as WireLanguageDependency,
-  ShowPublishedSchema,
-} from '@arthome-platform/events';
+import { ShowPublishedSchema } from '@arthome-platform/events';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Injectable } from '@nestjs/common';
@@ -12,10 +6,11 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { LanguageDependency, type Bilingual, type MediaSet } from '@arthome/core';
+import type { Bilingual, LanguageDependency, MediaSet } from '@arthome/core';
 
 import { Show } from './show.entity.js';
 import { writeCatalogEvent } from '../catalog-events.js';
+import { WIRE_LANGUAGE_DEPENDENCY } from '../wire.js';
 
 export interface PublishShowCommand {
   readonly channelId: string;
@@ -38,22 +33,6 @@ export interface PublishedShow {
   readonly showId: string;
   readonly messageId: string;
 }
-
-/**
- * The domain's member → the wire's number.
- *
- * An encoding, not a parallel literal table (§5.2): there is one spelling — core's, which
- *   is also the wire's — plus a Protobuf number that cannot be avoided, only written once
- *   from the two generated sides. No string literal on either side.
- * `satisfies` points at the domain on purpose: a fourth member of `LANGUAGE_DEPENDENCIES`
- *   fails this build, because the domain leads. The reverse is deliberately not checked —
- *   the proto's `UNSPECIFIED = 0` has no domain member and must not acquire one.
- */
-const WIRE_LANGUAGE_DEPENDENCY = {
-  [LanguageDependency.NONE]: WireLanguageDependency.NONE,
-  [LanguageDependency.HELPFUL]: WireLanguageDependency.HELPFUL,
-  [LanguageDependency.ESSENTIAL]: WireLanguageDependency.ESSENTIAL,
-} satisfies Record<LanguageDependency, WireLanguageDependency>;
 
 @Injectable()
 export class PublishShowService {

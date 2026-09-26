@@ -5,6 +5,7 @@ import { DomainErrorCode, LanguageDependency, isDomainError, rendition } from '@
 import { CatalogController } from './catalog.controller.js';
 import type { PublishShowBody } from './publish-show.schema.js';
 import type { PublishShowCommand, PublishShowService } from './publish-show.service.js';
+import type { UpdateShowService } from './update-show.service.js';
 
 /** A service that records the command it was handed, and publishes nothing. */
 function recordingService(commands: PublishShowCommand[]): PublishShowService {
@@ -35,12 +36,15 @@ const body: PublishShowBody = {
   synopsis: { fr: '', en: '' },
 };
 
+/** The POST route is under test; the PATCH service is never reached. */
+const UNUSED_UPDATE = {} as unknown as UpdateShowService;
+
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 
 describe('CatalogController', () => {
   it('carries the traceparent the request arrived with', async () => {
     const commands: PublishShowCommand[] = [];
-    const controller = new CatalogController(recordingService(commands));
+    const controller = new CatalogController(recordingService(commands), UNUSED_UPDATE);
 
     await controller.publish(body, TRACEPARENT);
     expect(commands[0]?.traceparent).toBe(TRACEPARENT);
@@ -48,7 +52,7 @@ describe('CatalogController', () => {
 
   it('carries null rather than an empty traceparent when the header is absent', async () => {
     const commands: PublishShowCommand[] = [];
-    const controller = new CatalogController(recordingService(commands));
+    const controller = new CatalogController(recordingService(commands), UNUSED_UPDATE);
 
     const result = await controller.publish(body);
     expect(commands[0]?.traceparent).toBeNull();
@@ -62,7 +66,7 @@ describe('CatalogController', () => {
     //   reach `outbox_event.tracecontext`, the one outbox column with no CHECK
     //   constraint, and from there a Kafka header on `arthome.catalog.show`.
     const commands: PublishShowCommand[] = [];
-    const controller = new CatalogController(recordingService(commands));
+    const controller = new CatalogController(recordingService(commands), UNUSED_UPDATE);
 
     const result = await controller.publish(body, '00-not-hex-00f067aa0ba902b7-01');
 
@@ -75,7 +79,7 @@ describe('CatalogController', () => {
     // checked that `widthPx` is a NUMBER; that zero is not a width is the domain's
     // to say, and saying it twice is what critical-rules #2 forbids.
     const commands: PublishShowCommand[] = [];
-    const controller = new CatalogController(recordingService(commands));
+    const controller = new CatalogController(recordingService(commands), UNUSED_UPDATE);
 
     await expect(
       controller.publish({
@@ -93,7 +97,7 @@ describe('CatalogController', () => {
 
   it('refuses an empty rendition url with the domain code', async () => {
     const commands: PublishShowCommand[] = [];
-    const controller = new CatalogController(recordingService(commands));
+    const controller = new CatalogController(recordingService(commands), UNUSED_UPDATE);
 
     await expect(
       controller.publish({
@@ -111,7 +115,10 @@ describe('CatalogController', () => {
     // nothing having checked it — the type said `MediaSet` and no value had earned
     // the name.
     const commands: PublishShowCommand[] = [];
-    await new CatalogController(recordingService(commands)).publish(body, TRACEPARENT);
+    await new CatalogController(recordingService(commands), UNUSED_UPDATE).publish(
+      body,
+      TRACEPARENT,
+    );
 
     expect(commands[0]?.media).toEqual({
       wide: [{ url: 'https://cdn.example.test/w-640.jpg', widthPx: 640, heightPx: 360 }],
@@ -121,7 +128,7 @@ describe('CatalogController', () => {
 
   it('hands the service the language dependency already narrowed to a member', async () => {
     const commands: PublishShowCommand[] = [];
-    await new CatalogController(recordingService(commands)).publish(body);
+    await new CatalogController(recordingService(commands), UNUSED_UPDATE).publish(body);
     expect(commands[0]?.languageDependency).toBe(LanguageDependency.ESSENTIAL);
   });
 });

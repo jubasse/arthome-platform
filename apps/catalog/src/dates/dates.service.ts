@@ -14,16 +14,17 @@ import {
   ApiErrorCode,
   DomainErrorCode,
   FailureNature,
+  PublicationPromise,
   PublicationState,
   assertCommandedTransition,
   isDomainError,
   publicationReadiness,
   worldwideRights,
   type Clock,
-  type PublicationPromise,
   type ReplayPolicy,
 } from '@arthome/core';
 
+import { announcePublication } from './announce-publication.js';
 import {
   dateSheet,
   publicationView,
@@ -35,12 +36,13 @@ import {
 import { PerformanceDate } from './performance-date.entity.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { Publication } from './publication.entity.js';
-import { WIRE_PUBLICATION_STATE } from './wire.js';
 import { Show } from '../catalog/show.entity.js';
 import { writeCatalogEvent } from '../catalog-events.js';
 import { CLOCK } from '../clock.js';
 import { runIdempotently, type IdempotentRequest } from '../idempotency/idempotency.js';
+import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { Venue } from '../venues/venue.entity.js';
+import { WIRE_PUBLICATION_STATE } from '../wire.js';
 
 export interface DraftDateCommand {
   readonly channelId: string;
@@ -66,6 +68,7 @@ export class DatesService {
   public constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PUBLIC_WEB_ORIGIN) private readonly publicWebOrigin: string,
   ) {}
 
   public draft(
@@ -87,7 +90,7 @@ export class DatesService {
   }
 
   public async sheet(dateId: string): Promise<DateSheet> {
-    return dateSheet(await dateRecordsOf(this.dataSource.manager, dateId));
+    return dateSheet(await dateRecordsOf(this.dataSource.manager, dateId), this.publicWebOrigin);
   }
 
   /**
@@ -153,14 +156,15 @@ export class DatesService {
       occurredAt,
     );
 
-    return dateSheet({ date, publication, show, venue, projectedFacts: [] });
+    return dateSheet({ date, publication, show, venue, projectedFacts: [] }, this.publicWebOrigin);
   }
 
   private async transitionIn(
     manager: EntityManager,
     command: TransitionPublicationCommand,
   ): Promise<PublicationView> {
-    const { publication, show, projectedFacts } = await dateRecordsOf(manager, command.dateId);
+    const records = await dateRecordsOf(manager, command.dateId);
+    const { publication, show, projectedFacts } = records;
     const from = publication.state;
     const transition = asConflict(() =>
       assertCommandedTransition(
@@ -175,7 +179,9 @@ export class DatesService {
     );
 
     const satisfied = satisfiedChecklistItems(show, projectedFacts);
-    const publishing = command.to === PublicationState.SCHEDULED;
+    // Publishing is the transition that engages the prices: `technical -> scheduled` also ends in
+    // `scheduled` and is not one.
+    const publishing = transition.irreversiblePromiseCode === PublicationPromise.PRICES_ENGAGED;
     if (publishing) {
       const readiness = publicationReadiness(satisfied);
       if (!readiness.ready) {
@@ -245,6 +251,16 @@ export class DatesService {
       },
       occurredAt,
     );
+
+    if (publishing) {
+      await announcePublication(
+        manager,
+        records,
+        this.publicWebOrigin,
+        occurredAt,
+        command.traceparent,
+      );
+    }
 
     return publicationView(next, satisfied);
   }

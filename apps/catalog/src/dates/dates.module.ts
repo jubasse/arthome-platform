@@ -1,3 +1,4 @@
+import { readPublicWebOrigin } from '@arthome-platform/config';
 import { OutboxEvent } from '@arthome-platform/messaging';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -11,6 +12,7 @@ import { PublicationChecklistFact } from './publication-checklist-fact.entity.js
 import { Publication } from './publication.entity.js';
 import { Show } from '../catalog/show.entity.js';
 import { CLOCK } from '../clock.js';
+import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { Venue } from '../venues/venue.entity.js';
 
 @Module({
@@ -25,6 +27,10 @@ import { Venue } from '../venues/venue.entity.js';
     ]),
   ],
   controllers: [DatesController],
-  providers: [DatesService, { provide: CLOCK, useValue: new SystemClock() }],
+  providers: [
+    DatesService,
+    { provide: CLOCK, useValue: new SystemClock() },
+    { provide: PUBLIC_WEB_ORIGIN, useValue: readPublicWebOrigin() },
+  ],
 })
 export class DatesModule {}

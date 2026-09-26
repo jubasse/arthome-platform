@@ -3,10 +3,14 @@ import {
   DateChatPolicyChangedSchema,
   DateDraftedSchema,
   DateSalesCapacitySetSchema,
+  DateScheduledSchema,
+  PublicationEngagedSchema,
+  PublicationEngagement,
   DateSalesPricingChangedSchema,
   PriceTier,
   PublicationState as WirePublicationState,
   PublicationStateChangedSchema,
+  ShowUpdatedSchema,
   TechnicalCheckPassedSchema,
 } from '@arthome-platform/events';
 import { RefusalException } from '@arthome-platform/http-edge';
@@ -46,12 +50,14 @@ import { PerformanceDate } from './performance-date.entity.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { Publication } from './publication.entity.js';
 import { Show } from '../catalog/show.entity.js';
+import { UpdateShowService } from '../catalog/update-show.service.js';
 import type { IdempotentRequest } from '../idempotency/idempotency.js';
 import { Initial1758800000000 } from '../migrations/1758800000000-initial.js';
 import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
 import { ShowCopyAndVenue1790420100000 } from '../migrations/1790420100000-show-copy-and-venue.js';
 import { DateAndPublication1790420200000 } from '../migrations/1790420200000-date-and-publication.js';
 import { ChecklistProjection1790420300000 } from '../migrations/1790420300000-checklist-projection.js';
+import { DateSlugs1790420400000 } from '../migrations/1790420400000-date-slugs.js';
 import { Venue } from '../venues/venue.entity.js';
 
 /**
@@ -197,6 +203,7 @@ beforeAll(async () => {
       ShowCopyAndVenue1790420100000,
       DateAndPublication1790420200000,
       ChecklistProjection1790420300000,
+      DateSlugs1790420400000,
     ],
   });
   await dataSource.getRepository(Show).insert({
@@ -225,7 +232,11 @@ beforeAll(async () => {
     country: 'FR',
     time_zone: 'Europe/Paris',
   });
-  dates = new DatesService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'));
+  dates = new DatesService(
+    dataSource,
+    new FixedClock('2026-09-26T10:00:00.000Z'),
+    'https://arthome.test',
+  );
 }, STARTUP_MS);
 
 afterAll(async () => {
@@ -399,17 +410,94 @@ describe('a publication transition', () => {
         pricesLockedAt: '2026-09-26T10:00:00.000Z',
       });
       const rows = await outboxRowsFor(dateId);
+      expect(rows.map((row) => [row.aggregatetype, row.aggregateid, row.type])).toEqual([
+        ['catalog.date', dateId, 'catalog.date.drafted.v1'],
+        ['catalog.date', dateId, 'catalog.publication.state_changed.v1'],
+        ['catalog.date', dateId, 'catalog.date.scheduled.v1'],
+        ['catalog.date', dateId, 'catalog.publication.engaged.v1'],
+      ]);
       const changed = fromBinary(
         PublicationStateChangedSchema,
-        rows.at(-1)?.payload ?? new Uint8Array(),
+        rows[1]?.payload ?? new Uint8Array(),
       );
       expect(changed.irreversible).toBe(true);
+
+      const scheduled = fromBinary(DateScheduledSchema, rows[2]?.payload ?? new Uint8Array());
+      expect(scheduled).toMatchObject({
+        dateId,
+        runtimeMin: 95,
+        replayWindowHours: 72,
+        canonicalUrl: 'https://arthome.test/fr/d/nuit-blanche-2026-11-04',
+        venueClock: { venueTimezone: 'Europe/Paris', venueUtcOffsetMin: 60 },
+      });
+      const engaged = fromBinary(PublicationEngagedSchema, rows[3]?.payload ?? new Uint8Array());
+      expect(engaged.engaged).toEqual([
+        PublicationEngagement.PRICES,
+        PublicationEngagement.REPLAY,
+        PublicationEngagement.CHAT_MODE,
+      ]);
+      expect((await dates.sheet(dateId)).canonicalUrl).toBe(scheduled.canonicalUrl);
 
       const back = await refusalOf(move(dateId, PublicationState.DRAFT, 2));
       expect(back.refusal).toMatchObject({
         code: DomainErrorCode.PUBLICATION_TRANSITION_IRREVERSIBLE,
         params: { promise: PublicationPromise.PRICES_ENGAGED },
       });
+    },
+    CASE_MS,
+  );
+});
+
+describe('a date already published', () => {
+  it(
+    'goes back from technical to scheduled without publishing again or rereading the checklist',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-000000000205';
+      await draft(dateId);
+      await satisfyProjectedItems(dateId);
+      await move(dateId, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
+      await move(dateId, PublicationState.TECHNICAL, 2);
+      await applyChecklistMessage(
+        dataSource,
+        upstream('ticketing.date_sales.pricing_changed.v1', DateSalesPricingChangedSchema, {
+          dateId,
+          tiers: [{ tier: PriceTier.FULL, active: false }],
+          occurredAt: timestampFromDate(new Date('2026-09-26T11:00:00.000Z')),
+        }),
+      );
+
+      const back = await move(dateId, PublicationState.SCHEDULED, 3);
+      expect(back.envelope.data).toMatchObject({ state: PublicationState.SCHEDULED, version: 4 });
+      const scheduledEvents = (await outboxRowsFor(dateId)).filter(
+        (row) => row.type === 'catalog.date.scheduled.v1',
+      );
+      expect(scheduledEvents).toHaveLength(1);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'takes a second slug when another date of the same show is published the same day',
+    async () => {
+      const first = '01a0e100-0000-7000-8000-000000000206';
+      const second = '01a0e100-0000-7000-8000-000000000207';
+      for (const dateId of [first, second]) {
+        await draft(dateId);
+        await satisfyProjectedItems(dateId);
+      }
+      await move(first, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
+      await move(second, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
+
+      const urls = [
+        (await dates.sheet(first)).canonicalUrl,
+        (await dates.sheet(second)).canonicalUrl,
+      ];
+      // Earlier cases published this show on the same day, so which candidate each takes depends
+      // on order; that they never share one does not.
+      expect(new Set(urls).size).toBe(2);
+      for (const url of urls) {
+        expect(url).toMatch(/\/fr\/d\/nuit-blanche-2026-11-04(-\d{4}|-[0-9a-f]{8})?$/);
+      }
     },
     CASE_MS,
   );
@@ -491,6 +579,61 @@ describe('a projected checklist fact', () => {
       expect(
         await dataSource.getRepository(ProcessedMessage).findOneBy({ id: messageId }),
       ).toBeNull();
+    },
+    CASE_MS,
+  );
+});
+
+describe('a show update', () => {
+  const updates = (): UpdateShowService =>
+    new UpdateShowService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'));
+
+  function showEvents(): Promise<OutboxEvent[]> {
+    return dataSource.getRepository(OutboxEvent).find({
+      where: { aggregateid: SHOW_ID, type: 'catalog.show.updated.v1' },
+      order: { created_at: 'ASC', id: 'ASC' },
+    });
+  }
+
+  it(
+    'emits ShowUpdated on the show’s topic, carrying every indexed field at its new value',
+    async () => {
+      await updates().update({ showId: SHOW_ID, genreIds: ['comedy'], traceparent: null });
+
+      const rows = await showEvents();
+      expect(rows.map((row) => row.aggregatetype)).toEqual(['catalog.show']);
+      const event = fromBinary(ShowUpdatedSchema, rows[0]?.payload ?? new Uint8Array());
+      expect(event.genreIds).toEqual(['comedy']);
+      expect(event.media?.poster).toHaveLength(1);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'emits nothing when only the copy changes, which no event carries',
+    async () => {
+      const before = (await showEvents()).length;
+      await updates().update({
+        showId: SHOW_ID,
+        synopsis: { fr: 'Une autre nuit.', en: '' },
+        traceparent: null,
+      });
+      expect(await showEvents()).toHaveLength(before);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'answers 404 for a show catalog does not hold',
+    async () => {
+      const refusal = await refusalOf(
+        updates().update({
+          showId: '01a0e100-0000-7000-8000-0000000009ff',
+          tagIds: [],
+          traceparent: null,
+        }),
+      );
+      expect(refusal.getStatus()).toBe(404);
     },
     CASE_MS,
   );

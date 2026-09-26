@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isProductionEnvironment,
   readKafkaBrokers,
+  readPublicWebOrigin,
   readConsumerEnv,
   readHttpServiceEnv,
   readSearchIndexerEnv,
@@ -132,5 +133,21 @@ describe('readKafkaBrokers', () => {
         KAFKA_BROKERS: 'a.internal:9092,b.internal:9092',
       }),
     ).toEqual(['a.internal:9092', 'b.internal:9092']);
+  });
+});
+
+describe('readPublicWebOrigin', () => {
+  it('defaults outside production', () => {
+    expect(readPublicWebOrigin({ NODE_ENV: 'development' })).toBe('http://localhost:3000');
+  });
+
+  it('refuses a production deployment with no origin rather than serve localhost links', () => {
+    expect(() => readPublicWebOrigin({ NODE_ENV: 'production' })).toThrow(/PUBLIC_WEB_ORIGIN/);
+  });
+
+  it('keeps the origin alone, so a path or a trailing slash cannot double into a URL', () => {
+    expect(
+      readPublicWebOrigin({ NODE_ENV: 'production', PUBLIC_WEB_ORIGIN: 'https://arthome.fr/' }),
+    ).toBe('https://arthome.fr');
   });
 });

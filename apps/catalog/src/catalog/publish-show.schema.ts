@@ -23,13 +23,20 @@ const UINT32_MAX = 2 ** 32 - 1;
  *   `.positive()` here would be a second implementation of it.
  */
 /** An empty side is absent copy, not a fault: the publication checklist is what asks for it. */
-const BilingualIn = z.strictObject({ fr: z.string(), en: z.string() });
+export const BilingualIn = z.strictObject({ fr: z.string(), en: z.string() });
 
 const RenditionIn = z.strictObject({
   url: z.string(),
   widthPx: z.number(),
   heightPx: z.number(),
 });
+
+export const MediaSetIn = z.strictObject({
+  wide: z.array(RenditionIn),
+  poster: z.array(RenditionIn),
+});
+
+export type MediaIn = z.infer<typeof MediaSetIn>;
 
 export const PublishShowSchema = z.strictObject({
   /**
@@ -63,10 +70,7 @@ export const PublishShowSchema = z.strictObject({
   subtitleLanguages: z.array(z.string().min(1)),
   surtitleLanguages: z.array(z.string().min(1)),
 
-  media: z.strictObject({
-    wide: z.array(RenditionIn),
-    poster: z.array(RenditionIn),
-  }),
+  media: MediaSetIn,
 
   title: BilingualIn.default({ fr: '', en: '' }),
   synopsis: BilingualIn.default({ fr: '', en: '' }),

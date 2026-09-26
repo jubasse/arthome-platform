@@ -34,6 +34,13 @@ export class PerformanceDate {
   @Column('jsonb')
   rights!: TerritoryRights;
 
+  /** Set once at publication, then stable: it is what gets shared and indexed (§2.7). */
+  @Column('text', { nullable: true })
+  slug_fr!: string | null;
+
+  @Column('text', { nullable: true })
+  slug_en!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

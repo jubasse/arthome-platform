@@ -156,3 +156,21 @@ export function readKafkaBrokers(
       : { KAFKA_BROKERS: DEVELOPMENT_KAFKA_BROKERS, ...stripEmpty(source) };
   return z.object({ KAFKA_BROKERS: brokerList }).parse(withDefault).KAFKA_BROKERS;
 }
+
+/** The storefront's own port in development, where Next.js listens by default. */
+const DEVELOPMENT_PUBLIC_WEB_ORIGIN = 'http://localhost:3000';
+
+/**
+ * The origin a served canonical URL starts with (data-model.md §2.7). Required in production,
+ * where a localhost link would be shared, bookmarked and printed into a QR code.
+ */
+export function readPublicWebOrigin(
+  source: Record<string, string | undefined> = process.env,
+): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { PUBLIC_WEB_ORIGIN: DEVELOPMENT_PUBLIC_WEB_ORIGIN, ...stripEmpty(source) };
+  return new URL(z.object({ PUBLIC_WEB_ORIGIN: httpUrl }).parse(withDefault).PUBLIC_WEB_ORIGIN)
+    .origin;
+}

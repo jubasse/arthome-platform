@@ -1,29 +1,20 @@
 import { parseTraceparent } from '@arthome-platform/http-edge';
-import { Body, Controller, Header, HttpCode, Headers, Post } from '@nestjs/common';
+import { Body, Controller, Header, HttpCode, Headers, Param, Patch, Post } from '@nestjs/common';
 
-import { rendition, type MediaSet, type Rendition } from '@arthome/core';
+import { ShowIdSchema } from '@arthome/core/schema';
 
+import { mediaSetOf } from './media.js';
 import { PublishShowSchema, type PublishShowBody } from './publish-show.schema.js';
 import { PublishShowService } from './publish-show.service.js';
-
-/**
- * It throws a `DomainError`, not an `HttpException`: `ErrorEnvelopeFilter` maps it with no
- *   translation table, because a `DomainError` already carries `code`, `params` and `nature`.
- *   It stops at the first bad rendition — collecting would mean reimplementing its checks.
- */
-function mediaSetOf(media: PublishShowBody['media']): MediaSet {
-  const toRendition = (declared: { url: string; widthPx: number; heightPx: number }): Rendition =>
-    rendition(declared.url, declared.widthPx, declared.heightPx);
-
-  return {
-    wide: media.wide.map(toRendition),
-    poster: media.poster.map(toRendition),
-  };
-}
+import { UpdateShowSchema, type UpdateShowBody } from './update-show.schema.js';
+import { UpdateShowService } from './update-show.service.js';
 
 @Controller('shows')
 export class CatalogController {
-  public constructor(private readonly publishShow: PublishShowService) {}
+  public constructor(
+    private readonly publishShow: PublishShowService,
+    private readonly updateShow: UpdateShowService,
+  ) {}
 
   @Post()
   @HttpCode(201)
@@ -56,5 +47,26 @@ export class CatalogController {
     // Returned, unlike identity's account id: `show_id` is already on the wire as the
     // partition key of `arthome.catalog.show`. §7.1's opaque handles are for people.
     return { showId: result.showId };
+  }
+
+  @Patch(':showId')
+  @HttpCode(200)
+  @Header('cache-control', 'no-store')
+  public update(
+    @Param('showId', { schema: ShowIdSchema }) showId: string,
+    @Body({ schema: UpdateShowSchema }) body: UpdateShowBody,
+    @Headers('traceparent') traceparent?: string,
+  ): Promise<{ showId: string }> {
+    const trace = parseTraceparent(traceparent);
+    return this.updateShow.update({
+      showId,
+      ...(body.genreIds !== undefined && { genreIds: body.genreIds }),
+      ...(body.tagIds !== undefined && { tagIds: body.tagIds }),
+      ...(body.languageDependency !== undefined && { languageDependency: body.languageDependency }),
+      ...(body.media !== undefined && { media: mediaSetOf(body.media) }),
+      ...(body.title !== undefined && { title: body.title }),
+      ...(body.synopsis !== undefined && { synopsis: body.synopsis }),
+      traceparent: trace === null ? null : trace.traceparent,
+    });
   }
 }

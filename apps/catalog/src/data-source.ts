@@ -13,6 +13,7 @@ import { Idempotency1790420000000 } from './migrations/1790420000000-idempotency
 import { ShowCopyAndVenue1790420100000 } from './migrations/1790420100000-show-copy-and-venue.js';
 import { DateAndPublication1790420200000 } from './migrations/1790420200000-date-and-publication.js';
 import { ChecklistProjection1790420300000 } from './migrations/1790420300000-checklist-projection.js';
+import { DateSlugs1790420400000 } from './migrations/1790420400000-date-slugs.js';
 import { Venue } from './venues/venue.entity.js';
 
 /**
@@ -39,6 +40,7 @@ export const dataSource: DataSource = new DataSource({
     ShowCopyAndVenue1790420100000,
     DateAndPublication1790420200000,
     ChecklistProjection1790420300000,
+    DateSlugs1790420400000,
   ],
   applicationName: Service.CATALOG,
 
