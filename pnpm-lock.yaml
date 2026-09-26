@@ -190,6 +190,9 @@ importers:
       eslint-config-prettier:
         specifier: 10.1.8
         version: 10.1.8(eslint@10.11.0)
+      kafkajs:
+        specifier: 2.2.4
+        version: 2.2.4
       prettier:
         specifier: 3.9.8
         version: 3.9.8
@@ -386,6 +389,9 @@ importers:
 
   libs/http-edge:
     dependencies:
+      '@arthome-platform/messaging':
+        specifier: workspace:*
+        version: link:../messaging
       '@arthome/core':
         specifier: file:../../vendor/arthome-core-b54e86f359c4.tgz
         version: file:vendor/arthome-core-b54e86f359c4.tgz(zod@4.6.5)

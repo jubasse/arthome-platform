@@ -95,6 +95,7 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 | `pnpm run check:enums` | string literals that duplicate a domain vocabulary |
 | `pnpm run fix` | Prettier, then ESLint `--fix`, then Prettier again |
 | `pnpm run purge:retention <service>` | what the retention job would delete; `--apply` to do it |
+| `pnpm run ops:check <service>` | the operational checks; exits 1 when anything is degraded |
 
 ## Running the event path
 
@@ -126,6 +127,18 @@ and a wrong port fails at bind where a wrong `DATABASE_URL` connects somewhere e
 No service reads `process.env` any more. `libs/config` parses once, at module load, with the
 protocol asserted — `postgres:` for the database, `http:`/`https:` for the index — because a bare
 URL check accepts `localhost:29092` as a URL whose scheme is `localhost:`.
+
+⚠ **`/health/liveness` AND `/health/readiness` ARE SPLIT, AND ONLY THE DATABASE FAILS READINESS.**
+Liveness touches no dependency: a failing one restarts the pod, and a database outage must not restart
+every replica at once. Readiness answers 503 only when the database is unreachable. The replication
+slot, the publication's scope and the outbox retention answer `degraded` — a 200 with the detail in
+the body — because a stopped connector must delay publishing, not take the API out of rotation.
+Proven on the running stack: with `connect` stopped, readiness stays 200 and a registration still
+answers 201. Both routes are exempt from `DenyInProductionGuard`; nothing else is.
+
+The two consumers serve no HTTP, so their checks — dead-letter depth and `processed_message`
+retention — run through `pnpm run ops:check`. The first run found a message sitting in
+`arthome.notifications.dlq` that nothing had ever reported.
 
 ⚠ **THE RETENTION JOB IS A COMMAND, NOT A SCHEDULE.** `data-model.md` §7.5 owes `outbox_event` a
 7-day purge and `processed_message` a horizon; neither existed. `libs/messaging` now has

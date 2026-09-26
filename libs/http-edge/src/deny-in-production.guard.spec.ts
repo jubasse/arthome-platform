@@ -1,47 +1,86 @@
-import { HttpStatus } from '@nestjs/common';
+import { HttpStatus, type ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { describe, expect, it } from 'vitest';
 
 import { ApiErrorCode, FailureNature } from '@arthome/core';
 
+import { AllowInProduction } from './allow-in-production.js';
 import { DenyInProductionGuard } from './deny-in-production.guard.js';
 import { RefusalException } from './refusal.js';
 
+class WriteRoutes {
+  public register(): string {
+    return 'register';
+  }
+}
+
+@AllowInProduction()
+class Probes {
+  public liveness(): string {
+    return 'liveness';
+  }
+}
+
+class MixedRoutes {
+  @AllowInProduction()
+  public readiness(): string {
+    return 'readiness';
+  }
+
+  public publish(): string {
+    return 'publish';
+  }
+}
+
+function contextFor(controller: new () => object, handler: string): ExecutionContext {
+  const handlerFn = (controller.prototype as Record<string, () => void>)[handler];
+  return {
+    getHandler: () => handlerFn,
+    getClass: () => controller,
+  } as unknown as ExecutionContext;
+}
+
+const reflector = new Reflector();
+
 describe('DenyInProductionGuard', () => {
-  it('lets the request through where the route is meant to be reachable', () => {
-    // `AGENTS.md`'s walkthrough and the test suite both run here, and neither may
-    // lose the route: a guard that broke the documented walkthrough would be
-    // removed by the next person rather than understood.
-    expect(new DenyInProductionGuard(false).canActivate()).toBe(true);
+  it('lets every route through outside production', () => {
+    const guard = new DenyInProductionGuard(false, reflector);
+    expect(guard.canActivate(contextFor(WriteRoutes, 'register'))).toBe(true);
   });
 
-  it('refuses in production, so the unauthenticated write route does not ship reachable', () => {
-    // This is not authentication — `adr-auth.md` defers that and it is not
-    // reopened. It is that every write route binds on 0.0.0.0 with no guard, so
-    // anyone who can route a packet to the port can create an account or publish a
-    // show. critical-rules #5 forbids the argument that would excuse it, "only the
-    // BFF calls me".
-    expect(() => new DenyInProductionGuard(true).canActivate()).toThrow(RefusalException);
+  /** ⚠ Not authentication: every write route binds on 0.0.0.0 unguarded, so it ships reachable. */
+  it('refuses an unexempted route in production', () => {
+    const guard = new DenyInProductionGuard(true, reflector);
+    expect(() => guard.canActivate(contextFor(WriteRoutes, 'register'))).toThrow(RefusalException);
   });
 
   it('refuses with a code and a status, never a sentence', () => {
+    const guard = new DenyInProductionGuard(true, reflector);
     let thrown: unknown;
     try {
-      new DenyInProductionGuard(true).canActivate();
+      guard.canActivate(contextFor(WriteRoutes, 'register'));
     } catch (error: unknown) {
       thrown = error;
     }
 
     expect(thrown).toBeInstanceOf(RefusalException);
-    if (!(thrown instanceof RefusalException)) {
-      return;
-    }
-    // 403 and not 401: there are no credentials to be missing. A `return false`
-    // would also yield 403, but with NestJS's English message and no code.
+    if (!(thrown instanceof RefusalException)) return;
     expect(thrown.getStatus()).toBe(HttpStatus.FORBIDDEN);
-    expect(thrown.refusal.code).toBe(ApiErrorCode.FORBIDDEN);
-    expect(thrown.refusal.nature).toBe(FailureNature.REFUSED);
-    // Nothing about the environment, the route or the missing mechanism: an
-    // unauthenticated caller is entitled to the refusal and to nothing else.
-    expect(thrown.refusal.params).toEqual({});
+    expect(thrown.refusal).toEqual({
+      code: ApiErrorCode.FORBIDDEN,
+      params: {},
+      nature: FailureNature.REFUSED,
+    });
+  });
+
+  it('lets an exempted controller through in production', () => {
+    const guard = new DenyInProductionGuard(true, reflector);
+    expect(guard.canActivate(contextFor(Probes, 'liveness'))).toBe(true);
+  });
+
+  it('reads the exemption per handler, and it does not leak to a sibling', () => {
+    const guard = new DenyInProductionGuard(true, reflector);
+    expect(guard.canActivate(contextFor(MixedRoutes, 'readiness'))).toBe(true);
+    expect(() => guard.canActivate(contextFor(MixedRoutes, 'publish'))).toThrow(RefusalException);
   });
 });

@@ -18,7 +18,7 @@
     "fix": "prettier --write . && eslint . --fix && prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0 --report-unused-disable-directives",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && pnpm --filter \"./libs/*\" run typecheck",
     "test": "vitest run",
     "check:versions": "arthome-check-versions",
     "check:tsconfig": "arthome-check-tsconfig",
@@ -30,7 +30,8 @@
     "check:vendor": "node tools/check-vendor-specs.mjs",
     "gen:events": "node tools/generate-events.mjs",
     "provision:topics": "node tools/provision-topics.mjs",
-    "purge:retention": "node tools/purge-retention.mjs"
+    "purge:retention": "node tools/purge-retention.mjs",
+    "ops:check": "node tools/ops-check.mjs"
   },
   "devDependencies": {
     "@arthome-platform/messaging": "workspace:*",
@@ -41,6 +42,7 @@
     "@types/node": "^24",
     "eslint": "10.11.0",
     "eslint-config-prettier": "10.1.8",
+    "kafkajs": "2.2.4",
     "prettier": "3.9.8",
     "typescript": "6.0.3",
     "vitest": "5.0.1"

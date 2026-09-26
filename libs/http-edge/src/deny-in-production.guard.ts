@@ -1,7 +1,9 @@
-import { HttpStatus, Injectable, type CanActivate } from '@nestjs/common';
+import { HttpStatus, Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
+import type { Reflector } from '@nestjs/core';
 
 import { ApiErrorCode, FailureNature } from '@arthome/core';
 
+import { AllowInProduction } from './allow-in-production.js';
 import { RefusalException } from './refusal.js';
 
 /**
@@ -15,10 +17,21 @@ import { RefusalException } from './refusal.js';
  */
 @Injectable()
 export class DenyInProductionGuard implements CanActivate {
-  public constructor(private readonly isProduction: boolean) {}
+  public constructor(
+    private readonly isProduction: boolean,
+    private readonly reflector: Reflector,
+  ) {}
 
-  public canActivate(): boolean {
+  public canActivate(context: ExecutionContext): boolean {
     if (!this.isProduction) {
+      return true;
+    }
+    if (
+      this.reflector.getAllAndOverride(AllowInProduction, [
+        context.getHandler(),
+        context.getClass(),
+      ])
+    ) {
       return true;
     }
     // ⚠ Thrown, not `return false`: a `false` yields NestJS's own 403 with an English message

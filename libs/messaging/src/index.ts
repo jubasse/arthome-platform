@@ -23,3 +23,16 @@ export type { Disposition, MessageHandler, Outcome } from './dispatch.js';
 
 export { runConsumers } from './consume.js';
 export type { ConsumerSetup } from './consume.js';
+
+export {
+  boundedCheck,
+  checkDatabaseReachable,
+  checkDeadLetterDepth,
+  checkOutboxRetention,
+  checkProcessedMessageRetention,
+  checkPublicationScope,
+  checkReplicationSlot,
+} from './health.js';
+export type { CheckResult, CheckStatus } from './health.js';
+
+export { MAX_SLOT_LAG_BYTES, outboxSlotName } from './slot.js';

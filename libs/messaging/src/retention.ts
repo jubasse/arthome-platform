@@ -1,22 +1,12 @@
 import type { DataSource } from 'typeorm';
 
-interface SlotState {
-  readonly active: boolean;
-  readonly unconfirmed: boolean;
-  readonly lag: string | null;
-}
+import { MAX_SLOT_LAG_BYTES, readSlotState } from './slot.js';
 
 export interface PurgeOutcome {
   readonly deleted: number;
   readonly refusedBecauseConnectorLagged: boolean;
   readonly lagBytes: number | null;
 }
-
-/**
- * ⚠ data-model.md §7.4's own alert threshold, reused rather than invented: a slot lagging
- *   more than this is already a page.
- */
-const MAX_SLOT_LAG_BYTES = 1024 * 1024 * 1024;
 
 /**
  * ⚠ GATED ON THE CONNECTOR, NOT ON THE CLOCK (§7.5). Deleting a row Debezium has not read
@@ -34,21 +24,14 @@ export async function purgeOutbox(
   slotName: string,
   retentionDays = 7,
 ): Promise<PurgeOutcome> {
-  // `query` is typed `any`; asserted through `unknown` as elsewhere in this repository.
-  const slots = (await dataSource.query(
-    `SELECT active, confirmed_flush_lsn IS NULL AS unconfirmed,
-            pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn)::bigint AS lag
-       FROM pg_replication_slots WHERE slot_name = $1`,
-    [slotName],
-  )) as unknown as SlotState[];
-  const slot = slots[0];
+  const slot = await readSlotState(dataSource, slotName);
 
   // No slot means no connector has ever read this table: nothing here has been published.
   if (slot === undefined || slot.unconfirmed || !slot.active) {
     return { deleted: 0, refusedBecauseConnectorLagged: true, lagBytes: null };
   }
 
-  const lagBytes = Number(slot.lag ?? 0);
+  const { lagBytes } = slot;
   if (lagBytes > MAX_SLOT_LAG_BYTES) {
     return { deleted: 0, refusedBecauseConnectorLagged: true, lagBytes };
   }

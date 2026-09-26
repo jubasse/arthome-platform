@@ -22,28 +22,6 @@ minimumReleaseAgeExclude:
   # repository waiting for it — and the symptom is "that version does not exist".
   - "@arthome/*"
 
-  # ─────────────────────────────────────────────────────────────────────────────
-  # TWO INHERITED EXCEPTIONS, AND THEY ARE NOT A DECISION TAKEN HERE.
-  #
-  #   versions.json pins the versions verified on 2026-09-21 and this policy
-  #   refuses anything under seven days old. This repository did not choose those
-  #   versions — `arthome-check-versions` requires them — so it inherits the
-  #   contradiction along with the table.
-  #
-  #   Measured against pnpm's own cutoff rather than guessed by calendar day,
-  #   which is how this was first got wrong here: pnpm compares TIMESTAMPS.
-  #     prettier@3.9.8  published 2026-09-17T21:41Z — matures 2026-09-24T21:41Z
-  #     eslint@10.11.0  published 2026-09-18T20:15Z — matures 2026-09-25T20:15Z
-  #   vitest@5.0.1 matured on 2026-09-22 and is deliberately NOT listed: an
-  #   exception that is no longer needed is a lowered threshold not saying its name.
-  #
-  #   The durable remedy is in code-conventions.md section 7.6 — a bump pins a
-  #   version that is ALREADY mature, never the day's.
-  # ─────────────────────────────────────────────────────────────────────────────
-  - "prettier" # inherited from versions.json — matures 2026-09-24T21:41Z
-  - "eslint" # inherited from versions.json — matures 2026-09-25T20:15Z
-  # remove-after: 2026-09-25
-
 # -------------------------------------------------------------------- catalog
 # THERE IS NO CATALOG HERE, AND IT WAS TRIED FIRST.
 #

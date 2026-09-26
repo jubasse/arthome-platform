@@ -2,19 +2,38 @@ import { isProductionEnvironment } from '@arthome-platform/config';
 import {
   DenyInProductionGuard,
   ErrorEnvelopeFilter,
+  HealthController,
+  READINESS_CHECKS,
   SuccessEnvelopeInterceptor,
   schemaInvalidException,
+  type ReadinessCheck,
 } from '@arthome-platform/http-edge';
+import {
+  checkDatabaseReachable,
+  checkOutboxRetention,
+  checkPublicationScope,
+  checkReplicationSlot,
+  outboxSlotName,
+} from '@arthome-platform/messaging';
 import { Module, StandardSchemaValidationPipe } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE, HttpAdapterHost } from '@nestjs/core';
+import {
+  APP_FILTER,
+  APP_GUARD,
+  APP_INTERCEPTOR,
+  APP_PIPE,
+  HttpAdapterHost,
+  Reflector,
+} from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 
-import { SystemClock } from '@arthome/core';
+import { Service, SystemClock } from '@arthome/core';
 
 import { CatalogModule } from './catalog/catalog.module.js';
 import { dataSource } from './data-source.js';
 
 @Module({
+  controllers: [HealthController],
   imports: [TypeOrmModule.forRoot(dataSource.options), CatalogModule],
   providers: [
     /**
@@ -47,7 +66,19 @@ import { dataSource } from './data-source.js';
     /** ⚠ It refuses EVERY route, so a liveness probe will need an exemption. */
     {
       provide: APP_GUARD,
-      useFactory: (): DenyInProductionGuard => new DenyInProductionGuard(isProductionEnvironment()),
+      inject: [Reflector],
+      useFactory: (reflector: Reflector): DenyInProductionGuard =>
+        new DenyInProductionGuard(isProductionEnvironment(), reflector),
+    },
+    {
+      provide: READINESS_CHECKS,
+      inject: [DataSource],
+      useFactory: (dataSource: DataSource): ReadinessCheck[] => [
+        () => checkDatabaseReachable(dataSource),
+        () => checkReplicationSlot(dataSource, outboxSlotName(Service.CATALOG)),
+        () => checkPublicationScope(dataSource, outboxSlotName(Service.CATALOG)),
+        () => checkOutboxRetention(dataSource),
+      ],
     },
   ],
 })
