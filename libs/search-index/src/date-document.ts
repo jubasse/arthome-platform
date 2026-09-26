@@ -9,8 +9,6 @@ import type {
 
 import { LOWERCASE_NORMALIZER } from './settings.js';
 import type { IndexedRendition } from './show-document.js';
-import type { DateProjection, ScheduledDateFields } from '../consumer/date-projection.entity.js';
-import type { ShowProjection } from '../consumer/show-projection.entity.js';
 
 /**
  * One document per public date, what a search result card is built from: the date's own
@@ -32,7 +30,16 @@ export interface DateDocument {
   readonly rights_scope: RightsScope | null;
   readonly blackout_countries: readonly string[];
   readonly canonical_url: string;
+  readonly slug_fr: string;
+  readonly slug_en: string;
   readonly publication_state: PublicationState | null;
+  /**
+   * Computed by `@arthome/core` when the document is composed, so a query compares instants
+   * instead of re-deriving them: the end of the live show, and the end of its replay window, or
+   * of the show when there is none.
+   */
+  readonly ends_at: string;
+  readonly over_at: string;
 
   readonly artist_id: string | null;
   readonly category_id: string | null;
@@ -51,7 +58,7 @@ export interface DateDocument {
 
 /** Readers and this writer name the alias only, as for the show index. */
 export const DATE_INDEX_ALIAS = 'arthome-catalog-date';
-export const DATE_INDEX_CONCRETE = `${DATE_INDEX_ALIAS}-v1`;
+export const DATE_INDEX_CONCRETE = 'arthome-catalog-date-v1';
 
 export const DATE_INDEX_PROPERTIES: Record<string, Types.Common_Mapping.Property> = {
   date_id: { type: 'keyword' },
@@ -69,7 +76,11 @@ export const DATE_INDEX_PROPERTIES: Record<string, Types.Common_Mapping.Property
   blackout_countries: { type: 'keyword' },
   /** Served, never searched. */
   canonical_url: { type: 'keyword', index: false, doc_values: false },
+  slug_fr: { type: 'keyword', index: false, doc_values: false },
+  slug_en: { type: 'keyword', index: false, doc_values: false },
   publication_state: { type: 'keyword' },
+  ends_at: { type: 'date' },
+  over_at: { type: 'date' },
 
   artist_id: { type: 'keyword' },
   category_id: { type: 'keyword' },
@@ -87,40 +98,3 @@ export const DATE_INDEX_MAPPING: Types.Common_Mapping.TypeMapping = {
   dynamic: 'strict',
   properties: DATE_INDEX_PROPERTIES,
 };
-
-export function dateDocumentOf(
-  date: DateProjection & { readonly scheduled: ScheduledDateFields },
-  show: ShowProjection | null,
-  indexedAt: Date,
-): DateDocument {
-  const { scheduled } = date;
-  const updatable = show?.updatable ?? null;
-  return {
-    date_id: date.date_id,
-    show_id: scheduled.show_id,
-    channel_id: scheduled.channel_id,
-    venue_id: scheduled.venue_id,
-    starts_at: scheduled.starts_at,
-    venue_timezone: scheduled.venue_timezone,
-    venue_city: scheduled.venue_city,
-    venue_country: scheduled.venue_country,
-    runtime_min: scheduled.runtime_min,
-    replay_policy: scheduled.replay_policy,
-    replay_window_hours: scheduled.replay_window_hours,
-    rights_scope: scheduled.rights_scope,
-    blackout_countries: scheduled.blackout_countries,
-    canonical_url: scheduled.canonical_url,
-    publication_state: date.publication_state,
-
-    artist_id: show?.published?.artist_id ?? null,
-    category_id: show?.published?.category_id ?? null,
-    genre_ids: updatable?.genre_ids ?? [],
-    tag_ids: updatable?.tag_ids ?? [],
-    language_dependency: updatable?.language_dependency ?? null,
-    title_fr: updatable?.title.fr ?? '',
-    title_en: updatable?.title.en ?? '',
-    media: updatable?.media ?? { wide: [], poster: [] },
-
-    indexed_at: indexedAt.toISOString(),
-  };
-}

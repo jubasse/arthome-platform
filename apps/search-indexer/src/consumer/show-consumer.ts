@@ -12,9 +12,8 @@ import {
   type UpdatableShowFields,
 } from './show-projection.entity.js';
 import { bilingualOf, indexedRendition, languageDependencyOf, stated } from './wire.js';
-import { dateDocumentOf } from '../index/date-document.js';
+import { dateDocumentOf, showDocumentOf } from '../index/compose.js';
 import type { Indices } from '../index/opensearch-client.js';
-import { showDocumentOf } from '../index/show-document.js';
 
 const SHOW_PUBLISHED = 'catalog.show.published.v1';
 const SHOW_UPDATED = 'catalog.show.updated.v1';

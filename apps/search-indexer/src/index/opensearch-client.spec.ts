@@ -1,9 +1,9 @@
 import { PermanentError } from '@arthome-platform/messaging';
+import type { ShowDocument } from '@arthome-platform/search-index';
 import type { Client } from '@opensearch-project/opensearch';
 import { describe, expect, it } from 'vitest';
 
 import { indicesOf } from './opensearch-client.js';
-import type { ShowDocument } from './show-document.js';
 
 const DOCUMENT = {
   show_id: '01a0d537-0abe-71f1-9ee1-d89eee348187',

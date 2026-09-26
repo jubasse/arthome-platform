@@ -30,6 +30,14 @@ input"; both are marked where they stand.
   the update before the publication, the date before its show, a show update reaching its dates,
   the state that overtakes `DateScheduled`, a stemmed title search, and a draft never indexed.
 - Rows written before the migration have no fields: replay `arthome.catalog.show` to fill them.
+- **The index definitions live in `libs/search-index`** since catalog reads the date index for
+  `/v1/search`: the writer and the reader share one mapping and one document type.
+- **A date document also carries `slug_fr`, `slug_en`, `ends_at` and `over_at`**: the slugs from
+  `DateScheduled` (arthome-core `3b6eefa`), the two instants computed by `@arthome/core` when the
+  document is composed, so a query compares instants instead of re-deriving the rule. All four are
+  additive: `ensureIndices` puts them on the live `-v1`. A document written before them lacks them,
+  and catalog's search filters on `over_at`, so such a date is not searchable until recomposed;
+  replaying `arthome.catalog.date` does it, since a duplicate rewrites the document.
 
 ## 1. What was built
 

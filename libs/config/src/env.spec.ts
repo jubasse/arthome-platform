@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   isProductionEnvironment,
   readKafkaBrokers,
+  readBffEnv,
+  readOpenSearchUrl,
   readPublicWebOrigin,
   readConsumerEnv,
   readHttpServiceEnv,
@@ -149,5 +151,29 @@ describe('readPublicWebOrigin', () => {
     expect(
       readPublicWebOrigin({ NODE_ENV: 'production', PUBLIC_WEB_ORIGIN: 'https://arthome.fr/' }),
     ).toBe('https://arthome.fr');
+  });
+});
+
+describe('readOpenSearchUrl', () => {
+  it('defaults outside production', () => {
+    expect(readOpenSearchUrl({ NODE_ENV: 'development' })).toBe('http://localhost:19200');
+  });
+
+  it('refuses a production deployment with no index URL instead of using localhost', () => {
+    expect(() => readOpenSearchUrl({ NODE_ENV: 'production' })).toThrow(/OPENSEARCH_URL/);
+  });
+});
+
+describe('readBffEnv', () => {
+  it('points at the local catalog outside production', () => {
+    expect(readBffEnv({ NODE_ENV: 'development', PORT: '3003' })).toEqual({
+      NODE_ENV: 'development',
+      PORT: 3003,
+      CATALOG_URL: 'http://localhost:3002',
+    });
+  });
+
+  it('refuses a production deployment with no CATALOG_URL', () => {
+    expect(() => readBffEnv({ NODE_ENV: 'production', PORT: '3003' })).toThrow(/CATALOG_URL/);
   });
 });

@@ -4,6 +4,39 @@
 outbox row together. Mirrors `apps/identity/`'s slice. Everything below was verified by
 running it, not by reading it.
 
+## 0. The search read, `GET /v1/search` (2026-09-26)
+
+`src/search/` serves the storefront's search from `arthome-catalog-date`, the index `search-indexer`
+writes; catalog owns the index and its read models (`context-map.md`), and nobody calls the
+indexer. The shapes served are `@arthome/contracts`': `ShowGroup`, `Facet`, the storefront
+`CursorPageInfo`, at the envelope's root beside `servedAt` and `validUntil` (`CollectionResponse`).
+
+- **One group per show** through OpenSearch `collapse`: the representative date is the first under
+  the sort, and `matchingDatesCount` counts the dates the filters kept (`inner_hits`, size 0).
+- **`displayState` is `publicDisplayStateOf`'s** (arthome-core D-072): a date under technical
+  check shows on the time axis. Run state and outcome are passed as unknown: `streaming` does not
+  publish and no command declares an outcome yet, so a cancelled date would still show its time
+  state the day one can be declared.
+- **A date fully over is not served**: `over_at` (`replayEndsAt`, or `endsAt` without a replay)
+  must be after now, or the card would be `ended` with no `displayStateValidUntil`, which a
+  `DateCard` requires. `lives` and `replays` split at `ends_at`.
+- **The cursor is an offset**, not D-010's `(created_at, id)`: OpenSearch 2.18 refuses `collapse`
+  with `search_after` whatever the sort (measured on the local cluster). It expires after 24 h
+  (410 `api.cursor_too_old`) and never points past `max_result_window`.
+- **Refused by name, never ignored**: the `artists` tab, the `popularity` and price sorts, and the
+  criteria the index cannot answer (`cityIds`, `displayStates`, prices, `almostSoldOut`,
+  `onPromotion`, `accessibility`) answer 400 `api.schema_invalid` with `fields`.
+- **`x-arthome-deadline` is required** (transport.md §5.3): absent, 400; past, 504
+  `api.deadline_exceeded` before the query; the time left bounds the OpenSearch request, and the
+  query is aborted when the caller hangs up (`whenCallerLeaves`, from the response's `close`).
+- **The title, slug and canonical URL are in the title's own language**: the contract gives this
+  read no viewer language, and an anonymous body must be the same for every caller.
+- Readiness does not check OpenSearch (`nestjs-search`): the index down fails the search, 503
+  `api.service_unavailable`, not the service.
+- The route is `/v1/search` as transport.md §5.1 shapes a service path. The older routes
+  (`/shows`, `/venues`, `/channels/…`, `/dates/…`) predate that reading and have no version segment.
+- Proven in `src/search/search.itest.ts` against a real OpenSearch, through the HTTP edge.
+
 ## 1. What was built
 
 | File | What it is |

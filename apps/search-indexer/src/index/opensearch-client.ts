@@ -1,21 +1,18 @@
 import { PermanentError } from '@arthome-platform/messaging';
-import { Client, type Types } from '@opensearch-project/opensearch';
-
 import {
   DATE_INDEX_ALIAS,
   DATE_INDEX_CONCRETE,
   DATE_INDEX_MAPPING,
   DATE_INDEX_PROPERTIES,
-  type DateDocument,
-} from './date-document.js';
-import { INDEX_SETTINGS } from './settings.js';
-import {
+  INDEX_SETTINGS,
   SHOW_INDEX_ALIAS,
   SHOW_INDEX_CONCRETE,
   SHOW_INDEX_MAPPING,
   SHOW_INDEX_PROPERTIES,
+  type DateDocument,
   type ShowDocument,
-} from './show-document.js';
+} from '@arthome-platform/search-index';
+import { Client, type Types } from '@opensearch-project/opensearch';
 
 export type IndexWrite = 'indexed' | 'superseded';
 

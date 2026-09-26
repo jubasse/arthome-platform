@@ -39,7 +39,7 @@
   "devDependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/tooling": "file:./vendor/arthome-tooling-4b7c3260e6f7.tgz",
+    "@arthome/tooling": "file:./vendor/arthome-tooling-b718beb3f1bf.tgz",
     "@bufbuild/buf": "1.73.0",
     "@bufbuild/protoc-gen-es": "2.15.0",
     "@eslint/js": "10.0.1",

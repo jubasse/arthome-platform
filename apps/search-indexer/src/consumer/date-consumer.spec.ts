@@ -33,6 +33,8 @@ function scheduled(occurredAt: string): Uint8Array {
       replayWindowHours: 72,
       rights: { scope: WireRightsScope.WORLDWIDE },
       canonicalUrl: 'https://arthome.test/fr/d/nuit-blanche-2026-11-04',
+      slugFr: 'nuit-blanche-2026-11-04',
+      slugEn: 'white-night-2026-11-04',
       occurredAt: timestampFromDate(new Date(occurredAt)),
     }),
   );
@@ -77,6 +79,8 @@ describe('dateFactOf', () => {
         venue_country: 'FR',
         replay_policy: ReplayPolicy.INCLUDED,
         rights_scope: RightsScope.WORLDWIDE,
+        slug_fr: 'nuit-blanche-2026-11-04',
+        slug_en: 'white-night-2026-11-04',
       },
     });
   });

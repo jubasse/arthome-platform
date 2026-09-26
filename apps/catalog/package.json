@@ -18,12 +18,15 @@
     "@arthome-platform/events": "workspace:*",
     "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/core": "file:../../vendor/arthome-core-957283d33ee0.tgz",
+    "@arthome-platform/search-index": "workspace:*",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-c7d9163f15e3.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-5c370f5d4d1a.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "@nestjs/common": "12.0.3",
     "@nestjs/core": "12.0.3",
     "@nestjs/platform-fastify": "12.0.3",
     "@nestjs/typeorm": "12.0.1",
+    "@opensearch-project/opensearch": "3.6.0",
     "kafkajs": "2.2.4",
     "pg": "8.23.0",
     "reflect-metadata": "0.2.2",
@@ -32,6 +35,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@arthome-platform/testing": "workspace:*"
+    "@arthome-platform/testing": "workspace:*",
+    "@nestjs/testing": "12.0.3"
   }
 }

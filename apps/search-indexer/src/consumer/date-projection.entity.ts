@@ -17,6 +17,8 @@ export interface ScheduledDateFields {
   readonly rights_scope: RightsScope | null;
   readonly blackout_countries: readonly string[];
   readonly canonical_url: string;
+  readonly slug_fr: string;
+  readonly slug_en: string;
 }
 
 /**

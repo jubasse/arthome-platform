@@ -1,8 +1,7 @@
+import type { IndexedRendition } from '@arthome-platform/search-index';
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
 import type { Bilingual, LanguageDependency } from '@arthome/core';
-
-import type { IndexedRendition } from '../index/show-document.js';
 
 /** What only ShowPublished states about a show. */
 export interface PublishedShowFields {

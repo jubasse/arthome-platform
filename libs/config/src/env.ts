@@ -18,6 +18,13 @@ export interface SearchIndexerEnv extends ConsumerEnv {
   readonly OPENSEARCH_URL: string;
 }
 
+/** A BFF owns no database: it reads the services behind it. */
+export interface BffEnv {
+  readonly NODE_ENV: NodeEnv;
+  readonly PORT: number;
+  readonly CATALOG_URL: string;
+}
+
 /**
  * Parsed once, at startup, and throwing: a configuration fault is a deployment
  * that should not have started. Reading `process.env` later defeats this.
@@ -60,6 +67,9 @@ const port = z.coerce.number().int().min(1).max(65535).default(3000);
  * an unset variable open the production-guarded write routes.
  */
 const DEVELOPMENT_KAFKA_BROKERS = 'localhost:29092';
+const DEVELOPMENT_OPENSEARCH_URL = 'http://localhost:19200';
+/** `apps/catalog/.env.example`'s port. */
+const DEVELOPMENT_CATALOG_URL = 'http://localhost:3002';
 
 function developmentDefaults(databaseName: string): {
   DATABASE_URL: string;
@@ -69,7 +79,7 @@ function developmentDefaults(databaseName: string): {
   return {
     DATABASE_URL: `postgres://arthome:arthome@localhost:55432/${databaseName}`,
     KAFKA_BROKERS: DEVELOPMENT_KAFKA_BROKERS,
-    OPENSEARCH_URL: 'http://localhost:19200',
+    OPENSEARCH_URL: DEVELOPMENT_OPENSEARCH_URL,
   };
 }
 
@@ -155,6 +165,25 @@ export function readKafkaBrokers(
       ? source
       : { KAFKA_BROKERS: DEVELOPMENT_KAFKA_BROKERS, ...stripEmpty(source) };
   return z.object({ KAFKA_BROKERS: brokerList }).parse(withDefault).KAFKA_BROKERS;
+}
+
+/** For a reader of the search index, where `readSearchIndexerEnv` serves its writer. */
+export function readOpenSearchUrl(
+  source: Record<string, string | undefined> = process.env,
+): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { OPENSEARCH_URL: DEVELOPMENT_OPENSEARCH_URL, ...stripEmpty(source) };
+  return z.object({ OPENSEARCH_URL: httpUrl }).parse(withDefault).OPENSEARCH_URL;
+}
+
+export function readBffEnv(source: Record<string, string | undefined> = process.env): BffEnv {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { CATALOG_URL: DEVELOPMENT_CATALOG_URL, ...stripEmpty(source) };
+  return z.object({ NODE_ENV: nodeEnv, PORT: port, CATALOG_URL: httpUrl }).parse(withDefault);
 }
 
 /** The storefront's own port in development, where Next.js listens by default. */

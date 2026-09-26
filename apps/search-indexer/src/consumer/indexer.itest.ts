@@ -9,6 +9,7 @@ import {
   ShowUpdatedSchema,
 } from '@arthome-platform/events';
 import { ProcessedMessage } from '@arthome-platform/messaging';
+import { DATE_INDEX_ALIAS, SHOW_INDEX_ALIAS } from '@arthome-platform/search-index';
 import {
   applyMigrations,
   createDatabase,
@@ -27,14 +28,12 @@ import { applyDateMessage } from './date-consumer.js';
 import { DateProjection } from './date-projection.entity.js';
 import { applyShowMessage } from './show-consumer.js';
 import { ShowProjection } from './show-projection.entity.js';
-import { DATE_INDEX_ALIAS } from '../index/date-document.js';
 import {
   createOpenSearchClient,
   ensureIndices,
   indicesOf,
   type Indices,
 } from '../index/opensearch-client.js';
-import { SHOW_INDEX_ALIAS } from '../index/show-document.js';
 import { Initial1758700400000 } from '../migrations/1758700400000-initial.js';
 import { ReadModel1790430000000 } from '../migrations/1790430000000-read-model.js';
 
@@ -129,6 +128,8 @@ function dateScheduled(dateId: string, showId: string) {
     replayWindowHours: 72,
     rights: { scope: WireRightsScope.WORLDWIDE },
     canonicalUrl: `https://arthome.test/fr/d/${dateId}`,
+    slugFr: `nuit-blanche-${dateId}`,
+    slugEn: `white-night-${dateId}`,
     occurredAt: at('2026-09-26T10:00:00.000Z'),
   });
 }
@@ -291,6 +292,9 @@ describe('the date index', () => {
         venue_country: 'FR',
         publication_state: PublicationState.SCHEDULED,
         starts_at: '2026-11-04T19:30:00.000Z',
+        slug_fr: `nuit-blanche-${dateId}`,
+        ends_at: '2026-11-04T21:05:00.000Z',
+        over_at: '2026-11-07T21:05:00.000Z',
       });
       expect(await hitIds(DATE_INDEX_ALIAS, { match: { title_fr: 'nuits' } })).toContain(dateId);
     },

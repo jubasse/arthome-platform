@@ -85,6 +85,8 @@ export async function announcePublication(
             }),
           },
           canonicalUrl: canonicalUrlOf(origin, show.title, slugs) ?? '',
+          slugFr: slugs.slug_fr,
+          slugEn: slugs.slug_en,
           venueCity: venue.city,
           venueCountry: venue.country,
           occurredAt: timestampFromDate(occurredAt),

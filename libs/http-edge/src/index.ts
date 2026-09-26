@@ -16,10 +16,21 @@ export type { Refusal, UniqueViolationCode } from './refusal.js';
 
 export { DenyInProductionGuard } from './deny-in-production.guard.js';
 
+export {
+  DEADLINE_HEADER,
+  deadlineExceededException,
+  remainingBeforeDeadline,
+  whenCallerLeaves,
+} from './deadline.js';
+
 export { parseTraceparent } from './traceparent.js';
 export type { TraceContext } from './traceparent.js';
 
-export { MemorisedResponse, SuccessEnvelopeInterceptor } from './success-envelope.interceptor.js';
+export {
+  CollectionResponse,
+  MemorisedResponse,
+  SuccessEnvelopeInterceptor,
+} from './success-envelope.interceptor.js';
 export type { SuccessEnvelope } from './success-envelope.interceptor.js';
 
 export { AllowInProduction } from './allow-in-production.js';

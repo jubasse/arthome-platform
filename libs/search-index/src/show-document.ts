@@ -3,7 +3,6 @@ import type { Types } from '@opensearch-project/opensearch';
 import type { LanguageDependency } from '@arthome/core';
 
 import { LOWERCASE_NORMALIZER } from './settings.js';
-import type { ShowProjection } from '../consumer/show-projection.entity.js';
 
 /**
  * The field names are `snake_case` like the wire. `_source` is read by the storefront BFF
@@ -58,7 +57,7 @@ export interface ShowDocument {
  *   which naming `…-v1` anywhere else would turn into a lockstep redeploy.
  */
 export const SHOW_INDEX_ALIAS = 'arthome-catalog-show';
-export const SHOW_INDEX_CONCRETE = `${SHOW_INDEX_ALIAS}-v1`;
+export const SHOW_INDEX_CONCRETE = 'arthome-catalog-show-v1';
 
 /**
  * Every identifier and vocabulary member is `keyword`, never `text`: `text` is analysed, so a
@@ -116,29 +115,3 @@ export const SHOW_INDEX_MAPPING: Types.Common_Mapping.TypeMapping = {
   dynamic: 'strict',
   properties: SHOW_INDEX_PROPERTIES,
 };
-
-/** The show's document once ShowPublished has landed; an update alone cannot make one. */
-export function showDocumentOf(show: ShowProjection, indexedAt: Date): ShowDocument | null {
-  const { published, updatable } = show;
-  if (published === null || updatable === null) return null;
-  return {
-    show_id: show.show_id,
-    channel_id: published.channel_id,
-    artist_id: published.artist_id,
-    category_id: published.category_id,
-    genre_ids: updatable.genre_ids,
-    tag_ids: updatable.tag_ids,
-    runtime_min: published.runtime_min,
-    language_dependency: updatable.language_dependency,
-    spoken_languages: published.spoken_languages,
-    subtitle_languages: published.subtitle_languages,
-    surtitle_languages: published.surtitle_languages,
-    media: updatable.media,
-    title_fr: updatable.title.fr,
-    title_en: updatable.title.en,
-    synopsis_fr: updatable.synopsis.fr,
-    synopsis_en: updatable.synopsis.en,
-    published_at: published.published_at,
-    indexed_at: indexedAt.toISOString(),
-  };
-}

@@ -15,6 +15,11 @@
       "file": "libs/config/src/env.ts",
       "value": "production",
       "reason": "NODE_ENV's deployment mode, not a role on a show. MEMBER_ROLES has a `production` member because somebody works IN production — the crew sense — and the two share the English word without sharing anything else. Importing MEMBER_ROLES.PRODUCTION to describe how a process was started would carve the confusion in rather than correct it. This is the exact shape the gate has produced a bad fix for before: an agent once reached for NavigationEntry.JOURNAL to name an accounting export format, the same string and the wrong concept."
+    },
+    {
+      "file": "apps/catalog/src/search/search-query.schema.ts",
+      "value": "replays",
+      "reason": "A tab of `/v1/search`, which storefront.yaml declares `x-arthome-vocabulary-source: none`: a property of that endpoint's list, not of the domain. PLAN_OPENINGS' `replays` is what a plan opens and NAVIGATION_ENTRIES' is a menu entry; importing either to name a search tab would be the NavigationEntry.JOURNAL mistake again."
     }
   ]
 }

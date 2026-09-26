@@ -11,7 +11,7 @@ import { DateProjection, type ScheduledDateFields } from './date-projection.enti
 import { claimed, decodedOrRefused, incomingOf } from './incoming.js';
 import { ShowProjection } from './show-projection.entity.js';
 import { publicationStateOf, replayPolicyOf, rightsScopeOf, stated } from './wire.js';
-import { dateDocumentOf } from '../index/date-document.js';
+import { dateDocumentOf } from '../index/compose.js';
 import type { Indices } from '../index/opensearch-client.js';
 
 const DATE_SCHEDULED = 'catalog.date.scheduled.v1';
@@ -55,6 +55,8 @@ export function dateFactOf(type: string, value: Uint8Array): DateFact {
         rights_scope: event.rights === undefined ? null : rightsScopeOf(event.rights.scope),
         blackout_countries: event.rights?.blackoutCountries ?? [],
         canonical_url: event.canonicalUrl,
+        slug_fr: event.slugFr,
+        slug_en: event.slugEn,
       },
     };
   }

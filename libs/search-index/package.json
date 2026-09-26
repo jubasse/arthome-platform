@@ -1,9 +1,9 @@
 {
-  "name": "@arthome-platform/config",
+  "name": "@arthome-platform/search-index",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Environment reading, validated once at startup.",
+  "description": "The search indices' names, mappings and document shapes, shared by the indexer that writes them and catalog that reads them.",
   "license": "UNLICENSED",
   "exports": {
     ".": {
@@ -14,12 +14,10 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@arthome/core": "file:../../vendor/arthome-core-5c370f5d4d1a.tgz",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-c7d9163f15e3.tgz",
-    "zod": "4.6.5"
+    "@opensearch-project/opensearch": "3.6.0"
   }
 }

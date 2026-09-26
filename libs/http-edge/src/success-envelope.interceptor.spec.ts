@@ -4,7 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 import { FixedClock } from '@arthome/core';
 
-import { MemorisedResponse, SuccessEnvelopeInterceptor } from './success-envelope.interceptor.js';
+import {
+  CollectionResponse,
+  MemorisedResponse,
+  SuccessEnvelopeInterceptor,
+} from './success-envelope.interceptor.js';
 
 const SERVED_AT = '2026-09-25T10:11:12.000Z';
 
@@ -42,6 +46,32 @@ describe('the success envelope', () => {
     );
 
     expect(sent).toEqual({ servedAt: SERVED_AT, data: { publicHandle: 'ada' } });
+  });
+
+  it('puts a collection’s fields at the root, with the instant its first perishable value expires', async () => {
+    const interceptor = new SuccessEnvelopeInterceptor(new FixedClock(SERVED_AT));
+    const page = { hasMore: false };
+
+    const perishable = await lastValueFrom(
+      interceptor.intercept(
+        contextOfType('http'),
+        handlerReturning(new CollectionResponse({ groups: [], page }, '2026-09-25T10:30:00.000Z')),
+      ),
+    );
+    const lasting = await lastValueFrom(
+      interceptor.intercept(
+        contextOfType('http'),
+        handlerReturning(new CollectionResponse({ items: [], page }, null)),
+      ),
+    );
+
+    expect(perishable).toEqual({
+      servedAt: SERVED_AT,
+      validUntil: '2026-09-25T10:30:00.000Z',
+      groups: [],
+      page,
+    });
+    expect(lasting).toEqual({ servedAt: SERVED_AT, items: [], page });
   });
 
   /** A global interceptor reaches WS and RPC, and neither carries this envelope. */

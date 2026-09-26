@@ -433,6 +433,9 @@ describe('a publication transition', () => {
         runtimeMin: 95,
         replayWindowHours: 72,
         canonicalUrl: 'https://arthome.test/fr/d/nuit-blanche-2026-11-04',
+        // No English title, so the English slug falls back to the French one.
+        slugFr: 'nuit-blanche-2026-11-04',
+        slugEn: 'nuit-blanche-2026-11-04',
         venueCity: 'Paris',
         venueCountry: 'FR',
         venueClock: { venueTimezone: 'Europe/Paris', venueUtcOffsetMin: 60 },

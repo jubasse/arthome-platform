@@ -45,13 +45,18 @@ export function canonicalUrl(origin: string, language: Locale, slug: string): st
   return `${origin}/${language}/d/${slug}`;
 }
 
-/** A date's canonical URL once published, in its title's own language; null before. */
+/** The language a date is shared and indexed under: its title's own, French when it has one. */
+export function canonicalLanguageOf(title: Bilingual): Locale {
+  return title.fr.length > 0 ? Locale.FR : Locale.EN;
+}
+
+/** A date's canonical URL once published; null before. */
 export function canonicalUrlOf(
   origin: string,
   title: Bilingual,
   slugs: { readonly slug_fr: string | null; readonly slug_en: string | null },
 ): string | null {
-  const language = title.fr.length > 0 ? Locale.FR : Locale.EN;
+  const language = canonicalLanguageOf(title);
   const slug = language === Locale.FR ? slugs.slug_fr : slugs.slug_en;
   return slug === null ? null : canonicalUrl(origin, language, slug);
 }

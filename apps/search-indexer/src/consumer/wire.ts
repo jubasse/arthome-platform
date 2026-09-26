@@ -6,6 +6,7 @@ import {
   type ImageRendition,
   type LocalizedText,
 } from '@arthome-platform/events';
+import type { IndexedRendition } from '@arthome-platform/search-index';
 import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
 
 import {
@@ -16,8 +17,6 @@ import {
   RightsScope,
   type Bilingual,
 } from '@arthome/core';
-
-import type { IndexedRendition } from '../index/show-document.js';
 
 /**
  * The wire's numbers → the domain's members. `UNSPECIFIED`, and any member a newer producer

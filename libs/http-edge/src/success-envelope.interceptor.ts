@@ -24,17 +24,23 @@ export class MemorisedResponse<T> {
   ) {}
 }
 
+/**
+ * A collection's fields sit at the envelope's root beside `servedAt` — `items` + `page`, or a
+ * search's `groups` + `facets` + `page` — never under `data` (§5.5). `validUntil` is the
+ * instant the first perishable value in it stops being true.
+ */
+export class CollectionResponse<T extends object> {
+  public constructor(
+    public readonly fields: T,
+    public readonly validUntil: string | null,
+  ) {}
+}
+
 interface HeaderWriter {
   header(name: string, value: string): unknown;
 }
 
-/**
- * transport.md §5.5's success envelope, applied once rather than remembered per route.
- *
- * `validUntil` is absent because no route here returns a perishable value. §5.5 makes it
- *   conditional — "as soon as a perishable value is present" — so the first route that serves one
- *   adds it, and inventing the mechanism now would be shape ahead of use.
- */
+/** transport.md §5.5's success envelope, applied once rather than remembered per route. */
 @Injectable()
 export class SuccessEnvelopeInterceptor implements NestInterceptor {
   public constructor(private readonly clock: Clock) {}
@@ -48,6 +54,14 @@ export class SuccessEnvelopeInterceptor implements NestInterceptor {
     // the same reason the error filter takes one.
     return next.handle().pipe(
       map((data: unknown) => {
+        if (data instanceof CollectionResponse) {
+          const { fields, validUntil } = data as CollectionResponse<object>;
+          return {
+            servedAt: this.clock.now(),
+            ...(validUntil !== null && { validUntil }),
+            ...fields,
+          };
+        }
         if (!(data instanceof MemorisedResponse)) return { servedAt: this.clock.now(), data };
         if (data.replayed) {
           // The body's `servedAt` is the first attempt's; this header says when the replay was.

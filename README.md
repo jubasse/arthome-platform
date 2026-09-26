@@ -21,16 +21,17 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | Built | What it is |
 | --- | --- |
 | `apps/identity` | `POST /accounts`, the outbox producer |
-| `apps/catalog` | `POST /shows`, the same shape — the first service written by someone other than the messaging library's author |
+| `apps/catalog` | shows, venues, dates and their publication, the checklist consumer, and `GET /v1/search` over the date index |
 | `apps/notifications` | the idempotent consumer, with retries and dead-lettering |
-| `apps/search-indexer` | the catalog projection into OpenSearch |
+| `apps/search-indexer` | the catalog projection into OpenSearch, composed from a read model of its own |
 | `libs/messaging` | the outbox, failure classification, retry, dead-lettering — shared by every service |
 | `libs/events` | the Protobuf wire types, generated from arthome-core's `proto/` |
+| `libs/http-edge` | the success and error envelopes, validation refusals, the deadline — every HTTP service's edge |
+| `libs/search-index` | the index mappings and document shapes, shared by the indexer and catalog's search |
 | `libs/config`, `libs/testing` | the environment, and a harness that starts real containers |
 
 **What is NOT built, said plainly.** `ticketing`, `streaming`, `chat` and `payouts` do not exist.
-`notifications` is only its consumer half. `catalog` has no Debezium connector yet, so its outbox
-rows accumulate unpublished. There is no Redis and no MinIO. There is no authentication:
+`notifications` is only its consumer half. There is no Redis and no MinIO. There is no authentication:
 `adr-auth.md` gives it to better-auth in its own schema, and that is deliberately deferred.
 
 `apps/search-indexer` is an **eighth** component and not one of the seven services — a projection
