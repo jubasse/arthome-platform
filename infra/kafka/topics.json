@@ -79,6 +79,18 @@
     {
       "name": "arthome.search.dlq",
       "partitions": 3
+    },
+    {
+      "name": "arthome.ticketing.date_sales",
+      "partitions": 12
+    },
+    {
+      "name": "arthome.streaming.run",
+      "partitions": 12
+    },
+    {
+      "name": "arthome.chat.date",
+      "partitions": 12
     }
   ]
 }

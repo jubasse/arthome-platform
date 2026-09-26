@@ -24,6 +24,7 @@ const PUBLISHERS = new Set(['identity', 'catalog']);
 // The search indexer's topics are `arthome.search.*`, not `arthome.search-indexer.*`: its
 // consumer group is named for the index, and main.ts records why.
 const CONSUMERS = new Map([
+  ['catalog', 'catalog'],
   ['notifications', 'notifications'],
   ['search-indexer', 'search'],
 ]);

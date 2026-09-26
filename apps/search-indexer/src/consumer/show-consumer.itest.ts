@@ -2,6 +2,7 @@ import {
   LanguageDependency as WireLanguageDependency,
   ShowPublishedSchema,
 } from '@arthome-platform/events';
+import { ProcessedMessage } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
@@ -14,7 +15,6 @@ import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ProcessedMessage } from './processed-message.entity.js';
 import { applyMessage } from './show-consumer.js';
 import { ShowProjection } from './show-projection.entity.js';
 import {

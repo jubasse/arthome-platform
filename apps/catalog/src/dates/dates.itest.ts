@@ -1,17 +1,31 @@
 import {
+  ChatMode,
+  DateChatPolicyChangedSchema,
   DateDraftedSchema,
+  DateSalesCapacitySetSchema,
+  DateSalesPricingChangedSchema,
+  PriceTier,
   PublicationState as WirePublicationState,
   PublicationStateChangedSchema,
+  TechnicalCheckPassedSchema,
 } from '@arthome-platform/events';
 import { RefusalException } from '@arthome-platform/http-edge';
-import { OutboxEvent } from '@arthome-platform/messaging';
+import { OutboxEvent, PermanentError, ProcessedMessage } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
-import { fromBinary } from '@bufbuild/protobuf';
+import {
+  create,
+  fromBinary,
+  toBinary,
+  type DescMessage,
+  type MessageInitShape,
+} from '@bufbuild/protobuf';
+import { timestampFromDate } from '@bufbuild/protobuf/wkt';
+import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -26,6 +40,7 @@ import {
   ReplayPolicy,
 } from '@arthome/core';
 
+import { applyChecklistMessage } from './checklist-consumer.js';
 import { DatesService, type TransitionPublicationCommand } from './dates.service.js';
 import { PerformanceDate } from './performance-date.entity.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
@@ -36,6 +51,7 @@ import { Initial1758800000000 } from '../migrations/1758800000000-initial.js';
 import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
 import { ShowCopyAndVenue1790420100000 } from '../migrations/1790420100000-show-copy-and-venue.js';
 import { DateAndPublication1790420200000 } from '../migrations/1790420200000-date-and-publication.js';
+import { ChecklistProjection1790420300000 } from '../migrations/1790420300000-checklist-projection.js';
 import { Venue } from '../venues/venue.entity.js';
 
 /**
@@ -114,29 +130,73 @@ function outboxRowsFor(dateId: string): Promise<OutboxEvent[]> {
   });
 }
 
+let messages = 0;
+
+function upstream<Desc extends DescMessage>(
+  type: string,
+  schema: Desc,
+  init: MessageInitShape<Desc>,
+  messageId = `01a0e2ff-0000-7000-8000-${String((messages += 1)).padStart(12, '0')}`,
+): EachMessagePayload {
+  return {
+    topic: 'arthome.ticketing.date_sales',
+    partition: 0,
+    message: {
+      key: Buffer.from('date'),
+      value: Buffer.from(toBinary(schema, create(schema, init))),
+      headers: { 'message-id': Buffer.from(messageId), type: Buffer.from(type) },
+    },
+  } as unknown as EachMessagePayload;
+}
+
+const AT = timestampFromDate(new Date('2026-09-26T09:00:00.000Z'));
+
+/** The four projected blocking items, reported the way their contexts will report them. */
 async function satisfyProjectedItems(dateId: string): Promise<void> {
-  await dataSource
-    .getRepository(PublicationChecklistFact)
-    .insert(
-      [
-        PublicationChecklistItem.AT_LEAST_ONE_ACTIVE_PRICE,
-        PublicationChecklistItem.CAPACITY,
-        PublicationChecklistItem.TECHNICAL_CHECK_PASSED,
-        PublicationChecklistItem.CHAT_MODE_SET,
-      ].map((item) => ({ date_id: dateId, item, satisfied: true })),
-    );
+  for (const payload of [
+    upstream('ticketing.date_sales.pricing_changed.v1', DateSalesPricingChangedSchema, {
+      dateId,
+      tiers: [{ tier: PriceTier.FULL, active: true }],
+      occurredAt: AT,
+    }),
+    upstream('ticketing.date_sales.capacity_set.v1', DateSalesCapacitySetSchema, {
+      dateId,
+      capacityTotal: 300,
+      occurredAt: AT,
+    }),
+    upstream('streaming.run.technical_check_passed.v1', TechnicalCheckPassedSchema, {
+      dateId,
+      passedAt: AT,
+    }),
+    upstream('chat.date_chat_policy.changed.v1', DateChatPolicyChangedSchema, {
+      dateId,
+      mode: ChatMode.OPEN,
+      occurredAt: AT,
+    }),
+  ]) {
+    expect(await applyChecklistMessage(dataSource, payload)).toBe('applied');
+  }
 }
 
 beforeAll(async () => {
   stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
   const database = await createDatabase(stack.postgres, 'catalog_dates_itest');
   dataSource = await applyMigrations(database, {
-    entities: [Show, Venue, PerformanceDate, Publication, PublicationChecklistFact, OutboxEvent],
+    entities: [
+      Show,
+      Venue,
+      PerformanceDate,
+      Publication,
+      PublicationChecklistFact,
+      ProcessedMessage,
+      OutboxEvent,
+    ],
     migrations: [
       Initial1758800000000,
       Idempotency1790420000000,
       ShowCopyAndVenue1790420100000,
       DateAndPublication1790420200000,
+      ChecklistProjection1790420300000,
     ],
   });
   await dataSource.getRepository(Show).insert({
@@ -350,6 +410,87 @@ describe('a publication transition', () => {
         code: DomainErrorCode.PUBLICATION_TRANSITION_IRREVERSIBLE,
         params: { promise: PublicationPromise.PRICES_ENGAGED },
       });
+    },
+    CASE_MS,
+  );
+});
+
+describe('a projected checklist fact', () => {
+  function pricing(dateId: string, active: boolean, at: string, messageId?: string) {
+    return upstream(
+      'ticketing.date_sales.pricing_changed.v1',
+      DateSalesPricingChangedSchema,
+      {
+        dateId,
+        tiers: [{ tier: PriceTier.FULL, active }],
+        occurredAt: timestampFromDate(new Date(at)),
+      },
+      messageId,
+    );
+  }
+
+  async function activePrice(dateId: string): Promise<boolean | undefined> {
+    const fact = await dataSource.getRepository(PublicationChecklistFact).findOneBy({
+      date_id: dateId,
+      item: PublicationChecklistItem.AT_LEAST_ONE_ACTIVE_PRICE,
+    });
+    return fact?.satisfied;
+  }
+
+  it(
+    'keeps the newer fact when an older one arrives after it, off a retry topic',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-000000000301';
+      await draft(dateId);
+
+      await applyChecklistMessage(dataSource, pricing(dateId, true, '2026-09-26T10:00:00.000Z'));
+      const late = await applyChecklistMessage(
+        dataSource,
+        pricing(dateId, false, '2026-09-26T09:00:00.000Z'),
+      );
+
+      expect(late).toBe('superseded');
+      expect(await activePrice(dateId)).toBe(true);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'applies a message once, however many times it is delivered',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-000000000302';
+      await draft(dateId);
+      const once = pricing(
+        dateId,
+        true,
+        '2026-09-26T10:00:00.000Z',
+        '01a0e2aa-0000-7000-8000-000000000001',
+      );
+
+      expect(await applyChecklistMessage(dataSource, once)).toBe('applied');
+      expect(await applyChecklistMessage(dataSource, once)).toBe('duplicate');
+    },
+    CASE_MS,
+  );
+
+  it(
+    'dead-letters a fact about a date catalog does not hold, and keeps no ledger row for it',
+    async () => {
+      const messageId = '01a0e2aa-0000-7000-8000-000000000002';
+      await expect(
+        applyChecklistMessage(
+          dataSource,
+          pricing(
+            '01a0e100-0000-7000-8000-0000000003ff',
+            true,
+            '2026-09-26T10:00:00.000Z',
+            messageId,
+          ),
+        ),
+      ).rejects.toThrow(PermanentError);
+      expect(
+        await dataSource.getRepository(ProcessedMessage).findOneBy({ id: messageId }),
+      ).toBeNull();
     },
     CASE_MS,
   );

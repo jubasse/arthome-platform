@@ -14,6 +14,10 @@ export class PublicationChecklistFact {
   @Column('boolean')
   satisfied!: boolean;
 
+  /** When the reporting context stated it; an older fact never replaces a newer one. */
+  @Column('timestamptz')
+  occurred_at!: Date;
+
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
 }

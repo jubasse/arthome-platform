@@ -4,9 +4,13 @@
 //   is lost, and the source of truth is arthome-core's proto/.
 //
 // This flat barrel is on borrowed time: `export *` from several generated files
-//   breaks the day two contexts name the same message. Today's three share no
-//   symbol (14 + 31 + 34 names, empty intersection). The durable answer is
-//   @arthome/contracts's: no `.` entry point, one subpath per context.
+// breaks the day two contexts name the same message. The six below share no name
+// (recounted 2026-09-26), and a collision fails the typecheck (TS2308) rather
+// than passing silently. The durable answer is @arthome/contracts's: no `.` entry
+// point, one subpath per context.
 export * from './gen/arthome/common/v1/common_pb.js';
 export * from './gen/arthome/identity/v1/events_pb.js';
 export * from './gen/arthome/catalog/v1/events_pb.js';
+export * from './gen/arthome/ticketing/v1/events_pb.js';
+export * from './gen/arthome/streaming/v1/events_pb.js';
+export * from './gen/arthome/chat/v1/events_pb.js';

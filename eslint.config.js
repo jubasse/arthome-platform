@@ -40,7 +40,7 @@ export default defineConfig([
   {
     // Scoped to the entry points: stdout IS the log in a container. Anywhere else a
     // console call is a debug statement somebody forgot.
-    files: ['apps/*/src/main.ts'],
+    files: ['apps/*/src/main.ts', 'apps/*/src/consumer.ts'],
     rules: {
       'no-console': 'off',
     },

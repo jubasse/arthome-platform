@@ -1,8 +1,8 @@
+import { ProcessedMessage } from '@arthome-platform/messaging';
 import { DataSource } from 'typeorm';
 
 import { Service } from '@arthome/core';
 
-import { ProcessedMessage } from './consumer/processed-message.entity.js';
 import { WelcomeEmail } from './consumer/welcome-email.entity.js';
 import { env } from './env.js';
 import { Initial1758700100000 } from './migrations/1758700100000-initial.js';

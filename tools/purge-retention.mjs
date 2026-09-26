@@ -16,7 +16,7 @@ import {
 } from '@arthome-platform/messaging';
 
 const PUBLISHERS = new Set(['identity', 'catalog']);
-const CONSUMERS = new Set(['notifications', 'search-indexer']);
+const CONSUMERS = new Set(['catalog', 'notifications', 'search-indexer']);
 
 const [service, ...flags] = process.argv.slice(2);
 const apply = flags.includes('--apply');

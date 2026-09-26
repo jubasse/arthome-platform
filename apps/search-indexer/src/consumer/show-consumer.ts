@@ -3,7 +3,12 @@ import {
   ShowPublishedSchema,
   type ShowPublished,
 } from '@arthome-platform/events';
-import { PermanentError, header, type Outcome } from '@arthome-platform/messaging';
+import {
+  header,
+  type Outcome,
+  PermanentError,
+  ProcessedMessage,
+} from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import { timestampDate, timestampMs } from '@bufbuild/protobuf/wkt';
 import type { EachMessagePayload } from 'kafkajs';
@@ -11,7 +16,6 @@ import type { DataSource } from 'typeorm';
 
 import { LanguageDependency } from '@arthome/core';
 
-import { ProcessedMessage } from './processed-message.entity.js';
 import type { ShowIndex } from '../index/opensearch-client.js';
 import type { IndexedRendition, ShowDocument } from '../index/show-document.js';
 

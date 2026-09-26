@@ -1,10 +1,14 @@
 import { AccountRegisteredSchema } from '@arthome-platform/events';
-import { PermanentError, header, type Outcome } from '@arthome-platform/messaging';
+import {
+  header,
+  type Outcome,
+  PermanentError,
+  ProcessedMessage,
+} from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource } from 'typeorm';
 
-import { ProcessedMessage } from './processed-message.entity.js';
 import { WelcomeEmail } from './welcome-email.entity.js';
 
 /**

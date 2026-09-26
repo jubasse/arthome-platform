@@ -1,6 +1,6 @@
+import { ProcessedMessage } from '@arthome-platform/messaging';
 import { DataSource } from 'typeorm';
 
-import { ProcessedMessage } from './consumer/processed-message.entity.js';
 import { ShowProjection } from './consumer/show-projection.entity.js';
 import { env } from './env.js';
 import { Initial1758700400000 } from './migrations/1758700400000-initial.js';

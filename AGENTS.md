@@ -265,7 +265,9 @@ an event one hour older with a fresh `message-id` — which deduplication cannot
 document's `_version` and fields untouched, and the consumer reports it as `superseded`, not
 `applied`. **`notifications` does not, and does not need to**: it handles one message type
 and its effect is one row keyed by `account_id`, so there is no second event to arrive out of order.
-The guard is owed by the next consumer that applies two events whose order matters.
+**`catalog`'s checklist projection guards it the same way**: each fact carries the reporting
+context's `occurred_at`, and the upsert refuses an older one (`superseded`). The next consumer that
+applies two events whose order matters owes the same condition.
 
 **The wait is held INSIDE the handler, and that is not an implementation detail.** KafkaJS resolves
 a message's offset as soon as `eachMessage` **returns** — unconditionally, storing `offset + 1`. So

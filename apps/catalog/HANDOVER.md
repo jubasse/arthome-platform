@@ -255,11 +255,11 @@ Two things make this more than a style note for `catalog` specifically:
   `LanguageDependency` already collides by name with `@arthome/core`'s — a Protobuf number
   against a domain string — and `publish-show.service.ts` has to alias one of them. That is
   the near miss, one package short of being a real conflict.
-- **The headroom is measured, not assumed.** Verified independently by the lead before the
-  re-export was added: common exports 14 names, identity 31, catalog 34, and all three
-  pairwise intersections are empty. So the barrel is safe *today* and the count is what says
-  so — which, per critical-rules #15, is the only form that claim may take. It ages the moment
-  a fourth context lands.
+- **The headroom is measured, not assumed.** Recounted on 2026-09-26 when catalog began
+  consuming ticketing, streaming and chat: common exports 15 names, identity 35, catalog 41,
+  ticketing 53, streaming 35, chat 29, and every pairwise intersection is empty. A future
+  collision would not pass silently either: TypeScript refuses an ambiguous `export *`
+  (TS2308), so the typecheck guards the barrel until it is split.
 
 **The instruction, and it is the lead's, not mine:** the restructuring into per-context
 subpaths is owned by the lead and happens after wave 2. Until then every service keeps
