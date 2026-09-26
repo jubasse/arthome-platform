@@ -44,8 +44,9 @@ and its reason · a warning where the obvious change is wrong.
 a block above a name that already carries it · JSDoc restating the signature · narration of a
 readable sequence · history · a default explained · prose about what the file does *not* do.
 
-**No `⚠`, no emoji, no pictographic symbol in a comment** (`✓`, `✗`, `✅`, `❌`…). A warning is a
-sentence that says what breaks. Typographic punctuation (`→`, `—`, `§`) is not concerned.
+**No `⚠`, no emoji, no pictographic symbol anywhere** — comment, document, tool output (`✓`, `✗`,
+`✅`, `❌`…). A warning is a sentence that says what breaks. Typographic punctuation (`→`, `—`, `§`)
+is not concerned. `arthome-check-symbols` enforces it in `verify`.
 
 **TypeScript already documents the types, so JSDoc must not.** The signature gives the parameter
 names, their types and the return type; repeating it is noise. JSDoc earns its place only for a

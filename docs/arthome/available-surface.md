@@ -23,7 +23,7 @@ local-vocabulary helper**. None of them was careless; nothing told them the expo
 - **`@arthome/contracts/*`** — one subpath per bounded context. A shape that crosses a boundary
   exists here already or belongs here.
 
-⚠ **A name ending in `In` or `Out` says which direction it is for**, and the two are not
+**A name ending in `In` or `Out` says which direction it is for**, and the two are not
 interchangeable: `In` is strict because a request can be wrong, `Out` is tolerant because a
 client a year old must not reject a payload over a value it has never seen.
 

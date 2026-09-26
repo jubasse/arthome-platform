@@ -92,7 +92,7 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 | --- | --- |
 | `pnpm run bootstrap` | packs the sibling arthome-core into `vendor/`, then installs |
 | `pnpm run verify` | everything below, in order, stopping at the first failure |
-| `pnpm run verify:offline` | the subset needing no install — vendor, versions, tsconfig, enums, language |
+| `pnpm run verify:offline` | the subset needing no install — vendor, versions, tsconfig, enums, language, symbols |
 | `pnpm run check:enums` | string literals that duplicate a domain vocabulary |
 | `pnpm run fix` | Prettier, then ESLint `--fix`, then Prettier again |
 | `pnpm run purge:retention <service>` | what the retention job would delete; `--apply` to do it |

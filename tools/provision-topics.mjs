@@ -66,7 +66,7 @@ function main() {
     `provision-topics: ${created} created, ${DECLARED.topics.length - created} already present`,
   );
   if (wrong.length) {
-    console.error('  ⚠ partition counts disagree with events.md §3 — NOT changed automatically:');
+    console.error('FAIL partition counts disagree with events.md §3 — NOT changed automatically:');
     for (const w of wrong) console.error(`    ${w}`);
     return 1;
   }

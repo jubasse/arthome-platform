@@ -16,7 +16,7 @@ slot and publication names to `outboxSlotName(<service>)`, which the readiness c
 topic to `outboxTopic()`, which reconciliation reads, and the `filtered`, `none` and `message-id`
 settings below. Five more connectors are owed; at the third, generate them instead of copying.
 
-⚠ **Registering is not the same as correcting.** A publication or a slot outlives the connector config
+**Registering is not the same as correcting.** A publication or a slot outlives the connector config
 that created it, and Kafka Connect keeps a deleted connector's source offsets under its name. Before
 registering a new one, check `_connect_offsets` holds no key for it and that the database has no
 slot or publication yet — the catalog connector was registered that way, on an empty outbox, and
@@ -39,7 +39,7 @@ A `DELETE` on `outbox_event` produces nothing: the router drops it without faili
 tombstone (verified on 3.0.0.Final). `republishOutboxRow` relies on that to send a row again under
 its own id.
 
-## ⚠ There is no dead-letter queue on this connector, and that was verified, not assumed
+## There is no dead-letter queue on this connector, and that was verified, not assumed
 
 `events.md` §1.4 names two reject mechanisms: Kafka Connect's native dead-letter queue for
 **connector** failures, and `arthome.<context>.retry` / `.dlq` for **consumer** failures. The second
@@ -59,10 +59,10 @@ business fact that is already committed** — the outbox row is the source of tr
 application never reads it back to notice the gap.
 
 Failing loudly is the recoverable posture: the connector stops, the replication slot retains the
-WAL, and the lag is measurable (`confirmed_flush_lsn`). ⚠ It is also the posture that fills a disk
+WAL, and the lag is measurable (`confirmed_flush_lsn`). It is also the posture that fills a disk
 if nobody looks — alert on slot lag, and never leave a stopped connector registered.
 
-## ⚠ The publication is created `FOR ALL TABLES` unless you say otherwise
+## The publication is created `FOR ALL TABLES` unless you say otherwise
 
 Both files now set `publication.autocreate.mode: filtered`. What follows is why, and what it cost
 while it was missing: the default is `all_tables`.
@@ -95,6 +95,6 @@ SELECT * FROM pg_publication_tables WHERE pubname = 'arthome_identity_outbox';
 `puballtables = t`, or more than one table, means the default won. Measured here on 2026-09-25 before
 the fix: `puballtables = t`, and the publication carried `account`, `migrations` and `outbox_event`.
 
-⚠ This is the same lesson as the dead-letter queue above, with a worse blast radius: **Connect
+This is the same lesson as the dead-letter queue above, with a worse blast radius: **Connect
 accepts a property, or silently supplies a default, and the log reads as though it were configured.**
 Six more connectors will be copied from this file.

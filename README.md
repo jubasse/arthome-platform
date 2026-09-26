@@ -42,7 +42,7 @@ Nothing lost, nothing doubled, in any of them — because the services never spe
 permanent failure dead-letters at once; a transient one retries at 5 s, 30 s and 5 min with jitter.
 
 **Infrastructure, at the versions that actually run.** PostgreSQL 18.6 with `wal_level=logical`,
-Kafka 4.0 in KRaft mode, Debezium 3.0, OpenSearch 2.18. ⚠ Postgres publishes on **55432**, not
+Kafka 4.0 in KRaft mode, Debezium 3.0, OpenSearch 2.18. Postgres publishes on **55432**, not
 5432: a development stack that fights for well-known ports is one you cannot run beside anything
 else.
 

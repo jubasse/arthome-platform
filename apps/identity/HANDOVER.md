@@ -3,7 +3,7 @@
 `POST /accounts` registers an account: one transaction, one `manager`, the business row and the
 outbox row together, and the inbound `traceparent` injected at write time.
 
-> ⚠ **THIS FILE DID NOT EXIST UNTIL 2026-09-25, AND ITS ABSENCE WAS ITSELF A DEFECT.** `catalog`
+> **THIS FILE DID NOT EXIST UNTIL 2026-09-25, AND ITS ABSENCE WAS ITSELF A DEFECT.** `catalog`
 > wrote a handover and `identity` did not, so identity's debt was recorded nowhere — and the one
 > place it *was* described, `apps/catalog/HANDOVER.md` §2(e), described it **second-hand and got it
 > wrong**: it said identity could "afford" unvalidated `locale` and `country` because a wrong value
@@ -37,7 +37,7 @@ Tests: 4 files, 24 tests here — `register-account.service.spec.ts` (6),
 (`error-envelope.filter.spec.ts` 21, `traceparent.spec.ts` 7,
 `deny-in-production.guard.spec.ts` 3).
 
-⚠ **`unique-violations.spec.ts` EXISTS BECAUSE THE FILTER'S OWN SUITE CANNOT CATCH WHAT IT CHECKS,
+**`unique-violations.spec.ts` EXISTS BECAUSE THE FILTER'S OWN SUITE CANNOT CATCH WHAT IT CHECKS,
 AND DID NOT.** That suite tests the mechanism against a fixture that copies this service's table, so
 it stayed green while the service passed **no** table at all and every duplicate email answered 500.
 The mechanism being right is not the same fact as the service using it. This test reads the
@@ -76,7 +76,7 @@ belong to the session that installs and commits. No `git`, no `docker`, no insta
 line and no failing test: the row and the message were both well-formed, and only their contents
 were wrong.
 
-⚠ **Being text on the wire is what made this invisible, not what made it safe.** That is the exact
+**Being text on the wire is what made this invisible, not what made it safe.** That is the exact
 sentence `apps/catalog/HANDOVER.md` §2(e) got backwards, and it is worth keeping in mind for the
 next field: a *wrong value* on a text field does arrive wrong and stay visible; a *wrong type* is
 coerced into something plausible, by both libraries, in two different directions.
@@ -123,7 +123,7 @@ It cannot be validated by a pipe, and that is a property of NestJS rather than a
 `@nestjs/common` 12.0.3 — no options object, therefore no `schema` for the pipe to find. So it is
 parsed by hand in the controller.
 
-⚠ **A malformed traceparent is dropped to `null`, never refused.** That was decided at
+**A malformed traceparent is dropped to `null`, never refused.** That was decided at
 `identity.controller.ts:23-26` and is not reopened: a broken trace is an observability fault, never
 a business one. Rejecting the request would reopen it; dropping it honours it. `parseTraceparent`
 returns `null` rather than throwing for exactly this reason.
@@ -146,7 +146,7 @@ collided** — that is the oracle, and `@arthome/core`'s `error-codes.ts` record
 exception that settles it: "`identity.*` STAYS VAGUE ON PURPOSE. An authentication refusal that says
 which check failed is an oracle, and answers a question the caller was not entitled to ask."
 
-⚠ **The constraint name is logged and the pg `detail` is not.** `QueryFailedError` copies the driver
+**The constraint name is logged and the pg `detail` is not.** `QueryFailedError` copies the driver
 error's properties onto itself, so its own `message` is pg's "duplicate key value violates unique
 constraint …" and its `detail` is "Key (email)=(someone@example.test) already exists" — the column
 **and** the person's address. One spread of `getResponse()` would have served both. The constraint
@@ -198,7 +198,7 @@ knowingly-wrong stand-ins (`ApiErrorCode.SCHEMA_INVALID` at 409, `ApiErrorCode.U
 at 500 and 503); both are deleted rather than repointed, because a constant whose only content is
 `= ApiErrorCode.INTERNAL` is indirection naming nothing.
 
-⚠ **`api.upstream_unavailable` MUST NOT BE EMITTED BY THIS SERVICE, and there is a test asserting no
+**`api.upstream_unavailable` MUST NOT BE EMITTED BY THIS SERVICE, and there is a test asserting no
 path does.** It means "a service behind the BFF failed". Said about ourselves it is false, and it
 destroyed the one distinction a caller acts on — **503 is retryable and 500 is not** — because one
 substitute answered 500, 502 and 503 alike. It stays reserved for the BFF relaying a failed service.
@@ -210,17 +210,17 @@ name and answers `IdentityErrorCode.EMAIL_TAKEN` or `IdentityErrorCode.HANDLE_TA
 `identity.handle_taken` having been added to the domain for exactly this, rather than collapsing both
 into one code that would be false half the time.
 
-⚠ **AND THE STANDING VAGUENESS EXCEPTION DOES NOT REACH THIS.** `error-codes.ts` says an
+**AND THE STANDING VAGUENESS EXCEPTION DOES NOT REACH THIS.** `error-codes.ts` says an
 *authentication* refusal that names which check failed is an oracle. A registration conflict is not
 an authentication refusal, and the proof is internal to the vocabulary: `identity.email_taken` is
 published, so if the exception covered sign-up the member would contradict the rule beside it.
 
-⚠ **WHAT THE ORACLE ACTUALLY IS, because this was mis-sited at first — mine.** It was never the code;
+**WHAT THE ORACLE ACTUALLY IS, because this was mis-sited at first — mine.** It was never the code;
 it is the **status**. A 409 where a 201 would otherwise be returned tells the caller the address is
 registered before any code is read, and a vaguer code cannot un-leak that. Reading the constraint to
 serve the right code therefore discloses nothing the status had not already given away.
 
-⚠ **THE OPEN QUESTION, ABOVE THIS SERVICE AND NOT DECIDED HERE: should sign-up disclose a taken
+**THE OPEN QUESTION, ABOVE THIS SERVICE AND NOT DECIDED HERE: should sign-up disclose a taken
 email at all?** The standard mitigation is to answer as though it had succeeded and disambiguate out
 of band, by email. That is a registration-flow design decision, far larger than an error code, and
 the published vocabulary is the project's current answer — so `EMAIL_TAKEN` is served today. Raised
@@ -259,7 +259,7 @@ corrupts a record". A `de` account was one whose welcome email had no template.
 `"ZZ"` passes. ISO 3166-1 has some 250 members and moves, `@arthome/core` publishes no vocabulary
 for it, and a list written here would be a parallel table going stale inside one service.
 
-⚠ **Every field left permissive says so, with its reason, in the schema.** An audit noted that
+**Every field left permissive says so, with its reason, in the schema.** An audit noted that
 `@Body() body: RegisterBody` is byte-identical between "I decided this field is free-form" and "I
 never considered it" — which is why D-069's per-case boundary left no trace at this edge. The point
 of those comments is that the next reader can tell a decision from an omission.
@@ -281,7 +281,7 @@ for a BFF to be extracted into a shared package: when a BFF is written, the shap
 `@arthome/contracts` is the BFF's own **client-facing** request and response schema, because the
 frontends consume that one. This service's inbound shape is not the same shape and never becomes it.
 
-⚠ **THE MOVE THAT LOOKS OBVIOUS IS THE HARMFUL ONE.** "These are DTOs, DTOs live in contracts" would
+**THE MOVE THAT LOOKS OBVIOUS IS THE HARMFUL ONE.** "These are DTOs, DTOs live in contracts" would
 put a service's internal input shape on a package every browser installs, and would then have
 `check:emit-diff` compare it against an OpenAPI document that does not describe it. Recorded because
 the reasoning is not visible from either file.
@@ -303,12 +303,12 @@ The library exports `Refusal`, `UniqueViolationCode`, `RefusalException`, `isMap
 `refusalForStatus`, `schemaInvalidRefusal`, `schemaInvalidException`, `ErrorEnvelopeFilter`,
 `DenyInProductionGuard`, `parseTraceparent` and `TraceContext`, and holds 31 tests.
 
-⚠ **WHAT STAYS IN THE SERVICE, AND WHY IT IS NOT AN EXCEPTION TO THE RULE**: the two endpoint
+**WHAT STAYS IN THE SERVICE, AND WHY IT IS NOT AN EXCEPTION TO THE RULE**: the two endpoint
 schemas, and `unique-violations.ts` — the table binding each uniquely-constrained column to its code.
 The library knows how to *match* a constraint; only the service knows what its columns mean. Passing
 an empty table is legitimate: `catalog`'s `show` has no unique constraint at all.
 
-⚠ **BUILD THE LIBRARY ONCE OR A PER-SERVICE `vitest` RUN WILL NOT RESOLVE IT, and the error names
+**BUILD THE LIBRARY ONCE OR A PER-SERVICE `vitest` RUN WILL NOT RESOLVE IT, and the error names
 the wrong thing.** `pnpm --filter @arthome-platform/identity exec vitest run` invoked from the
 service directory does **not** read the root `vitest.config.mjs`, so it resolves the workspace
 dependency through the `default` export condition — `dist/index.js` — and reports "Failed to resolve
@@ -322,7 +322,7 @@ invocation. `dist/` is gitignored and every other library has a locally built on
 pnpm --filter @arthome-platform/http-edge run build
 ```
 
-⚠ **THE LIBRARY DEPENDS ON NEITHER `typeorm` NOR `zod`, AND MUST NOT START.** It recognises a pg
+**THE LIBRARY DEPENDS ON NEITHER `typeorm` NOR `zod`, AND MUST NOT START.** It recognises a pg
 unique violation by duck-typing `code` and `driverError.code` rather than `instanceof
 QueryFailedError`, so the transport layer does not depend on the ORM; and the pipe's
 `exceptionFactory` types its issues structurally rather than importing zod. Both were in the first

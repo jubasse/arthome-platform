@@ -118,7 +118,7 @@ null, so the day an actor exists it is clear the column was deliberate and not f
 
 ### (e) Where I diverged from identity: one validated field
 
-> ⚠ **CORRECTED 2026-09-25 — the premise of this section was wrong, and it was wrong in the
+> **CORRECTED 2026-09-25 — the premise of this section was wrong, and it was wrong in the
 > direction that hides a defect.** The paragraph below said identity "can afford" unvalidated
 > `locale` and `country` because "they are text on the wire, so a wrong value arrives wrong and
 > stays visible". That is true of a wrong **value** and it **inverts** for a wrong **type**.
@@ -352,12 +352,12 @@ and all three were published during the pass (arthome-core `63ca16a`, `60ec163`)
 Two named constants held knowingly-wrong stand-ins for a few hours; **both are deleted rather than
 repointed**, because a constant whose only content is `= ApiErrorCode.INTERNAL` names nothing.
 
-⚠ **`api.upstream_unavailable` IS NOT EMITTED BY EITHER SERVICE, and a test asserts no path does.**
+**`api.upstream_unavailable` IS NOT EMITTED BY EITHER SERVICE, and a test asserts no path does.**
 It means "a service behind the BFF failed" — false said about ourselves, and it destroyed the one
 distinction a caller acts on, since one substitute answered 500, 502 and 503 alike while **503 is
 retryable and 500 is not.**
 
-⚠ **THIS SERVICE STILL EMITS NO 409, AND THAT IS CORRECT RATHER THAN MISSING.** `show` has no unique
+**THIS SERVICE STILL EMITS NO 409, AND THAT IS CORRECT RATHER THAN MISSING.** `show` has no unique
 constraint, so it passes the filter an **empty** `UniqueViolationCode` table. A generic conflict code
 was ruled out — the published `Conflict` description reads "Definitive business refusal. The `code`
 says which one" — so an unmapped violation answers 500 and logs the gap by name. The day the
@@ -397,11 +397,11 @@ comments removed before deleting either.
 `ErrorEnvelopeFilter`, `DenyInProductionGuard`, `parseTraceparent` and `TraceContext`. Its three spec
 files hold 31 tests.
 
-⚠ **WHAT STAYS IN A SERVICE**: its endpoint schema, and the table binding each uniquely-constrained
+**WHAT STAYS IN A SERVICE**: its endpoint schema, and the table binding each uniquely-constrained
 column to its code. The library knows how to *match* a constraint name; only the service knows what
 its columns mean. This service's table is empty, legitimately.
 
-⚠ **THE LIBRARY MUST BE BUILT ONCE BEFORE A PER-SERVICE `vitest` RUN WILL RESOLVE IT**, and the
+**THE LIBRARY MUST BE BUILT ONCE BEFORE A PER-SERVICE `vitest` RUN WILL RESOLVE IT**, and the
 failure names the wrong thing. `pnpm --filter @arthome-platform/catalog exec vitest run` invoked from
 the service directory does **not** read the root `vitest.config.mjs`, so it resolves the workspace
 dependency through the `default` export condition — `dist/index.js` — and reports "Failed to resolve
@@ -412,7 +412,7 @@ own header comment describes exactly this trap for `@arthome-platform/messaging`
 not. `dist/` is gitignored and every other library has a locally built one, so:
 `pnpm --filter @arthome-platform/http-edge run build`.
 
-⚠ **THE LIBRARY DEPENDS ON NEITHER `typeorm` NOR `zod`, AND MUST NOT START.** It duck-types the pg
+**THE LIBRARY DEPENDS ON NEITHER `typeorm` NOR `zod`, AND MUST NOT START.** It duck-types the pg
 error's `code` and `driverError.code` rather than `instanceof QueryFailedError`, so the transport
 layer does not depend on the ORM; and the pipe's `exceptionFactory` types its issues structurally.
 Both were in the first scaffold and were removed.
@@ -434,7 +434,7 @@ for a BFF to be extracted into a shared package: when a BFF is written, the shap
 `@arthome/contracts` is the BFF's own **client-facing** request and response schema, because the
 frontends consume that one. This service's inbound shape is not the same shape and never becomes it.
 
-⚠ **THE MOVE THAT LOOKS OBVIOUS IS THE HARMFUL ONE.** "These are DTOs, DTOs live in contracts" would
+**THE MOVE THAT LOOKS OBVIOUS IS THE HARMFUL ONE.** "These are DTOs, DTOs live in contracts" would
 put a service's internal input shape on a package every browser installs, and would then have
 `check:emit-diff` compare it against an OpenAPI document that does not describe it. Recorded because
 the reasoning is not visible from either file.
@@ -482,7 +482,7 @@ still owed for `catalog`.
 
 - ~~**No `ValidationPipe`, no DTO, no `@arthome/contracts` schema.**~~ **DONE — see §2(l).**
 
-  > ⚠ **CORRECTED 2026-09-25 — the "do this next" in this bullet was false, and a wrong
+  > **CORRECTED 2026-09-25 — the "do this next" in this bullet was false, and a wrong
   > instruction costs more than a silence because it gets carried out.** It read: "`runtimeMin`
   > is the one I would do next: it is `uint32` on the wire, so a negative value does not fail —
   > it encodes as a large positive number."

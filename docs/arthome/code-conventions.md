@@ -46,7 +46,7 @@ marked as such, so that nobody tells themselves it is being upheld.
 
 1. **One person, seven repositories.** Any mechanism that must be maintained in seven copies will be
    abandoned. That is why `@arthome/tooling` exists (§4), and why this document refuses husky,
-   lint-staged and commitlint in favour of two dependency-free git hooks (§8.4). ⚠ They were described as "ten-line" until 2026-09-25, when writing them showed the cost honestly: `pre-commit` is short, and `commit-msg` is 78 lines of which 18 are logic — the rest is the refusal message that teaches the shape, and the record of what it deliberately does not check. The argument was never brevity; it is that three packages, three configurations and three version bumps in seven copies buy nothing git does not already do.
+   lint-staged and commitlint in favour of two dependency-free git hooks (§8.4). They were described as "ten-line" until 2026-09-25, when writing them showed the cost honestly: `pre-commit` is short, and `commit-msg` is 78 lines of which 18 are logic — the rest is the refusal message that teaches the shape, and the record of what it deliberately does not check. The argument was never brevity; it is that three packages, three configurations and three version bumps in seven copies buy nothing git does not already do.
 2. **The account's GitHub Actions quota is exhausted.** No gate in this document assumes a remote
    runner. Everything runs locally, with the command given. When the quota returns, the workflow
    file will only have to call the same commands — which is why they all sit behind
@@ -98,10 +98,10 @@ changes.
 
 | D-014 row | What is verified | Effect |
 |---|---|---|
-| Angular 22 → TS `>=6.0 <6.1` | ✅ **exact**, it is a hard `peerDependencies` entry | unchanged |
-| Angular 22 → Vitest `^4.0.8` | ✅ exact (Vitest publishes 5.0.1 as `latest`, 4.1.11 as `V4`) | unchanged |
-| React 19.3 → TS **`7.0.2`** | ❌ **this is not a constraint.** `react-native@0.87.1` has no `typescript` peer; `@types/react@19.3.0` carries `typesVersions: {"<=5.0": …}`, so **TS 5.1+ is enough**. `7.0.2` is what `npm latest` returned when the `react-how-to` router was verified — a registry observation, not a floor. | **the split is not forced on us** |
-| NestJS 12 → "not pinned" | ❌ **NestJS is the most constrained of the four.** `nest build` fails on TS 7.0 whichever builder is used (`tsc`, `swc`, `rspack`). | **the backend sits on the TS 6 side** |
+| Angular 22 → TS `>=6.0 <6.1` | **exact**, it is a hard `peerDependencies` entry | unchanged |
+| Angular 22 → Vitest `^4.0.8` | exact (Vitest publishes 5.0.1 as `latest`, 4.1.11 as `V4`) | unchanged |
+| React 19.3 → TS **`7.0.2`** | **this is not a constraint.** `react-native@0.87.1` has no `typescript` peer; `@types/react@19.3.0` carries `typesVersions: {"<=5.0": …}`, so **TS 5.1+ is enough**. `7.0.2` is what `npm latest` returned when the `react-how-to` router was verified — a registry observation, not a floor. | **the split is not forced on us** |
+| NestJS 12 → "not pinned" | **NestJS is the most constrained of the four.** `nest build` fails on TS 7.0 whichever builder is used (`tsc`, `swc`, `rspack`). | **the backend sits on the TS 6 side** |
 
 **The consequence, and it is the hinge of all of §2:** the TypeScript 6 / 7 split is not a fate
 imposed by React. **The only hard floor is Angular's ceiling** (`<6.1`), and NestJS and
@@ -382,12 +382,12 @@ entry point introduced in 10.1.1:
 ```js
 // eslint.config.js — the shape, in all seven repositories
 import { defineConfig, globalIgnores } from 'eslint/config';
-import prettier from 'eslint-config-prettier/flat';   // ⚠ /flat, not the root
+import prettier from 'eslint-config-prettier/flat';   // /flat, not the root
 
 export default defineConfig([
   globalIgnores(['dist/**', 'coverage/**', '**/generated/**']),
   // … everything else: floor, stack presets, local overrides …
-  prettier,                                            // ⚠ LAST, always
+  prettier,                                            // LAST, always
 ]);
 ```
 
@@ -898,7 +898,7 @@ it fails immediately, at the publisher, not six months later at a consumer.
 ```jsonc
 // tools/dts-check/tsconfig.json
 {
-  "extends": "@arthome/tooling/tsconfig/base.json",  // ⚠ this is what turns gate 7 into
+  "extends": "@arthome/tooling/tsconfig/base.json",  // this is what turns gate 7 into
   "compilerOptions": {                               //   a check of the floor AND of the .d.ts
     "noEmit": true,
     "skipLibCheck": false,                           // without this the gate always passes (§2.4)
@@ -917,10 +917,10 @@ D-014 asks to be checked, verified rather than assumed:
 
 | Context | Verdict | What was verified |
 |---|---|---|
-| **`exports` resolution** | ✅ **honoured** | This was a known defect — `extends` ignored the `exports` field and always read from the package root (microsoft/TypeScript#48665). **Fixed by PR #50955**, merged December 2022, so shipped well before TS 6. The `./tsconfig/*.json` subpaths must therefore be **listed in `exports`, `.json` extension included** (§4.1): a missing subpath is unreachable. |
-| **pnpm and its symlinks** | ✅ holds | TypeScript resolves `@arthome/tooling` as a module then reads through the link; `preserveSymlinks` stays `false`. **But the pnpm constraint is elsewhere**: `node_modules/@arthome/tooling` only exists if the package is a **direct** dependency of the repository. pnpm isolates, it does not hoist transitive dependencies — a repository inheriting `@arthome/tooling` transitively could not extend it, with a message about a file not being found. So it is an **explicit** `devDependencies` entry in all seven. |
-| **Metro bundler** | ✅ not applicable, and that is the right answer | **Metro does not read `tsconfig.json` at all**: it transpiles via Babel, with no type checking. So `extends` never concerns it. Two real consequences in its place: `paths` must be **replicated** in `metro.config.js` (§6.3), and `@arthome/core`'s `exports` field is honoured, since `exports` resolution has been **on by default** in Metro since 0.82 (React Native 0.79), therefore in RN 0.87. |
-| **Angular CLI** | ✅ holds, with one extra guarantee | `ng build` goes through TypeScript's own parsing, so `extends` by package name works. And Angular has **explicitly implemented inheritance of `angularCompilerOptions` through `extends`**, at the same level as `compilerOptions`. So the two Angular repositories keep their `angularCompilerOptions` **locally** — `@arthome/tooling` carries none, so as not to couple the floor of all seven to a framework that concerns only two. |
+| **`exports` resolution** | **honoured** | This was a known defect — `extends` ignored the `exports` field and always read from the package root (microsoft/TypeScript#48665). **Fixed by PR #50955**, merged December 2022, so shipped well before TS 6. The `./tsconfig/*.json` subpaths must therefore be **listed in `exports`, `.json` extension included** (§4.1): a missing subpath is unreachable. |
+| **pnpm and its symlinks** | holds | TypeScript resolves `@arthome/tooling` as a module then reads through the link; `preserveSymlinks` stays `false`. **But the pnpm constraint is elsewhere**: `node_modules/@arthome/tooling` only exists if the package is a **direct** dependency of the repository. pnpm isolates, it does not hoist transitive dependencies — a repository inheriting `@arthome/tooling` transitively could not extend it, with a message about a file not being found. So it is an **explicit** `devDependencies` entry in all seven. |
+| **Metro bundler** | not applicable, and that is the right answer | **Metro does not read `tsconfig.json` at all**: it transpiles via Babel, with no type checking. So `extends` never concerns it. Two real consequences in its place: `paths` must be **replicated** in `metro.config.js` (§6.3), and `@arthome/core`'s `exports` field is honoured, since `exports` resolution has been **on by default** in Metro since 0.82 (React Native 0.79), therefore in RN 0.87. |
+| **Angular CLI** | holds, with one extra guarantee | `ng build` goes through TypeScript's own parsing, so `extends` by package name works. And Angular has **explicitly implemented inheritance of `angularCompilerOptions` through `extends`**, at the same level as `compilerOptions`. So the two Angular repositories keep their `angularCompilerOptions` **locally** — `@arthome/tooling` carries none, so as not to couple the floor of all seven to a framework that concerns only two. |
 
 **The trap that costs the most, and it is not a version matter.** The documentation is unambiguous:
 "All relative paths found in the configuration file will be resolved relative to the configuration
@@ -1334,11 +1334,11 @@ Applied to the six vocabularies in `@arthome/core` whose names suggest a reason:
 
 | Vocabulary | Members | Answers | Family |
 |---|---|---|---|
-| `WATCH_DENIAL_REASONS` | `NO_SEAT`, `ROOM_NOT_OPEN`, … | why watching was refused | **`SCREAMING_SNAKE`** ✓ |
+| `WATCH_DENIAL_REASONS` | `NO_SEAT`, `ROOM_NOT_OPEN`, … | why watching was refused | **`SCREAMING_SNAKE`**, consistent |
 | `REPLAY_UNAVAILABILITY_REASONS` | `no_replay_policy`, `replay_window_expired` | why the replay was refused | **`SCREAMING_SNAKE`** — currently lowercase, **the one inconsistency** |
-| `BLACKOUT_REASONS` | `co_production`, `broadcaster`, `festival` | a fact about the rights arrangement | `snake_case` ✓ |
-| `MODERATION_REASONS` | `spam`, `insult`, `spoiler` | a fact about the message | `snake_case` ✓ |
-| `PROMOTION_REASONS` | `pre_sale`, `preview_night` | a fact about the date | `snake_case` ✓ |
+| `BLACKOUT_REASONS` | `co_production`, `broadcaster`, `festival` | a fact about the rights arrangement | `snake_case`, consistent |
+| `MODERATION_REASONS` | `spam`, `insult`, `spoiler` | a fact about the message | `snake_case`, consistent |
+| `PROMOTION_REASONS` | `pre_sale`, `preview_night` | a fact about the date | `snake_case`, consistent |
 | `FAILURE_NATURES` | `refused`, `unavailable`, `offline_forbidden` | *arguable* — classifies a failure rather than giving its reason | **open question** |
 
 Five decided without being consulted, one inconsistency found, one genuine borderline surfaced rather
@@ -2242,8 +2242,8 @@ the other five costs nothing.
 **[floor] Naming a case:** a sentence describing the **expected behaviour**, not the function called.
 
 ```
-✗ it('calls computeRemainingSeats')
-✓ it('reports zero remaining seats once capacity is reached')
+wrong: it('calls computeRemainingSeats')
+right: it('reports zero remaining seats once capacity is reached')
 ```
 
 **[floor] No mocking of anything that comes from `@arthome/core`.** The domain is pure and
@@ -2259,54 +2259,76 @@ tested exhaustively on their **boundaries**, because those are what compose the 
 `corrections-handoff.md` found diverging everywhere. `definition-of-done.md` has the last word on what
 makes a batch finished.
 
-### 5.10 Comments — the why and the failure, never the what
+### 5.10 Comments — delete by default
 
-**[floor] The first instrument is the NAME, not the comment.** A function named for exactly what it
-does, and a variable named for exactly what it holds, remove the need for the paragraph above them —
-and a long name is the cheap side of that trade. `waitUntilDue` needs no gloss;
-`handleRetryTiming` needs one. Prefer `refuseCommitWhenVerifyIsRed` to `check` plus three lines of
-explanation. See §5.2 for the naming rules themselves; what matters here is the order: **name first,
-and comment only what a name cannot carry.**
+**[floor] The default is no comment.** The first instrument is the NAME: `waitUntilDue` needs no
+gloss, `handleRetryTiming` needs one. Name it, then comment only what a name cannot carry (§5.2).
 
-**[floor] JSDoc is not owed to every export.** Write it when the code is non-trivial, or when a
-reader needs context the signature cannot give — where the function sits in a flow, what must be true
-before calling it, what it costs. A one-line function whose name says what it does gets nothing; a
-`@param` that restates the parameter's name is noise. And when a comment is warranted, **it is
-concise**: the shortest form that carries the fact.
+**[floor] A comment survives only if it answers what the code cannot.** The test: *would a reader
+with this code in front of them learn something they could not derive from it?*
 
-**[floor] A comment earns its place by saying something the code cannot.** The test is one question:
-*would a reader with this code in front of them learn something they could not derive from it?*
+**Keep** — a measured failure, with what it cost · a constraint invisible at that line · a decision
+and its reason, where the code shows only the outcome · a warning where the obvious change is wrong.
 
-Keep:
+**Delete** — a comment on trivial code (a delegate, a getter, a `findAll` calling `Model.findAll`) ·
+any block above a name that already carries it · JSDoc restating the signature · narration of a
+readable sequence · history ("before this there was no…") · a default or a library behaviour
+explained · **prose about what the file does *not* do**, which rots first because nothing fails when
+it stops being true · a second copy of `DECISIONS.md` — link instead.
 
-- **a measured failure** — what went wrong, and what it cost. These are the most valuable lines in
-  the repository and several of them have already stopped a defect being reintroduced;
-- **a constraint that is not visible locally** — a column name a router owns, an ordering a library
-  imposes, a version that behaves differently from its documentation;
-- **a decision and its reason**, where the code shows only the outcome;
-- **a trap**, marked `⚠`, where the obvious change is the wrong one.
+**[floor] No `⚠`, no emoji, no pictographic symbol in a committed file** (`✓`, `✗`, `✅`, `❌`,
+`★`…): not in a comment, a document, a JSON prose field or a line a gate prints. A warning is a
+sentence that says what breaks; the symbol adds nothing the words do not. Typographic punctuation
+(`→`, `—`, `§`, `≤`) is not concerned. Gate 19 enforces it. Markdown inline code is exempt, so a rule
+can name the symbol, and content we do not author goes in `tools/symbols.allow.json` with its reason.
 
-Cut:
+**[floor] TypeScript already documents the types, so JSDoc must not.** The signature gives the
+parameter names, their types and the return type; repeating any of it is noise — `@param source - the
+source`, `@returns the result`, a line naming a type the annotation states. JSDoc earns its place in
+two cases only, never systematically: a parameter whose **meaning** the type cannot give (units, a
+range, what must be true before calling, which of two same-typed arguments is which), and a **union
+return** — which branch comes back and when. `Promise<'indexed' | 'superseded'>` gives the shapes, not
+their causes.
 
-- anything that restates the code. `// increment the counter` above `counter += 1`;
-- an explanation of a well-named function. Naming it well is the comment;
-- narration of a sequence a reader can simply read;
-- a second copy of something already written in `DECISIONS.md` or an ADR — **link, do not restate**.
+**Where one line does, use one line, and give the scope rather than the whole story.** No account of
+the why and the how from A to Z: enough to situate it. A surviving warning is two to four lines,
+never ten.
 
-**A rough ceiling, and it is a smell rather than a limit: past a quarter of a file, ask whether the
-code is unclear instead.** Measured on 2026-09-25, `libs/messaging` in arthome-platform stood at
-**59 %, 55 % and 40 %** comment lines in its three main files. Those files carry real findings —
-the offset-resolution rule among them — buried in paragraphs that explain code which explains
-itself. The findings were worth keeping; their length was not.
+**[floor] Never delete a recorded measurement.** Shorten its prose to one sentence; keep the fact. The
+failure mode this rule replaces is verbosity, and the one it could create is losing the paragraph
+that stopped a defect coming back.
 
-⚠ **THIS IS NOT A LICENCE TO DELETE REASONS.** The failure mode this rule replaces is verbosity; the
-failure mode it could create is losing the one paragraph that stopped somebody re-introducing a
-defect. When a comment is long **because** it records something expensive, shorten the prose and keep
-the fact. When in doubt, keep it and make it tighter — never delete a recorded reason to satisfy a
-ratio.
+**One exception, narrow.** A gate's header block, which records the defect it was built against and
+the scope it does **not** cover.
 
-**Apply it opportunistically.** Any file you read or modify is one you may shrink: it costs a moment
-while the context is loaded, and it is the only way a convention reaches code written before it.
+**And one clarification that looks like a second exception and is not.** `REPOSITORY_MAP.md` is
+generated from JSDoc, so a deleted description blanks an export's row in an index of 594 names — but
+that row also carries the **type signature**, so the reader is not stranded: `plusMinutes` prints
+`function plusMinutes(instant: Instant, minutes: number): Instant;` and needs nothing added. The test
+is the same one as everywhere else: a description earns its place by saying what the name and the
+signature cannot. `SlugSchema: z.ZodString` earns "Lowercase, hyphenated, no leading or trailing
+hyphen", because the regex's shape is not in `z.ZodString`. **373 of 594 rows have no description and
+most of them are correct.** Filling them would mean writing 240 comments the rule forbids. What a
+description must never do is open on the hazard: the row then names the hazard and never the export.
+
+**Apply it opportunistically**: any file you read is one you may shrink.
+
+#### Four shapes, each measured on this repository
+
+1. **Paying yourself in comment lines for what the discovery cost** — the mechanism behind the other
+   three. A line just fought for feels load-bearing, so each gets a paragraph. The effort of finding
+   something out is **not the reader's problem**: it belongs in the commit message.
+2. **A default written out with a paragraph defending it.** `migrationsTransactionMode: 'all'` is
+   TypeORM's default and had ten lines arguing for it. Delete both, the option included.
+3. **A comment on a self-documenting option.** `applicationName` had four lines saying what
+   `applicationName` is for.
+4. **JSDoc attached to nothing**, which defeats every ratio: TypeScript associates only the **last**
+   of consecutive `/** */` blocks. Eighty lines in `packages/core/src/schema/vocabulary.ts` held two
+   real findings above a private constant while the function they described seventy-five lines below
+   had none. An export with a blank `REPOSITORY_MAP.md` description is how you find them.
+
+**This rule was itself 989 words and produced dissertations in the code it governed.** A long rule
+about concision teaches the register it forbids.
 
 ### 5.9 Commit messages
 
@@ -2395,6 +2417,16 @@ may flag it in the subject; the footer is what is mandatory.
 maintain in seven copies. `.githooks/commit-msg` does the same job in eighteen lines of logic, and it
 is written, installed and exercised against real history: §8.4.
 
+#### Pull requests and PR comments
+
+**[floor] No `⚠`, no emoji, no pictographic symbol** — in the title, the description, a review comment
+or a reply, generated footer included: write "Generated with Claude Code", without its emoji.
+
+**[floor] Size the description to the change.** A trivial change gets one or two sentences of
+context, then a bulleted list of what was done — nothing more. Otherwise add only what the diff
+cannot show: the risk, what was verified and how, what was not. No dissertation: the reason for a
+line belongs at that line (§5.10) or in the commit body, not restated in the PR.
+
 ---
 
 ## 6. What legitimately stays specific to each stack
@@ -2417,7 +2449,7 @@ export default defineConfig([
   ...base,                                        // @arthome/tooling/eslint/browser
   { files: ['**/*.ts'],
     extends: [...tseslint.configs.recommended, ...angular.configs.tsRecommended],
-    processor: angular.processInlineTemplates },  // ⚠ without this, inline templates go unlinted
+    processor: angular.processInlineTemplates },  // without this, inline templates go unlinted
   { files: ['**/*.html'],
     extends: [...angular.configs.templateRecommended,
               ...angular.configs.templateAccessibility] },
@@ -2875,9 +2907,10 @@ The account's Actions quota is exhausted. No gate assumes a remote runner.
 | 13 | `@arthome/core` dependency-free | the script in §4.7 | empty | §4.7 |
 | 14 | Tests | `pnpm exec vitest run` | green | §5.8 |
 | 15 | Commit message | `.githooks/commit-msg`, on every commit — **armed per clone** by `git config core.hooksPath .githooks` (§8.4) | a subject that is not `<area>: <subject>` is refused; unarmed clones check nothing | §5.9, §8.4 |
-| 16 | OpenAPI conformance | `python3 tools/check-openapi.py openapi/*.yaml` | `✓ conformant` | `definition-of-done.md` |
+| 16 | OpenAPI conformance | `python3 tools/check-openapi.py openapi/*.yaml` | `PASS conformant` | `definition-of-done.md` |
 | 17 | No French prose committed | `pnpm exec arthome-check-language` | `PASS` | D-024 |
 | 18 | **Contracts and domain share one vocabulary** | `python3 tools/check-vocabulary.py openapi/*.yaml` | `PASS` | §5.3.1 |
+| 19 | No warning sign, check mark or emoji | `pnpm exec arthome-check-symbols` | `PASS` | §5.10 |
 
 Gate 18 is five checks, and **three of them need no annotation**, which is why it was worth
 building before the 120-block migration rather than after it:
@@ -2898,7 +2931,7 @@ each time the gate had to grow: when a check needs data that does not exist yet,
 formulation that needs none. The three that do need it are the three that genuinely cannot be answered
 without knowing *which* vocabulary a block mirrors.
 
-**Gates 9, 10, 11, 16, 17 and 18 run without `node_modules`** — the first three are pure Node shipped by
+**Gates 9, 10, 11, 16, 17, 18 and 19 run without `node_modules`** — the first three are pure Node shipped by
 `@arthome/tooling`, the fourth is Python with no dependency beyond PyYAML. That is deliberate: a gate
 that needs an install in order to exist does not exist on the day a repository is created, which is
 the day it would help most. Hence the second script in §8.2.
@@ -2943,7 +2976,7 @@ It runs on a freshly cloned repository, before the first `pnpm install`, and tha
 possible to create the other six repositories with their gates already green. `verify` calls it and
 then adds what requires `node_modules`.
 
-**⚠ And the split has a failure mode this document walked into.** Because `verify:offline` is the one
+**And the split has a failure mode this document walked into.** Because `verify:offline` is the one
 everybody runs — it is fast, it needs no install, and it is what gets quoted as "green" — the four
 steps that exist only in `verify` can go unexercised indefinitely. They did: the root `typecheck` had
 been failing with `TS2688` since the day `types: ["node"]` was written into `tsconfig.json` against a
@@ -3002,7 +3035,7 @@ if ! pnpm run verify; then
 fi
 ```
 
-**⚠ THE SECOND JOB WAS ADDED AFTER THE SAME FAULT RECURRED THREE TIMES**, and it is the reason this
+**THE SECOND JOB WAS ADDED AFTER THE SAME FAULT RECURRED THREE TIMES**, and it is the reason this
 section is no longer one command. A compound shell line of the shape
 
 ```sh
@@ -3069,7 +3102,7 @@ It carried a second defect worth recording, independent of the format: `grep -q 
 the **whole message**, not the subject, so any commit whose body happened to contain a line starting
 with "Merge" was waved through entirely. A whitelist must be anchored to the line it is about.
 
-⚠ **AND §5.9 CITED A DECISION THAT DOES NOT MAKE THE RULE.** §5.9 read "[floor] Conventional
+**AND §5.9 CITED A DECISION THAT DOES NOT MAKE THE RULE.** §5.9 read "[floor] Conventional
 Commits, in English, per D-008". D-008 says: "`arthome-core` is committed at the end of phase 0, then
 at the end of each of the three times. Messages in English. No remote, no push, ever." It arbitrates
 cadence, language and pushing — and says nothing about the format. So "in English" is backed by an
