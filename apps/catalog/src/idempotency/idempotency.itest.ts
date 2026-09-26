@@ -12,6 +12,7 @@ import { ApiErrorCode, FixedClock } from '@arthome/core';
 
 import { runIdempotently, type IdempotentRequest } from './idempotency.js';
 import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
+import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500000-idempotency-response-as-json.js';
 
 /**
  * The store against a real Postgres: what makes a concurrent retry wait, replay or give up is
@@ -53,7 +54,7 @@ beforeAll(async () => {
   const database = await createDatabase(stack.postgres, 'catalog_idempotency_itest');
   dataSource = await applyMigrations(database, {
     entities: [],
-    migrations: [Idempotency1790420000000],
+    migrations: [Idempotency1790420000000, IdempotencyResponseAsJson1790420500000],
   });
 }, STARTUP_MS);
 
@@ -84,7 +85,8 @@ describe('an idempotent command against a real Postgres', () => {
 
       expect(first.replayed).toBe(false);
       expect(again.replayed).toBe(true);
-      expect(again.envelope).toEqual(first.envelope);
+      // Serialised, because `toEqual` ignores key order and the replay must be byte for byte.
+      expect(JSON.stringify(again.envelope)).toBe(JSON.stringify(first.envelope));
       expect(runs).toBe(1);
     },
     CASE_MS,

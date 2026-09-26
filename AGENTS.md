@@ -122,7 +122,7 @@ done
 ```
 
 **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
-anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`,
+anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`, `PUBLIC_WEB_ORIGIN`,
 `OPENSEARCH_URL` — is filled from a local default **only outside production**, and `NODE_ENV` is
 what selects that. Defaulting it to `development` would make an unset variable open the
 production-guarded write routes and point a migration at localhost; both fail loudly instead, naming
@@ -235,6 +235,37 @@ What should then be true, and what is worth checking because each step can fail 
 | its headers | all five: `message-id`, `type`, `traceparent`, `actor-id`, `occurred-at` — the traceparent being the one the request carried. Debezium renders a NULL column as the four characters `null`, not as an absent header |
 | `notifications.welcome_email` | one row, holding that same traceparent |
 | replaying the message | the consumer says `duplicate` and the row count does **not** move |
+
+### The catalog date path
+
+`catalog` runs two processes from `apps/catalog`: the API (`node dist/main.js`, on `PORT`) and the
+checklist consumer (`node dist/consumer.js`). A date goes from draft to published through the
+studio's commands, each carrying an `Idempotency-Key`:
+
+```
+POST /venues                                  → venueId
+POST /shows   (with title, synopsis, poster)  → showId
+POST /channels/:channelId/dates               → 201, the date sheet, its publication in draft
+POST /dates/:dateId/publication/transitions   { to, expectedVersion, acknowledgedPromiseCode }
+```
+
+Publishing answers `publication.checklist_incomplete` until ticketing, streaming and chat have
+reported their four facts. None of those services exists yet, so in development send the facts by
+hand on `arthome.ticketing.date_sales`, `arthome.streaming.run` and `arthome.chat.date`, keyed by the
+date id, with a `message-id` and a `type` header.
+
+Proven on the running stack on 2026-09-26:
+
+| Check | Result |
+| --- | --- |
+| a replayed draft | `Idempotency-Replayed: true`, the body byte for byte, first `servedAt` included |
+| the same key with another body | 409 `api.idempotency_key_reused` |
+| a stale `expectedVersion` | 409 `state.conflict`, with the current state and version |
+| publishing before the facts | 409 `publication.checklist_incomplete`, the four projected items named |
+| publishing after them | on `arthome.catalog.date`, one partition, in order: `drafted`, two state changes, `date.scheduled` with the venue clock and canonical URL, `publication.engaged` |
+
+The same run found two defects, both fixed and now held by tests: a draft served `…/d/undefined` as
+its canonical URL, and a replay came back with its keys reordered, because `jsonb` reorders them.
 
 ### When a message cannot be applied
 

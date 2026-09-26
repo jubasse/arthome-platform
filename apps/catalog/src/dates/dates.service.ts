@@ -122,6 +122,8 @@ export class DatesService {
       replay_policy: command.replayPolicy,
       replay_window_hours: command.replayWindowHours,
       rights: worldwideRights(),
+      slug_fr: null,
+      slug_en: null,
     });
     await manager.insert(PerformanceDate, date);
 

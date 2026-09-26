@@ -502,17 +502,20 @@ both exist.
   *reachable*: `DenyInProductionGuard` is bound globally and refuses every request when
   `NODE_ENV` is neither `development` nor `test`. critical-rules #5 forbids the "only the BFF
   calls me" argument, and this is what forces the question to be answered rather than assumed.
-  See §2(l).
-- **No idempotency key.** critical-rules #12. A retried `POST /shows` publishes a second
-  show with a second id.
+  See §2(l). The date commands are in the same position: `canDecide` is true for every caller,
+  where it must come from the operator's verified rights.
+- ~~**No idempotency key.**~~ **DONE for the date commands** (2026-09-26): `idempotency_record`,
+  written inside the command's transaction, covers transport.md §5.4's four cases. `POST /shows`
+  still takes none: no contract describes it.
 - ~~**No error envelope.**~~ **DONE — `@arthome-platform/http-edge`, §2(l) and §2(m).** It now
   carries `traceId` too, which §2(e) recorded as owed: the same parse that validates the inbound
   `traceparent` yields the 32-hex trace-id `transport.md` §5.5 defines it as.
-- **No consumer.** `catalog` produces only. The retry and DLQ topics
-  `arthome.catalog.retry` / `arthome.catalog.dlq` exist in `topics.json` and nothing uses
-  them yet.
-- **Only `ShowPublished`.** `DateDrafted`, `DateScheduled`, `PublicationStateChanged`,
-  `DateOutcomeDeclared` and the rest of `events.proto` are untouched, and `Date`,
-  `Publication`, `Venue`, `Artist`, `Taxonomy` and `SavedSearch` have no entity. The
-  `Publication` state machine (§2.3) is the substantial piece of `catalog` and none of it
-  exists.
+- ~~**No consumer.**~~ **DONE** (2026-09-26): `dist/consumer.js` projects the publication
+  checklist from `arthome.ticketing.date_sales`, `arthome.streaming.run` and `arthome.chat.date`,
+  retrying and dead-lettering on `arthome.catalog.retry` / `.dlq`.
+- **Dates and publication, partly.** Built on 2026-09-26: `Date`, `Publication` (the commanded
+  transitions, the version condition, the checklist gate), `Venue`, and the events `DateDrafted`,
+  `PublicationStateChanged`, `DateScheduled`, `PublicationEngaged` and `ShowUpdated`. Still owed:
+  `DateRescheduled`, `DateOutcomeDeclared`, `DateReplayPolicySet`, `DateRightsChanged`, the two
+  transitions `streaming` causes (`technical -> live`, `live -> ended`), and `Artist`, `Taxonomy`,
+  `SavedSearch`.

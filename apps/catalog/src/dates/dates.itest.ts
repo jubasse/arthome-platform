@@ -58,6 +58,7 @@ import { ShowCopyAndVenue1790420100000 } from '../migrations/1790420100000-show-
 import { DateAndPublication1790420200000 } from '../migrations/1790420200000-date-and-publication.js';
 import { ChecklistProjection1790420300000 } from '../migrations/1790420300000-checklist-projection.js';
 import { DateSlugs1790420400000 } from '../migrations/1790420400000-date-slugs.js';
+import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500000-idempotency-response-as-json.js';
 import { Venue } from '../venues/venue.entity.js';
 
 /**
@@ -204,6 +205,7 @@ beforeAll(async () => {
       DateAndPublication1790420200000,
       ChecklistProjection1790420300000,
       DateSlugs1790420400000,
+      IdempotencyResponseAsJson1790420500000,
     ],
   });
   await dataSource.getRepository(Show).insert({
@@ -256,6 +258,8 @@ describe('a date draft', () => {
         version: 1,
       });
       expect(response.envelope.data.venueClock.utcOffsetMinutes).toBe(60);
+      // No slug before publication, so no URL: found on the running stack as `/fr/d/undefined`.
+      expect(response.envelope.data.canonicalUrl).toBeNull();
 
       const rows = await outboxRowsFor(dateId);
       expect(rows.map((row) => [row.aggregatetype, row.type])).toEqual([
@@ -281,7 +285,7 @@ describe('a date draft', () => {
       const again = await draft(dateId, key);
 
       expect(again.replayed).toBe(true);
-      expect(again.envelope).toEqual(first.envelope);
+      expect(JSON.stringify(again.envelope)).toBe(JSON.stringify(first.envelope));
       expect(await outboxRowsFor(dateId)).toHaveLength(1);
     },
     CASE_MS,
