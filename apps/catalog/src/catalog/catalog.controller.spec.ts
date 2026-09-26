@@ -31,6 +31,8 @@ const body: PublishShowBody = {
     wide: [rendition('https://cdn.example.test/w-640.jpg', 640, 360)],
     poster: [rendition('https://cdn.example.test/p-480.jpg', 480, 720)],
   },
+  title: { fr: 'Nuit blanche', en: 'White night' },
+  synopsis: { fr: '', en: '' },
 };
 
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';

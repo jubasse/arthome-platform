@@ -13,7 +13,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { LanguageDependency, type MediaSet } from '@arthome/core';
+import { LanguageDependency, type Bilingual, type MediaSet } from '@arthome/core';
 
 import { Show } from './show.entity.js';
 
@@ -29,6 +29,8 @@ export interface PublishShowCommand {
   readonly subtitleLanguages: readonly string[];
   readonly surtitleLanguages: readonly string[];
   readonly media: MediaSet;
+  readonly title: Bilingual;
+  readonly synopsis: Bilingual;
   readonly traceparent: string | null;
 }
 
@@ -102,6 +104,8 @@ export class PublishShowService {
         subtitle_languages: [...command.subtitleLanguages],
         surtitle_languages: [...command.surtitleLanguages],
         media: command.media,
+        title: command.title,
+        synopsis: command.synopsis,
       });
 
       messageId = await writeOutboxEvent(

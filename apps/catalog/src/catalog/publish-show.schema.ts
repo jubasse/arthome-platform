@@ -22,6 +22,9 @@ const UINT32_MAX = 2 ** 32 - 1;
  *   url (`media.url_empty`) and a non-positive dimension (`media.size_invalid`). `.url()` or
  *   `.positive()` here would be a second implementation of it.
  */
+/** An empty side is absent copy, not a fault: the publication checklist is what asks for it. */
+const BilingualIn = z.strictObject({ fr: z.string(), en: z.string() });
+
 const RenditionIn = z.strictObject({
   url: z.string(),
   widthPx: z.number(),
@@ -64,6 +67,9 @@ export const PublishShowSchema = z.strictObject({
     wide: z.array(RenditionIn),
     poster: z.array(RenditionIn),
   }),
+
+  title: BilingualIn.default({ fr: '', en: '' }),
+  synopsis: BilingualIn.default({ fr: '', en: '' }),
 });
 
 export type PublishShowBody = z.infer<typeof PublishShowSchema>;

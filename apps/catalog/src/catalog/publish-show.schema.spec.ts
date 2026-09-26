@@ -41,8 +41,12 @@ async function refusalFor(candidate: unknown): Promise<RefusalException> {
 }
 
 describe('the POST /shows body', () => {
-  it('accepts a well-formed publication', async () => {
-    await expect(pipe.transform(body, metadata)).resolves.toEqual(body);
+  it('accepts a well-formed publication, with empty copy where none was sent', async () => {
+    await expect(pipe.transform(body, metadata)).resolves.toEqual({
+      ...body,
+      title: { fr: '', en: '' },
+      synopsis: { fr: '', en: '' },
+    });
   });
 
   it('refuses genreIds sent as a string, which used to invent three genres nobody sent', async () => {

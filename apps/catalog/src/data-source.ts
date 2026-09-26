@@ -7,6 +7,8 @@ import { Show } from './catalog/show.entity.js';
 import { env } from './env.js';
 import { Initial1758800000000 } from './migrations/1758800000000-initial.js';
 import { Idempotency1790420000000 } from './migrations/1790420000000-idempotency.js';
+import { ShowCopyAndVenue1790420100000 } from './migrations/1790420100000-show-copy-and-venue.js';
+import { Venue } from './venues/venue.entity.js';
 
 /**
  * Used by the application AND by the migration CLI.
@@ -17,8 +19,8 @@ import { Idempotency1790420000000 } from './migrations/1790420000000-idempotency
 export const dataSource: DataSource = new DataSource({
   type: 'postgres',
   url: env.DATABASE_URL,
-  entities: [Show, OutboxEvent],
-  migrations: [Initial1758800000000, Idempotency1790420000000],
+  entities: [Show, Venue, OutboxEvent],
+  migrations: [Initial1758800000000, Idempotency1790420000000, ShowCopyAndVenue1790420100000],
   applicationName: Service.CATALOG,
 
   // `poolSize` × replicas, plus one replication connection per registered connector, must

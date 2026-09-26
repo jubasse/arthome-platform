@@ -31,10 +31,11 @@ import { Service, SystemClock } from '@arthome/core';
 
 import { CatalogModule } from './catalog/catalog.module.js';
 import { dataSource } from './data-source.js';
+import { VenuesModule } from './venues/venues.module.js';
 
 @Module({
   controllers: [HealthController],
-  imports: [TypeOrmModule.forRoot(dataSource.options), CatalogModule],
+  imports: [TypeOrmModule.forRoot(dataSource.options), CatalogModule, VenuesModule],
   providers: [
     /**
      * A schema on a `@Body()` parameter is metadata: without this pipe reading it, nothing

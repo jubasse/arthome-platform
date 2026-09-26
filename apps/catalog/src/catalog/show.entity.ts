@@ -1,6 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
-import type { LanguageDependency, MediaSet } from '@arthome/core';
+import type { Bilingual, LanguageDependency, MediaSet } from '@arthome/core';
 
 /**
  * The root aggregate of `catalog` (data-model.md §2.1), sliced to what `ShowPublished` carries.
@@ -57,6 +57,13 @@ export class Show {
    */
   @Column('jsonb')
   media!: MediaSet;
+
+  /** Both languages where they exist (§2.1); an empty side is absent copy, which the checklist reads. */
+  @Column('jsonb')
+  title!: Bilingual;
+
+  @Column('jsonb')
+  synopsis!: Bilingual;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;

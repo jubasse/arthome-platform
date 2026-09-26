@@ -48,6 +48,8 @@ export class CatalogController {
       subtitleLanguages: body.subtitleLanguages,
       surtitleLanguages: body.surtitleLanguages,
       media: mediaSetOf(body.media),
+      title: body.title,
+      synopsis: body.synopsis,
       traceparent: trace === null ? null : trace.traceparent,
     });
 
