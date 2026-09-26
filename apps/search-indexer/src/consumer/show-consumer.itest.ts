@@ -222,16 +222,16 @@ describe('the indexer against a real index', () => {
       expect((await readDocument(OTHER_SHOW_ID))?.runtime_min).toBe(120);
 
       // THE GUARD THAT A FAKE INDEX CANNOT PROVE. A retry topic reorders one
-      //   key's events: a message that waited five minutes comes back behind
-      //   later ones for the same show. `version_type: external_gte` is what
-      //   makes the late arrival lose instead of overwriting.
+      // key's events: a message that waited five minutes comes back behind
+      // later ones for the same show. `version_type: external_gte` is what
+      // makes the late arrival lose instead of overwriting.
       expect(
         await applyMessage(
           dataSource,
           index,
           message('01a0d55c-0000-7000-8000-000000000302', older),
         ),
-      ).toBe('applied');
+      ).toBe('superseded');
       expect((await readDocument(OTHER_SHOW_ID))?.runtime_min).toBe(120);
     },
     CASE_MS,

@@ -20,6 +20,7 @@
     "lint": "eslint . --max-warnings 0 --report-unused-disable-directives",
     "typecheck": "tsc --noEmit && pnpm --filter \"./libs/*\" run typecheck",
     "test": "vitest run",
+    "test:integration": "pnpm -r --if-present run test:integration",
     "check:versions": "arthome-check-versions",
     "check:tsconfig": "arthome-check-tsconfig",
     "check:enums": "arthome-check-enums",

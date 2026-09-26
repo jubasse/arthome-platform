@@ -384,9 +384,9 @@ likely I am to be wrong:
 
 ### Not done, on purpose
 
-- **No integration test.** `libs/testing` was being built by another agent at the same time and is
-  not in this package's dependencies; a Testcontainers OpenSearch test is the obvious next piece and
-  would cover all five items above.
+- ~~**No integration test.**~~ **DONE — `src/consumer/show-consumer.itest.ts`** runs the consumer
+  against a real OpenSearch: the mapping and its normalizer, a duplicate that still rebuilds, and the
+  version guard answering `superseded`. `pnpm run test:integration`; `verify` does not run it.
 - **`catalog.show.updated.v1` is not handled** — it is `ignored`, and there is a test for that. It
   needs a *partial* update rather than a full overwrite, or `published_at` will be clobbered.
 - **`arthome.catalog.artist` and `arthome.catalog.date` are not consumed.** A date index is what a

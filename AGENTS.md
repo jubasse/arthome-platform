@@ -95,6 +95,7 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 | `pnpm run verify:offline` | the subset needing no install — vendor, versions, tsconfig, enums, language, symbols |
 | `pnpm run check:enums` | string literals that duplicate a domain vocabulary |
 | `pnpm run fix` | Prettier, then ESLint `--fix`, then Prettier again |
+| `pnpm run test:integration` | the container suites (`*.itest.ts`) that `verify` skips; needs Docker. Run it after touching a consumer, the outbox or `libs/testing` |
 | `pnpm run purge:retention <service>` | what the retention job would delete; `--apply` to do it |
 | `pnpm run ops:check <service>` | the operational checks; exits 1 when anything is degraded |
 | `pnpm run republish:outbox <service>` | outbox rows never published to their topic; `--apply` republishes them |
