@@ -290,8 +290,10 @@ that waits five minutes comes back behind later events for the same aggregate.
 
 **`search-indexer` guards this.** `version_type: external_gte` on the OpenSearch write, with the
 event's `occurred_at` in epoch milliseconds as the version, so an older event is refused by the index
-rather than applied — and `show_projection`'s upsert carries the same condition, so the ledger cannot
-go backwards either. Proven on the running stack on 2026-09-26, the first time the catalog half ran:
+rather than applied — and its read model (`show_projection`, `date_projection`) carries the same
+condition per group of fields, so an update that overtakes a publication keeps its fields. Date
+documents are versioned by a counter advanced under the date row's lock, since a show change moves
+them too (`apps/search-indexer/HANDOVER.md` §0). Proven on the running stack on 2026-09-26, the first time the catalog half ran:
 an event one hour older with a fresh `message-id` — which deduplication cannot catch — left the
 document's `_version` and fields untouched, and the consumer reports it as `superseded`, not
 `applied`. **`notifications` does not, and does not need to**: it handles one message type

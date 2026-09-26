@@ -2,6 +2,9 @@ import type { Types } from '@opensearch-project/opensearch';
 
 import type { LanguageDependency } from '@arthome/core';
 
+import { LOWERCASE_NORMALIZER } from './settings.js';
+import type { ShowProjection } from '../consumer/show-projection.entity.js';
+
 /**
  * The field names are `snake_case` like the wire. `_source` is read by the storefront BFF
  *   and by whatever reindexes this, so renaming one here makes the index disagree with the
@@ -32,6 +35,11 @@ export interface ShowDocument {
     readonly wide: readonly IndexedRendition[];
     readonly poster: readonly IndexedRendition[];
   };
+  /** Empty when the show has no copy in that language. */
+  readonly title_fr: string;
+  readonly title_en: string;
+  readonly synopsis_fr: string;
+  readonly synopsis_en: string;
   /**
    * The event's `occurred_at`. Named for the fact, not the event: once a second event feeds
    * this document, a "newest shows" sort still means publication, so this must not move.
@@ -51,26 +59,6 @@ export interface ShowDocument {
  */
 export const SHOW_INDEX_ALIAS = 'arthome-catalog-show';
 export const SHOW_INDEX_CONCRETE = `${SHOW_INDEX_ALIAS}-v1`;
-
-const LOWERCASE_NORMALIZER = 'arthome_lowercase';
-
-/**
- * One shard for a relevance reason, not a size one: document frequency is counted per shard,
- *   so splitting makes identical documents score differently. Changing it needs a reindex.
- * Zero replicas is a development value, to raise before any real deployment: on the
- *   single-node stack a replica has nowhere to go and the cluster stays YELLOW for ever.
- * The normalizer is what makes a language filter work: BCP 47 is case-insensitive and
- *   `keyword` matches byte for byte, so `fr-FR` and `fr-fr` would be two terms.
- */
-export const SHOW_INDEX_SETTINGS: Types.Indices_Common.IndexSettings = {
-  number_of_shards: 1,
-  number_of_replicas: 0,
-  analysis: {
-    normalizer: {
-      [LOWERCASE_NORMALIZER]: { type: 'custom', filter: ['lowercase'] },
-    },
-  },
-};
 
 /**
  * Every identifier and vocabulary member is `keyword`, never `text`: `text` is analysed, so a
@@ -109,6 +97,12 @@ export const SHOW_INDEX_PROPERTIES: Record<string, Types.Common_Mapping.Property
    */
   media: { type: 'object', enabled: false },
 
+  /** One field per language, each with its own stemming: `nuits` must find `nuit`. */
+  title_fr: { type: 'text', analyzer: 'french' },
+  title_en: { type: 'text', analyzer: 'english' },
+  synopsis_fr: { type: 'text', analyzer: 'french' },
+  synopsis_en: { type: 'text', analyzer: 'english' },
+
   published_at: { type: 'date' },
   indexed_at: { type: 'date' },
 };
@@ -122,3 +116,29 @@ export const SHOW_INDEX_MAPPING: Types.Common_Mapping.TypeMapping = {
   dynamic: 'strict',
   properties: SHOW_INDEX_PROPERTIES,
 };
+
+/** The show's document once ShowPublished has landed; an update alone cannot make one. */
+export function showDocumentOf(show: ShowProjection, indexedAt: Date): ShowDocument | null {
+  const { published, updatable } = show;
+  if (published === null || updatable === null) return null;
+  return {
+    show_id: show.show_id,
+    channel_id: published.channel_id,
+    artist_id: published.artist_id,
+    category_id: published.category_id,
+    genre_ids: updatable.genre_ids,
+    tag_ids: updatable.tag_ids,
+    runtime_min: published.runtime_min,
+    language_dependency: updatable.language_dependency,
+    spoken_languages: published.spoken_languages,
+    subtitle_languages: published.subtitle_languages,
+    surtitle_languages: published.surtitle_languages,
+    media: updatable.media,
+    title_fr: updatable.title.fr,
+    title_en: updatable.title.en,
+    synopsis_fr: updatable.synopsis.fr,
+    synopsis_en: updatable.synopsis.en,
+    published_at: published.published_at,
+    indexed_at: indexedAt.toISOString(),
+  };
+}

@@ -1,20 +1,36 @@
 import { PermanentError } from '@arthome-platform/messaging';
-import { Client } from '@opensearch-project/opensearch';
+import { Client, type Types } from '@opensearch-project/opensearch';
 
+import {
+  DATE_INDEX_ALIAS,
+  DATE_INDEX_CONCRETE,
+  DATE_INDEX_MAPPING,
+  DATE_INDEX_PROPERTIES,
+  type DateDocument,
+} from './date-document.js';
+import { INDEX_SETTINGS } from './settings.js';
 import {
   SHOW_INDEX_ALIAS,
   SHOW_INDEX_CONCRETE,
   SHOW_INDEX_MAPPING,
   SHOW_INDEX_PROPERTIES,
-  SHOW_INDEX_SETTINGS,
   type ShowDocument,
 } from './show-document.js';
 
 export type IndexWrite = 'indexed' | 'superseded';
 
-/** An interface, not the client, so the handler is testable without a cluster. */
+/** Interfaces, not the client, so a handler is testable without a cluster. */
 export interface ShowIndex {
   put(document: ShowDocument, version: number): Promise<IndexWrite>;
+}
+
+export interface DateIndex {
+  put(document: DateDocument, version: number): Promise<IndexWrite>;
+}
+
+export interface Indices {
+  readonly shows: ShowIndex;
+  readonly dates: DateIndex;
 }
 
 /**
@@ -34,38 +50,48 @@ function statusOf(error: unknown): number | null {
 /**
  * THE VERSION GUARD A RETRY TOPIC OWES: the index refuses to go backwards, so nothing
  *   here assumes Kafka's ordering. `external_gte` and not `external`, which demands
- *   strictly greater — two events about one show in the same millisecond would lose one.
+ *   strictly greater: an equal version is a rebuild of the same state, and must land.
  */
-export function showIndex(client: Client): ShowIndex {
+async function versionedPut(
+  client: Client,
+  alias: string,
+  id: string,
+  document: object,
+  version: number,
+): Promise<IndexWrite> {
+  try {
+    await client.index({ index: alias, id, body: document, version, version_type: 'external_gte' });
+    return 'indexed';
+  } catch (error) {
+    const status = statusOf(error);
+    if (status === 409) return 'superseded';
+    if (status === 400) {
+      throw new PermanentError(
+        `OpenSearch refused ${alias}/${id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    throw error;
+  }
+}
+
+export function indicesOf(client: Client): Indices {
   return {
-    async put(document: ShowDocument, version: number): Promise<IndexWrite> {
-      try {
-        await client.index({
-          index: SHOW_INDEX_ALIAS,
-          id: document.show_id,
-          body: document,
-          version,
-          version_type: 'external_gte',
-        });
-        return 'indexed';
-      } catch (error) {
-        const status = statusOf(error);
-
-        // A replay behind a newer event: its effect is already in the index.
-        if (status === 409) return 'superseded';
-
-        // Permanent because the document is a pure function of the event. Unclassified
-        //   it would dead-letter as `exhausted`, which means the opposite thing.
-        if (status === 400) {
-          throw new PermanentError(
-            `OpenSearch refused document ${document.show_id}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-
-        throw error;
-      }
+    shows: {
+      put: (document, version) =>
+        versionedPut(client, SHOW_INDEX_ALIAS, document.show_id, document, version),
+    },
+    dates: {
+      put: (document, version) =>
+        versionedPut(client, DATE_INDEX_ALIAS, document.date_id, document, version),
     },
   };
+}
+
+interface IndexDefinition {
+  readonly concrete: string;
+  readonly alias: string;
+  readonly mapping: Types.Common_Mapping.TypeMapping;
+  readonly properties: Record<string, Types.Common_Mapping.Property>;
 }
 
 /**
@@ -74,24 +100,36 @@ export function showIndex(client: Client): ShowIndex {
  *   400 is left to fail the startup — a non-additive change is a reindex behind the
  *   alias, not a deploy.
  */
-export async function ensureShowIndex(client: Client): Promise<void> {
-  if (await indexExists(client, SHOW_INDEX_CONCRETE)) {
+async function ensureIndex(client: Client, definition: IndexDefinition): Promise<void> {
+  if (await indexExists(client, definition.concrete)) {
     await client.indices.putMapping({
-      index: SHOW_INDEX_CONCRETE,
-      body: { properties: SHOW_INDEX_PROPERTIES },
+      index: definition.concrete,
+      body: { properties: definition.properties },
     });
     return;
   }
-
   await client.indices.create({
-    index: SHOW_INDEX_CONCRETE,
+    index: definition.concrete,
     body: {
-      settings: SHOW_INDEX_SETTINGS,
-      mappings: SHOW_INDEX_MAPPING,
-      // In the same call: created after, there is a window in which every write to
-      //   the alias fails against a healthy cluster.
-      aliases: { [SHOW_INDEX_ALIAS]: {} },
+      settings: INDEX_SETTINGS,
+      mappings: definition.mapping,
+      aliases: { [definition.alias]: {} },
     },
+  });
+}
+
+export async function ensureIndices(client: Client): Promise<void> {
+  await ensureIndex(client, {
+    concrete: SHOW_INDEX_CONCRETE,
+    alias: SHOW_INDEX_ALIAS,
+    mapping: SHOW_INDEX_MAPPING,
+    properties: SHOW_INDEX_PROPERTIES,
+  });
+  await ensureIndex(client, {
+    concrete: DATE_INDEX_CONCRETE,
+    alias: DATE_INDEX_ALIAS,
+    mapping: DATE_INDEX_MAPPING,
+    properties: DATE_INDEX_PROPERTIES,
   });
 }
 

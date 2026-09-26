@@ -1,173 +1,186 @@
-import {
-  LanguageDependency as WireLanguageDependency,
-  ShowPublishedSchema,
-  type ShowPublished,
-} from '@arthome-platform/events';
-import {
-  header,
-  type Outcome,
-  PermanentError,
-  ProcessedMessage,
-} from '@arthome-platform/messaging';
+import { ShowPublishedSchema, ShowUpdatedSchema } from '@arthome-platform/events';
+import type { Outcome } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
-import { timestampDate, timestampMs } from '@bufbuild/protobuf/wkt';
 import type { EachMessagePayload } from 'kafkajs';
-import type { DataSource } from 'typeorm';
+import type { DataSource, EntityManager } from 'typeorm';
 
-import { LanguageDependency } from '@arthome/core';
-
-import type { ShowIndex } from '../index/opensearch-client.js';
-import type { IndexedRendition, ShowDocument } from '../index/show-document.js';
+import type { DateProjection } from './date-projection.entity.js';
+import { claimed, decodedOrRefused, incomingOf } from './incoming.js';
+import {
+  ShowProjection,
+  type PublishedShowFields,
+  type UpdatableShowFields,
+} from './show-projection.entity.js';
+import { bilingualOf, indexedRendition, languageDependencyOf, stated } from './wire.js';
+import { dateDocumentOf } from '../index/date-document.js';
+import type { Indices } from '../index/opensearch-client.js';
+import { showDocumentOf } from '../index/show-document.js';
 
 const SHOW_PUBLISHED = 'catalog.show.published.v1';
+const SHOW_UPDATED = 'catalog.show.updated.v1';
 
-/**
- * `UNSPECIFIED` maps to `null`, not to `NONE`: protobuf's zero value is what an older
- *   producer sends when it has nothing to say, and `NONE` would assert a fact nobody stated.
- */
-const DOMAIN_LANGUAGE_DEPENDENCY: Readonly<
-  Record<WireLanguageDependency, LanguageDependency | null>
-> = {
-  [WireLanguageDependency.UNSPECIFIED]: null,
-  [WireLanguageDependency.NONE]: LanguageDependency.NONE,
-  [WireLanguageDependency.HELPFUL]: LanguageDependency.HELPFUL,
-  [WireLanguageDependency.ESSENTIAL]: LanguageDependency.ESSENTIAL,
-};
-
-/**
- * An unknown member — a producer one version ahead — is dropped, not refused: a field
- *   that decides a badge must not take a whole show out of the catalogue.
- */
-function domainLanguageDependency(wire: WireLanguageDependency): LanguageDependency | null {
-  return DOMAIN_LANGUAGE_DEPENDENCY[wire] ?? null;
+export interface ShowFact {
+  readonly showId: string;
+  /** The fact's `occurred_at` in epoch milliseconds. */
+  readonly version: number;
+  /** Null for ShowUpdated, which states only the updatable group. */
+  readonly published: PublishedShowFields | null;
+  readonly updatable: UpdatableShowFields;
 }
 
-function indexedRendition(source: {
-  url: string;
-  widthPx: number;
-  heightPx: number;
-}): IndexedRendition {
-  return { url: source.url, width_px: source.widthPx, height_px: source.heightPx };
-}
-
-/**
- * Pure, and that is what licenses re-indexing on a replay. The day this reads the
- *   current document, the ordering decided in `applyMessage` has to be revisited.
- */
-export function projectShow(event: ShowPublished, indexedAt: Date): ShowDocument {
-  // Absent media is empty media, not a refusal: a show published before its images
-  //   were uploaded is still one somebody must be able to find.
-  const media = event.media;
-
+export function showFactOf(type: string, value: Uint8Array): ShowFact {
+  if (type === SHOW_PUBLISHED) {
+    const event = fromBinary(ShowPublishedSchema, value);
+    const occurredAt = stated(event.occurredAt, `show ${event.showId}`);
+    return {
+      showId: event.showId,
+      version: occurredAt.getTime(),
+      published: {
+        channel_id: event.channelId,
+        artist_id: event.artistId,
+        category_id: event.categoryId,
+        runtime_min: event.runtimeMin,
+        spoken_languages: event.spokenLanguages,
+        subtitle_languages: event.subtitleLanguages,
+        surtitle_languages: event.surtitleLanguages,
+        published_at: occurredAt.toISOString(),
+      },
+      updatable: {
+        genre_ids: event.genreIds,
+        tag_ids: event.tagIds,
+        language_dependency: languageDependencyOf(event.languageDependency),
+        media: {
+          wide: event.media?.wide.map(indexedRendition) ?? [],
+          poster: event.media?.poster.map(indexedRendition) ?? [],
+        },
+        title: bilingualOf(event.title),
+        synopsis: bilingualOf(event.synopsis),
+      },
+    };
+  }
+  const event = fromBinary(ShowUpdatedSchema, value);
   return {
-    show_id: event.showId,
-    channel_id: event.channelId,
-    artist_id: event.artistId,
-    category_id: event.categoryId,
-    genre_ids: event.genreIds,
-    tag_ids: event.tagIds,
-    runtime_min: event.runtimeMin,
-    language_dependency: domainLanguageDependency(event.languageDependency),
-    spoken_languages: event.spokenLanguages,
-    subtitle_languages: event.subtitleLanguages,
-    surtitle_languages: event.surtitleLanguages,
-    media: {
-      wide: media === undefined ? [] : media.wide.map(indexedRendition),
-      poster: media === undefined ? [] : media.poster.map(indexedRendition),
+    showId: event.showId,
+    version: stated(event.occurredAt, `show ${event.showId}`).getTime(),
+    published: null,
+    updatable: {
+      genre_ids: event.genreIds,
+      tag_ids: event.tagIds,
+      language_dependency: languageDependencyOf(event.languageDependency),
+      media: {
+        wide: event.media?.wide.map(indexedRendition) ?? [],
+        poster: event.media?.poster.map(indexedRendition) ?? [],
+      },
+      title: bilingualOf(event.title),
+      synopsis: bilingualOf(event.synopsis),
     },
-    published_at: timestampDate(occurredAt(event)).toISOString(),
-    indexed_at: indexedAt.toISOString(),
   };
 }
 
 /**
- * Protobuf makes every field optional, so a message with no timestamp decodes happily
- *   and would index at version 0 — losing to every later write, for ever and silently.
+ * Each group takes the fact only if the fact is at least as new as what set it, so an update
+ * that overtook the publication keeps its fields when the publication lands. Null when neither
+ * group moves: the fact is superseded.
  */
-function occurredAt(event: ShowPublished): NonNullable<ShowPublished['occurredAt']> {
-  const value = event.occurredAt;
-  if (value === undefined) {
-    throw new PermanentError(
-      `show ${event.showId} was published with no occurred_at — there is no version to index it at`,
-    );
-  }
-  return value;
+export function showAfter(
+  row: ShowProjection,
+  fact: ShowFact,
+  traceparent: string | null,
+): ShowProjection | null {
+  const takes = (version: string | null): boolean =>
+    version === null || fact.version >= Number(version);
+  const publishedMoves = fact.published !== null && takes(row.published_version);
+  const updatableMoves = takes(row.updatable_version);
+  if (!publishedMoves && !updatableMoves) return null;
+  return {
+    ...row,
+    published: publishedMoves ? fact.published : row.published,
+    published_version: publishedMoves ? String(fact.version) : row.published_version,
+    updatable: updatableMoves ? fact.updatable : row.updatable,
+    updatable_version: updatableMoves ? String(fact.version) : row.updatable_version,
+    version: String(Math.max(Number(row.version), fact.version)),
+    traceparent,
+  };
+}
+
+async function lockedShow(manager: EntityManager, showId: string): Promise<ShowProjection> {
+  await manager.query(
+    `INSERT INTO show_projection (show_id, version) VALUES ($1, 0) ON CONFLICT DO NOTHING`,
+    [showId],
+  );
+  return manager.findOneOrFail(ShowProjection, {
+    where: { show_id: showId },
+    lock: { mode: 'pessimistic_write' },
+  });
+}
+
+/** Every public date of the show, its document version advanced under the row lock. */
+async function recomposedDatesOf(
+  manager: EntityManager,
+  showId: string,
+): Promise<DateProjection[]> {
+  const [rows] = await manager.query<[DateProjection[], number]>(
+    `UPDATE date_projection SET doc_version = doc_version + 1, indexed_at = now()
+      WHERE show_id = $1 AND scheduled IS NOT NULL
+      RETURNING *`,
+    [showId],
+  );
+  return rows;
+}
+
+function publicDatesOf(manager: EntityManager, showId: string): Promise<DateProjection[]> {
+  return manager.query<DateProjection[]>(
+    'SELECT * FROM date_projection WHERE show_id = $1 AND scheduled IS NOT NULL',
+    [showId],
+  );
 }
 
 /**
- * THE INDEX WRITE COMES BEFORE THE `processed_message` COMMIT, AND THE ORDER IS THE
- *   DECISION. The two cannot commit together: crashing between them either repeats an
- *   idempotent index write (chosen) or leaves the show missing from search for ever
- *   behind a row claiming it was processed. Indexing before the dedup check is also what
- *   lets a replay of the topic rebuild the index, so no `SELECT` is added to skip it.
+ * The read model commits first and the index is written from it afterwards, never with the
+ * transaction open. A crash in between leaves the offset uncommitted: the message comes back as
+ * a duplicate, and a duplicate rewrites the documents from the read model at their current
+ * versions, which is what makes a replay a rebuild.
  */
-export async function applyMessage(
+export async function applyShowMessage(
   dataSource: DataSource,
-  index: ShowIndex,
+  indices: Indices,
   payload: EachMessagePayload,
   now: Date = new Date(),
 ): Promise<Outcome> {
-  const messageId = header(payload, 'message-id');
-  if (messageId === null) {
-    // A generated id would make the message undeduplicable and reprocessable for ever.
-    throw new PermanentError(
-      `message on ${payload.topic} has no message-id header — permanent, not a default`,
-    );
-  }
+  const incoming = incomingOf(payload);
+  const { type } = incoming;
+  if (type !== SHOW_PUBLISHED && type !== SHOW_UPDATED) return 'ignored';
+  const fact = decodedOrRefused(payload, incoming, (value) => showFactOf(type, value));
 
-  const type = header(payload, 'type');
-  if (type !== SHOW_PUBLISHED) return 'ignored';
-
-  const value = payload.message.value;
-  if (value === null) throw new PermanentError(`message ${messageId} has no value`);
-
-  let event: ShowPublished;
-  try {
-    event = fromBinary(ShowPublishedSchema, new Uint8Array(value));
-  } catch (cause) {
-    throw new PermanentError(
-      `message ${messageId} does not decode as ShowPublished: ${String(cause)}`,
-    );
-  }
-
-  const version = timestampMs(occurredAt(event));
-  const document = projectShow(event, now);
-
-  // The data path treats `indexed` and `superseded` alike — either way the index holds this show
-  //   at a version at least this new, and the ledger row must still be written. Only the reported
-  //   outcome differs: logging `applied` for an older event that changed nothing misleads whoever
-  //   is chasing an ordering problem. Found by running one on 2026-09-26.
-  const write = await index.put(document, version);
-
-  // No network call is made with the transaction open: a slow index must not hold
-  // database connections.
-  return dataSource.transaction(async (manager) => {
-    const claimed = await manager
-      .createQueryBuilder()
-      .insert()
-      .into(ProcessedMessage)
-      .values({ id: messageId, topic: payload.topic })
-      .orIgnore()
-      .returning('id')
-      .execute();
-
-    if ((claimed.raw as unknown[]).length === 0) return 'duplicate';
-
-    // THE `WHERE` IS THE REASON FOR THE RAW SQL — TypeORM's `orUpdate` carries no
-    //   condition. A message off the retry topic can arrive after a newer one for the
-    //   same show; OpenSearch refuses that write (`external_gte`), so the ledger must
-    //   refuse it too, or the table an operator consults goes backwards.
-    await manager.query(
-      `INSERT INTO show_projection (show_id, version, traceparent, indexed_at)
-            VALUES ($1, $2, $3, $4)
-       ON CONFLICT (show_id) DO UPDATE
-               SET version     = excluded.version,
-                   traceparent = excluded.traceparent,
-                   indexed_at  = excluded.indexed_at
-             WHERE excluded.version >= show_projection.version`,
-      [document.show_id, version, header(payload, 'traceparent'), now],
-    );
-
-    return write === 'superseded' ? 'superseded' : 'applied';
+  const result = await dataSource.transaction(async (manager) => {
+    const firstDelivery = await claimed(manager, incoming, payload.topic);
+    const row = await lockedShow(manager, fact.showId);
+    if (!firstDelivery) {
+      return {
+        outcome: 'duplicate' as const,
+        show: row,
+        dates: await publicDatesOf(manager, fact.showId),
+      };
+    }
+    const next = showAfter(row, fact, incoming.traceparent);
+    if (next === null) return { outcome: 'superseded' as const, show: row, dates: [] };
+    await manager.save(ShowProjection, next);
+    return {
+      outcome: 'applied' as const,
+      show: next,
+      dates: await recomposedDatesOf(manager, fact.showId),
+    };
   });
+
+  if (result.outcome === 'superseded') return result.outcome;
+  const document = showDocumentOf(result.show, now);
+  if (document !== null) await indices.shows.put(document, Number(result.show.version));
+  for (const date of result.dates) {
+    if (date.scheduled === null) continue;
+    await indices.dates.put(
+      dateDocumentOf({ ...date, scheduled: date.scheduled }, result.show, now),
+      Number(date.doc_version),
+    );
+  }
+  return result.outcome;
 }

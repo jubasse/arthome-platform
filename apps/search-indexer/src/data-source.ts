@@ -1,17 +1,19 @@
 import { ProcessedMessage } from '@arthome-platform/messaging';
 import { DataSource } from 'typeorm';
 
+import { DateProjection } from './consumer/date-projection.entity.js';
 import { ShowProjection } from './consumer/show-projection.entity.js';
 import { env } from './env.js';
 import { Initial1758700400000 } from './migrations/1758700400000-initial.js';
+import { ReadModel1790430000000 } from './migrations/1790430000000-read-model.js';
 
 /** Used by the application AND by the migration CLI. */
 export const dataSource: DataSource = new DataSource({
   type: 'postgres',
   // 55432, not 5432 — see compose.yaml, and AGENTS.md for why.
   url: env.DATABASE_URL,
-  entities: [ProcessedMessage, ShowProjection],
-  migrations: [Initial1758700400000],
+  entities: [ProcessedMessage, ShowProjection, DateProjection],
+  migrations: [Initial1758700400000, ReadModel1790430000000],
   applicationName: 'search-indexer',
 
   // `poolSize` × replicas, plus one replication connection per connector, must stay

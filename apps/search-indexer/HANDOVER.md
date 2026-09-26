@@ -2,6 +2,35 @@
 
 Wave 2, agent C. Everything below `apps/search-indexer/` and nothing else was written.
 
+## 0. Since wave 2: a read model, and the date index (2026-09-26)
+
+The indexer now keeps its own copy of shows and dates, fed only by events, and composes every
+document from it. That was needed twice over: a date document carries its show's fields, which
+arrive on another topic and change (`ShowUpdated`), and a partial update cannot be applied to a
+document built from one event alone. It supersedes §3's ordering and §4's "ledger, never a decision
+input"; both are marked where they stand.
+
+- **`show_projection`** holds the show in two groups, each versioned by the `occurred_at` of the
+  fact that set it: what only `ShowPublished` states, and what `ShowUpdated` replaces. An update
+  that overtakes the publication on a retry topic keeps its fields when the publication lands.
+- **`date_projection`** holds what `DateScheduled` makes public and the publication state, each
+  guarded by its own version (the state by the publication's own `version`). A date is indexed
+  once scheduled, never before: before publication it is not public.
+- **`arthome-catalog-date`** (alias, `-v1` behind it): one document per public date, with its
+  show's identifiers, taxonomy, language and titles copied in. Its version is `doc_version`, a
+  counter advanced under the date row's lock each time the document is recomposed, whichever input
+  changed; a show change recomposes every public date of the show.
+- **Order: the read model commits, then the documents are written from it.** A crash in between
+  leaves the offset uncommitted, the message returns as a duplicate, and a duplicate rewrites the
+  documents from the read model at their current versions. So there is no silent gap, and a replay
+  is still a rebuild: the two properties §3 chose its ordering to keep.
+- Titles and synopses are searchable: `ShowPublished` and `ShowUpdated` carry them since
+  arthome-core `068a7cd`, as `title_fr` / `title_en` with the French and English analyzers.
+- Proven against real stores in `src/consumer/indexer.itest.ts` (10 cases): the partial update,
+  the update before the publication, the date before its show, a show update reaching its dates,
+  the state that overtakes `DateScheduled`, a stemmed title search, and a draft never indexed.
+- Rows written before the migration have no fields: replay `arthome.catalog.show` to fill them.
+
 ## 1. What was built
 
 | File | What it is |
@@ -46,6 +75,9 @@ answers 400 are all **reasoned from the client's typings and the OpenSearch API,
 Index `arthome-catalog-show-v1`, written and read through the alias **`arthome-catalog-show`**.
 
 ### The finding that shaped everything: there is no text to search
+
+> **RESOLVED 2026-09-26** — the proto now carries title and synopsis (§0). What follows is why the
+> first mapping had no text field.
 
 `ShowPublished` carries **no title, no synopsis, no artist name** — only identifiers, vocabulary
 members, a runtime, language tags and image renditions. So this index supports **filtering and
@@ -117,6 +149,10 @@ every one of them redeployed in step.
 
 ## 3. The dual-write ordering — the answer, stated plainly
 
+> **SUPERSEDED 2026-09-26 by §0.** The precondition written at the end of this section no longer
+> holds: the projection reads a read model. The order is now commit first, index after, and a
+> duplicate rebuilds from the read model, which keeps both properties argued for here.
+
 **The index write happens first. The Postgres transaction commits last.**
 
 An OpenSearch write and a Postgres transaction cannot commit together. There is no safe ordering;
@@ -176,9 +212,8 @@ minutes late loses to the newer one already indexed.
   it as a failure would retry it, fail identically three times, and dead-letter a message whose
   effect is already correctly in place. The outcome reported is `applied`, because the index has
   converged to a state at least as new as this event.
-- This only matters today as headroom — `catalog.show.published.v1` is the sole handled type, so
-  there is one event per show. It starts earning its keep the day `catalog.show.updated.v1` is
-  projected.
+- It earns its keep since 2026-09-26: `ShowUpdated` is projected, and date documents are
+  versioned by the counter §0 describes.
 
 ### A 400 from OpenSearch is classified permanent
 
@@ -214,6 +249,8 @@ the mapping admissible at all (code-conventions.md §5.2).
   the index that no filter can legitimately ask for and no surface can label. Both cases are tested.
 
 ### `show_projection` is a ledger, never a decision input
+
+> **SUPERSEDED 2026-09-26 by §0**: it is now the read model the documents are composed from.
 
 The handler never reads it. The authority on "which version is indexed" is OpenSearch's own
 `_version`; a second copy consulted to decide would be two sources of truth, and the one nobody
@@ -384,14 +421,14 @@ likely I am to be wrong:
 
 ### Not done, on purpose
 
-- ~~**No integration test.**~~ **DONE — `src/consumer/show-consumer.itest.ts`** runs the consumer
-  against a real OpenSearch: the mapping and its normalizer, a duplicate that still rebuilds, and the
-  version guard answering `superseded`. `pnpm run test:integration`; `verify` does not run it.
-- **`catalog.show.updated.v1` is not handled** — it is `ignored`, and there is a test for that. It
-  needs a *partial* update rather than a full overwrite, or `published_at` will be clobbered.
-- **`arthome.catalog.artist` and `arthome.catalog.date` are not consumed.** A date index is what a
-  viewer actually browses; a show index alone answers "which shows exist", not "what can I watch on
-  Friday".
+- ~~**No integration test.**~~ **DONE — `src/consumer/indexer.itest.ts`**, against a real
+  OpenSearch and Postgres (§0). `pnpm run test:integration`; `verify` does not run it.
+- ~~**`catalog.show.updated.v1` is not handled.**~~ **DONE** (§0): a partial update of the
+  updatable group; `published_at` is never touched by it.
+- ~~**`arthome.catalog.date` is not consumed.**~~ **DONE** (§0). **`arthome.catalog.artist` still
+  is not**, and the date document carries no artist name.
+- **Not in the date document yet, because no event carries them:** prices (ticketing), the venue's
+  name, and the outcome (`DateOutcomeDeclared`, `DateRescheduled` are not consumed).
 - **No percolator**, so `SavedSearchMatched` (the proto says it is raised by "the index's
   PERCOLATOR") has no producer. That is the other half of this service and it is not started.
 - **`show_id` is an uuid column.** `ShowIdSchema` is `uuidV7()`, so that holds; but if `catalog`
