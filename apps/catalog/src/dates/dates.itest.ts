@@ -38,6 +38,7 @@ import {
   DomainErrorCode,
   FixedClock,
   LanguageDependency,
+  Locale,
   PublicationChecklistItem,
   PublicationPromise,
   PublicationState,
@@ -432,6 +433,8 @@ describe('a publication transition', () => {
         runtimeMin: 95,
         replayWindowHours: 72,
         canonicalUrl: 'https://arthome.test/fr/d/nuit-blanche-2026-11-04',
+        venueCity: 'Paris',
+        venueCountry: 'FR',
         venueClock: { venueTimezone: 'Europe/Paris', venueUtcOffsetMin: 60 },
       });
       const engaged = fromBinary(PublicationEngagedSchema, rows[3]?.payload ?? new Uint8Array());
@@ -614,7 +617,7 @@ describe('a show update', () => {
   );
 
   it(
-    'emits nothing when only the copy changes, which no event carries',
+    'publishes a copy change too, now that the event carries the copy',
     async () => {
       const before = (await showEvents()).length;
       await updates().update({
@@ -622,7 +625,13 @@ describe('a show update', () => {
         synopsis: { fr: 'Une autre nuit.', en: '' },
         traceparent: null,
       });
-      expect(await showEvents()).toHaveLength(before);
+      const rows = await showEvents();
+      expect(rows).toHaveLength(before + 1);
+      const event = fromBinary(ShowUpdatedSchema, rows.at(-1)?.payload ?? new Uint8Array());
+      expect(event.synopsis).toMatchObject([
+        { contentLanguage: Locale.FR, text: 'Une autre nuit.' },
+      ]);
+      expect(event.title).toMatchObject([{ contentLanguage: Locale.FR, text: 'Nuit blanche' }]);
     },
     CASE_MS,
   );

@@ -85,6 +85,8 @@ export async function announcePublication(
             }),
           },
           canonicalUrl: canonicalUrlOf(origin, show.title, slugs) ?? '',
+          venueCity: venue.city,
+          venueCountry: venue.country,
           occurredAt: timestampFromDate(occurredAt),
         }),
       ),

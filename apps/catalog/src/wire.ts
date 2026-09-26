@@ -11,9 +11,11 @@ import {
 import {
   BlackoutReason,
   LanguageDependency,
+  Locale,
   PublicationState,
   ReplayPolicy,
   RightsScope,
+  type Bilingual,
 } from '@arthome/core';
 
 /**
@@ -63,3 +65,11 @@ export const WIRE_LANGUAGE_DEPENDENCY = {
   [LanguageDependency.HELPFUL]: WireLanguageDependency.HELPFUL,
   [LanguageDependency.ESSENTIAL]: WireLanguageDependency.ESSENTIAL,
 } satisfies Record<LanguageDependency, WireLanguageDependency>;
+
+/** One `LocalizedText` per language that has copy: an empty side is absent, not an empty entry. */
+export function wireLocalizedTexts(text: Bilingual): { contentLanguage: string; text: string }[] {
+  return [
+    { contentLanguage: Locale.FR, text: text.fr },
+    { contentLanguage: Locale.EN, text: text.en },
+  ].filter((entry) => entry.text.length > 0);
+}

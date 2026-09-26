@@ -10,7 +10,7 @@ import type { Bilingual, LanguageDependency, MediaSet } from '@arthome/core';
 
 import { Show } from './show.entity.js';
 import { writeCatalogEvent } from '../catalog-events.js';
-import { WIRE_LANGUAGE_DEPENDENCY } from '../wire.js';
+import { WIRE_LANGUAGE_DEPENDENCY, wireLocalizedTexts } from '../wire.js';
 
 export interface PublishShowCommand {
   readonly channelId: string;
@@ -66,6 +66,8 @@ export class PublishShowService {
       // `Rendition` and `arthome.common.v1.ImageRendition` agree field for field.
       media: { wide: [...command.media.wide], poster: [...command.media.poster] },
       occurredAt: timestampFromDate(occurredAt),
+      title: wireLocalizedTexts(command.title),
+      synopsis: wireLocalizedTexts(command.synopsis),
     });
 
     let messageId = '';

@@ -11,7 +11,7 @@ import type { Bilingual, Clock, LanguageDependency, MediaSet } from '@arthome/co
 import { Show } from './show.entity.js';
 import { writeCatalogEvent } from '../catalog-events.js';
 import { CLOCK } from '../clock.js';
-import { WIRE_LANGUAGE_DEPENDENCY } from '../wire.js';
+import { WIRE_LANGUAGE_DEPENDENCY, wireLocalizedTexts } from '../wire.js';
 
 export interface UpdateShowCommand {
   readonly showId: string;
@@ -31,10 +31,7 @@ export class UpdateShowService {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  /**
-   * ShowUpdated carries the four fields a consumer indexes, each at its new value, and only
-   * when one of them changed: the copy is catalog's own and travels in no event.
-   */
+  /** ShowUpdated carries every field it names at its new value: a consumer replaces them. */
   public async update(command: UpdateShowCommand): Promise<{ showId: string }> {
     await this.dataSource.transaction(async (manager) => {
       const show = await manager.findOneBy(Show, { id: command.showId });
@@ -52,13 +49,6 @@ export class UpdateShowService {
       };
       await manager.update(Show, { id: show.id }, next);
 
-      const indexedFieldChanged =
-        command.genreIds !== undefined ||
-        command.tagIds !== undefined ||
-        command.languageDependency !== undefined ||
-        command.media !== undefined;
-      if (!indexedFieldChanged) return;
-
       const occurredAt = new Date(this.clock.now());
       await writeCatalogEvent(
         manager,
@@ -74,6 +64,8 @@ export class UpdateShowService {
               languageDependency: WIRE_LANGUAGE_DEPENDENCY[next.language_dependency],
               media: { wide: [...next.media.wide], poster: [...next.media.poster] },
               occurredAt: timestampFromDate(occurredAt),
+              title: wireLocalizedTexts(next.title),
+              synopsis: wireLocalizedTexts(next.synopsis),
             }),
           ),
           traceparent: command.traceparent,

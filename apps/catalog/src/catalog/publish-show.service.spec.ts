@@ -7,7 +7,7 @@ import { fromBinary } from '@bufbuild/protobuf';
 import type { DataSource, EntityManager } from 'typeorm';
 import { describe, expect, it } from 'vitest';
 
-import { LanguageDependency, rendition } from '@arthome/core';
+import { LanguageDependency, Locale, rendition } from '@arthome/core';
 
 import { PublishShowService } from './publish-show.service.js';
 import { Show } from './show.entity.js';
@@ -108,6 +108,11 @@ describe('PublishShowService', () => {
     // payload would not have proved.
     expect(decoded.media?.wide[0]?.widthPx).toBe(640);
     expect(decoded.media?.poster[0]?.url).toBe(command.media.poster[0]?.url);
+    // One entry per language that has copy: the empty English title and synopsis are absent.
+    expect(decoded.title.map(({ contentLanguage, text }) => ({ contentLanguage, text }))).toEqual([
+      { contentLanguage: Locale.FR, text: 'Nuit blanche' },
+    ]);
+    expect(decoded.synopsis).toEqual([]);
   });
 
   it('encodes the language dependency as the wire number, not as its domain spelling', async () => {
