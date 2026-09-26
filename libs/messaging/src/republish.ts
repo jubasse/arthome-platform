@@ -5,6 +5,9 @@ import type { DataSource } from 'typeorm';
 
 import { outboxTopic } from './outbox.js';
 
+/** `topic-retention.spec.ts` holds every topic's retention above this. */
+export const REPUBLISH_HORIZON_HOURS = 144;
+
 export interface UnpublishedRow {
   readonly id: string;
   readonly aggregateType: string;
@@ -30,15 +33,14 @@ export type PublishedIdsReader = (topic: string) => Promise<ReadonlySet<string>>
  * confirmed while its WAL was never read.
  *
  * `settleSeconds`: younger rows may still be in flight. `horizonHours`: older rows may have left
- * the topic under retention, where absence proves nothing — keep it below the topic's retention,
- * the broker's 168 h default today.
+ * the topic under retention, where absence proves nothing.
  */
 export async function findUnpublishedOutboxRows(
   dataSource: DataSource,
   readPublishedIds: PublishedIdsReader,
   {
     settleSeconds = 300,
-    horizonHours = 144,
+    horizonHours = REPUBLISH_HORIZON_HOURS,
   }: { settleSeconds?: number; horizonHours?: number } = {},
 ): Promise<Reconciliation> {
   const rows = (await dataSource.query(

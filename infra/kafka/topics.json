@@ -10,8 +10,15 @@
     "",
     "  It is also what a consumer needs in order to start at all: KafkaJS refuses",
     "  to subscribe to a topic that does not exist yet, with 'This server does not",
-    "  host this topic-partition'."
+    "  host this topic-partition'.",
+    "",
+    "retentionHours applies to every topic unless one sets its own. It must stay",
+    "  below processed_message's retention, or a replayed message finds no ledger",
+    "  row and is applied twice; libs/messaging/src/topic-retention.spec.ts fails",
+    "  the day it does not. Kafka's own default is not relied on: the repository",
+    "  cannot see a broker's configuration."
   ],
+  "retentionHours": 168,
   "topics": [
     {
       "name": "arthome.identity.account",

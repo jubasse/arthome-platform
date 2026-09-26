@@ -4,7 +4,12 @@ export type { FailureRoute } from './failure.js';
 
 export { OutboxEvent } from './outbox-event.entity.js';
 export { outboxConstraintNames, outboxConstraints, outboxTableDdl, outboxTopic } from './outbox.js';
-export { purgeOutbox, purgeProcessedMessages } from './retention.js';
+export {
+  OUTBOX_RETENTION_DAYS,
+  PROCESSED_MESSAGE_RETENTION_DAYS,
+  purgeOutbox,
+  purgeProcessedMessages,
+} from './retention.js';
 export type { PurgeOutcome } from './retention.js';
 export { writeOutboxEvent } from './write.js';
 export type { OutboxFact } from './write.js';
@@ -40,6 +45,7 @@ export { MAX_SLOT_LAG_BYTES, outboxSlotName } from './slot.js';
 export {
   findUnpublishedOutboxRows,
   readPublishedMessageIds,
+  REPUBLISH_HORIZON_HOURS,
   republishOutboxRow,
 } from './republish.js';
 export type { PublishedIdsReader, Reconciliation, UnpublishedRow } from './republish.js';

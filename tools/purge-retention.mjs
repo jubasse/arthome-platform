@@ -8,7 +8,12 @@
 //   Usage: NODE_ENV=development node tools/purge-retention.mjs <service> [--apply]
 //   Without `--apply` it reports what it would delete and deletes nothing.
 
-import { purgeOutbox, purgeProcessedMessages } from '@arthome-platform/messaging';
+import {
+  OUTBOX_RETENTION_DAYS,
+  PROCESSED_MESSAGE_RETENTION_DAYS,
+  purgeOutbox,
+  purgeProcessedMessages,
+} from '@arthome-platform/messaging';
 
 const PUBLISHERS = new Set(['identity', 'catalog']);
 const CONSUMERS = new Set(['notifications', 'search-indexer']);
@@ -24,6 +29,8 @@ if (!PUBLISHERS.has(service) && !CONSUMERS.has(service)) {
 }
 
 const { dataSource } = await import(`../apps/${service}/dist/data-source.js`);
+// Same logger rebuild as ops-check.mjs: `logging: false` alone is a no-op.
+dataSource.setOptions({ logger: 'advanced-console', logging: false });
 await dataSource.initialize();
 
 try {
@@ -47,10 +54,11 @@ try {
         [slot],
       );
       const [{ count }] = await dataSource.query(
-        `SELECT count(*)::int AS count FROM outbox_event WHERE created_at < now() - interval '7 days'`,
+        `SELECT count(*)::int AS count FROM outbox_event WHERE created_at < now() - ($1 || ' days')::interval`,
+        [String(OUTBOX_RETENTION_DAYS)],
       );
       console.log(
-        `outbox_event: ${count} row(s) past 7 days; ${slot} ${
+        `outbox_event: ${count} row(s) past ${OUTBOX_RETENTION_DAYS} days; ${slot} ${
           state === undefined ? 'absent' : `active=${state.active} lag=${state.lag}`
         }`,
       );
@@ -62,9 +70,12 @@ try {
       console.log(`processed_message: ${await purgeProcessedMessages(dataSource)} row(s) deleted`);
     } else {
       const [{ count }] = await dataSource.query(
-        `SELECT count(*)::int AS count FROM processed_message WHERE processed_at < now() - interval '30 days'`,
+        `SELECT count(*)::int AS count FROM processed_message WHERE processed_at < now() - ($1 || ' days')::interval`,
+        [String(PROCESSED_MESSAGE_RETENTION_DAYS)],
       );
-      console.log(`processed_message: ${count} row(s) past 30 days`);
+      console.log(
+        `processed_message: ${count} row(s) past ${PROCESSED_MESSAGE_RETENTION_DAYS} days`,
+      );
     }
   }
 } finally {

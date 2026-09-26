@@ -2,6 +2,16 @@ import type { DataSource } from 'typeorm';
 
 import { MAX_SLOT_LAG_BYTES, readSlotState } from './slot.js';
 
+export const OUTBOX_RETENTION_DAYS = 7;
+
+/**
+ * Must outlive every way a message can come back (§7.5): the retry budget, a dead-lettered
+ * message waiting to be replayed, a consumer group rewound. Purged sooner, a replay finds no row
+ * and the effect is applied twice in silence. Past its topic's retention a message cannot come
+ * back at all, so `topic-retention.spec.ts` holds every topic below this.
+ */
+export const PROCESSED_MESSAGE_RETENTION_DAYS = 30;
+
 export interface PurgeOutcome {
   readonly deleted: number;
   readonly refusedBecauseConnectorLagged: boolean;
@@ -22,7 +32,7 @@ export interface PurgeOutcome {
 export async function purgeOutbox(
   dataSource: DataSource,
   slotName: string,
-  retentionDays = 7,
+  retentionDays: number = OUTBOX_RETENTION_DAYS,
 ): Promise<PurgeOutcome> {
   const slot = await readSlotState(dataSource, slotName);
 
@@ -48,21 +58,9 @@ export async function purgeOutbox(
   };
 }
 
-/**
- * THE HORIZON MUST OUTLIVE EVERY WAY A MESSAGE CAN COME BACK (§7.5), which is the retry
- *   budget — 5 s, 30 s, 5 min — plus however long a dead-lettered message sits before
- *   somebody replays it. Purged sooner it stops deduplicating precisely the replays it
- *   exists for: the message returns, finds no row, and the effect is applied twice in
- *   silence.
- *
- * 30 days is chosen against a real bound, not a feeling: past the DLQ topic's retention
- *   the message cannot come back at all, and no topic in `infra/kafka/topics.json` sets one,
- *   so Kafka's 168 h default applies. **Raising a DLQ retention past 30 days requires raising
- *   this**, and nothing checks that coupling.
- */
 export async function purgeProcessedMessages(
   dataSource: DataSource,
-  retentionDays = 30,
+  retentionDays: number = PROCESSED_MESSAGE_RETENTION_DAYS,
 ): Promise<number> {
   const result: unknown = await dataSource.query(
     `DELETE FROM processed_message WHERE processed_at < now() - ($1 || ' days')::interval`,

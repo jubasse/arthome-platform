@@ -2,6 +2,7 @@ import type { Admin } from 'kafkajs';
 import type { DataSource } from 'typeorm';
 
 import { findUnpublishedOutboxRows, type PublishedIdsReader } from './republish.js';
+import { OUTBOX_RETENTION_DAYS, PROCESSED_MESSAGE_RETENTION_DAYS } from './retention.js';
 import { MAX_SLOT_LAG_BYTES, readSlotState } from './slot.js';
 
 export type CheckStatus = 'up' | 'degraded' | 'down';
@@ -110,7 +111,7 @@ export function checkPublicationScope(
  */
 export function checkOutboxRetention(
   dataSource: DataSource,
-  retentionDays = 7,
+  retentionDays: number = OUTBOX_RETENTION_DAYS,
 ): Promise<CheckResult> {
   return rowsPastRetention(
     dataSource,
@@ -123,7 +124,7 @@ export function checkOutboxRetention(
 
 export function checkProcessedMessageRetention(
   dataSource: DataSource,
-  retentionDays = 30,
+  retentionDays: number = PROCESSED_MESSAGE_RETENTION_DAYS,
 ): Promise<CheckResult> {
   return rowsPastRetention(
     dataSource,

@@ -365,12 +365,12 @@ per-language slugs arrive, the column and its code go in that table and the test
 `apps/identity/src/unique-violations.spec.ts` is the pattern to copy: it reads the migrations and
 fails if a constrained column has no code.
 
-Two smaller unreconciled points:
+Two smaller points, one since reconciled:
 
-- **Success responses still carry no `servedAt`.** critical-rules #9 and §5.5 both require it, and
-  §5.5 also wraps the payload in `data`. Errors now carry it; `POST /shows` still answers
-  `{ showId }` bare. Not changed, because restructuring a success body is a contract change to an
-  endpoint no document describes, and it was outside this task. It is owed.
+- ~~**Success responses still carry no `servedAt`.**~~ **DONE — `SuccessEnvelopeInterceptor` in
+  `@arthome-platform/http-edge`** wraps every success body as `{ servedAt, data }`, per
+  critical-rules #9 and §5.5. On the running stack on 2026-09-26, `POST /shows` answered
+  `{"servedAt":…,"data":{"showId":…}}`.
 - **An unrecognised key is refused without being named.** Measured: zod's issue for that case is
   `{ code: 'unrecognized_keys', keys: ['…'], path: [] }` — the key is in `keys` and `path` is
   **empty**, so `params.fields` has nothing to report. `keys` is not reachable, because
@@ -392,10 +392,8 @@ copies were **byte-identical**. They were kept that way deliberately while they 
 diff was empty and the move could not silently drop a branch. Verified by comparing them with
 comments removed before deleting either.
 
-`@arthome-platform/http-edge` exports `Refusal`, `UniqueViolationCode`, `RefusalException`,
-`isMappedStatus`, `refusalForStatus`, `schemaInvalidRefusal`, `schemaInvalidException`,
-`ErrorEnvelopeFilter`, `DenyInProductionGuard`, `parseTraceparent` and `TraceContext`. Its three spec
-files hold 31 tests.
+`@arthome-platform/http-edge` has since gained the success envelope and the health routes;
+`libs/http-edge/src/index.ts` is the list of what it exports.
 
 **WHAT STAYS IN A SERVICE**: its endpoint schema, and the table binding each uniquely-constrained
 column to its code. The library knows how to *match* a constraint name; only the service knows what
@@ -461,22 +459,12 @@ exists anywhere in this tree.
 
 ## 4. What I did NOT do, and what remains
 
-**Not verified against a running stack.** I ran no `docker`, no migration and no connector —
-forbidden, and correctly so. So: the migration has **never been executed**, the `show` table
-has never existed, and no `ShowPublished` message has ever reached Kafka. Everything in §1 is
-proven by typecheck and unit tests only. The end-to-end proof identity has in `AGENTS.md` is
-still owed for `catalog`.
-
-**Needed outside `apps/catalog/**` before the path can run** (I changed none of it):
-
-1. **`infra/debezium/catalog-outbox.json`** does not exist. Copy `identity-outbox.json` and
-   change `database.dbname`, `topic.prefix`, `slot.name` and `publication.name` to `catalog` /
-   `arthome_catalog_outbox`. Without it nothing leaves the outbox.
-2. **`AGENTS.md`'s "Running the event path"** lists `migration:run` for `identity` and
-   `notifications` only; `catalog` needs adding, and the `catalog` database already exists
-   (`infra/postgres/init-databases.sql`).
-3. **Nothing else.** `arthome.catalog.show` is already in `infra/kafka/topics.json` at 3
-   partitions, matching `events.md` §3, and `compose.yaml` needs no change.
+**Verified against a running stack since 2026-09-26** (`2feee34`): the migration ran, the
+`catalog-outbox` connector was registered, a `POST /shows` reached `arthome.catalog.show` and was
+indexed by `search-indexer`, and the version guard refused an older fact. The same day a lost
+outbox row was found and republished (`republish:outbox`). The two prerequisites this section once
+listed outside `apps/catalog/**`, the connector file and catalog's `migration:run` in `AGENTS.md`,
+both exist.
 
 **Owed inside this service, and deliberately not built:**
 

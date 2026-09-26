@@ -1,7 +1,7 @@
 // NOT A BARREL OVER A WHOLE TREE. §5.5 discourages those (D-012: zod's barrel made
-//   64 translation files reachable, 93 KB gzip against 7.5 KB, at a FIXED cost). This
-//   is four modules with one purpose, named individually, in a library no bundler
-//   ships to a browser — the two reasons the rule exists do not apply.
+// 64 translation files reachable, 93 KB gzip against 7.5 KB, at a FIXED cost). These
+// are a few modules with one purpose, named individually, in a library no bundler
+// ships to a browser — the two reasons the rule exists do not apply.
 
 export { ErrorEnvelopeFilter } from './error-envelope.filter.js';
 

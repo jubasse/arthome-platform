@@ -157,10 +157,10 @@ is visible rather than missing.
   fact that was never published and nothing reads that table back to notice. Proven both ways on
   the running stack: it purges with the connector up, and answers `REFUSED` with it stopped.
 
-  **`processed_message`'s 30 days must stay above every DLQ topic's retention.** Past that a
-  message cannot come back at all; below it, a replay finds no row and the effect applies twice in
-  silence. No topic in `infra/kafka/topics.json` sets a retention, so the broker's 168 h default
-  applies today, and nothing checks the coupling.
+  **`processed_message`'s 30 days must stay above every topic's retention.** Past that a message
+  cannot come back at all; below it, a replay, off the dead-letter topic or through a rewound group,
+  finds no row and the effect applies twice in silence. Every topic's retention is declared in `infra/kafka/topics.json` (168 h) and applied by
+  `provision:topics`, and `topic-retention.spec.ts` fails the day one would outlive the ledger.
 
 **`migration:generate` OUTPUT IS NOT TRUSTWORTHY ON `outbox_event`, AND THE DAMAGE IT PROPOSES IS
 REAL.** Run against a migrated identity or catalog database it emits a migration that DROPS and
