@@ -1,0 +1,29 @@
+{
+  "name": "catalog-outbox",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "arthome",
+    "database.password": "arthome",
+    "database.dbname": "catalog",
+    "topic.prefix": "catalog",
+    "plugin.name": "pgoutput",
+    "slot.name": "arthome_catalog_outbox",
+    "publication.name": "arthome_catalog_outbox",
+    "table.include.list": "public.outbox_event",
+    "binary.handling.mode": "bytes",
+    "transforms": "outbox",
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.route.topic.replacement": "arthome.${routedByValue}",
+    "transforms.outbox.table.field.event.payload": "payload",
+    "transforms.outbox.table.expand.json.payload": "false",
+    "transforms.outbox.table.fields.additional.placement": "id:header:message-id,type:header:type,tracecontext:header:traceparent,actor_id:header:actor-id,created_at:header:occurred-at",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
+    "errors.log.enable": "true",
+    "errors.log.include.messages": "true",
+    "errors.tolerance": "none",
+    "publication.autocreate.mode": "filtered"
+  }
+}

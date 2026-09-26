@@ -1,12 +1,25 @@
-# The Debezium outbox connector
+# The Debezium outbox connectors
 
-`identity-outbox.json` is the connector that turns `outbox_event` rows into Kafka messages.
-Register it against a running stack with:
+One connector per publishing service turns its `outbox_event` rows into Kafka messages:
+`identity-outbox.json` and `catalog-outbox.json`. Register them against a running stack with:
 
 ```bash
-curl -s -X POST -H 'Content-Type: application/json' \
-  --data @infra/debezium/identity-outbox.json http://localhost:8083/connectors
+for c in identity catalog; do
+  curl -s -X POST -H 'Content-Type: application/json' \
+    --data @infra/debezium/$c-outbox.json http://localhost:8083/connectors
+done
 ```
+
+⚠ **The two files differ in four fields and nothing checks that they stay that way:**
+`database.dbname`, `topic.prefix`, `slot.name`, `publication.name`. The slot and publication names
+must equal `outboxSlotName(<service>)` from `@arthome-platform/messaging`, which the readiness checks
+query. Five more connectors are owed; at the third, generate them instead of copying.
+
+⚠ **Registering is not the same as correcting.** A publication or a slot outlives the connector config
+that created it, and Kafka Connect keeps a deleted connector's source offsets under its name. Before
+registering a new one, check `_connect_offsets` holds no key for it and that the database has no
+slot or publication yet — the catalog connector was registered that way, on an empty outbox, and
+came up scoped on the first attempt.
 
 ## What the router maps
 
@@ -46,7 +59,8 @@ if nobody looks — alert on slot lag, and never leave a stopped connector regis
 
 ## ⚠ The publication is created `FOR ALL TABLES` unless you say otherwise
 
-`publication.autocreate.mode` is **not** in `identity-outbox.json`, and its default is `all_tables`.
+Both files now set `publication.autocreate.mode: filtered`. What follows is why, and what it cost
+while it was missing: the default is `all_tables`.
 When the publication does not exist, Debezium runs
 `CREATE PUBLICATION <publication.name> FOR ALL TABLES;` — which needs **superuser**, and captures
 every table in the database. `table.include.list` then filters at the connector, *after* logical

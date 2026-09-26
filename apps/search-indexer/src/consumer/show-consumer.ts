@@ -129,9 +129,11 @@ export async function applyMessage(
   const version = timestampMs(occurredAt(event));
   const document = projectShow(event, now);
 
-  // ⚠ The answer is discarded on purpose: `indexed` and `superseded` both mean the index
-  //   now holds this show at a version at least this new, which is all the rest needs.
-  await index.put(document, version);
+  // ⚠ The data path treats `indexed` and `superseded` alike — either way the index holds this show
+  //   at a version at least this new, and the ledger row must still be written. Only the reported
+  //   outcome differs: logging `applied` for an older event that changed nothing misleads whoever
+  //   is chasing an ordering problem. Found by running one on 2026-09-26.
+  const write = await index.put(document, version);
 
   // No network call is made with the transaction open: a slow index must not hold
   // database connections.
@@ -162,6 +164,6 @@ export async function applyMessage(
       [document.show_id, version, header(payload, 'traceparent'), now],
     );
 
-    return 'applied';
+    return write === 'superseded' ? 'superseded' : 'applied';
   });
 }

@@ -311,10 +311,9 @@ describe('applyMessage', () => {
     expect(writes[0]?.document.language_dependency).toBeNull();
   });
 
-  it('marks a message processed even when a newer document already won', async () => {
-    // `external_gte` refuses an older write, and that refusal means the index is
-    // already correct. Leaving the message unclaimed would retry it, fail the
-    // same way three times and dead-letter something that never needed doing.
+  it('marks a message processed, and says superseded, when a newer document already won', async () => {
+    // ⚠ Claimed, not left for a retry: `external_gte` refusing an older write means the index is
+    //   already correct, and a retry would fail the same way three times and dead-letter it.
     const outcome = await applyMessage(
       fakeDataSource(true),
       fakeIndex([], 'superseded'),
@@ -322,6 +321,17 @@ describe('applyMessage', () => {
       INDEXED_AT,
     );
 
-    expect(outcome).toBe('applied');
+    expect(outcome).toBe('superseded');
+  });
+
+  it('reports a redelivery as duplicate even when it is also older', async () => {
+    const outcome = await applyMessage(
+      fakeDataSource(false),
+      fakeIndex([], 'superseded'),
+      message(headers),
+      INDEXED_AT,
+    );
+
+    expect(outcome).toBe('duplicate');
   });
 });
