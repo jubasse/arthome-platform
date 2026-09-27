@@ -61,6 +61,7 @@ describe('the connector files', () => {
     expect(connectors.map(({ name }) => name).sort()).toEqual([
       'catalog-outbox',
       'identity-outbox',
+      'ticketing-outbox',
     ]);
   });
 

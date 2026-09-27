@@ -85,6 +85,22 @@
       "partitions": 12
     },
     {
+      "name": "arthome.ticketing.order",
+      "partitions": 6
+    },
+    {
+      "name": "arthome.ticketing.account",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.ticketing.retry",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.ticketing.dlq",
+      "partitions": 3
+    },
+    {
       "name": "arthome.streaming.run",
       "partitions": 12
     },

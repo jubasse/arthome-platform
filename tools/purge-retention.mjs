@@ -15,8 +15,8 @@ import {
   purgeProcessedMessages,
 } from '@arthome-platform/messaging';
 
-const PUBLISHERS = new Set(['identity', 'catalog']);
-const CONSUMERS = new Set(['catalog', 'notifications', 'search-indexer']);
+const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing']);
+const CONSUMERS = new Set(['catalog', 'notifications', 'search-indexer', 'ticketing']);
 
 const [service, ...flags] = process.argv.slice(2);
 const apply = flags.includes('--apply');
