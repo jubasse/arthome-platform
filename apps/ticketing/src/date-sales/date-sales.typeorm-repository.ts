@@ -39,8 +39,9 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
   }
 
   /**
-   * The counters move by what the aggregate added since the load, `seats_available + n`: written
-   *   as values, a hold committed between a load and a save without the row lock would be undone.
+   * The counters move by what the aggregate added since the load, `seats_available + n`. The load's
+   *   lock already orders this save after any hold; the delta is what keeps T3's decrement, which
+   *   moves the counters with no load and no version, from being undone should a write ever skip it.
    */
   public async save(sales: DateSales): Promise<void> {
     const current = sales.snapshot;

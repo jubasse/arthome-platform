@@ -362,7 +362,7 @@ prices, each with an `Idempotency-Key` and the version the pane served:
 POST /v1/dates/:dateId/capacity-tiers   { additionalCapacity, expectedVersion, notifyWaitlist }
 PUT  /v1/dates/:dateId/prices           { expectedVersion, tiers: [{ tier, amountMinor, currencyCode, active }] }
 GET  /v1/dates/:dateId/panes/tickets
-GET  /v1/dates/:dateId/availability     x-arthome-deadline required; 404 until the sale opens
+GET  /v1/dates/:dateId/availability     x-arthome-deadline required; 404 unless on sale
 ```
 
 Each command writes `capacity_set` or `pricing_changed` on `arthome.ticketing.date_sales`, keyed by
@@ -370,7 +370,28 @@ the date, which catalog's checklist consumer reads: with them, catalog's by-hand
 `arthome.ticketing.date_sales` facts above are no longer needed. Publishing the date in catalog
 locks the prices in ticketing (`date.prices_locked` from then) and opens the sale; the sweeper then
 publishes the availability at most every five seconds per date, a sell-out at once. What each part
-does and why is `apps/ticketing/HANDOVER.md`; the path has not yet been run on the stack.
+does and why is `apps/ticketing/HANDOVER.md`.
+
+**Deploy ticketing's consumer before the first date is drafted in production.** It opens a sale only
+from `catalog.date.drafted`, and reads `arthome.catalog.date` from the beginning of what the topic
+keeps: a date drafted more than the topic's retention (168 h) before the group first reads it never
+opens, and every later fact about it is retried, then dead-lettered.
+
+Proven on the running stack on 2026-09-27, the ticketing database created by hand (the init script
+runs only on an empty data directory), its migration run, its connector registered, the four new
+topics provisioned, catalog's API and consumer and ticketing's three processes running:
+
+| Check | Result |
+| --- | --- |
+| a date drafted in catalog | opened in ticketing within 5 s through Debezium: version 1, no capacity, no price; the backlog of `arthome.catalog.date` opened the dates already drafted |
+| `openCapacityTier` 300, then `setDatePrices` full 2500 and reduced 1800 EUR | 200, versions 2 and 3; a write naming version 2 again, 409 `state.conflict` with version 3 |
+| catalog's checklist | `capacity` and `at_least_one_active_price` satisfied by ticketing's own events, no fact sent by hand |
+| publishing in catalog | ticketing locked the prices and opened the sale: 300 seats; `setDatePrices` then 409 `date.prices_locked` with `lockedAt` |
+| the public availability | 200 with `validUntil` 60 s out; without `x-arthome-deadline`, 400 |
+| ticketing's outbox for the date | `capacity_set`, `pricing_changed`, `pricing_changed` (the lock), then `availability_changed` from the sweeper half a second after the sale opened |
+
+That run was at 630dbd5, before the reviews' fixes: their two migrations, the publisher's own table
+and its retry of a failed date, are proven on containers only so far.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

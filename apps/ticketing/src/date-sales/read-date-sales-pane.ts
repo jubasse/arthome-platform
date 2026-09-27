@@ -4,8 +4,8 @@ import { dateSalesPaneOf, type DateSalesPane } from './date-sales-pane.js';
 import { DateSalesRow } from './date-sales.entity.js';
 
 /**
- * Read off the row rather than the aggregate: the counters a command did not touch may have moved
- *   since its load, and the pane serves them as they stand.
+ * Read off the row rather than the aggregate: the counters are written as deltas, so the row, not
+ *   the snapshot, holds them as they stand once T3's decrement moves them without a load.
  */
 export async function readDateSalesPane(
   manager: EntityManager,

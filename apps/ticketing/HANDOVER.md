@@ -19,6 +19,15 @@ binds `DenyInProductionGuard`, the envelopes and the validation pipe (`src/edge-
 catalog does. Its readiness fails only on the database; the slot, the publication and the outbox
 retention answer `degraded`.
 
+**Deployment order: ticketing's consumer runs before the first date is drafted in production**
+(both reviews, 2026-09-27). A sale opens only from `catalog.date.drafted`, and the consumer group
+reads `arthome.catalog.date` from the beginning of what the topic keeps (168 h). A date drafted
+longer than that before the group first reads it never opens: every later fact about it is
+retried, then dead-lettered, and its checklist can never be satisfied. Nothing restates old drafts;
+a catalog migration restating `DateDrafted`, and the start and lock of published dates, the way
+`PublicSlugs1790420900000` restated `DateScheduled`, is the way back if it happens. On the
+development stack the backlog was within the retention and opened every date drafted before.
+
 ## 0a. `DateSales`
 
 `src/date-sales/date-sales.aggregate.ts`, one row of `date_sales` (`1790440000000-initial.ts`).
@@ -87,6 +96,7 @@ Anything else is `ignored`, and so is an outcome member this build does not know
 **A fact about a date not opened here is retried, not dead-lettered**: catalog drafts first, so only
 a retry topic holding the draft explains it, and the draft is ahead of it on their key's retry
 partition. Unreadable bytes and a missing or malformed `message-id` are dead-lettered at attempt 0.
+A draft older than the topic's retention is never read: see the deployment order (§0).
 
 ## 0e. The events, and the availability publisher
 
@@ -145,8 +155,13 @@ Refusals: the aggregate throws core's `DomainError`; the studio handlers wrap it
 | `catalog-exchange.itest.ts` | catalog and ticketing read each other's real outbox rows, shaped as the connector routes them: a draft opens the sale, ticketing's capacity and price complete catalog's checklist, catalog publishes, the prices lock |
 | `boot.itest.ts` | the three root modules |
 
-`catalog-exchange.itest.ts` imports catalog's source: it is the one place the two services' code
-meet, and only a test.
+**`catalog-exchange.itest.ts` imports fourteen of catalog's internal modules by relative path**, no
+manifest recording it (architecture review M5), and that is accepted, in a test only. Its point is
+that each service's own consumer code reads the other's real outbox rows; a shared fixture or a
+contract test on the proto alone would prove only that both sides read the same schema, not that
+catalog's checklist rules accept what ticketing's aggregate writes. The cost is known: a rename
+inside catalog breaks this suite, which is where it should be noticed. No production code of
+either service imports the other.
 
 ## 2. What T3 inherits
 
@@ -156,8 +171,21 @@ meet, and only a test.
   update the tracker's stored snapshot too, or a later save in the transaction applies the delta
   again. The publisher takes no lock it could wait on.
 - `seats_sold` moves at payment by the same kind of statement; the fill rate reads it.
+- **`findById` always loads `FOR UPDATE`**: the hold path must not reuse it (ADR §11: no lock across
+  application code), but load unlocked, or not at all, before its conditional decrement.
+- **`on_sale` has no end in time**: prices locked and not closed. A decrement on `on_sale` alone
+  would sell after the show and its replay are over, unless T3 bounds its WHERE by the date's window
+  or a sweeper closes the sale.
+- **The stored snapshot moves both ways**: if T3 also moves the aggregate's counters after its
+  decrement, it moves the repository's stored snapshot by the same amount, or the next save applies
+  the delta a second time.
+- The purchase claims its idempotency key in tx A and answers in tx B, which `runIdempotently`
+  (one transaction) does not cover: settle it in T3's first change, or key the purchase on
+  `seat_order` alone (libs review L1).
 - The sweeper process for hold expiry: a second loop beside `AvailabilityPublisher`.
 - Topics `arthome.ticketing.order` (6, `order_id`) and `.account` (3) are provisioned.
+- For T4: refunds run on BullMQ (ADR §8), which needs Redis; the sweeper stays on Postgres alone,
+  so those workers need a process of their own or the consumer's. T4 decides and records it here.
 
 ## 3. Gaps, reported rather than worked around
 
@@ -168,15 +196,29 @@ arthome-core:
   data-model §3.1 as its owner;
 - **a refusal rule for `date.technical_provision_required`** (when `openCapacityTier` refuses), with
   a function for the revision deadline and one for the penalty exposure: until then the provision is
-  served and published, never refused, its deadline counted back with core's constant;
+  served and published, never refused, its deadline counted back with core's constant. **This
+  interim blocks lifting `DenyInProductionGuard` from the studio routes** (architecture review M2):
+  until the refusal exists, a studio could widen past 10,000 seats inside the last 72 hours;
 - **a rule that a sale's tiers share one currency**, which core's `lowestActivePrice` assumes: until
   then `DateSales.setPrices` holds it locally (`assertOneCurrency`, refused with core's
   `money.currency_mismatch`, 409 through `asConflict`), and the request schema refuses it earlier,
   400 `api.schema_invalid` naming `tiers`, so no HTTP caller reaches the aggregate's refusal.
 
-Known and left:
+Known and left, each judged:
 
 - `market_id` and the service-fee schedule have no source yet; neither is stored.
-- `itest/http-app.ts` is catalog's, copied: the second consumer of a harness that could move to
-  `libs/testing`. The aggregate's `frozen` helper is catalog's too.
-- The path has not been run on the development stack; the lead runs that proof.
+- **Catalog's service glue is copied** (architecture review M4): `itest/http-app.ts`,
+  `assert-never.ts`, `edge-providers.ts`, `writeTicketingEvent`, `notFound`, `asConflict`, the
+  consumer host and `frozen`. They move to `libs/` in a feature of their own after T2.
+- **`CLOCK` is provided in each feature module and in `EDGE_PROVIDERS`** (N2): catalog's pattern,
+  harmless while `SystemClock` is stateless; one provider per process root comes with the glue.
+- **`pricesLockedAt` is catalog's engagement instant**, not ticketing's consumption (correctness
+  nit 2): the studio shows one lock instant, and the contract's examples give catalog's publication
+  `pricesLockedAt` and ticketing's `lockedAt` the same value. A price change applied between the two
+  instants is what the lock then holds.
+- **Two services' clocks order one date's facts** (correctness nit 3): the API's for
+  `pricing_changed` and `capacity_set`, the sweeper's for `availability_changed`, compared by
+  latest-wins consumers. It takes a skew larger than the seconds between two facts, NTP makes that
+  unlikely, and catalog does the same: a platform pattern, not T2's alone.
+- Proven on the development stack on 2026-09-27 at 630dbd5 (AGENTS.md); the fixes since are proven
+  on containers only.
