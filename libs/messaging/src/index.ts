@@ -42,7 +42,12 @@ export {
 export type { CheckResult, CheckStatus } from './health.js';
 
 export { MAX_SLOT_LAG_BYTES, outboxSlotName } from './slot.js';
-export { ProcessedMessage, processedMessageTableDdl } from './processed-message.js';
+export {
+  ProcessedMessage,
+  claimMessage,
+  messageIdOf,
+  processedMessageTableDdl,
+} from './processed-message.js';
 export {
   findUnpublishedOutboxRows,
   readPublishedMessageIds,

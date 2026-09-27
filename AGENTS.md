@@ -323,7 +323,7 @@ producer script:
 | a draft, then the same key again | 201; replayed 201 with `Idempotency-Replayed: true` |
 | the four checklist facts through Kafka | `applied` four times; the same `message-id` again, `duplicate` |
 | facts about a date catalog does not hold | `dead-lettered` at once: attempt 0, reason `permanent`, "… is about date …, unknown here" |
-| a `message-id` that is not a UUID | retried as transient on `arthome.catalog.retry`, since `processed_message.id` refuses it: a malformed id should be permanent, left open |
+| a `message-id` that is not a UUID | retried as transient on `arthome.catalog.retry`, since `processed_message.id` refuses it. Fixed since: `messageIdOf` in `libs/messaging` refuses it at every consumer's edge, dead-lettered at attempt 0, reason `permanent` |
 | publishing | 200, version 2; slug `2027-03-10`, running time frozen at 110; on the date's key `drafted`, `state_changed`, `date.scheduled`, `engaged`; indexed; resolved through the BFF in 57 ms |
 | postponing, then a stale command | 200, slug `2027-03-17`, the old one aliased; `outcome_declared` then `rescheduled`; 409 `state.conflict` with version 3 |
 | the show retitled, the artist renamed | the old URL resolves to the new one, with the new title and the new name |
@@ -385,7 +385,7 @@ Two reject paths, and they answer different questions.
 
 | Failure | Example | What happens |
 | --- | --- | --- |
-| **permanent** | no `message-id` header, bytes that are not this schema | **dead-lettered at once**, `attempt: 0`, no replay |
+| **permanent** | no `message-id` header, or one that is not a UUID; bytes that are not this schema | **dead-lettered at once**, `attempt: 0`, no replay |
 | **transient** | database unavailable, lock, dependency down | retried after 5 s, 30 s, 5 min — each with jitter — then dead-lettered |
 
 Anything unrecognised is treated as **transient**, deliberately: retrying a permanent failure costs

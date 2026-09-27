@@ -1,9 +1,10 @@
 import { AccountRegisteredSchema } from '@arthome-platform/events';
 import {
+  claimMessage,
   header,
+  messageIdOf,
   type Outcome,
   PermanentError,
-  ProcessedMessage,
 } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import type { EachMessagePayload } from 'kafkajs';
@@ -11,24 +12,11 @@ import type { DataSource } from 'typeorm';
 
 import { WelcomeEmail } from './welcome-email.entity.js';
 
-/**
- * The dedup insert and the business write share one transaction and one manager.
- *   `orIgnore().returning('id')` returns no row when the identifier is already there, and
- *   that is the signal to skip — not a prior SELECT, which would leave a window in which two
- *   consumers both see nothing.
- * A missing `message-id` is a permanent error, never a generated default: inventing one
- *   would make the message undeduplicable and silently reprocessable for ever (§1.3).
- */
 export async function applyMessage(
   dataSource: DataSource,
   payload: EachMessagePayload,
 ): Promise<Outcome> {
-  const messageId = header(payload, 'message-id');
-  if (messageId === null) {
-    throw new PermanentError(
-      `message on ${payload.topic} has no message-id header — permanent, not a default`,
-    );
-  }
+  const messageId = messageIdOf(payload);
 
   const type = header(payload, 'type');
   if (type !== 'identity.account.registered.v1') return 'ignored';
@@ -47,19 +35,10 @@ export async function applyMessage(
   }
 
   return dataSource.transaction(async (manager) => {
-    const claimed = await manager
-      .createQueryBuilder()
-      .insert()
-      .into(ProcessedMessage)
-      .values({ id: messageId, topic: payload.topic })
-      .orIgnore()
-      .returning('id')
-      .execute();
-
-    if ((claimed.raw as unknown[]).length === 0) return 'duplicate';
+    if (!(await claimMessage(manager, messageId, payload.topic))) return 'duplicate';
 
     /**
-     * `orIgnore()` because the two guards answer different questions: the dedup insert above
+     * `orIgnore()` because the two guards answer different questions: the dedup claim above
      *   answers "have I seen this MESSAGE", `welcome_email`'s primary key answers "does this
      *   ACCOUNT already have one". Two `message-id`s carrying one account pass the first and
      *   violate the second.

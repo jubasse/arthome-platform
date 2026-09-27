@@ -5,7 +5,7 @@ import {
   DateSalesPricingChangedSchema,
   TechnicalCheckPassedSchema,
 } from '@arthome-platform/events';
-import { PermanentError, header, type Outcome } from '@arthome-platform/messaging';
+import { PermanentError, header, messageIdOf, type Outcome } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
 import type { CommandBus } from '@nestjs/cqrs';
@@ -64,10 +64,7 @@ export function applyChecklistMessage(
   commands: CommandBus,
   payload: EachMessagePayload,
 ): Promise<Outcome> {
-  const messageId = header(payload, 'message-id');
-  if (messageId === null) {
-    throw new PermanentError(`message on ${payload.topic} has no message-id header`);
-  }
+  const messageId = messageIdOf(payload);
   const type = header(payload, 'type');
   const read = type === null ? undefined : READERS[type];
   if (read === undefined) return Promise.resolve('ignored');

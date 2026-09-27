@@ -163,7 +163,10 @@ describe('applyShowMessage, before any write', () => {
     } as unknown as EachMessagePayload;
   }
 
-  const headers = { 'message-id': 'm-1', type: 'catalog.show.published.v1' };
+  const headers = {
+    'message-id': '01a0e5cc-0000-7000-8000-000000000001',
+    type: 'catalog.show.published.v1',
+  };
 
   it('ignores a type it does not handle', async () => {
     await expect(
@@ -173,6 +176,7 @@ describe('applyShowMessage, before any write', () => {
 
   it.each([
     ['no message-id', message({ type: headers.type }, published())],
+    ['a message-id that is not a UUID', message({ ...headers, 'message-id': 'm-1' }, published())],
     ['no value', message(headers, null)],
     ['bytes that are not this schema', message(headers, new Uint8Array([0xff, 0xff, 0xff]))],
     ['a publication with no occurred_at', message(headers, published(null))],

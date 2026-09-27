@@ -1,12 +1,12 @@
 import { ArtistUpdatedSchema } from '@arthome-platform/events';
-import type { Outcome } from '@arthome-platform/messaging';
+import { claimMessage, type Outcome } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import type { EachMessagePayload } from 'kafkajs';
 import { In, type DataSource, type EntityManager } from 'typeorm';
 
 import { ArtistProjection } from './artist-projection.entity.js';
 import type { DateProjection } from './date-projection.entity.js';
-import { claimed, decodedOrRefused, incomingOf } from './incoming.js';
+import { decodedOrRefused, incomingOf } from './incoming.js';
 import { ShowProjection } from './show-projection.entity.js';
 import { stated } from './wire.js';
 import { dateDocumentOf } from '../index/compose.js';
@@ -71,7 +71,7 @@ export async function applyArtistMessage(
   const fact = decodedOrRefused(payload, incoming, artistFactOf);
 
   const result = await dataSource.transaction(async (manager) => {
-    const firstDelivery = await claimed(manager, incoming, payload.topic);
+    const firstDelivery = await claimMessage(manager, incoming.messageId, payload.topic);
     const current = await manager.findOne(ArtistProjection, {
       where: { channel_id: fact.channelId },
       lock: { mode: 'pessimistic_write' },

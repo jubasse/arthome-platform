@@ -1,12 +1,12 @@
 import { ShowPublishedSchema, ShowUpdatedSchema } from '@arthome-platform/events';
-import type { Outcome } from '@arthome-platform/messaging';
+import { claimMessage, type Outcome } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource, EntityManager } from 'typeorm';
 
 import { ArtistProjection } from './artist-projection.entity.js';
 import type { DateProjection } from './date-projection.entity.js';
-import { claimed, decodedOrRefused, incomingOf } from './incoming.js';
+import { decodedOrRefused, incomingOf } from './incoming.js';
 import {
   ShowProjection,
   type PublishedShowFields,
@@ -153,7 +153,7 @@ export async function applyShowMessage(
   const fact = decodedOrRefused(payload, incoming, (value) => showFactOf(type, value));
 
   const result = await dataSource.transaction(async (manager) => {
-    const firstDelivery = await claimed(manager, incoming, payload.topic);
+    const firstDelivery = await claimMessage(manager, incoming.messageId, payload.topic);
     const row = await lockedShow(manager, fact.showId);
     if (!firstDelivery) {
       return {

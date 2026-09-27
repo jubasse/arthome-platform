@@ -364,7 +364,9 @@ would only compare what the handler had already read. Their wiring is proven ove
   the way it runs `outboxTableDdl()`. Catalog's own two migrations stay as they are, and
   `migrations/idempotency-record.itest.ts` fails the day they and the DDL stop making one table;
   the library's scenarios run on the DDL's;
-- still here, lifted next: the processed-message claim copied in three consumers.
+- `@arthome-platform/messaging`: `claimMessage(manager, messageId, topic)`, the processed-message
+  claim the three consumers each held a copy of, and `messageIdOf(payload)`, which refuses an
+  absent or malformed `message-id` as permanent at the consume edge.
 
 Nothing else is generic: aggregates extend `@nestjs/cqrs`'s `AggregateRoot` as it is, and the
 events-to-outbox mapping builds catalog's own payloads over `writeOutboxEvent`, already shared.

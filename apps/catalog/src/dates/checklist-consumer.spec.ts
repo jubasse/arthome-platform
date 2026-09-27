@@ -3,7 +3,13 @@ import {
   DateChatPolicyChangedSchema,
   DateSalesPricingChangedSchema,
 } from '@arthome-platform/events';
-import { ATTEMPT_HEADER, PermanentError, dispatch, retryTopic } from '@arthome-platform/messaging';
+import {
+  ATTEMPT_HEADER,
+  PermanentError,
+  deadLetterTopic,
+  dispatch,
+  retryTopic,
+} from '@arthome-platform/messaging';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import type { CommandBus } from '@nestjs/cqrs';
@@ -14,7 +20,13 @@ import { DomainError, DomainErrorCode, Service } from '@arthome/core';
 
 import { applyChecklistMessage } from './checklist-consumer.js';
 
-function message(type: string | null, value: Uint8Array | null, messageId: string | null = 'm-1') {
+const MESSAGE_ID = '01a0e5bb-0000-7000-8000-000000000001';
+
+function message(
+  type: string | null,
+  value: Uint8Array | null,
+  messageId: string | null = MESSAGE_ID,
+) {
   const headers: Record<string, Buffer> = {};
   if (messageId !== null) headers['message-id'] = Buffer.from(messageId);
   if (type !== null) headers.type = Buffer.from(type);
@@ -49,6 +61,36 @@ describe('applyChecklistMessage, before any write', () => {
     expect(() => applyChecklistMessage(untouchable, message('x.v1', null, null))).toThrow(
       PermanentError,
     );
+  });
+
+  it('dead-letters a message-id that is not a UUID at once, before any command', async () => {
+    const sent: ProducerRecord[] = [];
+    const producer = {
+      send: (record: ProducerRecord) => {
+        sent.push(record);
+        return Promise.resolve([]);
+      },
+    } as unknown as Producer;
+
+    const policy = toBinary(
+      DateChatPolicyChangedSchema,
+      create(DateChatPolicyChangedSchema, {
+        dateId: 'date-1',
+        mode: ChatMode.OPEN,
+        occurredAt: timestampFromDate(new Date('2026-09-26T10:00:00.000Z')),
+      }),
+    );
+
+    const disposition = await dispatch(
+      (payload) => applyChecklistMessage(untouchable, payload),
+      producer,
+      Service.CATALOG,
+      message('chat.date_chat_policy.changed.v1', policy, 'm-1'),
+    );
+
+    expect(disposition).toBe('dead-lettered');
+    expect(sent.map((record) => record.topic)).toEqual([deadLetterTopic(Service.CATALOG)]);
+    expect(sent[0]?.messages[0]?.headers?.[ATTEMPT_HEADER]).toBe('0');
   });
 
   it('refuses a fact with no occurred_at as permanent: an undated fact cannot be ordered', () => {
@@ -128,6 +170,6 @@ describe('applyChecklistMessage, before any write', () => {
 
     await expect(
       applyChecklistMessage(refusing, message('chat.date_chat_policy.changed.v1', policy)),
-    ).rejects.toThrow('message m-1 is about date date-1, refused state.conflict');
+    ).rejects.toThrow(`message ${MESSAGE_ID} is about date date-1, refused state.conflict`);
   });
 });

@@ -4,7 +4,7 @@ import {
   DateScheduledSchema,
   PublicationStateChangedSchema,
 } from '@arthome-platform/events';
-import type { Outcome } from '@arthome-platform/messaging';
+import { claimMessage, type Outcome } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import type { EachMessagePayload } from 'kafkajs';
@@ -14,7 +14,7 @@ import { PublicationState, type DateOutcome } from '@arthome/core';
 
 import { ArtistProjection } from './artist-projection.entity.js';
 import { DateProjection, type ScheduledDateFields } from './date-projection.entity.js';
-import { claimed, decodedOrRefused, incomingOf } from './incoming.js';
+import { decodedOrRefused, incomingOf } from './incoming.js';
 import { ShowProjection } from './show-projection.entity.js';
 import {
   dateOutcomeOf,
@@ -199,7 +199,7 @@ export async function applyDateMessage(
   const fact = decodedOrRefused(payload, incoming, (value) => dateFactOf(type, value));
 
   const result = await dataSource.transaction(async (manager) => {
-    const firstDelivery = await claimed(manager, incoming, payload.topic);
+    const firstDelivery = await claimMessage(manager, incoming.messageId, payload.topic);
     const row = await lockedDate(manager, fact.dateId);
     const next = firstDelivery ? dateAfter(row, fact) : row;
     if (next === null) {
