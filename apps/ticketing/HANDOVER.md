@@ -107,7 +107,10 @@ partition. Unreadable bytes and a missing or malformed `message-id` are dead-let
   Measured (`publish-due-availability.itest.ts`, three runs): a hold on the last date of a
   hundred-date pass waits 1.2 to 1.3 ms, against 69 to 73 ms when the pass locked every row; the
   pass takes 230 to 300 ms, one transaction per date. A move during a publication held open 300 ms
-  does not wait for it. **A closing publishes a last time, at once**, offering no
+  does not wait for it.
+- **A date that cannot be published holds back no other** (correctness review): its failure is
+  logged, its `failed_at` recorded, and it waits `AVAILABILITY_PUBLISH_RETRY_SECONDS` (30) before it
+  is tried again, behind the others, still marked; a publication clears it. **A closing publishes a last time, at once**, offering no
   seat (`seats_available` 0, sold out), so the cards and the index stop offering the date.
 - **It runs in the sweeper process, its own, on a one-second loop**, not in the consumer and not on
   BullMQ. The sweeper needs Postgres alone: in the consumer's process a Kafka outage would stop it
@@ -135,7 +138,7 @@ Refusals: the aggregate throws core's `DomainError`; the studio handlers wrap it
 | `date-sales.aggregate.spec.ts` | 19 cases, plain Vitest, core never mocked |
 | `date-sales.itest.ts` | the commands through the buses: replay, key reuse, stale version, two commands from one version, the lock, the counters as deltas under a hold, the provision's deadline restated, domain events after commit only, the outbox's rows in order |
 | `catalog-date-consumer.itest.ts` | real Kafka: duplicate, superseded start and outcome, ignored, a fact before its draft retried then applied, poison dead-lettered |
-| `publish-due-availability.itest.ts` | the rate bound (a seat every 500 ms for 12 s: four publications), selling out and back at once, a closing, a draft unpublished, a date a command holds published without waiting, `SKIP LOCKED` and four racing passes, a move during a publication neither waiting nor lost, the hold's wait behind a hundred-date pass |
+| `publish-due-availability.itest.ts` | the rate bound (a seat every 500 ms for 12 s: four publications), selling out and back at once, a closing, a draft unpublished, a date a command holds published without waiting, `SKIP LOCKED` and four racing passes, a move during a publication neither waiting nor lost, the hold's wait behind a hundred-date pass, a date that cannot be published set aside and tried again |
 | `migrations/availability-publication.itest.ts` | the publication table's migration on a database that already holds dates |
 | `date-sales.http.itest.ts` | the routes over HTTP through the modules the API boots |
 | `catalog-exchange.itest.ts` | catalog and ticketing read each other's real outbox rows, shaped as the connector routes them: a draft opens the sale, ticketing's capacity and price complete catalog's checklist, catalog publishes, the prices lock |

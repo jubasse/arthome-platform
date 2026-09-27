@@ -1,4 +1,4 @@
-import { Inject } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -26,9 +26,13 @@ function offeredFiguresOf(row: DateSalesRow): AvailabilityFigures {
 /** Dates a pass looks at; each is then published in a transaction of its own. */
 export const AVAILABILITY_PUBLISH_BATCH = 100;
 
+/** How long a date whose publication failed waits before it is tried again. */
+export const AVAILABILITY_PUBLISH_RETRY_SECONDS = 30;
+
 /**
  * The candidates: moved since their last publication, and quiet for the interval or flipped
- *   around sold out against what was published. Read without any lock: the figures are re-read
+ *   around sold out against what was published, a date whose publication failed only once its
+ *   retry delay has passed, and after the others. Read without any lock: the figures are re-read
  *   and the decision taken again under the publication row's.
  */
 const DUE_DATES = `
@@ -37,11 +41,12 @@ const DUE_DATES = `
     JOIN date_availability_publication AS publication USING (date_id)
    WHERE sales.prices_locked_at IS NOT NULL
      AND sales.availability_moves > publication.published_moves
+     AND (publication.failed_at IS NULL OR publication.failed_at <= $3)
      AND (publication.published_at IS NULL
           OR publication.published_at <= $1
           OR (sales.seats_available = 0 OR NOT sales.on_sale)
              IS DISTINCT FROM publication.published_sold_out)
-   ORDER BY publication.published_at ASC NULLS FIRST
+   ORDER BY publication.failed_at ASC NULLS FIRST, publication.published_at ASC NULLS FIRST
    LIMIT $2
 `;
 
@@ -56,6 +61,8 @@ const DUE_DATES = `
  */
 @CommandHandler(PublishDueAvailability)
 export class PublishDueAvailabilityHandler implements ICommandHandler<PublishDueAvailability> {
+  private readonly logger = new Logger(PublishDueAvailabilityHandler.name);
+
   public constructor(
     private readonly transactions: TicketingTransactions,
     @InjectDataSource() private readonly dataSource: DataSource,
@@ -67,13 +74,29 @@ export class PublishDueAvailabilityHandler implements ICommandHandler<PublishDue
     const quietSince = new Date(
       Date.parse(now) - AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS * 1_000,
     );
+    const retrySince = new Date(Date.parse(now) - AVAILABILITY_PUBLISH_RETRY_SECONDS * 1_000);
     const candidates = await this.dataSource.query<{ date_id: string }[]>(DUE_DATES, [
       quietSince,
       AVAILABILITY_PUBLISH_BATCH,
+      retrySince,
     ]);
     let published = 0;
     for (const { date_id } of candidates) {
-      if (await this.publishIfDue(date_id, now, quietSince)) published += 1;
+      try {
+        if (await this.publishIfDue(date_id, now, quietSince)) published += 1;
+      } catch (error) {
+        // One date that cannot be published must not hold back the others: it is set aside for
+        //   the retry delay, still marked, and the pass goes on.
+        this.logger.error(
+          `availability of date ${date_id} not published, retried in ${String(AVAILABILITY_PUBLISH_RETRY_SECONDS)} s`,
+          error instanceof Error ? error.stack : String(error),
+        );
+        await this.dataSource.manager.update(
+          DateAvailabilityPublicationRow,
+          { date_id },
+          { failed_at: new Date(now) },
+        );
+      }
     }
     return published;
   }
@@ -106,6 +129,7 @@ export class PublishDueAvailabilityHandler implements ICommandHandler<PublishDue
           published_moves: sales.availability_moves,
           published_at: new Date(now),
           published_sold_out: figures.soldOut,
+          failed_at: null,
         },
       );
       return true;

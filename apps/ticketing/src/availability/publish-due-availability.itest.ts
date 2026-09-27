@@ -18,8 +18,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS, FixedClock, PriceTier } from '@arthome/core';
 
+import { DateAvailabilityPublicationRow } from './date-availability-publication.entity.js';
 import { PublishDueAvailability } from './publish-due-availability.command.js';
-import { PublishDueAvailabilityHandler } from './publish-due-availability.handler.js';
+import {
+  AVAILABILITY_PUBLISH_RETRY_SECONDS,
+  PublishDueAvailabilityHandler,
+} from './publish-due-availability.handler.js';
 import { CLOCK } from '../clock.js';
 import { ApplyCatalogDateFactHandler } from '../date-sales/apply-catalog-date-fact.handler.js';
 import { applyCatalogDateMessage } from '../date-sales/catalog-date-messages.js';
@@ -370,6 +374,54 @@ describe('the availability publisher', () => {
         `hold behind a 100-date pass: waited ${holdMs.toFixed(1)} ms, pass ${passMs.toFixed(1)} ms\n`,
       );
       expect(holdMs).toBeLessThan(20);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'sets aside a date it cannot publish, publishes the others, and tries it again later',
+    async () => {
+      const healthy = await openSale(10);
+      await publish();
+      const broken = await openSale(10);
+      // A price core refuses to read: no validated write stores one, a hand edit could.
+      await dataSource.query(
+        `UPDATE date_sales
+            SET price_tiers = '[{"tier":"full","amountMinor":1.5,"currencyCode":"EUR","active":true}]'
+          WHERE date_id = $1`,
+        [broken],
+      );
+      clock.advance(INTERVAL_MS);
+      await move(healthy, 1);
+      const failedAt = async () =>
+        (
+          await dataSource.getRepository(DateAvailabilityPublicationRow).findOneByOrFail({
+            date_id: broken,
+          })
+        ).failed_at?.toISOString() ?? null;
+
+      // The broken date sorts first, never published, and the healthy one is published after it.
+      await publish();
+      expect(await published(healthy)).toHaveLength(2);
+      expect(await published(broken)).toHaveLength(0);
+      const firstFailure = clock.now();
+      expect(await failedAt()).toBe(firstFailure);
+
+      clock.advance(1_000);
+      await publish();
+      expect(await failedAt()).toBe(firstFailure);
+
+      clock.advance(AVAILABILITY_PUBLISH_RETRY_SECONDS * 1_000);
+      await publish();
+      expect(await failedAt()).toBe(clock.now());
+
+      await dataSource.query(`UPDATE date_sales SET price_tiers = '[]' WHERE date_id = $1`, [
+        broken,
+      ]);
+      clock.advance(AVAILABILITY_PUBLISH_RETRY_SECONDS * 1_000);
+      await publish();
+      expect(await published(broken)).toHaveLength(1);
+      expect(await failedAt()).toBeNull();
     },
     CASE_MS,
   );

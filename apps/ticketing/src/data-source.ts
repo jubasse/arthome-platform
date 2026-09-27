@@ -8,6 +8,7 @@ import { DateSalesRow } from './date-sales/date-sales.entity.js';
 import { env } from './env.js';
 import { Initial1790440000000 } from './migrations/1790440000000-initial.js';
 import { AvailabilityPublication1790440100000 } from './migrations/1790440100000-availability-publication.js';
+import { AvailabilityPublicationFailure1790440200000 } from './migrations/1790440200000-availability-publication-failure.js';
 
 /**
  * Used by the three processes AND by the migration CLI. `synchronize` stays false: it would drop
@@ -18,7 +19,11 @@ export const dataSource: DataSource = new DataSource({
   type: 'postgres',
   url: env.DATABASE_URL,
   entities: [DateSalesRow, DateAvailabilityPublicationRow, ProcessedMessage, OutboxEvent],
-  migrations: [Initial1790440000000, AvailabilityPublication1790440100000],
+  migrations: [
+    Initial1790440000000,
+    AvailabilityPublication1790440100000,
+    AvailabilityPublicationFailure1790440200000,
+  ],
   applicationName: Service.TICKETING,
 
   // `poolSize` × replicas × processes, plus the connector's replication connection, must stay

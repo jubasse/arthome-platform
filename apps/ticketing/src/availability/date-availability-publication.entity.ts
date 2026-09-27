@@ -15,4 +15,7 @@ export class DateAvailabilityPublicationRow {
 
   @Column('boolean', { nullable: true })
   published_sold_out!: boolean | null;
+
+  @Column('timestamptz', { nullable: true })
+  failed_at!: Date | null;
 }
