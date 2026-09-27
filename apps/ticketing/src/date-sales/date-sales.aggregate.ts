@@ -6,6 +6,7 @@ import {
   DateOutcome,
   DomainError,
   DomainErrorCode,
+  DomainGuardCode,
   assertTierWidens,
   isBefore,
   type Instant,
@@ -62,6 +63,21 @@ function frozen<T>(value: T): T {
   return value;
 }
 
+/**
+ * One currency per sale: core's headline price compares amounts across tiers. A local rule until
+ *   core carries it (HANDOVER §3), refused with core's own guard for two currencies.
+ */
+function assertOneCurrency(tiers: readonly TierPrice[]): void {
+  const [first, ...rest] = tiers;
+  if (first === undefined) return;
+  const other = rest.find(({ amount }) => amount.currencyCode !== first.amount.currencyCode);
+  if (other === undefined) return;
+  throw new DomainError({
+    code: DomainGuardCode.MONEY_CURRENCY_MISMATCH,
+    params: { left: first.amount.currencyCode, right: other.amount.currencyCode },
+  });
+}
+
 /** An older fact never overwrites a newer one; one stated at the same instant applies again. */
 function isStale(statedAt: Instant, lastStatedAt: Instant | null): boolean {
   return lastStatedAt !== null && isBefore(statedAt, lastStatedAt);
@@ -113,7 +129,10 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
     return this.current;
   }
 
-  /** Replaces every tier, until the sale opens: `date.prices_locked` from then, naming when. */
+  /**
+   * Replaces every tier, in one currency, until the sale opens: `date.prices_locked` from then,
+   *   naming when.
+   */
   public setPrices(expectedVersion: number, tiers: readonly TierPrice[], now: Instant): void {
     const version = this.advancedFrom(expectedVersion);
     const { dateId, channelId, pricesLockedAt } = this.current;
@@ -123,6 +142,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
         params: { lockedAt: pricesLockedAt },
       });
     }
+    assertOneCurrency(tiers);
     this.current = frozen({ ...this.current, priceTiers: tiers, version });
     this.apply(new DatePricesSet(dateId, channelId, tiers, now));
   }

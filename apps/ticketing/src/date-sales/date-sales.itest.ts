@@ -25,6 +25,7 @@ import {
   CatalogErrorCode,
   DateOutcome,
   DomainErrorCode,
+  DomainGuardCode,
   FixedClock,
   PROVISION_REVISION_HOURS,
   PriceTier,
@@ -246,6 +247,28 @@ describe('setDatePrices', () => {
 
       expect(refusal.getStatus()).toBe(409);
       expect(refusal.refusal.code).toBe(ApiErrorCode.IDEMPOTENCY_KEY_REUSED);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'refuses two currencies in one sale even past the request schema, and writes nothing',
+    async () => {
+      const dateId = await openedDate();
+      const [full, reduced] = FULL_AND_REDUCED;
+      if (full === undefined || reduced === undefined) throw new Error('two tiers');
+
+      const refusal = await refusalOf(
+        setPrices(dateId, 1, [full, { ...reduced, currencyCode: 'CHF' }]),
+      );
+
+      expect(refusal.getStatus()).toBe(409);
+      expect(refusal.refusal).toMatchObject({
+        code: DomainGuardCode.MONEY_CURRENCY_MISMATCH,
+        params: { left: 'EUR', right: 'CHF' },
+      });
+      expect(await outboxRowsFor(dateId)).toHaveLength(0);
+      expect((await rowOf(dateId)).version).toBe(1);
     },
     CASE_MS,
   );

@@ -5,6 +5,7 @@ import {
   DateOutcome,
   DomainError,
   DomainErrorCode,
+  DomainGuardCode,
   PROVISION_REVISION_HOURS,
   PriceTier,
   TECHNICAL_PROVISION_THRESHOLD,
@@ -91,6 +92,18 @@ describe('setPrices', () => {
 
     expect(refusal.code).toBe(DomainErrorCode.STATE_CONFLICT);
     expect(refusal.params).toEqual({ version: 3 });
+  });
+
+  it('refuses tiers in two currencies, and changes nothing', () => {
+    const sales = restored({ priceTiers: [FULL] });
+    const inFrancs: TierPrice = { ...REDUCED, amount: money(1600, 'CHF') };
+
+    const refusal = refusalOf(() => sales.setPrices(3, [FULL, inFrancs], NOW));
+
+    expect(refusal.code).toBe(DomainGuardCode.MONEY_CURRENCY_MISMATCH);
+    expect(refusal.params).toEqual({ left: 'EUR', right: 'CHF' });
+    expect(sales.snapshot.priceTiers).toEqual([FULL]);
+    expect(sales.getUncommittedEvents()).toEqual([]);
   });
 
   it('refuses once the sale opened, naming when, and changes nothing', () => {

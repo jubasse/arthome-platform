@@ -49,7 +49,8 @@ retention answer `degraded`.
 - The two commands take an `Idempotency-Key` (`runIdempotentlyVersioned`: the version at the
   envelope's root), answer the pane read off the row inside their transaction, and refuse 409 with
   the domain's code: `state.conflict` with `version`, `date.prices_locked`, `capacity.tier_must_widen`.
-- `setDatePrices` refuses 400 naming `tiers` a tier sent twice or two currencies in one sale.
+- `setDatePrices` refuses 400 naming `tiers` a tier sent twice or two currencies in one sale; the
+  aggregate holds the one currency itself for any other writer (§3).
 - `openCapacityTier` accepts `notifyWaitlist` and records nothing for it: the waiting list is T5's.
   It answers `waitlistNotified: 0`, true while no list exists, and no `priorityUntil`. On a sale a
   cancellation or an interruption closed, it refuses 409 `state.conflict` naming the version and
@@ -169,7 +170,9 @@ arthome-core:
   a function for the revision deadline and one for the penalty exposure: until then the provision is
   served and published, never refused, its deadline counted back with core's constant;
 - **a rule that a sale's tiers share one currency**, which core's `lowestActivePrice` assumes: until
-  then a request mixing them is refused 400 `api.schema_invalid` naming `tiers`.
+  then `DateSales.setPrices` holds it locally (`assertOneCurrency`, refused with core's
+  `money.currency_mismatch`, 409 through `asConflict`), and the request schema refuses it earlier,
+  400 `api.schema_invalid` naming `tiers`, so no HTTP caller reaches the aggregate's refusal.
 
 Known and left:
 

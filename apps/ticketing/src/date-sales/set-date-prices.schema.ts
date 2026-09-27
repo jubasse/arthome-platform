@@ -12,7 +12,7 @@ const TierSchema = z.strictObject({
 
 /**
  * The studio's `setDatePrices` (openapi/studio.yaml). Each tier once, and one currency for the
- *   whole sale: core's headline price compares amounts across tiers and assumes it.
+ *   whole sale, refused here as a malformed request before the aggregate refuses it as a rule.
  */
 export const SetDatePricesSchema = z.strictObject({
   expectedVersion: z.int().min(1),
