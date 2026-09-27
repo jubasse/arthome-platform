@@ -122,10 +122,13 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
   `/show/{show-slug}/date/{date-slug}`; `/artist/{artist-slug}`, short `/a/{artist-slug}`. No
   language, two levels at most, on `PUBLIC_WEB_ORIGIN`.
 - **A show's slug** is its title's (the French one when it has any), else the title's with the
-  show's id tail; set at publication, in `ShowPublished.slug`, unique (`show_slug`).
+  show's id tail; set at publication, in `ShowPublished.slug`, unique (`show_slug`). Two shows of
+  one title published at once both find it free: the second is refused 409 `state.conflict`, and
+  its retry takes the id-tailed slug.
 - **A date's slug** is its day at the venue (`2026-12-15`), then `2026-12-15-2000` for a second
   performance that day, then the day with the date's id tail; unique within its show
-  (`date_show_slug`); set at publication, moved by a postponement.
+  (`date_show_slug`); set at publication, moved by a postponement, picked under the show's row
+  lock (§0f).
 - **`public_slug_alias`** keeps a replaced slug (a date's, an artist's) leading to its page for
   `SLUG_REDIRECT_DAYS` (30), keyed by kind, scope (the show for a date) and slug. While it does, no
   other page may take the slug; the page itself may take it back.
@@ -209,6 +212,12 @@ the date. `save` inserts a date it did not load, which only `PerformanceDate.dra
 date's row first since the publication's references it. The handler calls one method
 (`transitionPublication`, `declareOutcome`) and one `save`; publishing makes the date public inside
 `transitionPublication`, which refuses a date that already has a slug.
+
+**A command on a date holds its show's row** (`loadDate`, `FOR UPDATE` to the commit), and
+publishing reads the channel's artist `FOR SHARE`. Measured without them
+(`dates/concurrency.itest.ts`): a show retitled or an artist renamed while a date was published left
+the new public row with the old copy, for good, and two dates of one show published or postponed
+onto one day at once lost one to `date_show_slug`, answered 500.
 
 **Refusals keep their code and params.** The aggregate and the repository throw core's
 `DomainError`; a date handler wraps its whole work in `asConflict`, which rethrows one as a 409
@@ -680,13 +689,11 @@ It means "a service behind the BFF failed" — false said about ourselves, and i
 distinction a caller acts on, since one substitute answered 500, 502 and 503 alike while **503 is
 retryable and 500 is not.**
 
-**THIS SERVICE STILL EMITS NO 409, AND THAT IS CORRECT RATHER THAN MISSING.** `show` has no unique
-constraint, so it passes the filter an **empty** `UniqueViolationCode` table. A generic conflict code
-was ruled out — the published `Conflict` description reads "Definitive business refusal. The `code`
-says which one" — so an unmapped violation answers 500 and logs the gap by name. The day the
-per-language slugs arrive, the column and its code go in that table and the test in
-`apps/identity/src/unique-violations.spec.ts` is the pattern to copy: it reads the migrations and
-fails if a constrained column has no code.
+**A UNIQUE VIOLATION ANSWERS 409 ONLY WHEN `src/unique-violations.ts` NAMES ITS COLUMN.** A generic
+conflict code was ruled out — the published `Conflict` description reads "Definitive business
+refusal. The `code` says which one" — so an unmapped violation answers 500 and logs the gap by
+name. `apps/identity/src/unique-violations.spec.ts` is the pattern for a test that reads the
+migrations and fails when a constrained column has no code; catalog has none yet.
 
 Two smaller points, one since reconciled:
 

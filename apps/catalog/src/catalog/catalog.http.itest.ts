@@ -35,6 +35,7 @@ import { Show } from './show.entity.js';
 import { Artist } from '../artists/artist.entity.js';
 import { ArtistsModule } from '../artists/artists.module.js';
 import { CLOCK } from '../clock.js';
+import { untilBlockedOrSettled } from '../itest/lock-waits.js';
 import { Initial1758800000000 } from '../migrations/1758800000000-initial.js';
 import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
 import { ShowCopyAndVenue1790420100000 } from '../migrations/1790420100000-show-copy-and-venue.js';
@@ -48,6 +49,7 @@ import { Artist1790420800000 } from '../migrations/1790420800000-artist.js';
 import { PublicSlugs1790420900000 } from '../migrations/1790420900000-public-slugs.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';
 import { SlugAlias } from '../public/slug-alias.entity.js';
+import { UNIQUE_VIOLATION_CODES } from '../unique-violations.js';
 import { Venue } from '../venues/venue.entity.js';
 import { VenuesModule } from '../venues/venues.module.js';
 
@@ -121,7 +123,7 @@ beforeAll(async () => {
         provide: APP_FILTER,
         inject: [HttpAdapterHost],
         useFactory: (host: HttpAdapterHost): ErrorEnvelopeFilter =>
-          new ErrorEnvelopeFilter(host, clock),
+          new ErrorEnvelopeFilter(host, clock, UNIQUE_VIOLATION_CODES),
       },
       { provide: APP_INTERCEPTOR, useValue: new SuccessEnvelopeInterceptor(clock) },
     ],
@@ -210,6 +212,72 @@ describe('the show, venue and artist routes over HTTP', () => {
         tagIds: [],
       });
       expect(missing.statusCode).toBe(404);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'answers 409 to a show whose slug another took at the same moment, and slugs its retry anew',
+    async () => {
+      const title = { fr: 'Course contre la montre', en: '' };
+      const show = {
+        channelId: CHANNEL,
+        artistId: 'artist-studio-http',
+        categoryId: 'theatre',
+        genreIds: [],
+        tagIds: [],
+        runtimeMin: 80,
+        languageDependency: LanguageDependency.NONE,
+        spokenLanguages: ['fr-FR'],
+        subtitleLanguages: [],
+        surtitleLanguages: [],
+        media: {
+          wide: [],
+          poster: [{ url: 'https://cdn.example.test/p.jpg', widthPx: 480, heightPx: 720 }],
+        },
+        title,
+      };
+      // Another publication of the same title, inserted and not yet committed: the slug looks free.
+      const runner = dataSource.createQueryRunner();
+      await runner.connect();
+      await runner.startTransaction();
+      let publishing: ReturnType<typeof send> | undefined;
+      try {
+        await runner.manager.insert(Show, {
+          id: '01a0e400-0000-7000-8000-0000000000f1',
+          slug: 'course-contre-la-montre',
+          channel_id: CHANNEL,
+          artist_id: 'artist-studio-http',
+          category_id: 'theatre',
+          genre_ids: [],
+          tag_ids: [],
+          runtime_min: 80,
+          language_dependency: LanguageDependency.NONE,
+          spoken_languages: ['fr-FR'],
+          subtitle_languages: [],
+          surtitle_languages: [],
+          media: { wide: [], poster: [] },
+          title,
+          synopsis: { fr: '', en: '' },
+        });
+        publishing = send('POST', '/shows', show);
+        await untilBlockedOrSettled(dataSource, publishing);
+        await runner.commitTransaction();
+      } finally {
+        await runner.release();
+      }
+
+      const lost = await publishing;
+      expect(lost?.statusCode).toBe(409);
+      expect(lost?.json()).toMatchObject({
+        error: { code: DomainErrorCode.STATE_CONFLICT, nature: FailureNature.REFUSED },
+      });
+
+      const retried = await send('POST', '/shows', show);
+      expect(retried.statusCode).toBe(201);
+      const { showId } = retried.json<{ data: { showId: string } }>().data;
+      const { slug } = await dataSource.getRepository(Show).findOneByOrFail({ id: showId });
+      expect(slug).toMatch(/^course-contre-la-montre-[0-9a-f]{8}$/);
     },
     CASE_MS,
   );

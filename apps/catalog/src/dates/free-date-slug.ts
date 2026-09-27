@@ -9,7 +9,8 @@ import { reservedForAnother } from '../public/slug-aliases.js';
 
 /**
  * The first slug for `startsAt` no other date of the show holds or still reserves (D-075). The
- *   last candidate carries the date's own id; the unique index settles a race.
+ *   last candidate carries the date's own id. Called under the show's row lock (`loadDate`): no
+ *   other date of the show picks one meanwhile.
  */
 export async function freeDateSlug(
   manager: EntityManager,

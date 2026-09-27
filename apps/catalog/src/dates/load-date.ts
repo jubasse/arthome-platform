@@ -11,7 +11,11 @@ export interface LoadedDate {
   readonly venue: Venue;
 }
 
-/** A missing date is 404. */
+/**
+ * A missing date is 404. The show is read under its row lock, held to the commit: publishing copies
+ *   it onto the date's public row, which a show update committing meanwhile could not reach, and
+ *   publishing or postponing picks a slug no other date of the show may take at the same moment.
+ */
 export async function loadDate(
   { manager, dates }: CatalogTransaction,
   dateId: string,
@@ -21,7 +25,10 @@ export async function loadDate(
   const { showId, venueId } = date.snapshot;
   return {
     date,
-    show: await manager.findOneByOrFail(Show, { id: showId }),
+    show: await manager.findOneOrFail(Show, {
+      where: { id: showId },
+      lock: { mode: 'pessimistic_write' },
+    }),
     venue: await manager.findOneByOrFail(Venue, { id: venueId }),
   };
 }

@@ -90,7 +90,10 @@ export class PublishShowHandler implements ICommandHandler<PublishShow> {
   }
 }
 
-/** The first candidate no show holds and no retired slug still reserves; the index settles a race. */
+/**
+ * The first candidate no show holds and no retired slug still reserves. Two shows of one title
+ *   published at once both find it free: `show_slug` refuses the second, 409 (`unique-violations.ts`).
+ */
 async function freeShowSlug(
   manager: EntityManager,
   title: Bilingual,

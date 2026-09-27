@@ -95,7 +95,11 @@ async function insertPublicDate(
   { show, venue }: DateCopies,
   changes: DateChanges,
 ): Promise<void> {
-  const artist = await manager.findOneBy(Artist, { channel_id: date.channelId });
+  // Shared lock to the commit: a rename committing meanwhile could not reach this row.
+  const artist = await manager.findOne(Artist, {
+    where: { channel_id: date.channelId },
+    lock: { mode: 'pessimistic_read' },
+  });
   await manager.insert(DateDetailPublic, {
     artist_name: artist?.public_name ?? null,
     date_id: date.id,
