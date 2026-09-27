@@ -27,7 +27,7 @@ export class TransitionPublicationHandler implements ICommandHandler<TransitionP
   public execute(command: TransitionPublication): Promise<MemorisedResponse<PublicationView>> {
     return this.transactions.run((transaction) =>
       runIdempotently(transaction.manager, command.idempotency, this.clock, () =>
-        asConflict(() => this.transitionIn(transaction, command)),
+        this.transitionIn(transaction, command),
       ),
     );
   }
@@ -53,16 +53,18 @@ export class TransitionPublicationHandler implements ICommandHandler<TransitionP
             now,
           )
         : null;
-    date.transitionPublication(
-      {
-        to: body.to,
-        expectedVersion: body.expectedVersion,
-        acknowledgedPromise: body.acknowledgedPromiseCode,
-      },
-      { satisfied, freeSlug, showRuntimeMin: show.runtime_min, now },
+    await asConflict(() =>
+      date.transitionPublication(
+        {
+          to: body.to,
+          expectedVersion: body.expectedVersion,
+          acknowledgedPromise: body.acknowledgedPromiseCode,
+        },
+        { satisfied, freeSlug, showRuntimeMin: show.runtime_min, now },
+      ),
     );
 
-    await dates.save(date);
+    await asConflict(() => dates.save(date));
     await recordDateEvents(manager, date.getUncommittedEvents(), {
       origin: this.publicWebOrigin,
       show,

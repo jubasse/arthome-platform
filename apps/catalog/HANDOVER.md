@@ -188,7 +188,7 @@ which are all functions of an `EntityManager` already.
 execute(command: DeclareOutcome) {
   return this.transactions.run((transaction) =>
     runIdempotently(transaction.manager, command.idempotency, this.clock, () =>
-      asConflict(() => this.declareIn(transaction, command)),
+      this.declareIn(transaction, command),
     ),
   );
 }
@@ -221,9 +221,10 @@ the new public row with the old copy, for good, and two dates of one show publis
 onto one day at once lost one to `date_show_slug`, answered 500.
 
 **Refusals keep their code and params.** The aggregate and the repository throw core's
-`DomainError`; a date handler wraps its whole work in `asConflict`, which rethrows one as a 409
-`RefusalException` with the same `code`, `params` and `nature`. Unwrapped, `ErrorEnvelopeFilter`
-answers a `DomainError` 400. The stale version is one too, checked before any rule, as before:
+`DomainError`; a date handler wraps the aggregate's method call and its `save` in `asConflict`, which
+rethrows one as a 409 `RefusalException` with the same `code`, `params` and `nature`. Any other
+`DomainError` in the handler stays unwrapped, and `ErrorEnvelopeFilter` answers it 400, as before the
+move (`transition-publication.handler.spec.ts`). The stale version is one too, checked before any rule, as before:
 core's `assertCommandedTransition` for a transition, `Publication.advancedFrom` for an outcome. A
 404 or a 400 stays the `RefusalException` it was; a handler builds one from `src/refusals.ts`
 (`notFound()`, `stateConflict(params)`) or `schemaInvalidException`, never by hand.

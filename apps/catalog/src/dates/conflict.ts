@@ -6,12 +6,13 @@ import { isDomainError } from '@arthome/core';
 import { PublicationChecklistIncomplete } from './publication.js';
 
 /**
- * The date commands answer every refusal 409, as the contract's `moveDatePublicationState` and
- *   `decideDateOutcome`: the aggregate's decisions and the version-conditional save alike.
+ * The date commands answer the aggregate's refusals and the version-conditional save's 409, as the
+ *   contract's `moveDatePublicationState` and `decideDateOutcome`. Only those two are wrapped: any
+ *   other `DomainError` in a handler is a fault in what it was sent, 400 through the filter.
  */
-export async function asConflict<T>(command: () => Promise<T>): Promise<T> {
+export async function asConflict<T>(decide: () => T | Promise<T>): Promise<T> {
   try {
-    return await command();
+    return await decide();
   } catch (error) {
     if (!isDomainError(error)) throw error;
     throw new RefusalException(HttpStatus.CONFLICT, {

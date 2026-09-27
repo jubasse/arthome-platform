@@ -37,7 +37,7 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
   public execute(command: DeclareOutcome): Promise<MemorisedResponse<DeclaredOutcome>> {
     return this.transactions.run((transaction) =>
       runIdempotently(transaction.manager, command.idempotency, this.clock, () =>
-        asConflict(() => this.declareIn(transaction, command)),
+        this.declareIn(transaction, command),
       ),
     );
   }
@@ -62,9 +62,11 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
             venue.time_zone,
             now,
           );
-    date.declareOutcome(body.expectedVersion, declaration, body.message, { slugAtNewStart, now });
+    await asConflict(() =>
+      date.declareOutcome(body.expectedVersion, declaration, body.message, { slugAtNewStart, now }),
+    );
 
-    await dates.save(date);
+    await asConflict(() => dates.save(date));
     await recordDateEvents(manager, date.getUncommittedEvents(), {
       origin: this.publicWebOrigin,
       show,
