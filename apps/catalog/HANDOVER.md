@@ -292,7 +292,7 @@ their routes no key, and the shows controller maps its body to core's types (§2
 
 **The checklist consumer dispatches too.** `consumer.ts` boots `ConsumerModule`
 (`consumer.module.ts`: TypeORM, `CqrsModule.forRoot()`, `ChecklistConsumerModule`, and
-`@arthome-platform/messaging`'s `ConsumerHostModule.forRoot({ service, topics, apply })`, whose
+`@arthome-platform/messaging/nest`'s `ConsumerHostModule.forRoot({ service, topics, apply })`, whose
 `ConsumerHost` runs the consumers over an injected `Kafka`) as an application context, without HTTP,
 and `applyChecklistMessage` turns each message it reads as a fact into `RecordChecklistFact`, whose
 handler claims `processed_message` in the command's transaction. The host starts Kafka in
@@ -378,7 +378,8 @@ review, M4); never a catalog concept and never in arthome-core:
   malformed `message-id` as permanent at the consume edge, `outboxWriter(topics)`, a service's
   `writeOutboxEvent` over its table of each event type's topic (`writeCatalogEvent` is one), and
   `ConsumerHostModule.forRoot({ service, topics, apply })`, a consumer process's Kafka client and
-  consumers, each message turned into a command on the `CommandBus`.
+  consumers, each message turned into a command on the `CommandBus`. The host is the package's
+  `/nest` entry, its `@nestjs/*` peers optional, so a consumer without Nest loads none of it.
 
 Nothing else is generic: aggregates extend `@nestjs/cqrs`'s `AggregateRoot` as it is, and the
 events-to-outbox mapping builds catalog's own payloads over `writeCatalogEvent`.

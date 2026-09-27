@@ -239,7 +239,7 @@ Known and left, each judged:
   `@arthome-platform/transactions`', `notFound`, `asConflict` and `edgeProviders` are
   `@arthome-platform/http-edge`'s, `httpApp` is `@arthome-platform/testing`'s, and
   `writeTicketingEvent` (`outboxWriter` over ticketing's topics) and the consumer host
-  (`ConsumerHostModule`) are `@arthome-platform/messaging`'s. `assert-never.ts` is still one copy
+  (`ConsumerHostModule`, its `/nest` entry) are `@arthome-platform/messaging`'s. `assert-never.ts` is still one copy
   per service: its home is core, which this repository does not edit.
 - **`CLOCK` is provided in each feature module and in `EDGE_PROVIDERS`** (N2): catalog's pattern,
   harmless while `SystemClock` is stateless. `edgeProviders` takes the service's token rather than

@@ -27,8 +27,9 @@ debugging NestJS code, load `nestjs-how-to` and the skills it routes to.** Alway
   (the outbox and the idempotent consumers) · `nestjs-performance` (@nestjs/platform-fastify) ·
   `nestjs-monorepo` (pnpm workspace) · `nestjs-search` (@opensearch-project/opensearch) ·
   `nestjs-bff-gateway` (`apps/bff-storefront`) · `nestjs-cqrs` (@nestjs/cqrs, `apps/catalog`,
-  `apps/ticketing`, `libs/transactions`, `libs/testing`'s `httpApp` and `libs/messaging`'s
-  `ConsumerHostModule`, whose conventions are `apps/catalog/HANDOVER.md` §0f) ·
+  `apps/ticketing`, `libs/transactions`, `libs/testing`'s `httpApp` and
+  `@arthome-platform/messaging/nest`'s `ConsumerHostModule`, whose conventions are
+  `apps/catalog/HANDOVER.md` §0f) ·
   `nestjs-ddd` (catalog's aggregates and repository ports, which `nestjs-cqrs` routes to)
 
 Project decisions — the ADRs and `DECISIONS.md` in arthome-core — take precedence over these
@@ -72,10 +73,6 @@ NestJS skips them; this block is what makes loading systematic rather than remem
   no gate checks it yet: a bump that misses one library's pin makes a second `@nestjs/common`, and
   a `RefusalException` from that copy is no longer an `HttpException` to the error filter. Bump them
   everywhere at once, and check `node_modules/.pnpm` holds one version of each after install.
-  `libs/messaging` (`ConsumerHostModule`) and `libs/testing` (`httpApp`) export Nest code from their
-  index, so `notifications`, `search-indexer` and the tools, which run no Nest, load `@nestjs/common`
-  and `@nestjs/cqrs` through them, from the library's own pinned install: an image of one of those
-  services has to ship them.
 - **`vendor/` is build output of another repository.** Do not edit anything inside it. To pick up a
   change made in arthome-core, run `pnpm run bootstrap`.
 - **After `pnpm run bootstrap`, restart your editor's ESLint server.** Bootstrap re-packs
