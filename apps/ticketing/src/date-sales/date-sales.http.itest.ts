@@ -134,21 +134,14 @@ describe('PUT /v1/dates/:dateId/prices', () => {
   );
 
   it(
-    'refuses by name a missing key, a tier twice, two currencies and a field it does not know',
+    'refuses by name a missing key, a tier twice and a field it does not know',
     async () => {
       const dateId = await openedDate();
-      const [full, reduced] = PRICES.tiers;
+      const [full] = PRICES.tiers;
 
       const cases = [
         [putPrices(dateId, { expectedVersion: 1, ...PRICES }, null), ['Idempotency-Key']],
         [putPrices(dateId, { expectedVersion: 1, tiers: [full, full] }), ['tiers']],
-        [
-          putPrices(dateId, {
-            expectedVersion: 1,
-            tiers: [full, { ...reduced, currencyCode: 'CHF' }],
-          }),
-          ['tiers'],
-        ],
         [putPrices(dateId, { expectedVersion: 1, ...PRICES, lockedAt: NOW }), []],
       ] as const;
 
@@ -167,15 +160,27 @@ describe('PUT /v1/dates/:dateId/prices', () => {
   );
 
   it(
-    'answers 409 with the code for a stale version and for prices the sale locked',
+    'answers 409 with the code for two currencies, a stale version and prices the sale locked',
     async () => {
       const dateId = await openedDate();
+      const [full, reduced] = PRICES.tiers;
+      const mixed = await putPrices(dateId, {
+        expectedVersion: 1,
+        tiers: [full, { ...reduced, currencyCode: 'CHF' }],
+      });
       await putPrices(dateId, { expectedVersion: 1, ...PRICES });
 
       const stale = await putPrices(dateId, { expectedVersion: 1, ...PRICES });
       await applyCatalogDateMessage(app.get(CommandBus), delivered(engaged(dateId, NOW)));
       const locked = await putPrices(dateId, { expectedVersion: 3, ...PRICES });
 
+      expect(mixed.statusCode).toBe(409);
+      expect(mixed.json()).toMatchObject({
+        error: {
+          code: CatalogErrorCode.PRICES_CURRENCY_MISMATCH,
+          params: { tier: PriceTier.REDUCED, currency: 'CHF', expected: 'EUR' },
+        },
+      });
       expect(stale.statusCode).toBe(409);
       expect(stale.json()).toMatchObject({
         error: {

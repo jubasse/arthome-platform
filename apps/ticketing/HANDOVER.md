@@ -42,8 +42,12 @@ development stack the backlog was within the retention and opened every date dra
   `lockedAt`. The sale opens when `catalog.publication.engaged` names the prices; `on_sale` is a
   column Postgres generates from the lock and the close, for T3's WHERE.
 - **The technical provision** is `technicalProvisionOf` (`technical-provision.ts`): core's
-  threshold, `requiresTechnicalProvision`, and a deadline `PROVISION_REVISION_HOURS` before the
-  start, once catalog has stated one. It is served and published, never refused (§3).
+  threshold, `requiresTechnicalProvision`, and core's `provisionRevisableUntil` once catalog has
+  stated a start. `openCapacityTier` calls core's `assertTechnicalProvisionCovers`: a capacity past
+  the threshold that no recorded provision covers is refused 409 `date.technical_provision_required`,
+  naming the threshold, the capacity asked for and the deadline.
+- **One currency per sale** is core's `assertPricesShareCurrency`, called by `setPrices`: 409
+  `date.prices_currency_mismatch`, naming the stray tier, its currency and the expected one.
 - **The version** counts every load-modify-save, a studio command's or a consumed fact's: a studio
   screen that did not see a reschedule or the lock is stale like any other (accepted by the lead,
   2026-09-27). A command names it (`expectedVersion`); a fact is guarded by its own `occurred_at` per
@@ -57,9 +61,10 @@ development stack the backlog was within the retention and opened every date dra
 
 - The two commands take an `Idempotency-Key` (`runIdempotentlyVersioned`: the version at the
   envelope's root), answer the pane read off the row inside their transaction, and refuse 409 with
-  the domain's code: `state.conflict` with `version`, `date.prices_locked`, `capacity.tier_must_widen`.
-- `setDatePrices` refuses 400 naming `tiers` a tier sent twice or two currencies in one sale; the
-  aggregate holds the one currency itself for any other writer (§3).
+  the domain's code: `state.conflict` with `version`, `date.prices_locked`,
+  `date.prices_currency_mismatch`, `capacity.tier_must_widen`, `date.technical_provision_required`.
+- `setDatePrices` refuses 400 naming `tiers` a tier sent twice: a malformed body. Two currencies
+  are a well-formed body a rule refuses, 409 above.
 - `openCapacityTier` accepts `notifyWaitlist` and records nothing for it: the waiting list is T5's.
   It answers `waitlistNotified: 0`, true while no list exists, and no `priorityUntil`. On a sale a
   cancellation or an interruption closed, it refuses 409 `state.conflict` naming the version and
@@ -75,8 +80,8 @@ development stack the backlog was within the retention and opened every date dra
 `GET /v1/dates/:dateId/availability`: seats available, waiting list, fill rate, sold out, the price
 tiers, read live off the row, each through core (`date-sales-figures.ts`, which the pane and the
 event share). It requires `x-arthome-deadline`, answers `no-store` (the BFF sets `public,
-max-age=15`, the operation's freshness, transport.md §5.9), and carries `validUntil` 60 s after
-`servedAt`, `AVAILABILITY_VALID_SECONDS`, whose number data-model §3.1 owns (§3). **Only a sale on
+max-age=15`, the operation's freshness, transport.md §5.9), and carries core's
+`availabilityValidUntil`, `AVAILABILITY_VALID_SECONDS` after `servedAt`. **Only a sale on
 sale is served** (`on_sale`): before it opens, and once a cancellation or an interruption closed it,
 the read answers 404 rather than seats nobody can buy.
 
@@ -89,7 +94,7 @@ the read answers 404 rather than seats nobody can buy.
 | --- | --- | --- |
 | `catalog.date.drafted.v1` | `drafted` | opens the `DateSales`; a second draft of the date is `superseded` |
 | `catalog.publication.engaged.v1` | `lock`, when it engages the prices | locks them, opens the sale, restates `pricing_changed` |
-| `catalog.date.scheduled.v1`, `.rescheduled.v1` | `start` | records the start; restates `capacity_set` when a provision's deadline moves |
+| `catalog.date.scheduled.v1`, `.rescheduled.v1` | `start` | records the start; restates `capacity_set` when a required provision's deadline moves |
 | `catalog.date.outcome_declared.v1` | `outcome` | records it; `cancelled` and `interrupted` close the sale (ADR §8), refunds and credits T4 |
 
 Anything else is `ignored`, and so is an outcome member this build does not know (critical rule 10).
@@ -153,7 +158,7 @@ Refusals: the aggregate throws core's `DomainError`; the studio handlers wrap it
 | Suite | What |
 | --- | --- |
 | `date-sales.aggregate.spec.ts` | 19 cases, plain Vitest, core never mocked |
-| `date-sales.itest.ts` | the commands through the buses: replay, key reuse, stale version, two commands from one version, the lock, the counters as deltas under a hold, the provision's deadline restated, domain events after commit only, the outbox's rows in order |
+| `date-sales.itest.ts` | the commands through the buses: replay, key reuse, stale version, two commands from one version, the lock, the counters as deltas under a hold, two currencies and an unprovisioned capacity past the threshold refused, domain events after commit only, the outbox's rows in order |
 | `catalog-date-consumer.itest.ts` | real Kafka: duplicate, superseded start and outcome, ignored, a fact before its draft retried then applied, poison dead-lettered |
 | `publish-due-availability.itest.ts` | the rate bound (a seat every 500 ms for 12 s: four publications), selling out and back at once, a closing, a draft unpublished, a date a command holds published without waiting, `SKIP LOCKED` and four racing passes, a move during a publication neither waiting nor lost, the hold's wait behind a hundred-date pass, a date that cannot be published set aside and tried again |
 | `migrations/availability-publication.itest.ts` | the publication table's migration on a database that already holds dates |
@@ -193,22 +198,15 @@ either service imports the other.
 - For T4: refunds run on BullMQ (ADR §8), which needs Redis; the sweeper stays on Postgres alone,
   so those workers need a process of their own or the consumer's. T4 decides and records it here.
 
-## 3. Gaps, reported rather than worked around
+## 3. Gaps
 
-Three are core's to add, and accepted as interim by the lead on 2026-09-27, who takes them to
-arthome-core:
+The three interims of the first handover are core's rules now (arthome-core PR #2, fbab36e):
+`AVAILABILITY_VALID_SECONDS` and `availabilityValidUntil`, `provisionRevisableUntil` and
+`assertTechnicalProvisionCovers`, `assertPricesShareCurrency`.
 
-- **a constant for the availability read's 60 s**: until then `AVAILABILITY_VALID_SECONDS`, naming
-  data-model §3.1 as its owner;
-- **a refusal rule for `date.technical_provision_required`** (when `openCapacityTier` refuses), with
-  a function for the revision deadline and one for the penalty exposure: until then the provision is
-  served and published, never refused, its deadline counted back with core's constant. **This
-  interim blocks lifting `DenyInProductionGuard` from the studio routes** (architecture review M2):
-  until the refusal exists, a studio could widen past 10,000 seats inside the last 72 hours;
-- **a rule that a sale's tiers share one currency**, which core's `lowestActivePrice` assumes: until
-  then `DateSales.setPrices` holds it locally (`assertOneCurrency`, refused with core's
-  `money.currency_mismatch`, 409 through `asConflict`), and the request schema refuses it earlier,
-  400 `api.schema_invalid` naming `tiers`, so no HTTP caller reaches the aggregate's refusal.
+**No command records a technical provision yet**, so `openCapacityTier` passes none to
+`assertTechnicalProvisionCovers` and every capacity past the threshold is refused. arthome-core
+recommends a studio `setTechnicalProvision` (D-088). The penalty exposure has no rule in core.
 
 Known and left, each judged:
 

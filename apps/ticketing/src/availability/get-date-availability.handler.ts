@@ -4,13 +4,9 @@ import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import type { Clock } from '@arthome/core';
+import { availabilityValidUntil, type Clock } from '@arthome/core';
 
-import {
-  availabilityValidUntil,
-  dateAvailabilityOf,
-  type DateAvailability,
-} from './date-availability.js';
+import { dateAvailabilityOf, type DateAvailability } from './date-availability.js';
 import { GetDateAvailability } from './get-date-availability.query.js';
 import { CLOCK } from '../clock.js';
 import { DateSalesRow } from '../date-sales/date-sales.entity.js';

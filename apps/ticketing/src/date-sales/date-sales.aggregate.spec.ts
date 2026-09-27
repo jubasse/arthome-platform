@@ -5,12 +5,10 @@ import {
   DateOutcome,
   DomainError,
   DomainErrorCode,
-  DomainGuardCode,
-  PROVISION_REVISION_HOURS,
   PriceTier,
   TECHNICAL_PROVISION_THRESHOLD,
   money,
-  plusHours,
+  provisionRevisableUntil,
   type TierPrice,
 } from '@arthome/core';
 
@@ -100,8 +98,8 @@ describe('setPrices', () => {
 
     const refusal = refusalOf(() => sales.setPrices(3, [FULL, inFrancs], NOW));
 
-    expect(refusal.code).toBe(DomainGuardCode.MONEY_CURRENCY_MISMATCH);
-    expect(refusal.params).toEqual({ left: 'EUR', right: 'CHF' });
+    expect(refusal.code).toBe(CatalogErrorCode.PRICES_CURRENCY_MISMATCH);
+    expect(refusal.params).toEqual({ tier: PriceTier.REDUCED, currency: 'CHF', expected: 'EUR' });
     expect(sales.snapshot.priceTiers).toEqual([FULL]);
     expect(sales.getUncommittedEvents()).toEqual([]);
   });
@@ -159,20 +157,26 @@ describe('openCapacityTier', () => {
     expect(sales.snapshot.capacityTiers.map(({ capacity }) => capacity)).toEqual([200, 50]);
   });
 
-  it('requires the technical provision past the threshold, revisable until 72 h before', () => {
-    const sales = restored({ capacityTotal: TECHNICAL_PROVISION_THRESHOLD, startsAt: STARTS_AT });
+  it('opens up to the threshold with no provision recorded', () => {
+    const sales = restored({ capacityTotal: TECHNICAL_PROVISION_THRESHOLD - 1 });
 
     sales.openCapacityTier(3, 1, NOW);
 
-    expect(sales.getUncommittedEvents()).toMatchObject([
-      {
-        kind: 'CapacityTierOpened',
-        provision: {
-          required: true,
-          revisableUntil: plusHours(STARTS_AT, -PROVISION_REVISION_HOURS),
-        },
-      },
-    ]);
+    expect(sales.snapshot.capacityTotal).toBe(TECHNICAL_PROVISION_THRESHOLD);
+  });
+
+  it('refuses a capacity past the threshold no provision covers, naming the deadline', () => {
+    const sales = restored({ capacityTotal: TECHNICAL_PROVISION_THRESHOLD, startsAt: STARTS_AT });
+
+    const refusal = refusalOf(() => sales.openCapacityTier(3, 1, NOW));
+
+    expect(refusal.code).toBe(CatalogErrorCode.TECHNICAL_PROVISION_REQUIRED);
+    expect(refusal.params).toEqual({
+      threshold: TECHNICAL_PROVISION_THRESHOLD,
+      capacityTotal: TECHNICAL_PROVISION_THRESHOLD + 1,
+      revisableUntil: provisionRevisableUntil(STARTS_AT),
+    });
+    expect(sales.snapshot.capacityTotal).toBe(TECHNICAL_PROVISION_THRESHOLD);
   });
 
   it('refuses a tier that does not widen, with the code core gives', () => {

@@ -1,7 +1,6 @@
 import {
-  PROVISION_REVISION_HOURS,
   TECHNICAL_PROVISION_THRESHOLD,
-  plusHours,
+  provisionRevisableUntil,
   requiresTechnicalProvision,
   type Instant,
 } from '@arthome/core';
@@ -22,7 +21,6 @@ export function technicalProvisionOf(
   return {
     required,
     threshold: TECHNICAL_PROVISION_THRESHOLD,
-    revisableUntil:
-      required && startsAt !== null ? plusHours(startsAt, -PROVISION_REVISION_HOURS) : null,
+    revisableUntil: required && startsAt !== null ? provisionRevisableUntil(startsAt) : null,
   };
 }

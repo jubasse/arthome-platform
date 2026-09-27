@@ -25,12 +25,10 @@ import {
   CatalogErrorCode,
   DateOutcome,
   DomainErrorCode,
-  DomainGuardCode,
   FixedClock,
-  PROVISION_REVISION_HOURS,
   PriceTier,
   TECHNICAL_PROVISION_THRESHOLD,
-  plusHours,
+  provisionRevisableUntil,
 } from '@arthome/core';
 
 import { ApplyCatalogDateFactHandler } from './apply-catalog-date-fact.handler.js';
@@ -50,7 +48,6 @@ import {
   drafted,
   engaged,
   outcomeDeclared,
-  rescheduled,
   scheduled,
 } from '../itest/catalog-messages.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
@@ -252,7 +249,7 @@ describe('setDatePrices', () => {
   );
 
   it(
-    'refuses two currencies in one sale even past the request schema, and writes nothing',
+    'refuses two currencies in one sale, and writes nothing',
     async () => {
       const dateId = await openedDate();
       const [full, reduced] = FULL_AND_REDUCED;
@@ -264,8 +261,8 @@ describe('setDatePrices', () => {
 
       expect(refusal.getStatus()).toBe(409);
       expect(refusal.refusal).toMatchObject({
-        code: DomainGuardCode.MONEY_CURRENCY_MISMATCH,
-        params: { left: 'EUR', right: 'CHF' },
+        code: CatalogErrorCode.PRICES_CURRENCY_MISMATCH,
+        params: { tier: PriceTier.REDUCED, currency: 'CHF', expected: 'EUR' },
       });
       expect(await outboxRowsFor(dateId)).toHaveLength(0);
       expect((await rowOf(dateId)).version).toBe(1);
@@ -417,32 +414,25 @@ describe('openCapacityTier', () => {
   );
 
   it(
-    'states the provision past the threshold, and its new deadline when the date moves',
+    'refuses a capacity past the threshold no provision covers, and writes nothing',
     async () => {
       const dateId = await openedDate();
       const startsAt = '2026-12-12T19:00:00.000Z';
-      const movedTo = '2026-12-19T19:00:00.000Z';
       await applyCatalogDateMessage(commands, delivered(scheduled(dateId, startsAt, NOW)));
 
-      const opened = await openTier(dateId, 2, TECHNICAL_PROVISION_THRESHOLD + 1);
-      await applyCatalogDateMessage(
-        commands,
-        delivered(rescheduled(dateId, movedTo, '2026-09-28T10:00:00.000Z')),
-      );
+      const refusal = await refusalOf(openTier(dateId, 2, TECHNICAL_PROVISION_THRESHOLD + 1));
 
-      expect(opened.envelope.data.sales.technicalProvision).toEqual({
-        required: true,
-        threshold: TECHNICAL_PROVISION_THRESHOLD,
-        revisableUntil: plusHours(startsAt, -PROVISION_REVISION_HOURS),
+      expect(refusal.getStatus()).toBe(409);
+      expect(refusal.refusal).toMatchObject({
+        code: CatalogErrorCode.TECHNICAL_PROVISION_REQUIRED,
+        params: {
+          threshold: TECHNICAL_PROVISION_THRESHOLD,
+          capacityTotal: TECHNICAL_PROVISION_THRESHOLD + 1,
+          revisableUntil: provisionRevisableUntil(startsAt),
+        },
       });
-      const deadlines = (await outboxRowsFor(dateId)).map(({ payload }) => {
-        const { provisionRevisableUntil } = fromBinary(DateSalesCapacitySetSchema, payload);
-        return provisionRevisableUntil && timestampDate(provisionRevisableUntil).toISOString();
-      });
-      expect(deadlines).toEqual([
-        plusHours(startsAt, -PROVISION_REVISION_HOURS),
-        plusHours(movedTo, -PROVISION_REVISION_HOURS),
-      ]);
+      expect((await rowOf(dateId)).capacity_total).toBe(0);
+      expect(await outboxRowsFor(dateId)).toHaveLength(0);
     },
     CASE_MS,
   );

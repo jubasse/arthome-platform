@@ -6,7 +6,8 @@ import {
   DateOutcome,
   DomainError,
   DomainErrorCode,
-  DomainGuardCode,
+  assertPricesShareCurrency,
+  assertTechnicalProvisionCovers,
   assertTierWidens,
   isBefore,
   type Instant,
@@ -61,21 +62,6 @@ function frozen<T>(value: T): T {
     for (const inner of Object.values(value)) frozen(inner);
   }
   return value;
-}
-
-/**
- * One currency per sale: core's headline price compares amounts across tiers. A local rule until
- *   core carries it (HANDOVER §3), refused with core's own guard for two currencies.
- */
-function assertOneCurrency(tiers: readonly TierPrice[]): void {
-  const [first, ...rest] = tiers;
-  if (first === undefined) return;
-  const other = rest.find(({ amount }) => amount.currencyCode !== first.amount.currencyCode);
-  if (other === undefined) return;
-  throw new DomainError({
-    code: DomainGuardCode.MONEY_CURRENCY_MISMATCH,
-    params: { left: first.amount.currencyCode, right: other.amount.currencyCode },
-  });
 }
 
 /** An older fact never overwrites a newer one; one stated at the same instant applies again. */
@@ -142,15 +128,16 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
         params: { lockedAt: pricesLockedAt },
       });
     }
-    assertOneCurrency(tiers);
+    assertPricesShareCurrency(tiers);
     this.current = frozen({ ...this.current, priceTiers: tiers, version });
     this.apply(new DatePricesSet(dateId, channelId, tiers, now));
   }
 
   /**
    * Widens the capacity by one tier, the first included, and the seats available with it; a sale
-   *   an outcome closed is refused, naming it. The waiting list's notification is T5's: nothing is
-   *   recorded for it yet.
+   *   an outcome closed is refused, naming it, and so is a capacity past core's threshold that no
+   *   recorded provision covers. No command records one yet, so none covers. The waiting list's
+   *   notification is T5's: nothing is recorded for it yet.
    */
   public openCapacityTier(expectedVersion: number, additionalCapacity: number, now: Instant): void {
     const version = this.advancedFrom(expectedVersion);
@@ -165,6 +152,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
     }
     const widened = capacityTotal + additionalCapacity;
     assertTierWidens(capacityTotal, widened);
+    assertTechnicalProvisionCovers(widened, null, startsAt);
     const tier: CapacityTier = { id: uuidv7(), capacity: additionalCapacity, openedAt: now };
     this.current = frozen({
       ...this.current,
