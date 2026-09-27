@@ -257,8 +257,11 @@ union fails both files with TS2345).
 what the command must guarantee: the `EventBus` is in memory and fire-and-forget (`nestjs-cqrs`
 rules 4 and 5), so an outbox row or a read model written there could be lost, or land after the
 answer. `commit()` is still called because §12 prescribes it and it keeps a future in-process
-reaction safe (rule 8); `dates.itest.ts` proves the events reach the bus after the commit and never
-for a replay or a refusal.
+reaction safe (rule 8). `dates.itest.ts` proves it against Postgres: when each event reaches the bus,
+another connection already reads the committed outcome (every COMMIT there first waits for the reads
+already started, so an event delivered inside the transaction would read the old row: measured
+`[null, null]` with `commit()` moved inside `dataSource.transaction`), and a replay, a stale refusal
+and a failure after the save deliver nothing (measured: 3 events with `commit()` in a `finally`).
 
 **Controllers dispatch.** They parse the `traceparent`, build the `IdempotentRequest`
 (`idempotencyKeyOf`, `fingerprintOf`), and return `this.commands.execute(new DeclareOutcome(…))` or

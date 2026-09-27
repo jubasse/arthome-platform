@@ -44,7 +44,7 @@ import { CommandBus, CqrsModule, EventBus, QueryBus, type IEvent } from '@nestjs
 import { Test, type TestingModule } from '@nestjs/testing';
 import type { EachMessagePayload, Producer, ProducerRecord } from 'kafkajs';
 import { DataSource } from 'typeorm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   ApiErrorCode,
@@ -1122,8 +1122,44 @@ describe('a date outcome', () => {
     async () => {
       const dateId = '01a0e100-0000-7000-8000-0000000005a3';
       await published(dateId);
+      const outcomeCommitted = () =>
+        dataSource
+          .getRepository(PerformanceDateRow)
+          .findOneByOrFail({ id: dateId })
+          .then((row) => row.outcome);
       const delivered: IEvent[] = [];
-      const subscription = cqrs.get(EventBus).subscribe((event) => delivered.push(event));
+      // Read on another connection the moment each event arrives: only a committed write shows.
+      const committedWhenDelivered: Promise<DateOutcome | null>[] = [];
+      const subscription = cqrs.get(EventBus).subscribe((event) => {
+        delivered.push(event);
+        committedWhenDelivered.push(outcomeCommitted());
+      });
+      // Every COMMIT first waits for the reads already started, so an event delivered inside the
+      // transaction is read before its write commits, whatever the timing.
+      const createQueryRunner = dataSource.createQueryRunner.bind(dataSource);
+      const readsFirst = vi.spyOn(dataSource, 'createQueryRunner').mockImplementation((mode) => {
+        const runner = createQueryRunner(mode);
+        const commit = runner.commitTransaction.bind(runner);
+        runner.commitTransaction = async () => {
+          await Promise.all(committedWhenDelivered);
+          await commit();
+        };
+        return runner;
+      });
+      // A failure after the save: the outbox refuses this date's rows, so the transaction rolls
+      // back with the date and its publication already written.
+      const refuseOutbox = async (refused: boolean): Promise<void> => {
+        await dataSource.query(
+          refused
+            ? `CREATE TRIGGER refuse_outbox_itest BEFORE INSERT ON outbox_event FOR EACH ROW
+                 WHEN (NEW.aggregateid = '${dateId}') EXECUTE FUNCTION refuse_outbox_itest()`
+            : 'DROP TRIGGER refuse_outbox_itest ON outbox_event',
+        );
+      };
+      await dataSource.query(
+        `CREATE FUNCTION refuse_outbox_itest() RETURNS trigger LANGUAGE plpgsql AS
+           $$ BEGIN RAISE EXCEPTION 'outbox refused by the test'; END $$`,
+      );
       try {
         const postponement = new DeclareOutcome(
           dateId,
@@ -1141,12 +1177,26 @@ describe('a date outcome', () => {
           DateOutcomeDeclared,
           DateRescheduled,
         ]);
+        expect(await Promise.all(committedWhenDelivered)).toEqual([
+          DateOutcome.POSTPONED,
+          DateOutcome.POSTPONED,
+        ]);
 
         expect((await commands.execute(postponement)).replayed).toBe(true);
         await refusalOf(declare(dateId, DateOutcome.CANCELLED, 2));
         expect(delivered).toHaveLength(2);
+
+        await refuseOutbox(true);
+        await expect(declare(dateId, DateOutcome.CANCELLED, 3)).rejects.toThrow(
+          'outbox refused by the test',
+        );
+        expect(delivered).toHaveLength(2);
+        expect(await outcomeCommitted()).toBe(DateOutcome.POSTPONED);
       } finally {
         subscription.unsubscribe();
+        readsFirst.mockRestore();
+        await refuseOutbox(false).catch(() => undefined);
+        await dataSource.query('DROP FUNCTION refuse_outbox_itest()');
       }
     },
     CASE_MS,
