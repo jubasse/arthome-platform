@@ -9,11 +9,14 @@ import {
   type PublicationState,
   type ReplayPolicy,
   type TerritoryRights,
+  worldwideRights,
 } from '@arthome/core';
 
 import {
+  DateDrafted,
   DateOutcomeDeclared,
   DateRescheduled,
+  DateScheduled,
   type OutcomeMessage,
   type PerformanceDateEvent,
 } from './performance-date.events.js';
@@ -37,6 +40,19 @@ export interface PerformanceDateSnapshot {
   readonly outcomeMessage: OutcomeMessage | null;
 }
 
+/** What a draft is created with; the rest waits for its publication or an outcome. */
+export type DateDraft = Pick<
+  PerformanceDateSnapshot,
+  | 'id'
+  | 'showId'
+  | 'venueId'
+  | 'channelId'
+  | 'startsAt'
+  | 'runtimeMin'
+  | 'replayPolicy'
+  | 'replayWindowHours'
+>;
+
 export interface OutcomeContext {
   readonly publicationState: PublicationState;
   /** The first slug free at a postponement's new start (`freeDateSlug`); null otherwise. */
@@ -57,8 +73,34 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
     return new PerformanceDate(snapshot);
   }
 
+  /** Worldwide until its rights are restricted, and without a slug until its publication. */
+  public static draft(draft: DateDraft, now: Instant): PerformanceDate {
+    const date = new PerformanceDate({
+      ...draft,
+      rights: worldwideRights(),
+      slug: null,
+      postponements: 0,
+      outcome: null,
+      rescheduledTo: null,
+      outcomeDeclaredAt: null,
+      outcomeMessage: null,
+    });
+    date.apply(new DateDrafted(draft.id, draft.channelId, draft.showId, draft.venueId, now));
+    return date;
+  }
+
   public get snapshot(): PerformanceDateSnapshot {
     return this.current;
+  }
+
+  /**
+   * Its publication makes the date public under `slug`, the first free on its day
+   *   (`freeDateSlug`), and freezes the running time its show has now.
+   */
+  public makePublic(slug: string, runtimeMin: number, now: Instant): void {
+    const date = { ...this.current, slug, runtimeMin };
+    this.current = date;
+    this.apply(new DateScheduled(date, now));
   }
 
   /**

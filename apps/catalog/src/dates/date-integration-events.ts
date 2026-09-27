@@ -1,35 +1,64 @@
-import { DateOutcomeDeclaredSchema, DateRescheduledSchema } from '@arthome-platform/events';
+import {
+  DateDraftedSchema,
+  DateOutcomeDeclaredSchema,
+  DateRescheduledSchema,
+  DateScheduledSchema,
+  PublicationEngagedSchema,
+  PublicationEngagement,
+  PublicationStateChangedSchema,
+} from '@arthome-platform/events';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import type { EntityManager } from 'typeorm';
 
+import type { DateRecords } from './date-sheet.js';
+import type { PerformanceDateSnapshot } from './performance-date.aggregate.js';
 import {
+  DateDrafted,
   DateOutcomeDeclared,
-  type DateRescheduled,
-  type PerformanceDateEvent,
+  DateRescheduled,
+  DateScheduled,
 } from './performance-date.events.js';
+import {
+  PublicationEngaged,
+  PublicationStateChanged,
+  type DateOrPublicationEvent,
+} from './publication.events.js';
 import type { Show } from '../catalog/show.entity.js';
 import { writeCatalogEvent, type CatalogEvent } from '../catalog-events.js';
 import { dateUrl } from '../public/links.js';
 import { venueClockAt } from '../venues/venue-clock.js';
 import type { Venue } from '../venues/venue.entity.js';
-import { WIRE_DATE_OUTCOME } from '../wire.js';
+import {
+  WIRE_BLACKOUT_REASON,
+  WIRE_DATE_OUTCOME,
+  WIRE_PUBLICATION_STATE,
+  WIRE_REPLAY_POLICY,
+  WIRE_RIGHTS_SCOPE,
+} from '../wire.js';
 
 /** What the wire says beyond the date's own facts: its canonical URL and its venue's clock. */
 export interface DateWireContext {
   readonly origin: string;
   readonly show: Pick<Show, 'slug'>;
-  readonly venue: Pick<Venue, 'time_zone'>;
+  readonly venue: Venue;
   readonly traceparent: string | null;
 }
 
-/** One outbox row per event, in the order the aggregate applied them, all keyed by the date. */
+/**
+ * One outbox row per event, all keyed by the date, in the order they were applied, except
+ *   `PublicationEngaged`, written last: no consumer may read the lock before the date's public facts.
+ */
 export async function writeDateIntegrationEvents(
   manager: EntityManager,
-  events: readonly PerformanceDateEvent[],
+  events: readonly DateOrPublicationEvent[],
   context: DateWireContext,
 ): Promise<void> {
-  for (const event of events) {
+  const lockLast = [
+    ...events.filter((event) => !(event instanceof PublicationEngaged)),
+    ...events.filter((event) => event instanceof PublicationEngaged),
+  ];
+  for (const event of lockLast) {
     await writeCatalogEvent(
       manager,
       integrationEventOf(event, context),
@@ -38,9 +67,91 @@ export async function writeDateIntegrationEvents(
   }
 }
 
-function integrationEventOf(event: PerformanceDateEvent, context: DateWireContext): CatalogEvent {
+/**
+ * The date's public facts as they stand. Publication states them first; a change to how they are
+ *   written, such as a new URL form, states them again (`PublicSlugs1790420900000`).
+ */
+export async function writeDateScheduled(
+  manager: EntityManager,
+  records: DateRecords & { readonly date: PerformanceDateSnapshot & { readonly slug: string } },
+  origin: string,
+  occurredAt: Date,
+  traceparent: string | null,
+): Promise<void> {
+  const { date, show, venue } = records;
+  await writeDateIntegrationEvents(manager, [new DateScheduled(date, occurredAt.toISOString())], {
+    origin,
+    show,
+    venue,
+    traceparent,
+  });
+}
+
+function integrationEventOf(event: DateOrPublicationEvent, context: DateWireContext): CatalogEvent {
+  if (event instanceof DateDrafted) return drafted(event, context);
+  if (event instanceof DateScheduled) return scheduled(event, context);
   if (event instanceof DateOutcomeDeclared) return outcomeDeclared(event, context);
-  return rescheduled(event, context);
+  if (event instanceof DateRescheduled) return rescheduled(event, context);
+  if (event instanceof PublicationStateChanged) return stateChanged(event, context);
+  return engaged(event, context);
+}
+
+function drafted(event: DateDrafted, context: DateWireContext): CatalogEvent {
+  return {
+    type: 'catalog.date.drafted.v1',
+    key: event.dateId,
+    payload: toBinary(
+      DateDraftedSchema,
+      create(DateDraftedSchema, {
+        dateId: event.dateId,
+        channelId: event.channelId,
+        showId: event.showId,
+        venueId: event.venueId,
+        occurredAt: timestampFromDate(new Date(event.occurredAt)),
+      }),
+    ),
+    traceparent: context.traceparent,
+  };
+}
+
+function scheduled({ date, occurredAt }: DateScheduled, context: DateWireContext): CatalogEvent {
+  const { show, venue } = context;
+  const venueClock = venueClockAt(venue.time_zone, date.startsAt);
+  return {
+    type: 'catalog.date.scheduled.v1',
+    key: date.id,
+    payload: toBinary(
+      DateScheduledSchema,
+      create(DateScheduledSchema, {
+        dateId: date.id,
+        channelId: date.channelId,
+        showId: date.showId,
+        venueId: date.venueId,
+        startsAt: timestampFromDate(new Date(date.startsAt)),
+        venueClock: {
+          venueTimezone: venueClock.timeZone,
+          venueUtcOffsetMin: venueClock.utcOffsetMinutes,
+        },
+        runtimeMin: date.runtimeMin,
+        replayPolicy: WIRE_REPLAY_POLICY[date.replayPolicy],
+        replayWindowHours: date.replayWindowHours ?? 0,
+        rights: {
+          scope: WIRE_RIGHTS_SCOPE[date.rights.scope],
+          blackoutCountries: [...date.rights.blackoutCountries],
+          ...(date.rights.reason !== null && {
+            reason: WIRE_BLACKOUT_REASON[date.rights.reason],
+          }),
+        },
+        canonicalUrl: dateUrl(context.origin, show.slug, date.slug),
+        showSlug: show.slug,
+        slug: date.slug,
+        venueCity: venue.city,
+        venueCountry: venue.country,
+        occurredAt: timestampFromDate(new Date(occurredAt)),
+      }),
+    ),
+    traceparent: context.traceparent,
+  };
 }
 
 function outcomeDeclared(event: DateOutcomeDeclared, context: DateWireContext): CatalogEvent {
@@ -81,6 +192,47 @@ function rescheduled(event: DateRescheduled, context: DateWireContext): CatalogE
         },
         newSlug: event.newSlug,
         newCanonicalUrl: dateUrl(context.origin, context.show.slug, event.newSlug),
+        occurredAt: timestampFromDate(new Date(event.occurredAt)),
+      }),
+    ),
+    traceparent: context.traceparent,
+  };
+}
+
+function stateChanged(event: PublicationStateChanged, context: DateWireContext): CatalogEvent {
+  return {
+    type: 'catalog.publication.state_changed.v1',
+    key: event.dateId,
+    payload: toBinary(
+      PublicationStateChangedSchema,
+      create(PublicationStateChangedSchema, {
+        dateId: event.dateId,
+        channelId: event.channelId,
+        fromState: WIRE_PUBLICATION_STATE[event.from],
+        toState: WIRE_PUBLICATION_STATE[event.to],
+        version: BigInt(event.version),
+        irreversible: event.irreversible,
+        occurredAt: timestampFromDate(new Date(event.occurredAt)),
+      }),
+    ),
+    traceparent: context.traceparent,
+  };
+}
+
+function engaged(event: PublicationEngaged, context: DateWireContext): CatalogEvent {
+  return {
+    type: 'catalog.publication.engaged.v1',
+    key: event.dateId,
+    payload: toBinary(
+      PublicationEngagedSchema,
+      create(PublicationEngagedSchema, {
+        dateId: event.dateId,
+        channelId: event.channelId,
+        engaged: [
+          PublicationEngagement.PRICES,
+          PublicationEngagement.REPLAY,
+          PublicationEngagement.CHAT_MODE,
+        ],
         occurredAt: timestampFromDate(new Date(event.occurredAt)),
       }),
     ),

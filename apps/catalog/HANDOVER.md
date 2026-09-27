@@ -45,7 +45,7 @@ indexer. The shapes served are `@arthome/contracts`': `ShowGroup`, `Facet`, the 
 
 - **`date_detail_public`** is data-model.md §4's read model: one row per public date, its show and
   venue copied in, written by catalog's own commands **in their transaction** — publishing inserts
-  the row (`announcePublication`), every transition moves its state, a show update rewrites its
+  the row (`projectDateEvents`), every transition moves its state, a show update rewrites its
   copy on every public date of the show. It carries a `version` and `applied_at`. The migration
   that creates it backfills every date already published (a date has a slug exactly once it is),
   and an integration case proves the rebuild matches.
@@ -188,30 +188,37 @@ nothing. Inside, in this order: load (a missing date is `dateNotFound()`, 404), 
 decide through the aggregates, save the publication then the date, write the consequences, answer.
 A handler never opens a transaction itself and never calls `commit()`.
 
-**Loading and saving.** A repository restores what it loads and remembers it; `save` refuses an
-aggregate it did not load, until the draft command brings the INSERT. `PublicationRepository.save`
-is the version-conditional UPDATE (`WHERE date_id AND version = <loaded>`, `affected === 1`,
+**Loading and saving.** A repository restores what it loads and remembers it; `save` inserts an
+aggregate it did not load, which only a draft's factory creates (`PerformanceDate.draft`,
+`Publication.draft`). `PublicationRepository.save` on a loaded one is the version-conditional UPDATE (`WHERE date_id AND version = <loaded>`, `affected === 1`,
 `nestjs-typeorm` rule 7); a change committed since the load answers 409 `state.conflict` with the
 current state and version, re-read. **The date has no version of its own**: its commands are
 conditioned on the publication's (§0c). That is why the publication is saved first: its row lock
-orders two concurrent commands before either writes the date.
+orders two concurrent commands before either writes the date. A draft inserts the date first: the
+publication's row references it, and no command can race on a row that does not exist yet.
 
 **Refusals keep their code and params.** An aggregate throws core's `DomainError`; the handler wraps
 each decision in `asConflict(() => aggregate.method(…))`, which rethrows it as a 409
 `RefusalException` with the same `code`, `params` and `nature`. Unwrapped, `ErrorEnvelopeFilter`
 answers a `DomainError` 400. The stale version is one too (`Publication.advanceVersionFrom`),
 checked before any rule, as before. A 404 or a 400 stays the `RefusalException` it was.
+`publication.checklist_incomplete` names a list, which core's `MessageParams` cannot carry:
+`PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and `asConflict`
+answers `{ missing }`.
 
 **What happened becomes rows from the uncommitted events, inside the transaction.** A method changes
 the snapshot, then `apply()`s one event per fact (no `on<Event>` handlers: nothing is replayed).
 After the saves the handler passes `getUncommittedEvents()` to:
 
 - `writeDateIntegrationEvents` (`date-integration-events.ts`): one outbox row per event through
-  `writeCatalogEvent`, in apply order, the Protobuf payload built there. A domain event is never the
+  `writeCatalogEvent`, in apply order, the publication's before the date's, except
+  `PublicationEngaged`, written last so no consumer reads the lock first; the Protobuf payload is
+  built there. A domain event is never the
   wire format (`nestjs-ddd` rule 11); what the wire needs beyond it — canonical URL, venue clock,
   `traceparent` — comes in a context.
 - `projectDateEvents` (`public/date-detail-projection.ts`): `date_detail_public`, the events folded
-  into one UPDATE, since the row's `version` counts commands. The read model is current when the
+  into one UPDATE, since the row's `version` counts commands, or into the whole row when
+  `DateScheduled` makes the date public. The read model is current when the
   command answers, which only the command's own transaction guarantees (`nestjs-cqrs`, Decide).
 - `retireSlugsMovedFrom` (`public/slug-aliases.ts`): a replaced slug keeps resolving for 30 days.
 
@@ -228,8 +235,16 @@ for a replay or a refusal.
 (`idempotencyKeyOf`, `fingerprintOf`), and return `this.commands.execute(new DeclareOutcome(…))` or
 `this.queries.execute(new GetDateSheet(…))`, typed by `Command<R>` / `Query<R>`. `CqrsModule.forRoot()`
 is imported once, in `AppModule`; handlers go in the feature module's `providers`, and
-`CatalogTransactionsModule` in its `imports`: it lists `CatalogTransactions` once, since two
-listings make two instances.
+`CatalogTransactions` comes from importing `CatalogTransactionsModule`: two listings make two
+instances.
+
+**The checklist consumer dispatches too.** `consumer.ts` boots `ConsumerModule` (TypeORM,
+`CqrsModule.forRoot()`, `ChecklistConsumerModule`) as an application context, without HTTP, and
+`applyChecklistMessage` turns each message it reads as a fact into `RecordChecklistFact`, whose
+handler claims `processed_message` in the command's transaction. The routing of a failure stays
+AGENTS.md's ("When a message cannot be applied"): the handler refuses a date catalog does not hold
+with core's `DomainError`, which the consumer rethrows as `PermanentError`, dead-lettered at once;
+anything else is retried as transient.
 
 **Queries read rows, never aggregates.** `GetDateSheetHandler` reads through `dataSource.manager`
 (`dateRecordsOf`, `date-records.ts`) and shapes with the pure `dateSheet()`: no transaction and no
@@ -243,6 +258,8 @@ which registers the handlers (`dates.itest.ts`). The wiring: `dates.http.itest.t
 `DatesModule` under `CqrsModule.forRoot()` and calls the routes over HTTP; a migrated route adds its
 request there. Measured: with `DeclareOutcomeHandler` left out of `DatesModule`'s `providers`, the
 route answers 500 and this suite fails; `dates.itest.ts` lists its handlers itself and cannot see it.
+The same suite records the checklist facts through `ChecklistConsumerModule`. Measured: without
+`RecordChecklistFactHandler` in its `providers`, it fails on "No handler found for the command".
 
 **No aggregate where no invariant earns one.** The show, the venue and the artist are on the
 `CommandBus` (`PublishShow`, `UpdateShow`, `CreateVenue`, `UpdateChannelIdentity`) with plain
@@ -268,8 +285,9 @@ Decided here, and each could have gone the other way:
 
 - **The entities were renamed `PerformanceDateRow` and `PublicationRow`**, so the aggregates carry
   the domain names; the tables did not move.
-- **Handlers throw `RefusalException`**, not domain errors mapped at an edge: every one is reached
-  from HTTP alone. The day a consumer dispatches one, `asConflict` moves to the HTTP edge
+- **Handlers reached from HTTP alone throw `RefusalException`**, not domain errors mapped at an
+  edge. `RecordChecklistFact`, reached from Kafka alone, throws `DomainError`, mapped by the
+  consumer. The day a consumer dispatches an HTTP one, `asConflict` moves to the HTTP edge
   (`nestjs-request-pipeline` rule 1).
 - **A lost race on the version answers the version committed since**, re-read, as a transition
   always did; the outcome path used to answer the one it had read. Only two concurrent commands see

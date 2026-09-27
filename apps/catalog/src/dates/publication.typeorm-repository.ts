@@ -20,7 +20,7 @@ export class TypeOrmPublicationRepository extends PublicationRepository {
   public async findByDateId(dateId: string): Promise<Publication | null> {
     const row = await this.manager.findOneBy(PublicationRow, { date_id: dateId });
     if (row === null) return null;
-    const publication = Publication.restore(snapshotOf(row));
+    const publication = Publication.restore(publicationSnapshotOf(row));
     this.loadedVersions.set(publication, row.version);
     return publication;
   }
@@ -29,22 +29,28 @@ export class TypeOrmPublicationRepository extends PublicationRepository {
     const { dateId, version } = publication.snapshot;
     const loadedVersion = this.loadedVersions.get(publication);
     if (loadedVersion === undefined) {
-      throw new Error(`publication of ${dateId} was not loaded in this transaction`);
-    }
-    const { affected } = await this.manager.update(
-      PublicationRow,
-      { date_id: dateId, version: loadedVersion },
-      columnsOf(publication.snapshot),
-    );
-    if (affected !== 1) {
-      throw stateConflict(await this.manager.findOneByOrFail(PublicationRow, { date_id: dateId }));
+      await this.manager.insert(PublicationRow, {
+        date_id: dateId,
+        ...columnsOf(publication.snapshot),
+      });
+    } else {
+      const { affected } = await this.manager.update(
+        PublicationRow,
+        { date_id: dateId, version: loadedVersion },
+        columnsOf(publication.snapshot),
+      );
+      if (affected !== 1) {
+        throw stateConflict(
+          await this.manager.findOneByOrFail(PublicationRow, { date_id: dateId }),
+        );
+      }
     }
     this.loadedVersions.set(publication, version);
     this.onSaved(publication);
   }
 }
 
-function snapshotOf(row: PublicationRow): PublicationSnapshot {
+export function publicationSnapshotOf(row: PublicationRow): PublicationSnapshot {
   return {
     dateId: row.date_id,
     channelId: row.channel_id,

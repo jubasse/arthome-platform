@@ -84,7 +84,7 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
     await dates.save(date);
     const events = date.getUncommittedEvents();
     await retireSlugsMovedFrom(manager, events);
-    await projectDateEvents(manager, events);
+    await projectDateEvents(manager, events, { show, venue });
     await writeDateIntegrationEvents(manager, events, {
       origin: this.publicWebOrigin,
       show,

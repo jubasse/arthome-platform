@@ -6,8 +6,8 @@ import {
 import { PermanentError } from '@arthome-platform/messaging';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
+import type { CommandBus } from '@nestjs/cqrs';
 import type { EachMessagePayload } from 'kafkajs';
-import type { DataSource } from 'typeorm';
 import { describe, expect, it } from 'vitest';
 
 import { applyChecklistMessage } from './checklist-consumer.js';
@@ -28,10 +28,10 @@ function message(type: string | null, value: Uint8Array | null, messageId: strin
 }
 
 const untouchable = {
-  transaction: () => {
-    throw new Error('no transaction expected');
+  execute: () => {
+    throw new Error('no command expected');
   },
-} as unknown as DataSource;
+} as unknown as CommandBus;
 
 describe('applyChecklistMessage, before any write', () => {
   it('ignores a type that says nothing about the checklist', async () => {
@@ -72,8 +72,8 @@ describe('applyChecklistMessage, before any write', () => {
       }),
     );
     const reachedTheWrite = {
-      transaction: () => Promise.resolve('applied'),
-    } as unknown as DataSource;
+      execute: () => Promise.resolve('applied'),
+    } as unknown as CommandBus;
     await expect(
       applyChecklistMessage(reachedTheWrite, message('chat.date_chat_policy.changed.v1', policy)),
     ).resolves.toBe('applied');

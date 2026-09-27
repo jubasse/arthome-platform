@@ -54,15 +54,20 @@ import {
 } from '@arthome/core';
 
 import { applyChecklistMessage } from './checklist-consumer.js';
-import { DatesService, type TransitionPublicationCommand } from './dates.service.js';
 import { DeclareOutcome } from './declare-outcome.command.js';
 import { DeclareOutcomeHandler } from './declare-outcome.handler.js';
+import { DraftDate } from './draft-date.command.js';
+import { DraftDateHandler } from './draft-date.handler.js';
 import { GetDateSheetHandler } from './get-date-sheet.handler.js';
 import { GetDateSheet } from './get-date-sheet.query.js';
 import { PerformanceDateRow } from './performance-date.entity.js';
 import { DateOutcomeDeclared, DateRescheduled } from './performance-date.events.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { PublicationRow } from './publication.entity.js';
+import { RecordChecklistFactHandler } from './record-checklist-fact.handler.js';
+import { TransitionPublication } from './transition-publication.command.js';
+import { TransitionPublicationHandler } from './transition-publication.handler.js';
+import type { TransitionPublicationBody } from './transition-publication.schema.js';
 import { Artist } from '../artists/artist.entity.js';
 import { UpdateChannelIdentity } from '../artists/update-channel-identity.command.js';
 import { UpdateChannelIdentityHandler } from '../artists/update-channel-identity.handler.js';
@@ -106,7 +111,6 @@ const VENUE_ID = '01a0e100-0000-7000-8000-000000000002';
 
 let stack: StartedStack;
 let dataSource: DataSource;
-let dates: DatesService;
 let cqrs: TestingModule;
 let commands: CommandBus;
 let queries: QueryBus;
@@ -123,35 +127,37 @@ function idempotency(fingerprint: string): IdempotentRequest {
 }
 
 async function draft(dateId: string, key: IdempotentRequest = idempotency(dateId)) {
-  return dates.draft(
-    {
-      channelId: CHANNEL,
-      dateId,
-      showId: SHOW_ID,
-      venueId: VENUE_ID,
-      startsAt: '2026-11-04T19:30:00.000Z',
-      replayPolicy: ReplayPolicy.INCLUDED,
-      replayWindowHours: 72,
-      traceparent: null,
-    },
-    key,
+  return commands.execute(
+    new DraftDate(
+      CHANNEL,
+      {
+        dateId,
+        showId: SHOW_ID,
+        venueId: VENUE_ID,
+        startsAt: '2026-11-04T19:30:00.000Z',
+        replayPolicy: ReplayPolicy.INCLUDED,
+        replayWindowHours: 72,
+      },
+      null,
+      key,
+    ),
   );
 }
 
 function move(
   dateId: string,
-  to: PublicationState,
+  to: TransitionPublicationBody['to'],
   expectedVersion: number,
-  acknowledgedPromise: PublicationPromise | null = null,
+  acknowledgedPromiseCode: PublicationPromise | null = null,
 ) {
-  const command: TransitionPublicationCommand = {
-    dateId,
-    to,
-    expectedVersion,
-    acknowledgedPromise,
-    traceparent: null,
-  };
-  return dates.transition(command, idempotency(`${dateId}:${to}:${expectedVersion}`));
+  return commands.execute(
+    new TransitionPublication(
+      dateId,
+      { to, expectedVersion, acknowledgedPromiseCode },
+      null,
+      idempotency(`${dateId}:${to}:${expectedVersion}`),
+    ),
+  );
 }
 
 async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
@@ -219,7 +225,7 @@ async function satisfyProjectedItems(dateId: string): Promise<void> {
       occurredAt: AT,
     }),
   ]) {
-    expect(await applyChecklistMessage(dataSource, payload)).toBe('applied');
+    expect(await applyChecklistMessage(commands, payload)).toBe('applied');
   }
 }
 
@@ -280,17 +286,15 @@ beforeAll(async () => {
     country: 'FR',
     time_zone: 'Europe/Paris',
   });
-  dates = new DatesService(
-    dataSource,
-    new FixedClock('2026-09-26T10:00:00.000Z'),
-    'https://arthome.test',
-  );
   cqrs = await Test.createTestingModule({
     imports: [CqrsModule.forRoot()],
     providers: [
       CatalogTransactions,
       DeclareOutcomeHandler,
+      DraftDateHandler,
       GetDateSheetHandler,
+      RecordChecklistFactHandler,
+      TransitionPublicationHandler,
       UpdateShowHandler,
       UpdateChannelIdentityHandler,
       { provide: DataSource, useValue: dataSource },
@@ -359,18 +363,20 @@ describe('a date draft', () => {
     'refuses another channel’s show, naming the field',
     async () => {
       const refusal = await refusalOf(
-        dates.draft(
-          {
-            channelId: 'someone-else',
-            dateId: '01a0e100-0000-7000-8000-000000000103',
-            showId: SHOW_ID,
-            venueId: VENUE_ID,
-            startsAt: '2026-11-04T19:30:00.000Z',
-            replayPolicy: ReplayPolicy.NONE,
-            replayWindowHours: null,
-            traceparent: null,
-          },
-          idempotency('other-channel'),
+        commands.execute(
+          new DraftDate(
+            'someone-else',
+            {
+              dateId: '01a0e100-0000-7000-8000-000000000103',
+              showId: SHOW_ID,
+              venueId: VENUE_ID,
+              startsAt: '2026-11-04T19:30:00.000Z',
+              replayPolicy: ReplayPolicy.NONE,
+              replayWindowHours: null,
+            },
+            null,
+            idempotency('other-channel'),
+          ),
         ),
       );
       expect(refusal.refusal).toMatchObject({
@@ -530,7 +536,7 @@ describe('a date already published', () => {
       await move(dateId, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
       await move(dateId, PublicationState.TECHNICAL, 2);
       await applyChecklistMessage(
-        dataSource,
+        commands,
         upstream('ticketing.date_sales.pricing_changed.v1', DateSalesPricingChangedSchema, {
           dateId,
           tiers: [{ tier: PriceTier.FULL, active: false }],
@@ -600,9 +606,9 @@ describe('a projected checklist fact', () => {
       const dateId = '01a0e100-0000-7000-8000-000000000301';
       await draft(dateId);
 
-      await applyChecklistMessage(dataSource, pricing(dateId, true, '2026-09-26T10:00:00.000Z'));
+      await applyChecklistMessage(commands, pricing(dateId, true, '2026-09-26T10:00:00.000Z'));
       const late = await applyChecklistMessage(
-        dataSource,
+        commands,
         pricing(dateId, false, '2026-09-26T09:00:00.000Z'),
       );
 
@@ -624,8 +630,8 @@ describe('a projected checklist fact', () => {
         '01a0e2aa-0000-7000-8000-000000000001',
       );
 
-      expect(await applyChecklistMessage(dataSource, once)).toBe('applied');
-      expect(await applyChecklistMessage(dataSource, once)).toBe('duplicate');
+      expect(await applyChecklistMessage(commands, once)).toBe('applied');
+      expect(await applyChecklistMessage(commands, once)).toBe('duplicate');
     },
     CASE_MS,
   );
@@ -636,7 +642,7 @@ describe('a projected checklist fact', () => {
       const messageId = '01a0e2aa-0000-7000-8000-000000000002';
       await expect(
         applyChecklistMessage(
-          dataSource,
+          commands,
           pricing(
             '01a0e100-0000-7000-8000-0000000003ff',
             true,

@@ -1,4 +1,12 @@
 import {
+  ChatMode,
+  DateChatPolicyChangedSchema,
+  DateSalesCapacitySetSchema,
+  DateSalesPricingChangedSchema,
+  PriceTier,
+  TechnicalCheckPassedSchema,
+} from '@arthome-platform/events';
+import {
   ErrorEnvelopeFilter,
   SuccessEnvelopeInterceptor,
   schemaInvalidException,
@@ -10,12 +18,15 @@ import {
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
+import { create, toBinary, type DescMessage, type MessageInitShape } from '@bufbuild/protobuf';
+import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { StandardSchemaValidationPipe } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE, HttpAdapterHost } from '@nestjs/core';
-import { CqrsModule } from '@nestjs/cqrs';
+import { CommandBus, CqrsModule } from '@nestjs/cqrs';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -26,12 +37,13 @@ import {
   FixedClock,
   LanguageDependency,
   Locale,
-  PublicationChecklistItem,
   PublicationPromise,
   PublicationState,
   ReplayPolicy,
 } from '@arthome/core';
 
+import { applyChecklistMessage } from './checklist-consumer.js';
+import { ChecklistConsumerModule } from './checklist-consumer.module.js';
 import { DatesModule } from './dates.module.js';
 import { PerformanceDateRow } from './performance-date.entity.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
@@ -58,7 +70,8 @@ import { Venue } from '../venues/venue.entity.js';
 /**
  * The date routes through the module graph the service boots, over HTTP: a handler missing from
  * `DatesModule` or a bus the graph cannot resolve fails here, not at the first request in
- * production. What each command decides is `dates.itest.ts`'s.
+ * production. The checklist facts go through `ChecklistConsumerModule`, what the consumer process
+ * boots, for the same reason. What each command decides is `dates.itest.ts`'s.
  */
 
 const STARTUP_MS = 240_000;
@@ -88,6 +101,28 @@ function post(url: string, payload: object, key = nextKey()) {
 function nextKey(): string {
   keys += 1;
   return `01a0e3ff-0000-7000-8000-${String(keys).padStart(12, '0')}`;
+}
+
+let messages = 0;
+
+function reported<Desc extends DescMessage>(
+  type: string,
+  schema: Desc,
+  init: MessageInitShape<Desc>,
+): EachMessagePayload {
+  messages += 1;
+  return {
+    topic: 'arthome.ticketing.date_sales',
+    partition: 0,
+    message: {
+      key: Buffer.from(DATE_ID),
+      value: Buffer.from(toBinary(schema, create(schema, init))),
+      headers: {
+        'message-id': Buffer.from(`01a0e3ee-0000-7000-8000-${String(messages).padStart(12, '0')}`),
+        type: Buffer.from(type),
+      },
+    },
+  } as unknown as EachMessagePayload;
 }
 
 beforeAll(async () => {
@@ -158,6 +193,7 @@ beforeAll(async () => {
       }),
       CqrsModule.forRoot(),
       DatesModule,
+      ChecklistConsumerModule,
     ],
     providers: [
       {
@@ -204,19 +240,30 @@ describe('the date routes over HTTP', () => {
         replayWindowHours: 72,
       });
       expect(drafted.statusCode).toBe(201);
-      await dataSource.getRepository(PublicationChecklistFact).insert(
-        [
-          PublicationChecklistItem.AT_LEAST_ONE_ACTIVE_PRICE,
-          PublicationChecklistItem.CAPACITY,
-          PublicationChecklistItem.TECHNICAL_CHECK_PASSED,
-          PublicationChecklistItem.CHAT_MODE_SET,
-        ].map((item) => ({
-          date_id: DATE_ID,
-          item,
-          satisfied: true,
-          occurred_at: new Date(NOW),
-        })),
-      );
+      const occurredAt = timestampFromDate(new Date(NOW));
+      for (const fact of [
+        reported('ticketing.date_sales.pricing_changed.v1', DateSalesPricingChangedSchema, {
+          dateId: DATE_ID,
+          tiers: [{ tier: PriceTier.FULL, active: true }],
+          occurredAt,
+        }),
+        reported('ticketing.date_sales.capacity_set.v1', DateSalesCapacitySetSchema, {
+          dateId: DATE_ID,
+          capacityTotal: 300,
+          occurredAt,
+        }),
+        reported('streaming.run.technical_check_passed.v1', TechnicalCheckPassedSchema, {
+          dateId: DATE_ID,
+          passedAt: occurredAt,
+        }),
+        reported('chat.date_chat_policy.changed.v1', DateChatPolicyChangedSchema, {
+          dateId: DATE_ID,
+          mode: ChatMode.OPEN,
+          occurredAt,
+        }),
+      ]) {
+        expect(await applyChecklistMessage(app.get(CommandBus), fact)).toBe('applied');
+      }
       const published = await post(`/dates/${DATE_ID}/publication/transitions`, {
         to: PublicationState.SCHEDULED,
         expectedVersion: 1,
