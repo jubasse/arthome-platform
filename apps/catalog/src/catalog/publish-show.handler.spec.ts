@@ -4,13 +4,16 @@ import {
 } from '@arthome-platform/events';
 import { OutboxEvent } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
+import { EventPublisher, type EventBus } from '@nestjs/cqrs';
 import type { DataSource, EntityManager } from 'typeorm';
 import { describe, expect, it } from 'vitest';
 
 import { LanguageDependency, Locale, rendition } from '@arthome/core';
 
-import { PublishShowService } from './publish-show.service.js';
+import { PublishShow } from './publish-show.command.js';
+import { PublishShowHandler } from './publish-show.handler.js';
 import { Show } from './show.entity.js';
+import { CatalogTransactions } from '../catalog-transactions.js';
 
 interface Insert {
   readonly target: unknown;
@@ -41,10 +44,17 @@ function recordingDataSource(
   } as unknown as DataSource;
 }
 
+/** No aggregate is saved, so nothing reaches the bus. */
+function handlerOver(dataSource: DataSource): PublishShowHandler {
+  return new PublishShowHandler(
+    new CatalogTransactions(dataSource, new EventPublisher({} as unknown as EventBus)),
+  );
+}
+
 // BUILT FROM `@arthome/core`'s `rendition()`, not from an object literal. The
 //   floor forbids hand-building a value the domain can produce (§5.8): that is a
 //   parallel literal table with a fixture's costume.
-const command = {
+const show = {
   channelId: '01931f00-0000-7000-8000-000000000001',
   artistId: '01931f00-0000-7000-8000-000000000002',
   categoryId: 'theatre',
@@ -61,13 +71,13 @@ const command = {
   },
   title: { fr: 'Nuit blanche', en: '' },
   synopsis: { fr: '', en: '' },
-  traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
 };
+const command = new PublishShow(show, '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01');
 
-describe('PublishShowService', () => {
+describe('PublishShowHandler', () => {
   it('writes the show and the outbox row through ONE manager', async () => {
     const inserts: Insert[] = [];
-    await new PublishShowService(recordingDataSource(inserts)).publish(command);
+    await handlerOver(recordingDataSource(inserts)).execute(command);
 
     expect(inserts).toHaveLength(2);
     expect(inserts[0]?.target).toBe(Show);
@@ -80,7 +90,7 @@ describe('PublishShowService', () => {
 
   it('routes by aggregate, and keys by the show so one show stays ordered', async () => {
     const inserts: Insert[] = [];
-    const result = await new PublishShowService(recordingDataSource(inserts)).publish(command);
+    const result = await handlerOver(recordingDataSource(inserts)).execute(command);
     const outbox = inserts[1]?.values ?? {};
 
     expect(outbox.aggregatetype).toBe('catalog.show');
@@ -90,33 +100,30 @@ describe('PublishShowService', () => {
 
   it('injects the traceparent at WRITE time, not at publication time', async () => {
     const inserts: Insert[] = [];
-    await new PublishShowService(recordingDataSource(inserts)).publish(command);
+    await handlerOver(recordingDataSource(inserts)).execute(command);
     expect(inserts[1]?.values.tracecontext).toBe(command.traceparent);
   });
 
   it('carries no traceparent rather than inventing one', async () => {
     const inserts: Insert[] = [];
-    await new PublishShowService(recordingDataSource(inserts)).publish({
-      ...command,
-      traceparent: null,
-    });
+    await handlerOver(recordingDataSource(inserts)).execute(new PublishShow(show, null));
     expect(inserts[1]?.values.tracecontext).toBeNull();
   });
 
   it('writes a payload that decodes back to the event', async () => {
     const inserts: Insert[] = [];
-    const result = await new PublishShowService(recordingDataSource(inserts)).publish(command);
+    const result = await handlerOver(recordingDataSource(inserts)).execute(command);
 
     const payload = inserts[1]?.values.payload as Buffer;
     const decoded = fromBinary(ShowPublishedSchema, new Uint8Array(payload));
     expect(decoded.showId).toBe(result.showId);
-    expect(decoded.channelId).toBe(command.channelId);
-    expect(decoded.genreIds).toEqual([...command.genreIds]);
-    expect(decoded.runtimeMin).toBe(command.runtimeMin);
+    expect(decoded.channelId).toBe(show.channelId);
+    expect(decoded.genreIds).toEqual([...show.genreIds]);
+    expect(decoded.runtimeMin).toBe(show.runtimeMin);
     // The nested message survives the round trip, which is the half a scalar-only
     // payload would not have proved.
     expect(decoded.media?.wide[0]?.widthPx).toBe(640);
-    expect(decoded.media?.poster[0]?.url).toBe(command.media.poster[0]?.url);
+    expect(decoded.media?.poster[0]?.url).toBe(show.media.poster[0]?.url);
     // One entry per language that has copy: the empty English title and synopsis are absent.
     expect(decoded.title.map(({ contentLanguage, text }) => ({ contentLanguage, text }))).toEqual([
       { contentLanguage: Locale.FR, text: 'Nuit blanche' },
@@ -126,7 +133,7 @@ describe('PublishShowService', () => {
 
   it('encodes the language dependency as the wire number, not as its domain spelling', async () => {
     const inserts: Insert[] = [];
-    await new PublishShowService(recordingDataSource(inserts)).publish(command);
+    await handlerOver(recordingDataSource(inserts)).execute(command);
 
     const payload = inserts[1]?.values.payload as Buffer;
     const decoded = fromBinary(ShowPublishedSchema, new Uint8Array(payload));
@@ -140,7 +147,7 @@ describe('PublishShowService', () => {
 
   it('gives the message an identifier of its own, distinct from the show', async () => {
     const inserts: Insert[] = [];
-    const result = await new PublishShowService(recordingDataSource(inserts)).publish(command);
+    const result = await handlerOver(recordingDataSource(inserts)).execute(command);
     // The message-id deduplicates deliveries; the show id identifies a work.
     // Reusing one for the other makes a second event about the same show look
     // like a duplicate of the first, and consumers silently drop it.
@@ -150,7 +157,7 @@ describe('PublishShowService', () => {
 
   it('slugs the show from its title, and carries the slug in ShowPublished (D-075)', async () => {
     const inserts: Insert[] = [];
-    await new PublishShowService(recordingDataSource(inserts)).publish(command);
+    await handlerOver(recordingDataSource(inserts)).execute(command);
 
     const payload = inserts[1]?.values.payload as Buffer;
     expect(inserts[0]?.values.slug).toBe('nuit-blanche');
@@ -159,16 +166,16 @@ describe('PublishShowService', () => {
 
   it('takes the next candidate when another show holds the title’s slug', async () => {
     const inserts: Insert[] = [];
-    const result = await new PublishShowService(
+    const result = await handlerOver(
       recordingDataSource(inserts, new Set(['nuit-blanche'])),
-    ).publish(command);
+    ).execute(command);
 
     expect(inserts[0]?.values.slug).toBe(`nuit-blanche-${result.showId.slice(-8)}`);
   });
 
   it('records no actor, because this slice has no verified one', async () => {
     const inserts: Insert[] = [];
-    await new PublishShowService(recordingDataSource(inserts)).publish(command);
+    await handlerOver(recordingDataSource(inserts)).execute(command);
     // Asserted rather than left implicit: the day an authenticated actor exists,
     // this test is what says the column was deliberately empty and not forgotten.
     expect(inserts[1]?.values.actor_id).toBeNull();

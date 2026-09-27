@@ -64,9 +64,11 @@ import { DateOutcomeDeclared, DateRescheduled } from './performance-date.events.
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { PublicationRow } from './publication.entity.js';
 import { Artist } from '../artists/artist.entity.js';
-import { ArtistsService } from '../artists/artists.service.js';
+import { UpdateChannelIdentity } from '../artists/update-channel-identity.command.js';
+import { UpdateChannelIdentityHandler } from '../artists/update-channel-identity.handler.js';
 import { Show } from '../catalog/show.entity.js';
-import { UpdateShowService } from '../catalog/update-show.service.js';
+import { UpdateShow } from '../catalog/update-show.command.js';
+import { UpdateShowHandler } from '../catalog/update-show.handler.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import type { IdempotentRequest } from '../idempotency/idempotency.js';
@@ -289,6 +291,8 @@ beforeAll(async () => {
       CatalogTransactions,
       DeclareOutcomeHandler,
       GetDateSheetHandler,
+      UpdateShowHandler,
+      UpdateChannelIdentityHandler,
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: new FixedClock('2026-09-26T10:00:00.000Z') },
       { provide: PUBLIC_WEB_ORIGIN, useValue: 'https://arthome.test' },
@@ -650,9 +654,6 @@ describe('a projected checklist fact', () => {
 });
 
 describe('a show update', () => {
-  const updates = (): UpdateShowService =>
-    new UpdateShowService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'));
-
   function showEvents(): Promise<OutboxEvent[]> {
     return dataSource.getRepository(OutboxEvent).find({
       where: { aggregateid: SHOW_ID, type: 'catalog.show.updated.v1' },
@@ -663,7 +664,7 @@ describe('a show update', () => {
   it(
     'emits ShowUpdated on the show’s topic, carrying every indexed field at its new value',
     async () => {
-      await updates().update({ showId: SHOW_ID, genreIds: ['comedy'], traceparent: null });
+      await commands.execute(new UpdateShow(SHOW_ID, { genreIds: ['comedy'] }, null));
 
       const rows = await showEvents();
       expect(rows.map((row) => row.aggregatetype)).toEqual(['catalog.show']);
@@ -678,11 +679,9 @@ describe('a show update', () => {
     'publishes a copy change too, now that the event carries the copy',
     async () => {
       const before = (await showEvents()).length;
-      await updates().update({
-        showId: SHOW_ID,
-        synopsis: { fr: 'Une autre nuit.', en: '' },
-        traceparent: null,
-      });
+      await commands.execute(
+        new UpdateShow(SHOW_ID, { synopsis: { fr: 'Une autre nuit.', en: '' } }, null),
+      );
       const rows = await showEvents();
       expect(rows).toHaveLength(before + 1);
       const event = fromBinary(ShowUpdatedSchema, rows.at(-1)?.payload ?? new Uint8Array());
@@ -698,11 +697,9 @@ describe('a show update', () => {
     'answers 404 for a show catalog does not hold',
     async () => {
       const refusal = await refusalOf(
-        updates().update({
-          showId: '01a0e100-0000-7000-8000-0000000009ff',
-          tagIds: [],
-          traceparent: null,
-        }),
+        commands.execute(
+          new UpdateShow('01a0e100-0000-7000-8000-0000000009ff', { tagIds: [] }, null),
+        ),
       );
       expect(refusal.getStatus()).toBe(404);
     },
@@ -777,11 +774,7 @@ describe('the public date page', () => {
     async () => {
       const dateId = '01a0e100-0000-7000-8000-0000000004a1';
       const before = await rowOf(dateId);
-      await new UpdateShowService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z')).update({
-        showId: SHOW_ID,
-        tagIds: ['late-night'],
-        traceparent: null,
-      });
+      await commands.execute(new UpdateShow(SHOW_ID, { tagIds: ['late-night'] }, null));
 
       const after = await rowOf(dateId);
       expect(after?.tag_ids).toEqual(['late-night']);
@@ -1107,16 +1100,18 @@ describe('an artist’s page', () => {
   it(
     'names the artist on its channel’s cards, and lists the channel’s dates by what they show',
     async () => {
-      const face = await new ArtistsService(dataSource, clock).updateIdentity(
-        {
-          channelId: CHANNEL,
-          expectedVersion: 0,
-          publicName: 'Compagnie Verticale',
-          categoryId: 'theatre',
-          biography: [{ contentLanguage: Locale.FR, text: 'Une compagnie.' }],
-          traceparent: null,
-        },
-        idempotency('artist-face'),
+      const face = await commands.execute(
+        new UpdateChannelIdentity(
+          CHANNEL,
+          {
+            expectedVersion: 0,
+            publicName: 'Compagnie Verticale',
+            categoryId: 'theatre',
+            biography: [{ contentLanguage: Locale.FR, text: 'Une compagnie.' }],
+          },
+          null,
+          idempotency('artist-face'),
+        ),
       );
       const artistId = face.envelope.data.artistId;
 

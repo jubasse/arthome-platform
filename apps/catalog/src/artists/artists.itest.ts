@@ -8,7 +8,9 @@ import {
   type StartedStack,
 } from '@arthome-platform/testing';
 import { fromBinary } from '@bufbuild/protobuf';
-import type { DataSource } from 'typeorm';
+import { CommandBus, CqrsModule } from '@nestjs/cqrs';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -24,7 +26,11 @@ import {
 } from '@arthome/core';
 
 import { Artist } from './artist.entity.js';
-import { ArtistsService, type UpdateIdentityCommand } from './artists.service.js';
+import { UpdateChannelIdentity } from './update-channel-identity.command.js';
+import { UpdateChannelIdentityHandler } from './update-channel-identity.handler.js';
+import type { UpdateIdentityBody } from './update-identity.schema.js';
+import { CatalogTransactions } from '../catalog-transactions.js';
+import { CLOCK } from '../clock.js';
 import type { IdempotentRequest } from '../idempotency/idempotency.js';
 import { Initial1758800000000 } from '../migrations/1758800000000-initial.js';
 import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
@@ -48,10 +54,11 @@ const CASE_MS = 30_000;
 
 let stack: StartedStack;
 let dataSource: DataSource;
-let artists: ArtistsService;
+let cqrs: TestingModule;
+let commands: CommandBus;
 let keys = 0;
 
-function edit(channelId: string, body: Omit<UpdateIdentityCommand, 'channelId' | 'traceparent'>) {
+function edit(channelId: string, body: UpdateIdentityBody) {
   keys += 1;
   const key: IdempotentRequest = {
     key: `01a0e8ff-0000-7000-8000-${String(keys).padStart(12, '0')}`,
@@ -59,7 +66,7 @@ function edit(channelId: string, body: Omit<UpdateIdentityCommand, 'channelId' |
     fingerprint: `${channelId}:${keys}`,
     statusCode: 200,
   };
-  return artists.updateIdentity({ channelId, ...body, traceparent: null }, key);
+  return commands.execute(new UpdateChannelIdentity(channelId, body, null, key));
 }
 
 async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
@@ -91,10 +98,22 @@ beforeAll(async () => {
       PublicSlugs1790420900000,
     ],
   });
-  artists = new ArtistsService(dataSource, new FixedClock('2026-09-27T10:00:00.000Z'));
+  cqrs = await Test.createTestingModule({
+    imports: [CqrsModule.forRoot()],
+    providers: [
+      CatalogTransactions,
+      UpdateChannelIdentityHandler,
+      { provide: DataSource, useValue: dataSource },
+      { provide: CLOCK, useValue: new FixedClock('2026-09-27T10:00:00.000Z') },
+    ],
+  }).compile();
+  // Handlers register with the bus when the module initialises.
+  await cqrs.init();
+  commands = cqrs.get(CommandBus);
 }, STARTUP_MS);
 
 afterAll(async () => {
+  await cqrs?.close();
   await dataSource?.destroy();
   await stack?.stop();
 });

@@ -1,14 +1,15 @@
 import { parseTraceparent, type MemorisedResponse } from '@arthome-platform/http-edge';
 import { Body, Controller, Header, Headers, HttpCode, Param, Patch } from '@nestjs/common';
+import { CommandBus } from '@nestjs/cqrs';
 
-import { ArtistsService, type ChannelIdentity } from './artists.service.js';
+import { UpdateChannelIdentity, type ChannelIdentity } from './update-channel-identity.command.js';
 import { UpdateIdentitySchema, type UpdateIdentityBody } from './update-identity.schema.js';
 import { ChannelIdParam } from '../channel-id.schema.js';
 import { fingerprintOf, idempotencyKeyOf } from '../idempotency/idempotency.js';
 
 @Controller('v1')
 export class ArtistsController {
-  public constructor(private readonly artists: ArtistsService) {}
+  public constructor(private readonly commands: CommandBus) {}
 
   @Patch('channels/:channelId/identity')
   @HttpCode(200)
@@ -20,14 +21,13 @@ export class ArtistsController {
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<ChannelIdentity>> {
     const trace = parseTraceparent(traceparent);
-    return this.artists.updateIdentity(
-      { channelId, ...body, traceparent: trace === null ? null : trace.traceparent },
-      {
+    return this.commands.execute(
+      new UpdateChannelIdentity(channelId, body, trace === null ? null : trace.traceparent, {
         key: idempotencyKeyOf(idempotencyKey),
         accountId: null,
         fingerprint: fingerprintOf('PATCH', `/v1/channels/${channelId}/identity`, body),
         statusCode: 200,
-      },
+      }),
     );
   }
 }
