@@ -16,8 +16,9 @@ export class GetDateSheetHandler implements IQueryHandler<GetDateSheet> {
   ) {}
 
   /**
-   * One snapshot for every row: the date has no version of its own, so a sheet reading the date
-   *   before an outcome commits and the publication after would serve a version it does not show.
+   * One snapshot for every row: the aggregate's version lives on the publication row, so a sheet
+   *   reading the date before an outcome commits and the publication after would serve a version
+   *   it does not show.
    */
   public async execute({ dateId }: GetDateSheet): Promise<DateSheet> {
     const records = await this.dataSource.transaction('REPEATABLE READ', (manager) =>

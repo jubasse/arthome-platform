@@ -223,7 +223,8 @@ the new public row with the old copy, for good, and two dates of one show publis
 onto one day at once lost one to `date_show_slug`, answered 500.
 
 **Refusals keep their code and params.** The aggregate and the repository throw core's
-`DomainError`. A date handler wraps exactly two calls in `asConflict`, which rethrows one as a 409
+`DomainError`. The transition and outcome handlers wrap exactly two calls in `asConflict` (the
+draft and `RecordChecklistFact` refuse nothing as 409), which rethrows one as a 409
 `RefusalException` with the same `code`, `params` and `nature`: the aggregate's method
 (`transitionPublication`, `declareOutcome`) and `dates.save`, whose `saveVersioned` refuses a change
 committed since the load. Those are the refusals the contract answers 409 (`moveDatePublicationState`,
@@ -232,8 +233,9 @@ or `content.*` value) is a fault in what the request carried, so it stays unwrap
 `ErrorEnvelopeFilter` answers it 400, as on main (`transition-publication.handler.spec.ts`). The
 stale version is a refusal too, checked before any rule, as before: core's
 `assertCommandedTransition` for a transition, `Publication.advancedFrom` for an outcome. A 404 or a
-400 stays the `RefusalException` it was; a handler builds one from `src/refusals.ts`
-(`notFound()`, `stateConflict(params)`) or `schemaInvalidException`, never by hand.
+400 stays the `RefusalException` it was, built from `src/refusals.ts` (`notFound()`,
+`stateConflict(params)`) or `schemaInvalidException`. Two refusals are still built where they are
+raised, each with one caller: the artist's `slugTaken` and the search's 503.
 `publication.checklist_incomplete` names a list, which core's `MessageParams` cannot carry:
 `PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and `asConflict`
 answers `{ missing }`.
@@ -296,8 +298,9 @@ so a wrong `DATABASE_URL` exits after about 24 s rather than at once: the API pr
 same way, and a database still starting is the common case.
 
 **Queries read rows, never aggregates.** `GetDateSheetHandler` reads its rows (`dateRecordsOf`,
-`date-records.ts`) in one `REPEATABLE READ` transaction, since the date has no version of its own
-and two snapshots could serve a version the sheet does not show, and shapes them with the pure
+`date-records.ts`) in one `REPEATABLE READ` transaction, since the aggregate's version lives on the
+publication row, read apart from the date row, and two snapshots could serve a version the sheet
+does not show, and shapes them with the pure
 `dateSheet()`. No port: a read has no invariant to protect.
 
 **The storefront's reads are queries.** `GetDateDetail`, `GetArtistDetail` and `ResolvePublicLink`
@@ -314,9 +317,11 @@ before and after the move to the bus, the seeded artist's `joinedAt` aside.
 the real bus against the container database, a testing module with `CqrsModule.forRoot()`, the
 handlers, `CatalogTransactions` and `{ provide: DataSource, useValue: dataSource }`, then `init()`,
 which registers the handlers (`dates.itest.ts`; races in `dates/concurrency.itest.ts`).
-`catalog/publish-show.handler.spec.ts`, kept from the service era, is the exception: it asserts
-over a recording fake `DataSource` that the show and its outbox row share one manager, and the
-HTTP suite runs the same command against Postgres. Every suite migrates the service's own schema
+Three specs use fakes, each for mapping or sequencing rather than SQL: `catalog/publish-show.handler.spec.ts`
+(the show and its outbox row share one manager; the HTTP suite runs the same command against
+Postgres), `dates/transition-publication.handler.spec.ts` (409 against 400; it recognises the
+idempotency INSERT by its text, so rewording that statement breaks it) and
+`dates/performance-date.typeorm-repository.spec.ts` (the order of the row writes). Every suite migrates the service's own schema
 (`itest/schema.ts`, from `dataSource.options`). The wiring: `itest/http-app.ts` boots feature
 modules over HTTP with the service's global providers (`EDGE_PROVIDERS`, which `AppModule` binds
 too), and `dates.http.itest.ts` calls the date routes through it; a migrated route adds its request

@@ -31,10 +31,6 @@ export class DraftDateHandler implements ICommandHandler<DraftDate> {
     );
   }
 
-  /**
-   * The date and its publication in one transaction, by decision rather than by accident: the
-   * contract creates a draft "with its publication and its checklist" (openapi/studio.yaml).
-   */
   private async draftIn(
     { manager, dates }: CatalogTransaction,
     { channelId, body, traceparent }: DraftDate,
