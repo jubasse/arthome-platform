@@ -30,8 +30,12 @@ function offeredFiguresOf(row: DateSalesRow): AvailabilityFigures {
 /** Dates a pass looks at; each is then published in a transaction of its own. */
 export const AVAILABILITY_PUBLISH_BATCH = 100;
 
-/** How long a date whose publication failed waits before it is tried again. */
-export const AVAILABILITY_PUBLISH_RETRY_SECONDS = 30;
+/**
+ * How long a date whose publication failed waits before it is tried again. Below the freshness
+ *   transport.md §5.9 promises for a capacity, so a transient failure, a connection reset or a pool
+ *   timeout that set it aside like a poison row, still reaches the surfaces within that promise.
+ */
+export const AVAILABILITY_PUBLISH_RETRY_SECONDS = 10;
 
 /**
  * The candidates, among the sales on sale and the closings not yet published only, each read

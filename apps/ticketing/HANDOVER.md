@@ -152,8 +152,10 @@ A draft older than the topic's retention is never read: see the deployment order
   without an outcome stays on sale until T3 ends its sale with the date's window (§2), and stays in
   the pass until then.
 - **A date that cannot be published holds back no other** (correctness review): its failure is
-  logged, its `failed_at` recorded, and it waits `AVAILABILITY_PUBLISH_RETRY_SECONDS` (30) before it
-  is tried again, behind the others, still marked; a publication clears it.
+  logged, its `failed_at` recorded, and it waits `AVAILABILITY_PUBLISH_RETRY_SECONDS` (10) before it
+  is tried again, behind the others, still marked; a publication clears it. The delay stays below
+  the capacity freshness transport.md §5.9 promises, since a transient failure is set aside the
+  same way as a poison row.
 - **It runs in the sweeper process, its own, on a one-second loop**, not in the consumer and not on
   BullMQ. The sweeper needs Postgres alone: in the consumer's process a Kafka outage would stop it
   at boot, and on a queue a Redis outage would; T3's hold expiry lives here and must return capacity
