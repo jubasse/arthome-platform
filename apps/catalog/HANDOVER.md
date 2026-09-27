@@ -230,7 +230,10 @@ After the save the handler passes `getUncommittedEvents()` to:
   command answers, which only the command's own transaction guarantees (`nestjs-cqrs`, Decide).
 - `retireSlugsMovedFrom` (`public/slug-aliases.ts`): a replaced slug keeps resolving for 30 days.
 
-A new event adds its case to each of these it concerns.
+A new event carries its own `kind`. `integrationEventOf` and `changesOf` switch on it and end in
+`assertNever`, so an event left without its case fails `tsc`, where it used to reach the wire as
+`catalog.publication.engaged.v1` (measured: an event with `PublicationEngaged`'s fields added to the
+union fails both files with TS2345).
 
 **`commit()` after the transaction, and no event handler.** None exists and none is to be added for
 what the command must guarantee: the `EventBus` is in memory and fire-and-forget (`nestjs-cqrs`

@@ -14,14 +14,15 @@ import type { EntityManager } from 'typeorm';
 import type { DateRecords } from './date-sheet.js';
 import type { PerformanceDateSnapshot } from './performance-date.aggregate.js';
 import {
-  DateDrafted,
-  DateOutcomeDeclared,
-  DateRescheduled,
   DateScheduled,
-  PublicationStateChanged,
+  type DateDrafted,
+  type DateOutcomeDeclared,
+  type DateRescheduled,
   type PerformanceDateEvent,
   type PublicationEngaged,
+  type PublicationStateChanged,
 } from './performance-date.events.js';
+import { assertNever } from '../assert-never.js';
 import type { Show } from '../catalog/show.entity.js';
 import { writeCatalogEvent, type CatalogEvent } from '../catalog-events.js';
 import { dateUrl } from '../public/links.js';
@@ -79,12 +80,22 @@ export async function writeDateScheduled(
 }
 
 function integrationEventOf(event: PerformanceDateEvent, context: DateWireContext): CatalogEvent {
-  if (event instanceof DateDrafted) return drafted(event, context);
-  if (event instanceof DateScheduled) return scheduled(event, context);
-  if (event instanceof DateOutcomeDeclared) return outcomeDeclared(event, context);
-  if (event instanceof DateRescheduled) return rescheduled(event, context);
-  if (event instanceof PublicationStateChanged) return stateChanged(event, context);
-  return engaged(event, context);
+  switch (event.kind) {
+    case 'DateDrafted':
+      return drafted(event, context);
+    case 'DateScheduled':
+      return scheduled(event, context);
+    case 'DateOutcomeDeclared':
+      return outcomeDeclared(event, context);
+    case 'DateRescheduled':
+      return rescheduled(event, context);
+    case 'PublicationStateChanged':
+      return stateChanged(event, context);
+    case 'PublicationEngaged':
+      return engaged(event, context);
+    default:
+      return assertNever(event);
+  }
 }
 
 function drafted(event: DateDrafted, context: DateWireContext): CatalogEvent {

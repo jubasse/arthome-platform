@@ -2,15 +2,10 @@ import type { EntityManager } from 'typeorm';
 
 import { DateDetailPublic } from './date-detail-public.entity.js';
 import { Artist } from '../artists/artist.entity.js';
+import { assertNever } from '../assert-never.js';
 import type { Show } from '../catalog/show.entity.js';
 import type { PerformanceDateSnapshot } from '../dates/performance-date.aggregate.js';
-import {
-  DateOutcomeDeclared,
-  DateRescheduled,
-  DateScheduled,
-  PublicationStateChanged,
-  type PerformanceDateEvent,
-} from '../dates/performance-date.events.js';
+import { DateScheduled, type PerformanceDateEvent } from '../dates/performance-date.events.js';
 import type { Venue } from '../venues/venue.entity.js';
 
 const APPLIED = { version: () => 'version + 1', applied_at: () => 'now()' };
@@ -72,18 +67,25 @@ export async function projectDateEvents(
 }
 
 function changesOf(event: PerformanceDateEvent): DateChanges {
-  if (event instanceof PublicationStateChanged) return { publication_state: event.to };
-  if (event instanceof DateOutcomeDeclared) {
-    return {
-      outcome: event.outcome,
-      // "rescheduled_to exists only if outcome = 'postponed'" (§2.2): a cancellation clears it.
-      rescheduled_to: event.rescheduledTo === null ? null : new Date(event.rescheduledTo),
-    };
+  switch (event.kind) {
+    case 'PublicationStateChanged':
+      return { publication_state: event.to };
+    case 'DateOutcomeDeclared':
+      return {
+        outcome: event.outcome,
+        // "rescheduled_to exists only if outcome = 'postponed'" (§2.2): a cancellation clears it.
+        rescheduled_to: event.rescheduledTo === null ? null : new Date(event.rescheduledTo),
+      };
+    case 'DateRescheduled':
+      return { starts_at: new Date(event.newStartsAt), slug: event.newSlug };
+    // A draft has no public row, `DateScheduled` writes it whole, and the lock shows on no page.
+    case 'DateDrafted':
+    case 'DateScheduled':
+    case 'PublicationEngaged':
+      return {};
+    default:
+      return assertNever(event);
   }
-  if (event instanceof DateRescheduled) {
-    return { starts_at: new Date(event.newStartsAt), slug: event.newSlug };
-  }
-  return {};
 }
 
 /** Publishing is one-way, so the row is written whole once, with the state it published in. */

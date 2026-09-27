@@ -11,6 +11,8 @@ export interface OutcomeMessage {
 }
 
 export class DateDrafted implements IEvent {
+  public readonly kind = 'DateDrafted';
+
   public constructor(
     public readonly dateId: string,
     public readonly channelId: string,
@@ -22,6 +24,8 @@ export class DateDrafted implements IEvent {
 
 /** Its publication made the date public: its slug set, its running time frozen (§2.2, §2.7). */
 export class DateScheduled implements IEvent {
+  public readonly kind = 'DateScheduled';
+
   public constructor(
     /** Its public facts as they stand, which `DateScheduled` states on the wire. */
     public readonly date: PerformanceDateSnapshot & { readonly slug: string },
@@ -34,6 +38,8 @@ export class DateScheduled implements IEvent {
 }
 
 export class DateOutcomeDeclared implements IEvent {
+  public readonly kind = 'DateOutcomeDeclared';
+
   public constructor(
     public readonly dateId: string,
     public readonly channelId: string,
@@ -47,6 +53,8 @@ export class DateOutcomeDeclared implements IEvent {
 
 /** Follows `DateOutcomeDeclared` when a postponement moves the date (D-074). */
 export class DateRescheduled implements IEvent {
+  public readonly kind = 'DateRescheduled';
+
   public constructor(
     public readonly dateId: string,
     public readonly showId: string,
@@ -59,6 +67,8 @@ export class DateRescheduled implements IEvent {
 }
 
 export class PublicationStateChanged implements IEvent {
+  public readonly kind = 'PublicationStateChanged';
+
   public constructor(
     public readonly dateId: string,
     public readonly channelId: string,
@@ -74,6 +84,8 @@ export class PublicationStateChanged implements IEvent {
 
 /** Publishing commits the displayed prices, the replay and the chat mode. */
 export class PublicationEngaged implements IEvent {
+  public readonly kind = 'PublicationEngaged';
+
   public constructor(
     public readonly dateId: string,
     public readonly channelId: string,
@@ -81,7 +93,11 @@ export class PublicationEngaged implements IEvent {
   ) {}
 }
 
-/** Every event of the aggregate: the date's own and its publication's, all keyed by the date. */
+/**
+ * Every event of the aggregate: the date's own and its publication's, all keyed by the date. A
+ *   mapping switches on `kind` and ends in `assertNever`, so an event without its case fails to
+ *   compile rather than reach the wire as another.
+ */
 export type PerformanceDateEvent =
   | DateDrafted
   | DateScheduled
