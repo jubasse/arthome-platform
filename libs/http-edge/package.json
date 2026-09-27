@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/core": "file:../../vendor/arthome-core-dead8045fc64.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-b2aac8898fe7.tgz",
     "rxjs": "7.8.2",
     "zod": "4.6.5"
   },
