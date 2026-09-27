@@ -173,10 +173,13 @@ describe('the sweeper process', () => {
         await seed.query(
           `INSERT INTO date_sales (date_id, channel_id, capacity_total, capacity_tiers,
                                    seats_available, seats_sold, waitlist_count, price_tiers,
-                                   prices_locked_at, version, availability_dirty_since)
-           VALUES ($1, 'channel-boot', 10, '[]', 10, 0, 0, '[]', now(), 2, now())`,
+                                   prices_locked_at, version, availability_moves)
+           VALUES ($1, 'channel-boot', 10, '[]', 10, 0, 0, '[]', now(), 2, 1)`,
           [DATE_ID],
         );
+        await seed.query('INSERT INTO date_availability_publication (date_id) VALUES ($1)', [
+          DATE_ID,
+        ]);
 
         const { SweeperModule } = await import('./sweeper.module.js');
         const context = await Test.createTestingModule({ imports: [SweeperModule] }).compile();
@@ -198,11 +201,11 @@ describe('the sweeper process', () => {
         }
 
         expect(await published()).toBe(1);
-        const [row] = await seed.query<{ availability_dirty_since: Date | null }[]>(
-          'SELECT availability_dirty_since FROM date_sales WHERE date_id = $1',
+        const [row] = await seed.query<{ published_moves: string }[]>(
+          'SELECT published_moves FROM date_availability_publication WHERE date_id = $1',
           [DATE_ID],
         );
-        expect(row?.availability_dirty_since).toBeNull();
+        expect(row?.published_moves).toBe('1');
       } finally {
         await seed.destroy();
       }

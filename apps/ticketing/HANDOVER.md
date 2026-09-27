@@ -92,13 +92,22 @@ partition. Unreadable bytes and a missing or malformed `message-id` are dead-let
 - `date_sales.capacity_set` and `date_sales.pricing_changed` are outbox rows written by the command
   from the aggregate's uncommitted events (`date-sales-integration-events.ts`), in the order it
   applied them, on the date's key.
-- **`date_sales.availability_changed` is published at a bounded rate** (ADR §5). A move of what it
-  carries (a tier, a price, the opening, T3's holds) sets `availability_dirty_since` in its own
-  transaction. `PublishDueAvailability` claims the moved dates of an opened sale `FOR UPDATE SKIP
-  LOCKED`, a hundred per pass, and writes their latest figures when the last publication is
-  `AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS` old, or at once when the date sold out or came back.
-  The value published is core's `availabilityOf`; the SQL `seats_available = 0` only finds the
-  candidates. A draft is never published. **A closing publishes a last time, at once**, offering no
+- **`date_sales.availability_changed` is published at a bounded rate** (ADR §5), when the last
+  publication is `AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS` old, or at once when the date sold out
+  or came back. The value published is core's `availabilityOf`; the SQL `seats_available = 0` only
+  finds the candidates. A draft is never published.
+- **The publisher never locks `date_sales`**, the row ADR §3 budgets for the hot decrement alone
+  (both reviews, 2026-09-27). A move of what the event carries (a tier, a price, the opening, a
+  closing, T3's holds) adds one to `date_sales.availability_moves`, in the statement that makes it.
+  The publisher's bookkeeping is its own table, `date_availability_publication`: the count it
+  published, when, and whether sold out. A pass reads its candidates without a lock, then takes
+  each date in a short transaction of its own, claiming the publication row `FOR UPDATE SKIP
+  LOCKED`, reading the figures as committed and deciding again. A move committed after that read
+  counts one more than what is recorded as published, so it is due again and none is lost.
+  Measured (`publish-due-availability.itest.ts`, three runs): a hold on the last date of a
+  hundred-date pass waits 1.2 to 1.3 ms, against 69 to 73 ms when the pass locked every row; the
+  pass takes 230 to 300 ms, one transaction per date. A move during a publication held open 300 ms
+  does not wait for it. **A closing publishes a last time, at once**, offering no
   seat (`seats_available` 0, sold out), so the cards and the index stop offering the date.
 - **It runs in the sweeper process, its own, on a one-second loop**, not in the consumer and not on
   BullMQ. The sweeper needs Postgres alone: in the consumer's process a Kafka outage would stop it
@@ -106,7 +115,9 @@ partition. Unreadable bytes and a missing or malformed `message-id` are dead-let
   through either (ADR §4: Redis down, correctness holds). A loop rather than `@Interval`
   (`nestjs-scheduling-events`): no overlapping passes, and `beforeApplicationShutdown` awaits the pass
   in flight. Every replica may run it; `SKIP LOCKED` hands each its own dates, and a missed tick
-  loses nothing (`nestjs-queues`' Decide: the recurring work stays in the database it reads).
+  loses nothing (`nestjs-queues`' Decide: the recurring work stays in the database it reads). A pass
+  scans the opened sales against their publication rows with no index of its own: fine at this
+  scale, to measure in T3's load test.
 
 ## 0f. Conventions
 
@@ -124,7 +135,8 @@ Refusals: the aggregate throws core's `DomainError`; the studio handlers wrap it
 | `date-sales.aggregate.spec.ts` | 19 cases, plain Vitest, core never mocked |
 | `date-sales.itest.ts` | the commands through the buses: replay, key reuse, stale version, two commands from one version, the lock, the counters as deltas under a hold, the provision's deadline restated, domain events after commit only, the outbox's rows in order |
 | `catalog-date-consumer.itest.ts` | real Kafka: duplicate, superseded start and outcome, ignored, a fact before its draft retried then applied, poison dead-lettered |
-| `publish-due-availability.itest.ts` | the rate bound (a seat every 500 ms for 12 s: four publications), selling out and back at once, a draft unpublished, `SKIP LOCKED` and four racing passes |
+| `publish-due-availability.itest.ts` | the rate bound (a seat every 500 ms for 12 s: four publications), selling out and back at once, a closing, a draft unpublished, a date a command holds published without waiting, `SKIP LOCKED` and four racing passes, a move during a publication neither waiting nor lost, the hold's wait behind a hundred-date pass |
+| `migrations/availability-publication.itest.ts` | the publication table's migration on a database that already holds dates |
 | `date-sales.http.itest.ts` | the routes over HTTP through the modules the API boots |
 | `catalog-exchange.itest.ts` | catalog and ticketing read each other's real outbox rows, shaped as the connector routes them: a draft opens the sale, ticketing's capacity and price complete catalog's checklist, catalog publishes, the prices lock |
 | `boot.itest.ts` | the three root modules |
@@ -135,10 +147,10 @@ meet, and only a test.
 ## 2. What T3 inherits
 
 - The hot decrement: `UPDATE date_sales SET seats_available = seats_available - $q,
-  availability_dirty_since = COALESCE(availability_dirty_since, now()) WHERE date_id = $1 AND
-  on_sale AND seats_available >= $q`, executed by the repository and registered with
-  `AggregateTracker.writtenUnversioned`; it must update the tracker's stored snapshot too, or a later
-  save in the transaction applies the delta again.
+  availability_moves = availability_moves + 1 WHERE date_id = $1 AND on_sale AND seats_available >=
+  $q`, executed by the repository and registered with `AggregateTracker.writtenUnversioned`; it must
+  update the tracker's stored snapshot too, or a later save in the transaction applies the delta
+  again. The publisher takes no lock it could wait on.
 - `seats_sold` moves at payment by the same kind of statement; the fill rate reads it.
 - The sweeper process for hold expiry: a second loop beside `AvailabilityPublisher`.
 - Topics `arthome.ticketing.order` (6, `order_id`) and `.account` (3) are provisioned.

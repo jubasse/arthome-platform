@@ -211,7 +211,7 @@ describe('setDatePrices', () => {
         [WirePriceTier.REDUCED, 1600n],
       ]);
       expect(payload.occurredAt && timestampDate(payload.occurredAt).toISOString()).toBe(NOW);
-      expect((await rowOf(dateId)).availability_dirty_since?.toISOString()).toBe(NOW);
+      expect((await rowOf(dateId)).availability_moves).toBe('1');
     },
     CASE_MS,
   );

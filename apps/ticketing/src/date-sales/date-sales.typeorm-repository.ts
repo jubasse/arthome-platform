@@ -11,14 +11,7 @@ type Counter = 'seats_available' | 'seats_sold' | 'waitlist_count';
 
 type StateColumns = Omit<
   DateSalesRow,
-  | 'date_id'
-  | Counter
-  | 'on_sale'
-  | 'availability_dirty_since'
-  | 'availability_published_at'
-  | 'availability_published_sold_out'
-  | 'created_at'
-  | 'updated_at'
+  'date_id' | Counter | 'on_sale' | 'availability_moves' | 'created_at' | 'updated_at'
 >;
 
 export class TypeOrmDateSalesRepository extends DateSalesRepository {

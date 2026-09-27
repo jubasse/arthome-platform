@@ -3,9 +3,11 @@ import { DataSource } from 'typeorm';
 
 import { Service } from '@arthome/core';
 
+import { DateAvailabilityPublicationRow } from './availability/date-availability-publication.entity.js';
 import { DateSalesRow } from './date-sales/date-sales.entity.js';
 import { env } from './env.js';
 import { Initial1790440000000 } from './migrations/1790440000000-initial.js';
+import { AvailabilityPublication1790440100000 } from './migrations/1790440100000-availability-publication.js';
 
 /**
  * Used by the three processes AND by the migration CLI. `synchronize` stays false: it would drop
@@ -15,8 +17,8 @@ import { Initial1790440000000 } from './migrations/1790440000000-initial.js';
 export const dataSource: DataSource = new DataSource({
   type: 'postgres',
   url: env.DATABASE_URL,
-  entities: [DateSalesRow, ProcessedMessage, OutboxEvent],
-  migrations: [Initial1790440000000],
+  entities: [DateSalesRow, DateAvailabilityPublicationRow, ProcessedMessage, OutboxEvent],
+  migrations: [Initial1790440000000, AvailabilityPublication1790440100000],
   applicationName: Service.TICKETING,
 
   // `poolSize` × replicas × processes, plus the connector's replication connection, must stay

@@ -71,15 +71,12 @@ export class DateSalesRow {
   @Column('integer')
   version!: number;
 
-  /** Set by a move of the figures `availability_changed` carries, cleared by their publication. */
-  @Column('timestamptz', { nullable: true })
-  availability_dirty_since!: Date | null;
-
-  @Column('timestamptz', { nullable: true })
-  availability_published_at!: Date | null;
-
-  @Column('boolean', { nullable: true })
-  availability_published_sold_out!: boolean | null;
+  /**
+   * Counts the moves of what `availability_changed` carries, each counted in the statement that
+   *   makes it; the publisher is due once it has published fewer. Postgres's `bigint`, read as text.
+   */
+  @Column({ type: 'bigint', insert: false, update: false })
+  availability_moves!: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;

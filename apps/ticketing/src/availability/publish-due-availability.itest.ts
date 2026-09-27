@@ -92,15 +92,25 @@ async function openSale(capacity: number): Promise<string> {
   return dateId;
 }
 
-/** The hot decrement's shape (adr-ticketing.md §2), and a hold returning its seats. */
+/** The hot decrement's shape (adr-ticketing.md §2), counting itself; a negative one returns seats. */
+const MOVE = `UPDATE date_sales
+                 SET seats_available = seats_available - $2,
+                     availability_moves = availability_moves + 1
+               WHERE date_id = $1`;
+
 async function move(dateId: string, taken: number): Promise<void> {
-  await dataSource.query(
-    `UPDATE date_sales
-        SET seats_available = seats_available - $2,
-            availability_dirty_since = COALESCE(availability_dirty_since, now())
+  await dataSource.query(MOVE, [dateId, taken]);
+}
+
+async function unpublishedMoves(dateId: string): Promise<number> {
+  const [row] = await dataSource.query<{ behind: number }[]>(
+    `SELECT (sales.availability_moves - publication.published_moves)::int AS behind
+       FROM date_sales AS sales
+       JOIN date_availability_publication AS publication USING (date_id)
       WHERE date_id = $1`,
-    [dateId, taken],
+    [dateId],
   );
+  return row?.behind ?? 0;
 }
 
 function publish(): Promise<number> {
@@ -209,14 +219,7 @@ describe('the availability publisher', () => {
         [1, false],
       ]);
       // The third move crossed nothing: it waits for the interval.
-      expect(
-        (
-          await dataSource.query<{ dirty: boolean }[]>(
-            'SELECT availability_dirty_since IS NOT NULL AS dirty FROM date_sales WHERE date_id = $1',
-            [dateId],
-          )
-        )[0]?.dirty,
-      ).toBe(true);
+      expect(await unpublishedMoves(dateId)).toBe(1);
     },
     CASE_MS,
   );
@@ -272,27 +275,101 @@ describe('the availability publisher', () => {
   );
 
   it(
-    'skips a date another transaction holds, and never publishes one date twice at once',
+    'publishes a date a command holds without waiting for it, and skips one another pass holds',
     async () => {
-      const held = await openSale(20);
-      const free = await openSale(20);
-      const holder = dataSource.createQueryRunner();
-      await holder.connect();
-      await holder.startTransaction();
+      const heldByCommand = await openSale(20);
+      const heldByPublisher = await openSale(20);
+      const command = dataSource.createQueryRunner();
+      const publisher = dataSource.createQueryRunner();
+      await command.connect();
+      await publisher.connect();
+      await command.startTransaction();
+      await publisher.startTransaction();
       try {
-        await holder.query('SELECT 1 FROM date_sales WHERE date_id = $1 FOR UPDATE', [held]);
+        await command.query('SELECT 1 FROM date_sales WHERE date_id = $1 FOR UPDATE', [
+          heldByCommand,
+        ]);
+        await publisher.query(
+          'SELECT 1 FROM date_availability_publication WHERE date_id = $1 FOR UPDATE',
+          [heldByPublisher],
+        );
         await publish();
-        expect(await published(held)).toHaveLength(0);
-        expect(await published(free)).toHaveLength(1);
+        expect(await published(heldByCommand)).toHaveLength(1);
+        expect(await published(heldByPublisher)).toHaveLength(0);
       } finally {
-        await holder.rollbackTransaction();
-        await holder.release();
+        await command.rollbackTransaction();
+        await publisher.rollbackTransaction();
+        await command.release();
+        await publisher.release();
       }
+      await publish();
+      expect(await published(heldByPublisher)).toHaveLength(1);
 
       const racing = await Promise.all([openSale(5), openSale(5), openSale(5)]);
       const passes = await Promise.all([publish(), publish(), publish(), publish()]);
-      expect(passes.reduce((sum, count) => sum + count, 0)).toBe(4);
-      for (const dateId of [held, ...racing]) expect(await published(dateId)).toHaveLength(1);
+      expect(passes.reduce((sum, count) => sum + count, 0)).toBe(3);
+      for (const dateId of racing) expect(await published(dateId)).toHaveLength(1);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'never makes a move wait for a publication, and never loses one made during it',
+    async () => {
+      const dateId = await openSale(30);
+      // Holds the publication between its read of the figures and its commit.
+      await dataSource.query(
+        `CREATE FUNCTION slow_publication_itest() RETURNS trigger LANGUAGE plpgsql AS
+           $$ BEGIN PERFORM pg_sleep(0.3); RETURN NEW; END $$`,
+      );
+      await dataSource.query(
+        `CREATE TRIGGER slow_publication_itest BEFORE INSERT ON outbox_event FOR EACH ROW
+           WHEN (NEW.aggregateid = '${dateId}') EXECUTE FUNCTION slow_publication_itest()`,
+      );
+      try {
+        const pass = publish();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const started = performance.now();
+        await move(dateId, 2);
+        expect(performance.now() - started).toBeLessThan(100);
+        expect(await pass).toBe(1);
+      } finally {
+        await dataSource.query('DROP TRIGGER slow_publication_itest ON outbox_event');
+        await dataSource.query('DROP FUNCTION slow_publication_itest()');
+      }
+
+      expect((await published(dateId)).map(({ event }) => event.seatsAvailable)).toEqual([30]);
+      expect(await unpublishedMoves(dateId)).toBe(1);
+      clock.advance(INTERVAL_MS);
+      await publish();
+      expect((await published(dateId)).map(({ event }) => event.seatsAvailable)).toEqual([30, 28]);
+      expect(await unpublishedMoves(dateId)).toBe(0);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'lets a hold on the last date of a hundred-date pass through at once',
+    async () => {
+      const dates = await Promise.all(Array.from({ length: 100 }, () => openSale(500)));
+      await publish();
+      clock.advance(INTERVAL_MS);
+      for (const dateId of dates) await move(dateId, 1);
+      const hot = dates.at(-1) ?? '';
+
+      const passStarted = performance.now();
+      const pass = publish();
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      const holdStarted = performance.now();
+      await dataSource.query(`${MOVE} AND on_sale AND seats_available >= $2`, [hot, 1]);
+      const holdMs = performance.now() - holdStarted;
+      expect(await pass).toBe(100);
+      const passMs = performance.now() - passStarted;
+
+      process.stdout.write(
+        `hold behind a 100-date pass: waited ${holdMs.toFixed(1)} ms, pass ${passMs.toFixed(1)} ms\n`,
+      );
+      expect(holdMs).toBeLessThan(20);
     },
     CASE_MS,
   );

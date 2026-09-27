@@ -5,10 +5,10 @@ import {
   type DateSalesWireContext,
 } from './date-sales-integration-events.js';
 import type { DateSalesEvent } from './date-sales.events.js';
-import { markAvailabilityMoved } from '../availability/mark-availability-moved.js';
+import { recordAvailabilityMoves } from '../availability/record-availability-moves.js';
 
 /**
- * Every consequence of a date's events inside its command's transaction: the mark the availability
+ * Every consequence of a date's events inside its command's transaction: what the availability
  *   publisher reads, and the outbox rows. A command calls this once, after its save.
  */
 export async function recordDateSalesEvents(
@@ -16,6 +16,6 @@ export async function recordDateSalesEvents(
   events: readonly DateSalesEvent[],
   context: DateSalesWireContext,
 ): Promise<void> {
-  await markAvailabilityMoved(manager, events);
+  await recordAvailabilityMoves(manager, events);
   await writeDateSalesIntegrationEvents(manager, events, context);
 }
