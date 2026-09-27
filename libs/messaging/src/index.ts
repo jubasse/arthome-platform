@@ -24,7 +24,8 @@ export {
   dispatch,
   header,
 } from './dispatch.js';
-export type { Disposition, MessageHandler, Outcome } from './dispatch.js';
+export { Outcome } from './dispatch.js';
+export type { Disposition, MessageHandler } from './dispatch.js';
 
 export { runConsumers } from './consume.js';
 export type { ConsumerSetup } from './consume.js';

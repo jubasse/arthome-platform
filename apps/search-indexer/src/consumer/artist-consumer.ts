@@ -1,5 +1,5 @@
 import { ArtistUpdatedSchema } from '@arthome-platform/events';
-import { claimMessage, type Outcome } from '@arthome-platform/messaging';
+import { Outcome, claimMessage } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import type { EachMessagePayload } from 'kafkajs';
 import { In, type DataSource, type EntityManager } from 'typeorm';
@@ -94,7 +94,7 @@ export async function applyArtistMessage(
     ];
     const shows = await manager.findBy(ShowProjection, { show_id: In(showIds) });
     return {
-      outcome: firstDelivery ? ('applied' as const) : ('duplicate' as const),
+      outcome: firstDelivery ? ('applied' as const) : Outcome.DUPLICATE,
       artist,
       dates,
       shows,

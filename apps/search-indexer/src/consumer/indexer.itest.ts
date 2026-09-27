@@ -12,7 +12,7 @@ import {
   ShowPublishedSchema,
   ShowUpdatedSchema,
 } from '@arthome-platform/events';
-import { ProcessedMessage } from '@arthome-platform/messaging';
+import { Outcome, ProcessedMessage } from '@arthome-platform/messaging';
 import { DATE_INDEX_ALIAS, SHOW_INDEX_ALIAS } from '@arthome-platform/search-index';
 import {
   applyMigrations,
@@ -271,7 +271,7 @@ describe('the show index', () => {
           showPublished(showId, undefined, messageId),
           replay,
         ),
-      ).toBe('duplicate');
+      ).toBe(Outcome.DUPLICATE);
       expect(await documentIn(SHOW_INDEX_ALIAS, showId)).toMatchObject({
         indexed_at: replay.toISOString(),
       });

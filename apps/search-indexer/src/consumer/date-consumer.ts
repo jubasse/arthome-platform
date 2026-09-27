@@ -4,7 +4,7 @@ import {
   DateScheduledSchema,
   PublicationStateChangedSchema,
 } from '@arthome-platform/events';
-import { claimMessage, type Outcome } from '@arthome-platform/messaging';
+import { Outcome, claimMessage } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import type { EachMessagePayload } from 'kafkajs';
@@ -220,7 +220,7 @@ export async function applyDateMessage(
         ? null
         : await manager.findOneBy(ArtistProjection, { channel_id: date.scheduled.channel_id });
     return {
-      outcome: firstDelivery ? ('applied' as const) : ('duplicate' as const),
+      outcome: firstDelivery ? ('applied' as const) : Outcome.DUPLICATE,
       date,
       show,
       artist,

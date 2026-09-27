@@ -1,10 +1,10 @@
 import { AccountRegisteredSchema } from '@arthome-platform/events';
 import {
+  Outcome,
+  PermanentError,
   claimMessage,
   header,
   messageIdOf,
-  type Outcome,
-  PermanentError,
 } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import type { EachMessagePayload } from 'kafkajs';
@@ -35,7 +35,7 @@ export async function applyMessage(
   }
 
   return dataSource.transaction(async (manager) => {
-    if (!(await claimMessage(manager, messageId, payload.topic))) return 'duplicate';
+    if (!(await claimMessage(manager, messageId, payload.topic))) return Outcome.DUPLICATE;
 
     /**
      * `orIgnore()` because the two guards answer different questions: the dedup claim above
@@ -61,6 +61,6 @@ export async function applyMessage(
       .returning('account_id')
       .execute();
 
-    return (written.raw as unknown[]).length === 0 ? 'duplicate' : 'applied';
+    return (written.raw as unknown[]).length === 0 ? Outcome.DUPLICATE : Outcome.APPLIED;
   });
 }

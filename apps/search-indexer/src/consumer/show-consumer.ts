@@ -1,5 +1,5 @@
 import { ShowPublishedSchema, ShowUpdatedSchema } from '@arthome-platform/events';
-import { claimMessage, type Outcome } from '@arthome-platform/messaging';
+import { Outcome, claimMessage } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource, EntityManager } from 'typeorm';
@@ -157,7 +157,7 @@ export async function applyShowMessage(
     const row = await lockedShow(manager, fact.showId);
     if (!firstDelivery) {
       return {
-        outcome: 'duplicate' as const,
+        outcome: Outcome.DUPLICATE,
         show: row,
         dates: await publicDatesOf(manager, fact.showId),
       };

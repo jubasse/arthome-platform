@@ -30,6 +30,11 @@
       "file": "apps/catalog/src/artists/artist.entity.ts",
       "value": "artist",
       "reason": "The table of the Artist aggregate, named for the aggregate as `show`, `date` and `venue` are. MEMBER_ROLES' `artist` is a role a person holds in a channel, not the channel's public face this table stores."
+    },
+    {
+      "file": "libs/messaging/src/dispatch.ts",
+      "value": "duplicate",
+      "reason": "A message's disposition: this message-id was already applied. REFUND_REASONS' `duplicate` is why money went back to a viewer charged twice. The two share the English word and nothing else; every consumer returns `Outcome.DUPLICATE`, so this definition is the only place the literal stands."
     }
   ]
 }

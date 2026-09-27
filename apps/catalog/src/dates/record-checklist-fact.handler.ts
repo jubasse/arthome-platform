@@ -1,4 +1,4 @@
-import { claimMessage, type Outcome } from '@arthome-platform/messaging';
+import { Outcome, claimMessage } from '@arthome-platform/messaging';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
 import { ApiErrorCode, DomainError } from '@arthome/core';
@@ -17,7 +17,7 @@ export class RecordChecklistFactHandler implements ICommandHandler<RecordCheckli
 
   public execute({ messageId, topic, fact }: RecordChecklistFact): Promise<Outcome> {
     return this.transactions.run(async ({ manager }) => {
-      if (!(await claimMessage(manager, messageId, topic))) return 'duplicate';
+      if (!(await claimMessage(manager, messageId, topic))) return Outcome.DUPLICATE;
 
       // Catalog emits DateDrafted before any other context knows the date, so an unknown one is
       // a fault to look at, not a race to wait out. Shared lock to the commit: a publication

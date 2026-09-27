@@ -21,6 +21,7 @@ import {
   DLQ_REASON_HEADER,
   ERROR_HEADER,
   OutboxEvent,
+  Outcome,
   PermanentError,
   ProcessedMessage,
   deadLetterTopic,
@@ -604,7 +605,7 @@ describe('a projected checklist fact', () => {
       );
 
       expect(await applyChecklistMessage(commands, once)).toBe('applied');
-      expect(await applyChecklistMessage(commands, once)).toBe('duplicate');
+      expect(await applyChecklistMessage(commands, once)).toBe(Outcome.DUPLICATE);
     },
     CASE_MS,
   );

@@ -9,13 +9,18 @@ export const ORIGIN_HEADER = 'arthome-origin-topic';
 export const ERROR_HEADER = 'arthome-error';
 export const DLQ_REASON_HEADER = 'arthome-dlq-reason';
 
-/** `applied` wrote the effect, `duplicate` found it already written, `ignored` was not ours. */
 /**
- * `duplicate`: this message-id was already applied. `superseded`: a newer version of the same
- * aggregate was, so this one changed nothing — recorded, not an error, and worth counting because
- * it is how often a retry topic reorders a key.
+ * `applied` wrote the effect, `ignored` was not ours. `duplicate`: this message-id was already
+ * applied. `superseded`: a newer version of the same aggregate was, so this one changed nothing —
+ * recorded, not an error, and worth counting because it is how often a retry topic reorders a key.
  */
-export type Outcome = 'applied' | 'duplicate' | 'ignored' | 'superseded';
+export const Outcome = {
+  APPLIED: 'applied',
+  DUPLICATE: 'duplicate',
+  IGNORED: 'ignored',
+  SUPERSEDED: 'superseded',
+} as const;
+export type Outcome = (typeof Outcome)[keyof typeof Outcome];
 
 export type Disposition = Outcome | 'retried' | 'dead-lettered';
 
