@@ -16,7 +16,16 @@ import {
   TechnicalCheckPassedSchema,
 } from '@arthome-platform/events';
 import { RefusalException } from '@arthome-platform/http-edge';
-import { OutboxEvent, PermanentError, ProcessedMessage } from '@arthome-platform/messaging';
+import {
+  ATTEMPT_HEADER,
+  DLQ_REASON_HEADER,
+  ERROR_HEADER,
+  OutboxEvent,
+  PermanentError,
+  ProcessedMessage,
+  deadLetterTopic,
+  dispatch,
+} from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
@@ -33,7 +42,7 @@ import {
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { CommandBus, CqrsModule, EventBus, QueryBus, type IEvent } from '@nestjs/cqrs';
 import { Test, type TestingModule } from '@nestjs/testing';
-import type { EachMessagePayload } from 'kafkajs';
+import type { EachMessagePayload, Producer, ProducerRecord } from 'kafkajs';
 import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -51,6 +60,7 @@ import {
   PublicationPromise,
   PublicationState,
   ReplayPolicy,
+  Service,
 } from '@arthome/core';
 
 import { applyChecklistMessage } from './checklist-consumer.js';
@@ -650,6 +660,37 @@ describe('a projected checklist fact', () => {
       expect(
         await dataSource.getRepository(ProcessedMessage).findOneBy({ id: messageId }),
       ).toBeNull();
+    },
+    CASE_MS,
+  );
+
+  it(
+    'parks that refusal from the bus as the consumer always has: dead-lettered at once, attempt 0',
+    async () => {
+      const messageId = '01a0e2aa-0000-7000-8000-000000000003';
+      const dateId = '01a0e100-0000-7000-8000-0000000003fe';
+      const parked: ProducerRecord[] = [];
+      const producer = {
+        send: (record: ProducerRecord) => {
+          parked.push(record);
+          return Promise.resolve([]);
+        },
+      } as unknown as Producer;
+
+      const disposition = await dispatch(
+        (payload) => applyChecklistMessage(commands, payload),
+        producer,
+        Service.CATALOG,
+        pricing(dateId, true, '2026-09-26T10:00:00.000Z', messageId),
+      );
+
+      expect(disposition).toBe('dead-lettered');
+      expect(parked.map((record) => record.topic)).toEqual([deadLetterTopic(Service.CATALOG)]);
+      expect(parked[0]?.messages[0]?.headers).toMatchObject({
+        [ATTEMPT_HEADER]: '0',
+        [DLQ_REASON_HEADER]: 'permanent',
+        [ERROR_HEADER]: `PermanentError: message ${messageId} is about date ${dateId}, unknown here`,
+      });
     },
     CASE_MS,
   );

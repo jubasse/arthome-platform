@@ -45,5 +45,6 @@ export class CatalogTransactions {
   }
 }
 
+/** Listed once, here: a second listing in another module's `providers` is a second instance. */
 @Module({ providers: [CatalogTransactions], exports: [CatalogTransactions] })
 export class CatalogTransactionsModule {}

@@ -2,14 +2,23 @@ import 'reflect-metadata';
 
 import { readKafkaBrokers } from '@arthome-platform/config';
 import { deadLetterTopic, retryTopic, runConsumers } from '@arthome-platform/messaging';
+import {
+  Injectable,
+  Module,
+  ShutdownSignal,
+  type OnApplicationBootstrap,
+  type OnApplicationShutdown,
+} from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { CommandBus } from '@nestjs/cqrs';
+import { CommandBus, CqrsModule } from '@nestjs/cqrs';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { Kafka } from 'kafkajs';
 
 import { Service } from '@arthome/core';
 
-import { ConsumerModule } from './consumer.module.js';
+import { dataSource } from './data-source.js';
 import { applyChecklistMessage } from './dates/checklist-consumer.js';
+import { ChecklistConsumerModule } from './dates/checklist-consumer.module.js';
 
 /** The facts the publication checklist projects (data-model.md §2.3), all keyed by date id. */
 const SOURCE_TOPICS = [
@@ -18,43 +27,57 @@ const SOURCE_TOPICS = [
   'arthome.chat.date',
 ];
 
-async function main(): Promise<void> {
-  const app = await NestFactory.createApplicationContext(ConsumerModule, {
-    logger: ['warn', 'error'],
+/**
+ * Stopped in `onApplicationShutdown`, which runs for the root module before the global TypeORM
+ *   module closes the pool: a message in flight finishes its transaction first.
+ */
+@Injectable()
+class ChecklistConsumer implements OnApplicationBootstrap, OnApplicationShutdown {
+  private readonly kafka = new Kafka({
+    clientId: Service.CATALOG,
+    brokers: [...readKafkaBrokers()],
   });
-  const commands = app.get(CommandBus);
+  private readonly producer = this.kafka.producer();
+  private stopConsumers: () => Promise<void> = () => Promise.resolve();
 
-  const kafka = new Kafka({ clientId: Service.CATALOG, brokers: [...readKafkaBrokers()] });
-  const producer = kafka.producer();
-  await producer.connect();
+  public constructor(private readonly commands: CommandBus) {}
 
-  const stop = await runConsumers({
-    kafka,
-    producer,
-    service: Service.CATALOG,
-    sources: SOURCE_TOPICS.map((topic) => ({
-      topic,
-      handler: (payload) => applyChecklistMessage(commands, payload),
-    })),
-    onDisposition: (topic, disposition) => console.log(`${topic} ${disposition}`),
-  });
+  public async onApplicationBootstrap(): Promise<void> {
+    await this.producer.connect();
+    this.stopConsumers = await runConsumers({
+      kafka: this.kafka,
+      producer: this.producer,
+      service: Service.CATALOG,
+      sources: SOURCE_TOPICS.map((topic) => ({
+        topic,
+        handler: (payload) => applyChecklistMessage(this.commands, payload),
+      })),
+      onDisposition: (topic, disposition) => console.log(`${topic} ${disposition}`),
+    });
+    console.log(
+      `catalog consumer: ${SOURCE_TOPICS.join(', ')}, retrying on ${retryTopic(Service.CATALOG)}, dead-lettering to ${deadLetterTopic(Service.CATALOG)}`,
+    );
+  }
 
-  let shuttingDown = false;
-  const shutdown = async (): Promise<void> => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-
-    await stop();
-    await producer.disconnect();
-    await app.close();
-    process.exit(0);
-  };
-  process.on('SIGTERM', () => void shutdown());
-  process.on('SIGINT', () => void shutdown());
-
-  console.log(
-    `catalog consumer: ${SOURCE_TOPICS.join(', ')}, retrying on ${retryTopic(Service.CATALOG)}, dead-lettering to ${deadLetterTopic(Service.CATALOG)}`,
-  );
+  public async onApplicationShutdown(): Promise<void> {
+    await this.stopConsumers();
+    await this.producer.disconnect();
+  }
 }
 
-await main();
+/** The consumer process: the command it dispatches and what that needs, no HTTP module. */
+@Module({
+  imports: [
+    TypeOrmModule.forRoot(dataSource.options),
+    CqrsModule.forRoot(),
+    ChecklistConsumerModule,
+  ],
+  providers: [ChecklistConsumer],
+})
+class ConsumerModule {}
+
+const app = await NestFactory.createApplicationContext(ConsumerModule, {
+  logger: ['warn', 'error'],
+});
+// `useProcessExit`: once closed, exit 0 as the consumer always has, rather than re-raise the signal.
+app.enableShutdownHooks([ShutdownSignal.SIGTERM, ShutdownSignal.SIGINT], { useProcessExit: true });

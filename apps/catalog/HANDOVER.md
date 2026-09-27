@@ -213,7 +213,8 @@ After the saves the handler passes `getUncommittedEvents()` to:
 - `writeDateIntegrationEvents` (`date-integration-events.ts`): one outbox row per event through
   `writeCatalogEvent`, in apply order, the publication's before the date's, except
   `PublicationEngaged`, written last so no consumer reads the lock first; the Protobuf payload is
-  built there. A domain event is never the
+  built there. `writeDateScheduled`, with which the public-slugs migration restates a published date,
+  moved here from `announce-publication.ts`, so one builder writes `DateScheduled`. A domain event is never the
   wire format (`nestjs-ddd` rule 11); what the wire needs beyond it — canonical URL, venue clock,
   `traceparent` — comes in a context.
 - `projectDateEvents` (`public/date-detail-projection.ts`): `date_detail_public`, the events folded
@@ -241,7 +242,10 @@ instances.
 **The checklist consumer dispatches too.** `consumer.ts` boots `ConsumerModule` (TypeORM,
 `CqrsModule.forRoot()`, `ChecklistConsumerModule`) as an application context, without HTTP, and
 `applyChecklistMessage` turns each message it reads as a fact into `RecordChecklistFact`, whose
-handler claims `processed_message` in the command's transaction. The routing of a failure stays
+handler claims `processed_message` in the command's transaction. Its `ChecklistConsumer` provider
+starts Kafka in `onApplicationBootstrap` and stops it in `onApplicationShutdown`, which runs for the
+root module before the global TypeORM module closes the pool; `enableShutdownHooks` on SIGTERM and
+SIGINT with `useProcessExit` exits 0 once closed, as before. The routing of a failure stays
 AGENTS.md's ("When a message cannot be applied"): the handler refuses a date catalog does not hold
 with core's `DomainError`, which the consumer rethrows as `PermanentError`, dead-lettered at once;
 anything else is retried as transient.
