@@ -26,8 +26,8 @@ debugging NestJS code, load `nestjs-how-to` and the skills it routes to.** Alway
 - `nestjs-typeorm` (typeorm, @nestjs/typeorm) · `nestjs-kafka` (kafkajs) · `nestjs-event-driven`
   (the outbox and the idempotent consumers) · `nestjs-performance` (@nestjs/platform-fastify) ·
   `nestjs-monorepo` (pnpm workspace) · `nestjs-search` (@opensearch-project/opensearch) ·
-  `nestjs-bff-gateway` (`apps/bff-storefront`) · `nestjs-cqrs` (@nestjs/cqrs, `apps/catalog` and
-  `libs/transactions`, whose conventions are `apps/catalog/HANDOVER.md` §0f) ·
+  `nestjs-bff-gateway` (`apps/bff-storefront`) · `nestjs-cqrs` (@nestjs/cqrs, `apps/catalog`,
+  `apps/ticketing` and `libs/transactions`, whose conventions are `apps/catalog/HANDOVER.md` §0f) ·
   `nestjs-ddd` (catalog's aggregates and repository ports, which `nestjs-cqrs` routes to)
 
 Project decisions — the ADRs and `DECISIONS.md` in arthome-core — take precedence over these
@@ -131,8 +131,9 @@ pnpm --filter @arthome-platform/identity      run migration:run
 pnpm --filter @arthome-platform/notifications run migration:run
 pnpm --filter @arthome-platform/catalog       run migration:run
 pnpm --filter @arthome-platform/search-indexer run migration:run
+pnpm --filter @arthome-platform/ticketing     run migration:run   # its three processes stopped first
 pnpm run provision:topics          # BEFORE the connectors, and before any consumer
-for c in identity catalog; do
+for c in identity catalog ticketing; do
   curl -s -X POST -H 'Content-Type: application/json' \
     --data @infra/debezium/$c-outbox.json http://localhost:8083/connectors
 done
@@ -346,6 +347,62 @@ producer script:
 
 The `TimeoutNegativeWarning` a KafkaJS client prints at start comes from KafkaJS 2.2.4 on Node 24:
 a bare producer script prints it too.
+
+### The ticketing date sales path
+
+`ticketing` runs three processes from `apps/ticketing`, all on its own database `ticketing`: the API
+(`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`)
+and the sweeper (`node dist/sweeper.js`), which publishes `availability_changed` and needs Postgres
+alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
+
+A date catalog drafts is opened in ticketing by the consumer; the studio then gives it capacity and
+prices, each with an `Idempotency-Key` and the version the pane served:
+
+```
+POST /v1/dates/:dateId/capacity-tiers   { additionalCapacity, expectedVersion, notifyWaitlist }
+PUT  /v1/dates/:dateId/prices           { expectedVersion, tiers: [{ tier, amountMinor, currencyCode, active }] }
+PUT  /v1/dates/:dateId/technical-provision  { provisionedCapacity, expectedVersion }; past core's TECHNICAL_PROVISION_THRESHOLD
+GET  /v1/dates/:dateId/panes/tickets
+GET  /v1/dates/:dateId/availability     x-arthome-deadline required; 404 unless on sale
+```
+
+Each command writes `capacity_set` or `pricing_changed` on `arthome.ticketing.date_sales`, keyed by
+the date, which catalog's checklist consumer reads: with them, catalog's by-hand
+`arthome.ticketing.date_sales` facts above are no longer needed. Publishing the date in catalog
+locks the prices in ticketing (`date.prices_locked` from then) and opens the sale; the sweeper then
+publishes the availability at most every five seconds per date, a sell-out at once. What each part
+does and why is `apps/ticketing/HANDOVER.md`.
+
+**Deploy ticketing's consumer before the first date is drafted in production.** It opens a sale only
+from `catalog.date.drafted`, and reads `arthome.catalog.date` from the beginning of what the topic
+keeps: a date drafted more than the topic's retention (168 h) before the group first reads it never
+opens, and every later fact about it is retried, then dead-lettered.
+
+Proven on the running stack on 2026-09-27, the ticketing database created by hand (the init script
+runs only on an empty data directory), its migration run, its connector registered, the four new
+topics provisioned, catalog's API and consumer and ticketing's three processes running:
+
+| Check | Result |
+| --- | --- |
+| a date drafted in catalog | opened in ticketing within 5 s through Debezium: version 1, no capacity, no price; the backlog of `arthome.catalog.date` opened the dates already drafted |
+| `openCapacityTier` 300, then `setDatePrices` full 2500 and reduced 1800 EUR | 200, versions 2 and 3; a write naming version 2 again, 409 `state.conflict` with version 3 |
+| catalog's checklist | `capacity` and `at_least_one_active_price` satisfied by ticketing's own events, no fact sent by hand |
+| publishing in catalog | ticketing locked the prices and opened the sale: 300 seats; `setDatePrices` then 409 `date.prices_locked` with `lockedAt` |
+| the public availability | 200 with `validUntil` 60 s out; without `x-arthome-deadline`, 400 |
+| ticketing's outbox for the date | `capacity_set`, `pricing_changed`, `pricing_changed` (the lock), then `availability_changed` from the sweeper half a second after the sale opened |
+
+That run was at 630dbd5, before the reviews' fixes. Proven again at e0967b4, after them and after
+core's rules and D-088, the three new migrations run on the database that already held those dates:
+
+| Check | Result |
+| --- | --- |
+| a tier past 10,000 with no provision | 409 `date.technical_provision_required`, naming the threshold, the capacity and `revisableUntil` |
+| `setTechnicalProvision` 12,000, then a tier to 12,000 | 200 and 200; both wrote a `capacity_set`, and the sweeper published the new availability 0.4 s later |
+| a provision of 11,000 under 12,000 open | 409 `date.provision_below_capacity` |
+| prices in EUR and CHF on a fresh draft | 409 `date.prices_currency_mismatch`, naming the tier and both currencies |
+| the date cancelled in catalog | the sale closed in ticketing: the availability read 404, a new tier 409 `state.conflict` naming the outcome, and a last `availability_changed` of 0 seats, `sold_out` false, 0.7 s after the cancellation |
+
+The failed-date retry is still proven on containers only: nothing on the stack failed to publish.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

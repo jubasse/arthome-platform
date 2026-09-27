@@ -19,7 +19,7 @@
     "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-b2aac8898fe7.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-9fb19108c720.tgz",
     "kafkajs": "2.2.4",
     "typeorm": "1.1.1",
     "uuid": "14.0.2"

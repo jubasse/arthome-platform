@@ -7,6 +7,7 @@
 CREATE DATABASE notifications OWNER arthome;
 CREATE DATABASE catalog OWNER arthome;
 CREATE DATABASE search OWNER arthome;
+CREATE DATABASE ticketing OWNER arthome;
 
 -- A SESSION LEFT IDLE INSIDE A TRANSACTION RETAINS THE WAL, exactly as an
 --   unconsumed slot above does — it holds back the oldest transaction the server
@@ -21,8 +22,10 @@ ALTER DATABASE identity      SET idle_in_transaction_session_timeout = '60s';
 ALTER DATABASE notifications SET idle_in_transaction_session_timeout = '60s';
 ALTER DATABASE catalog       SET idle_in_transaction_session_timeout = '60s';
 ALTER DATABASE search        SET idle_in_transaction_session_timeout = '60s';
+ALTER DATABASE ticketing     SET idle_in_transaction_session_timeout = '60s';
 
 ALTER DATABASE identity      SET statement_timeout = '30s';
 ALTER DATABASE notifications SET statement_timeout = '30s';
 ALTER DATABASE catalog       SET statement_timeout = '30s';
 ALTER DATABASE search        SET statement_timeout = '30s';
+ALTER DATABASE ticketing     SET statement_timeout = '30s';
