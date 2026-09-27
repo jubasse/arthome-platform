@@ -37,6 +37,7 @@ const nodeEnv = z.enum(['development', 'test', 'production']);
  */
 const postgresUrl = z.url({ protocol: /^postgres(ql)?$/ });
 const httpUrl = z.url({ protocol: /^https?$/ });
+const redisUrl = z.url({ protocol: /^rediss?$/ });
 
 /**
  * It was passed to KafkaJS as `[process.env.KAFKA_BROKERS]`, so `a:9092,b:9092`
@@ -68,6 +69,7 @@ const port = z.coerce.number().int().min(1).max(65535).default(3000);
  */
 const DEVELOPMENT_KAFKA_BROKERS = 'localhost:29092';
 const DEVELOPMENT_OPENSEARCH_URL = 'http://localhost:19200';
+const DEVELOPMENT_REDIS_URL = 'redis://localhost:56379';
 /** `apps/catalog/.env.example`'s port. */
 const DEVELOPMENT_CATALOG_URL = 'http://localhost:3002';
 
@@ -176,6 +178,14 @@ export function readOpenSearchUrl(
       ? source
       : { OPENSEARCH_URL: DEVELOPMENT_OPENSEARCH_URL, ...stripEmpty(source) };
   return z.object({ OPENSEARCH_URL: httpUrl }).parse(withDefault).OPENSEARCH_URL;
+}
+
+export function readRedisUrl(source: Record<string, string | undefined> = process.env): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { REDIS_URL: DEVELOPMENT_REDIS_URL, ...stripEmpty(source) };
+  return z.object({ REDIS_URL: redisUrl }).parse(withDefault).REDIS_URL;
 }
 
 export function readBffEnv(source: Record<string, string | undefined> = process.env): BffEnv {

@@ -61,6 +61,18 @@ export interface StartedPostgres {
   stop(): Promise<void>;
 }
 
+/** The server: a test takes its own database index on it (`workerRedisUrl`). */
+export interface RedisEndpoint {
+  readonly host: string;
+  readonly port: number;
+  readonly url: string;
+}
+
+export interface StartedRedis {
+  readonly endpoint: RedisEndpoint;
+  stop(): Promise<void>;
+}
+
 export interface StartedKafka {
   readonly endpoint: KafkaEndpoint;
   stop(): Promise<void>;
@@ -70,6 +82,7 @@ export interface StackRequest {
   readonly postgres?: boolean;
   readonly kafka?: boolean;
   readonly opensearch?: boolean;
+  readonly redis?: boolean;
   /**
    * Implies `postgres` and `kafka`, all three on one Docker network: a
    *   connector reaches its database and broker from INSIDE Docker, where the
@@ -85,6 +98,7 @@ export interface StartedStack {
   readonly kafka: KafkaEndpoint;
   readonly opensearch: OpenSearchEndpoint;
   readonly connect: ConnectEndpoint;
+  readonly redis: RedisEndpoint;
   stop(): Promise<void>;
 }
 
@@ -96,6 +110,7 @@ const POSTGRES_SERVICE = 'postgres';
 const KAFKA_SERVICE = 'kafka';
 const OPENSEARCH_SERVICE = 'opensearch';
 const CONNECT_SERVICE = 'connect';
+const REDIS_SERVICE = 'redis';
 
 /**
  * The aliases are compose's service names on purpose: a connector names its
@@ -129,6 +144,8 @@ const POSTGRES_PORT = 5432;
 const REQUIRED_WAL_LEVEL = 'logical';
 
 const OPENSEARCH_PORT = 9200;
+
+const REDIS_PORT = 6379;
 
 /**
  * Not read out of `compose.yaml` like the image tag: these cannot drift into
@@ -200,7 +217,8 @@ function composeCommand(service: string): string[] {
   for (const line of block.slice(at + 1)) {
     const item = /^ {6}- (.*)$/.exec(line)?.[1];
     if (item === undefined) break;
-    items.push(item);
+    // Quoted where YAML would otherwise read a word as a boolean: redis' `"yes"`.
+    items.push(/^"(.*)"$/.exec(item)?.[1] ?? item);
   }
   if (items.length === 0) throw new Error(`compose.yaml gives \`${service}\` an empty command:.`);
   return items;
@@ -286,6 +304,30 @@ export async function startOpenSearch(
 
   return {
     endpoint: { host, port, url: `http://${host}:${port}` },
+    stop: async (): Promise<void> => {
+      await container.stop();
+    },
+  };
+}
+
+/** Its policy and append-only file come from `compose.yaml`'s command, as Postgres' flags do. */
+export async function startRedis(
+  startupTimeoutMs: number = DEFAULT_STARTUP_MS,
+): Promise<StartedRedis> {
+  const container = await new GenericContainer(composeImage(REDIS_SERVICE))
+    .withCommand(composeCommand(REDIS_SERVICE))
+    .withExposedPorts(REDIS_PORT)
+    .withWaitStrategy(
+      Wait.forAll([Wait.forListeningPorts(), Wait.forLogMessage('Ready to accept connections')]),
+    )
+    .withStartupTimeout(startupTimeoutMs)
+    .start();
+
+  const host = container.getHost();
+  const port = container.getMappedPort(REDIS_PORT);
+
+  return {
+    endpoint: { host, port, url: `redis://${host}:${port}` },
     stop: async (): Promise<void> => {
       await container.stop();
     },
@@ -503,10 +545,11 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
   const wantsPostgres = request.postgres === true || wantsConnect;
   const wantsKafka = request.kafka === true || wantsConnect;
 
-  const [postgres, kafka, opensearch] = await Promise.allSettled([
+  const [postgres, kafka, opensearch, redis] = await Promise.allSettled([
     wantsPostgres ? startPostgres(timeout, network) : null,
     wantsKafka ? startKafka(timeout, network) : null,
     request.opensearch === true ? startOpenSearch(timeout) : null,
+    request.redis === true ? startRedis(timeout) : null,
   ]);
 
   const dependenciesFailed = [postgres, kafka, opensearch].some((o) => o.status === 'rejected');
@@ -521,7 +564,7 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
     }
   })();
 
-  const outcomes = [postgres, kafka, opensearch, connect];
+  const outcomes = [postgres, kafka, opensearch, redis, connect];
   const started = outcomes.flatMap((outcome) =>
     outcome.status === 'fulfilled' && outcome.value !== null ? [outcome.value] : [],
   );
@@ -545,6 +588,7 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
   const openSearchEndpoint =
     opensearch.status === 'fulfilled' ? opensearch.value?.endpoint : undefined;
   const connectEndpoint = connect.status === 'fulfilled' ? connect.value?.endpoint : undefined;
+  const redisEndpoint = redis.status === 'fulfilled' ? redis.value?.endpoint : undefined;
 
   return {
     get postgres(): PostgresEndpoint {
@@ -570,6 +614,12 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
         throw new Error('startStack was not asked for connect: pass { connect: true }.');
       }
       return connectEndpoint;
+    },
+    get redis(): RedisEndpoint {
+      if (redisEndpoint === undefined) {
+        throw new Error('startStack was not asked for redis: pass { redis: true }.');
+      }
+      return redisEndpoint;
     },
     stop,
   };

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The integration harness: real Postgres, Kafka and OpenSearch in containers.",
+  "description": "The integration harness: real Postgres, Kafka, OpenSearch and Redis in containers.",
   "license": "UNLICENSED",
   "exports": {
     ".": {
@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@arthome-platform/messaging": "workspace:*",
+    "ioredis": "6.0.0",
     "kafkajs": "2.2.4",
     "pg": "8.23.0",
     "testcontainers": "12.1.0",

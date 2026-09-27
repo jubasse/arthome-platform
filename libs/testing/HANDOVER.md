@@ -9,13 +9,14 @@ from reading.
 
 | File | What it gives |
 | --- | --- |
-| `src/stack.ts` | `startPostgres`, `startKafka`, `startStack`, `composeImage`. Containers, and a `stop()`. |
+| `src/stack.ts` | `startPostgres`, `startKafka`, `startOpenSearch`, `startConnect`, `startRedis`, `startStack`, `composeImage`. Containers, and a `stop()`. |
+| `src/redis.ts` | `provideRedisForRun` (a Vitest `globalSetup`: one Redis per run), `workerRedisUrl` (a database index per worker, 1 to 15), `flushRedisDatabase`. |
 | `src/kafka.ts` | `createTopics`, `waitForMessage`, `headersOf`. The waiting an event test cannot do without. |
 | `src/database.ts` | `createDatabase`, `applyMigrations`, `truncateAll`. |
 | `src/index.ts` | The public surface. The placeholder is gone. |
-| `src/stack.spec.ts`, `src/kafka.spec.ts` | **Fast, no Docker.** These two run inside `pnpm run verify`. |
-| `src/stack.itest.ts`, `src/kafka.itest.ts`, `src/outbox.itest.ts` | **Slow, Docker.** 13 tests. |
-| `vitest.integration.config.mjs` | The only thing that can find a `*.itest.ts`. |
+| `src/*.spec.ts` | **Fast, no Docker.** They run inside `pnpm run verify`. |
+| `src/*.itest.ts` | **Slow, Docker.** |
+| `vitest.integration.config.mjs` | The only thing that can find a `*.itest.ts`. Its `globalSetup`, `vitest.redis-setup.mjs`, starts the run's Redis. |
 
 ```ts
 import { OutboxEvent, writeOutboxEvent } from '@arthome-platform/messaging';
@@ -301,6 +302,8 @@ mine.
 - **`startStack` is not reference-counted.** Two test files each get their own containers; three
   files means three sets. That is what makes them independent and it is why the suite is 13 s
   rather than 40 s — the files run in parallel. If it ever becomes too slow, the answer is a Vitest
-  `globalSetup`, not a shared singleton inside `stack.ts`.
+  `globalSetup`, not a shared singleton inside `stack.ts`. Redis already goes that way: a suite
+  lists a setup file exporting `provideRedisForRun`, and each file reads the URL with
+  `inject(PROVIDED_REDIS_URL)` and takes `workerRedisUrl(url)`, flushed between tests.
 - **`vitest` is not declared as a dependency of this package.** It resolves from the repository
   root by walk-up, which is why the tests run. Declaring it needs an install.

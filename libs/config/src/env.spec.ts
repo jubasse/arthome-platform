@@ -6,6 +6,7 @@ import {
   readBffEnv,
   readOpenSearchUrl,
   readPublicWebOrigin,
+  readRedisUrl,
   readConsumerEnv,
   readHttpServiceEnv,
   readSearchIndexerEnv,
@@ -161,6 +162,25 @@ describe('readOpenSearchUrl', () => {
 
   it('refuses a production deployment with no index URL instead of using localhost', () => {
     expect(() => readOpenSearchUrl({ NODE_ENV: 'production' })).toThrow(/OPENSEARCH_URL/);
+  });
+});
+
+describe('readRedisUrl', () => {
+  it('defaults outside production to the port compose.yaml publishes', () => {
+    expect(readRedisUrl({ NODE_ENV: 'development' })).toBe('redis://localhost:56379');
+  });
+
+  it('refuses a production deployment with no REDIS_URL instead of using localhost', () => {
+    expect(() => readRedisUrl({ NODE_ENV: 'production' })).toThrow(/REDIS_URL/);
+  });
+
+  it('accepts TLS, and refuses a URL that is not Redis', () => {
+    expect(
+      readRedisUrl({ NODE_ENV: 'production', REDIS_URL: 'rediss://cache.internal:6380/2' }),
+    ).toBe('rediss://cache.internal:6380/2');
+    expect(() =>
+      readRedisUrl({ NODE_ENV: 'production', REDIS_URL: 'http://cache.internal:6379' }),
+    ).toThrow(/REDIS_URL/);
   });
 });
 

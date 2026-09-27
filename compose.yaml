@@ -1,4 +1,4 @@
-# The infrastructure the event path needs, and nothing else yet.
+# The infrastructure the services run against, and nothing else yet.
 #
 # THIS FILE IS NOT A MINIATURE OF PRODUCTION and does not pretend to be.
 #   One broker, one connector, no replication, no TLS, no schema registry yet.
@@ -110,3 +110,23 @@ services:
       interval: 5s
       timeout: 5s
       retries: 40
+
+  redis:
+    image: redis:8.8.2-alpine
+    # noeviction and an append-only file: BullMQ keeps its queues here, and an evicted key is a
+    #   lost job (nestjs-queues rule 6). The policy is instance-wide, so a database index does not
+    #   isolate a cache from it.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      # 56379, NOT 6379, for the reason Postgres is on 55432.
+      - "56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

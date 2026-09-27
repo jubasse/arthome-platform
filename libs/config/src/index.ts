@@ -4,6 +4,7 @@ export {
   readKafkaBrokers,
   readOpenSearchUrl,
   readPublicWebOrigin,
+  readRedisUrl,
   readConsumerEnv,
   readHttpServiceEnv,
   readSearchIndexerEnv,

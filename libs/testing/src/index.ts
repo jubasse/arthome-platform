@@ -1,6 +1,6 @@
 /**
- * The integration harness: real Postgres and real Kafka, in containers a test
- * starts and throws away.
+ * The integration harness: real Postgres, Kafka, OpenSearch and Redis, in
+ * containers a test starts and throws away.
  *
  * An integration test is named `*.itest.ts`, never `*.spec.ts`, so that the
  *   pre-commit gate does not need a Docker daemon. Run them with
@@ -13,6 +13,7 @@ export {
   startKafka,
   startOpenSearch,
   startPostgres,
+  startRedis,
   startStack,
 } from './stack.js';
 export type {
@@ -20,13 +21,22 @@ export type {
   KafkaEndpoint,
   OpenSearchEndpoint,
   PostgresEndpoint,
+  RedisEndpoint,
   StackRequest,
   StartedConnect,
   StartedKafka,
   StartedOpenSearch,
   StartedPostgres,
+  StartedRedis,
   StartedStack,
 } from './stack.js';
+
+export {
+  PROVIDED_REDIS_URL,
+  flushRedisDatabase,
+  provideRedisForRun,
+  workerRedisUrl,
+} from './redis.js';
 
 export { createTopics, headersOf, waitForMessage } from './kafka.js';
 export type { ObservedMessage, TopicSpec, WaitForMessageOptions } from './kafka.js';

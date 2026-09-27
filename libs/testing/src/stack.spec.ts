@@ -17,6 +17,7 @@ describe('composeImage', () => {
     expect(composeImage('kafka')).toMatch(/^apache\/kafka:\S+$/);
     expect(composeImage('connect')).toMatch(/^quay\.io\/debezium\/connect:\S+$/);
     expect(composeImage('opensearch')).toMatch(/^opensearchproject\/opensearch:\S+$/);
+    expect(composeImage('redis')).toMatch(/^redis:\S+$/);
   });
 
   it('does not run one service’s block into the next', () => {

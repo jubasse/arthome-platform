@@ -4,6 +4,8 @@
 // Hence a name Vitest does not look for: it is read only when `--config` says so.
 export default {
   test: {
+    // One Redis for the run, which `redis.itest.ts` reads through `inject`.
+    globalSetup: ['./vitest.redis-setup.mjs'],
     include: ['src/**/*.itest.ts'],
     exclude: ['**/node_modules/**', '**/dist/**'],
   },

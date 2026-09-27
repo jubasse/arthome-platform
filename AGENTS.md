@@ -105,10 +105,12 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 
 ## Running the event path
 
-The stack is three containers: Postgres 18 with `wal_level=logical`, Kafka in KRaft mode, and Kafka
-Connect carrying Debezium. **Postgres publishes on 55432, not 5432** — the conventional port was
-taken by another project, and a development stack that fights for well-known ports is one you
-cannot run beside anything else.
+The event path is three containers: Postgres 18 with `wal_level=logical`, Kafka in KRaft mode, and
+Kafka Connect carrying Debezium. OpenSearch serves the search, and Redis 8.8 waits for ticketing's
+queues and waiting room, with no eviction and an append-only file (`nestjs-queues` rule 6); nothing
+reads it yet. **Postgres publishes on 55432, not 5432, and Redis on 56379, not 6379** — the
+conventional port was taken by another project, and a development stack that fights for well-known
+ports is one you cannot run beside anything else.
 
 ```bash
 docker compose up -d
@@ -126,15 +128,16 @@ done
 
 **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
 anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`, `PUBLIC_WEB_ORIGIN`,
-`OPENSEARCH_URL` — is filled from a local default **only outside production**, and `NODE_ENV` is
+`OPENSEARCH_URL`, `REDIS_URL` — is filled from a local default **only outside production**, and `NODE_ENV` is
 what selects that. Defaulting it to `development` would make an unset variable open the
 production-guarded write routes and point a migration at localhost; both fail loudly instead, naming
 the variable. `PORT` is the single exception and defaults to 3000: the migration CLI never listens,
 and a wrong port fails at bind where a wrong `DATABASE_URL` connects somewhere else in silence.
 
 No service reads `process.env` any more. `libs/config` parses once, at module load, with the
-protocol asserted — `postgres:` for the database, `http:`/`https:` for the index — because a bare
-URL check accepts `localhost:29092` as a URL whose scheme is `localhost:`.
+protocol asserted — `postgres:` for the database, `http:`/`https:` for the index, `redis:`/`rediss:`
+for Redis — because a bare URL check accepts `localhost:29092` as a URL whose scheme is
+`localhost:`.
 
 **`/health/liveness` AND `/health/readiness` ARE SPLIT, AND ONLY THE DATABASE FAILS READINESS.**
 Liveness touches no dependency: a failing one restarts the pod, and a database outage must not restart

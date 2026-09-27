@@ -33,7 +33,8 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | `libs/config`, `libs/testing` | the environment, and a harness that starts real containers |
 
 **What is NOT built, said plainly.** `ticketing`, `streaming`, `chat` and `payouts` do not exist.
-`notifications` is only its consumer half. There is no Redis and no MinIO. There is no authentication:
+`notifications` is only its consumer half. Redis runs in the development stack and nothing uses it
+yet: ticketing brings its queues and waiting room. There is no MinIO. There is no authentication:
 `adr-auth.md` gives it to better-auth in its own schema, and that is deliberately deferred.
 
 `apps/search-indexer` is an **eighth** component and not one of the seven services — a projection
@@ -45,9 +46,9 @@ Nothing lost, nothing doubled, in any of them — because the services never spe
 permanent failure dead-letters at once; a transient one retries at 5 s, 30 s and 5 min with jitter.
 
 **Infrastructure, at the versions that actually run.** PostgreSQL 18.6 with `wal_level=logical`,
-Kafka 4.0 in KRaft mode, Debezium 3.0, OpenSearch 2.18. Postgres publishes on **55432**, not
-5432: a development stack that fights for well-known ports is one you cannot run beside anything
-else.
+Kafka 4.0 in KRaft mode, Debezium 3.0, OpenSearch 2.18, Redis 8.8 with no eviction and an
+append-only file. Postgres publishes on **55432**, not 5432, and Redis on **56379**: a development
+stack that fights for well-known ports is one you cannot run beside anything else.
 
 **`pnpm run verify` runs in under two seconds** and needs no Docker. The
 integration tests that do need it are `*.itest.ts`, behind their own command — a gate that costs
