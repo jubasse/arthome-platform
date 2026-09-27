@@ -1,16 +1,18 @@
 import { ShowPublishedSchema } from '@arthome-platform/events';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
+import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import type { EntityManager } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import type { Bilingual, Instant } from '@arthome/core';
+import type { Bilingual, Clock, Instant } from '@arthome/core';
 
 import { PublishShow, type PublishedShow } from './publish-show.command.js';
 import { Show } from './show.entity.js';
 import { writeCatalogEvent } from '../catalog-events.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
+import { CLOCK } from '../clock.js';
 import { showSlugCandidates } from '../dates/slug.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
 import { UNSCOPED, reservedForAnother } from '../public/slug-aliases.js';
@@ -18,7 +20,10 @@ import { WIRE_LANGUAGE_DEPENDENCY, wireLocalizedTexts } from '../wire.js';
 
 @CommandHandler(PublishShow)
 export class PublishShowHandler implements ICommandHandler<PublishShow> {
-  public constructor(private readonly transactions: CatalogTransactions) {}
+  public constructor(
+    private readonly transactions: CatalogTransactions,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
 
   /**
    * The transaction is the feature. Never `save()` then `emit()`: a crash between the two
@@ -30,7 +35,7 @@ export class PublishShowHandler implements ICommandHandler<PublishShow> {
    */
   public async execute({ show, traceparent }: PublishShow): Promise<PublishedShow> {
     const showId = uuidv7();
-    const occurredAt = new Date();
+    const occurredAt = new Date(this.clock.now());
 
     const event = create(ShowPublishedSchema, {
       showId,

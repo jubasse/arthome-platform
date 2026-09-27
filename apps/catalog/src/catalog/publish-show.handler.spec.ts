@@ -8,7 +8,7 @@ import { EventPublisher, type EventBus } from '@nestjs/cqrs';
 import type { DataSource, EntityManager } from 'typeorm';
 import { describe, expect, it } from 'vitest';
 
-import { LanguageDependency, Locale, rendition } from '@arthome/core';
+import { LanguageDependency, Locale, SystemClock, rendition } from '@arthome/core';
 
 import { PublishShow } from './publish-show.command.js';
 import { PublishShowHandler } from './publish-show.handler.js';
@@ -48,6 +48,7 @@ function recordingDataSource(
 function handlerOver(dataSource: DataSource): PublishShowHandler {
   return new PublishShowHandler(
     new CatalogTransactions(dataSource, new EventPublisher({} as unknown as EventBus)),
+    new SystemClock(),
   );
 }
 
