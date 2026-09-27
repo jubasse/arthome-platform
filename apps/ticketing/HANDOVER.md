@@ -236,8 +236,9 @@ Known and left, each judged:
 
 - `market_id` and the service-fee schedule have no source yet; neither is stored.
 - **Catalog's service glue is copied** (architecture review M4): `itest/http-app.ts`,
-  `assert-never.ts`, `edge-providers.ts`, `writeTicketingEvent`, `notFound`, `asConflict`, the
-  consumer host and `frozen`. They move to `libs/` in a feature of their own after T2.
+  `assert-never.ts`, `edge-providers.ts`, `writeTicketingEvent`, `notFound`, `asConflict` and the
+  consumer host. They move to `libs/` in a feature of their own after T2; `frozen` is
+  `@arthome-platform/transactions`'.
 - **`CLOCK` is provided in each feature module and in `EDGE_PROVIDERS`** (N2): catalog's pattern,
   harmless while `SystemClock` is stateless; one provider per process root comes with the glue.
 - **`pricesLockedAt` is catalog's engagement instant**, not ticketing's consumption (correctness

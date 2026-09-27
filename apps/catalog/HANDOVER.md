@@ -358,7 +358,7 @@ would only compare what the handler had already read. Their wiring is proven ove
   reaches `work` untouched, so a class instance keeps its methods (the spread it replaced dropped
   them, while the type still promised them); a factory handing back another manager is refused.
   `writtenUnversioned` registers a write that leaves the version as loaded, which ticketing's
-  conditional decrement is;
+  conditional decrement is. `frozen` deep-freezes each snapshot an aggregate replaces;
 - `@arthome-platform/http-edge`: `runIdempotently`, `runIdempotentlyVersioned`,
   `idempotentRequestOf` and `idempotencyRecordTableDdl()`, which a new service's migration runs
   the way it runs `outboxTableDdl()`. Catalog's own two migrations stay as they are, and
