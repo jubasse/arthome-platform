@@ -96,16 +96,32 @@ export interface OutcomeContext {
   readonly now: Instant;
 }
 
+/** Deeply, so that a nested array written in place throws as well. */
+function frozen<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const inner of Object.values(value)) frozen(inner);
+  }
+  return value;
+}
+
 /**
  * data-model.md §2.2's `Date`, owning its `Publication` (D-085): two rows, one aggregate, one
  *   version, the publication's, which the studio's sheet serves and every command names.
  */
 export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
+  /**
+   * Replaced, never edited, and frozen to hold it: the repository skips the date row's UPDATE when
+   *   this reference has not changed since the load, so a write in place would be lost in silence.
+   */
+  private current: PerformanceDateSnapshot;
+
   private constructor(
-    private current: PerformanceDateSnapshot,
+    current: PerformanceDateSnapshot,
     private currentPublication: Publication,
   ) {
     super();
+    this.current = frozen(current);
   }
 
   public static restore(
@@ -163,7 +179,7 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
     }
     const date = this.madePublic(context);
     this.currentPublication = publication;
-    this.current = date;
+    this.current = frozen(date);
     this.apply(changed);
     this.apply(new DateScheduled(publicFactsOf(date), context.now));
     this.apply(engaged);
@@ -210,7 +226,7 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
     }
 
     this.currentPublication = publication;
-    this.current = {
+    this.current = frozen({
       ...date,
       outcome: declaration.outcome,
       rescheduledTo: movedTo,
@@ -219,7 +235,7 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
       startsAt: movedTo ?? date.startsAt,
       slug,
       postponements: date.postponements + (movedTo === null ? 0 : 1),
-    };
+    });
     this.apply(
       new DateOutcomeDeclared(date.id, date.channelId, declaration.outcome, message, movedTo, now),
     );

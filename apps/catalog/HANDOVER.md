@@ -227,7 +227,8 @@ onto one day at once lost one to `date_show_slug`, answered 500.
 draft and `RecordChecklistFact` refuse nothing as 409), which rethrows one as a 409
 `RefusalException` with the same `code`, `params` and `nature`: the aggregate's method
 (`transitionPublication`, `declareOutcome`) and `dates.save`, whose `saveVersioned` refuses a change
-committed since the load. Those are the refusals the contract answers 409 (`moveDatePublicationState`,
+committed since the load. That refusal is the guard of last resort: the load already holds the
+publication row `FOR UPDATE`, so in catalog no change can commit between the load and the save. Those are the refusals the contract answers 409 (`moveDatePublicationState`,
 `decideDateOutcome`): a state or rule said no. Any other `DomainError` in the handler (a `media.*`
 or `content.*` value) is a fault in what the request carried, so it stays unwrapped and
 `ErrorEnvelopeFilter` answers it 400, as on main (`transition-publication.handler.spec.ts`). The

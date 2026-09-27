@@ -251,6 +251,21 @@ describe('PerformanceDate', () => {
     expect(date.getUncommittedEvents()).toHaveLength(1);
   });
 
+  it('refuses a snapshot written in place, which the repository would not save', () => {
+    const date = publishedDate();
+    date.declareOutcome(
+      2,
+      { outcome: DateOutcome.CANCELLED, rescheduledTo: null },
+      MESSAGE,
+      scheduled(),
+    );
+    const { snapshot } = date;
+
+    expect(() => Object.assign(snapshot, { slug: 'elsewhere' })).toThrow(TypeError);
+    expect(() => (snapshot.rights.blackoutCountries as string[]).push('FR')).toThrow(TypeError);
+    expect(Object.isFrozen(publishedDate().snapshot)).toBe(true);
+  });
+
   it('refuses what core refuses, and changes nothing', () => {
     const date = publishedDate();
     const before = date.snapshot;
