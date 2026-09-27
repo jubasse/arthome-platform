@@ -176,6 +176,10 @@ beforeAll(async () => {
   });
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
+  // Measured: with three agents' containers running (load average 20), the first search on the
+  // cold cluster outlasted the 1 s budget twice in five runs, and the first case read a 504. The
+  // warm-up takes the path that succeeds, with a deadline it cannot miss.
+  await search({ sort: SearchSort.SOON }, addHours(NOW, 1));
 }, STARTUP_MS);
 
 afterAll(async () => {
