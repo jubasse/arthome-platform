@@ -92,6 +92,12 @@ NestJS skips them; this block is what makes loading systematic rather than remem
   `;` discards verify's status. Without this one command the hook file sits inert and protects
   nobody.
 
+- **Branches (arthome-core D-087).** Nothing is committed on `main` or `develop`. Work goes on
+  `feature/{name}` from `develop`, one per repository it touches, and reaches `develop` through a
+  pull request once `verify` is green. A release is `release/{version}` from `develop`, merged into
+  `main`, tagged `v{version}` and merged back, in the four repositories at once with one shared
+  version. A worktree, an agent's included, branches from `develop`.
+
 - **`pnpm run verify` is the gate.** Run it before every commit — and chain with `&&`, never `;`:
   this project has twice pushed with a red `verify` because a `;` let the commit run anyway.
 
