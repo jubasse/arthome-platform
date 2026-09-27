@@ -1,0 +1,41 @@
+{
+  "name": "@arthome-platform/ticketing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The ticketing service: a date's capacity, prices and seats.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.mjs",
+    "migration:run": "pnpm run build && typeorm migration:run -d dist/data-source.js",
+    "migration:revert": "pnpm run build && typeorm migration:revert -d dist/data-source.js"
+  },
+  "dependencies": {
+    "@arthome-platform/config": "workspace:*",
+    "@arthome-platform/events": "workspace:*",
+    "@arthome-platform/http-edge": "workspace:*",
+    "@arthome-platform/messaging": "workspace:*",
+    "@arthome-platform/transactions": "workspace:*",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-2cf0970eb95d.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-b2aac8898fe7.tgz",
+    "@bufbuild/protobuf": "2.15.0",
+    "@nestjs/common": "12.0.3",
+    "@nestjs/core": "12.0.3",
+    "@nestjs/cqrs": "12.0.0",
+    "@nestjs/platform-fastify": "12.0.3",
+    "@nestjs/typeorm": "12.0.1",
+    "kafkajs": "2.2.4",
+    "pg": "8.23.0",
+    "reflect-metadata": "0.2.2",
+    "typeorm": "1.1.1",
+    "uuid": "14.0.2",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@arthome-platform/testing": "workspace:*",
+    "@nestjs/testing": "12.0.3"
+  }
+}
