@@ -9,9 +9,13 @@ below was run, against real Postgres and Kafka through `libs/testing`, not reaso
 
 | Process | Entry | Serves |
 | --- | --- | --- |
-| API | `node dist/main.js`, `PORT` (3004 in `.env.example`) | the studio's `setDatePrices`, `openCapacityTier`, `getDateTicketsPane`; the storefront's `refreshDateAvailability`; `/health/liveness`, `/health/readiness` |
+| API | `node dist/main.js`, `PORT` (3004 in `.env.example`) | the studio's `setDatePrices`, `openCapacityTier`, `setTechnicalProvision`, `getDateTicketsPane`; the storefront's `refreshDateAvailability`; `/health/liveness`, `/health/readiness` |
 | consumer | `node dist/consumer.js` | `arthome.catalog.date`, retrying on `arthome.ticketing.retry`, dead-lettering to `arthome.ticketing.dlq` |
 | sweeper | `node dist/sweeper.js` | the availability publisher (§0e); T3's hold expiry joins it |
+
+**Stop all three before `migration:run`.** A migration may drop a column the running build still
+reads (`1790440100000` moved three `date_sales` columns to the publisher's table): a rolling restart
+would fail their reads, and the consumer could dead-letter facts it can no longer apply.
 
 All three read `DATABASE_URL` through `libs/config` (`NODE_ENV` required, never defaulted), close
 their pool on SIGTERM, and are booted as their entry points boot them by `src/boot.itest.ts`. The API
@@ -99,7 +103,7 @@ the read answers 404 rather than seats nobody can buy.
 | --- | --- | --- |
 | `catalog.date.drafted.v1` | `drafted` | opens the `DateSales`; a second draft of the date is `superseded` |
 | `catalog.publication.engaged.v1` | `lock`, when it engages the prices | locks them, opens the sale, restates `pricing_changed` |
-| `catalog.date.scheduled.v1`, `.rescheduled.v1` | `start` | records the start; restates `capacity_set` when a required provision's deadline moves |
+| `catalog.date.scheduled.v1`, `.rescheduled.v1` | `start` | records the start; restates `capacity_set` when the deadline of a provision, required or recorded, moves |
 | `catalog.date.outcome_declared.v1` | `outcome` | records it; `cancelled` and `interrupted` close the sale (ADR §8), refunds and credits T4 |
 
 Anything else is `ignored`, and so is an outcome member this build does not know (critical rule 10).

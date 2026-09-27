@@ -131,7 +131,7 @@ pnpm --filter @arthome-platform/identity      run migration:run
 pnpm --filter @arthome-platform/notifications run migration:run
 pnpm --filter @arthome-platform/catalog       run migration:run
 pnpm --filter @arthome-platform/search-indexer run migration:run
-pnpm --filter @arthome-platform/ticketing     run migration:run
+pnpm --filter @arthome-platform/ticketing     run migration:run   # its three processes stopped first
 pnpm run provision:topics          # BEFORE the connectors, and before any consumer
 for c in identity catalog ticketing; do
   curl -s -X POST -H 'Content-Type: application/json' \
