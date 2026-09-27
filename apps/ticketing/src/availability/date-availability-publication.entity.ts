@@ -18,4 +18,8 @@ export class DateAvailabilityPublicationRow {
 
   @Column('timestamptz', { nullable: true })
   failed_at!: Date | null;
+
+  /** Set when the sale closes, cleared by its last publication: closed sales are otherwise not read. */
+  @Column('boolean')
+  closing_due!: boolean;
 }

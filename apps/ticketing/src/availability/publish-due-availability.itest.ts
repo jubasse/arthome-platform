@@ -445,4 +445,40 @@ describe('the availability publisher', () => {
     },
     CASE_MS,
   );
+
+  it(
+    'looks at the live sales and the pending closings, not at the history',
+    async () => {
+      const history = 50_000;
+      await dataSource.query(
+        `WITH sold AS (
+           INSERT INTO date_sales (date_id, channel_id, capacity_total, capacity_tiers,
+                                   seats_available, seats_sold, waitlist_count, price_tiers,
+                                   prices_locked_at, sales_closed_at, version, availability_moves)
+           SELECT gen_random_uuid(), 'channel-history', 100, '[]', 0, 100, 0, '[]',
+                  now(), now(), 4, 3
+             FROM generate_series(1, $1)
+           RETURNING date_id
+         )
+         INSERT INTO date_availability_publication
+                (date_id, published_moves, published_at, published_sold_out)
+         SELECT date_id, 3, now(), false FROM sold`,
+        [history],
+      );
+      await dataSource.query('ANALYZE date_sales, date_availability_publication');
+      await publish();
+
+      const passes: number[] = [];
+      for (let run = 0; run < 5; run += 1) {
+        const started = performance.now();
+        await publish();
+        passes.push(performance.now() - started);
+      }
+      process.stdout.write(
+        `idle pass over ${String(history)} dates of history: ${passes.map((ms) => ms.toFixed(1)).join(', ')} ms\n`,
+      );
+      expect(Math.min(...passes)).toBeLessThan(10);
+    },
+    CASE_MS * 2,
+  );
 });

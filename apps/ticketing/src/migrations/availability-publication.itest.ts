@@ -12,8 +12,9 @@ import { Initial1790440000000 } from './1790440000000-initial.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 
 /**
- * `AvailabilityPublication1790440100000` on a database that already holds dates, as the stack's
- * did: a date marked and not yet published stays due, one published and quiet does not.
+ * `AvailabilityPublication1790440100000` and `AvailabilityScan1790440400000` on a database that
+ * already holds dates, as the stack's did: a date marked and not yet published stays due, one
+ * published and quiet does not, and a closed one not yet published keeps its closing due.
  */
 
 const STARTUP_MS = 240_000;
@@ -21,6 +22,7 @@ const CASE_MS = 30_000;
 
 const MARKED = '01a0f700-0000-7000-8000-000000000001';
 const QUIET = '01a0f700-0000-7000-8000-000000000002';
+const CLOSING = '01a0f700-0000-7000-8000-000000000003';
 
 let stack: StartedStack;
 
@@ -34,7 +36,7 @@ afterAll(async () => {
 
 describe('the availability publication migration', () => {
   it(
-    'moves the marks to the publisher’s table without losing a due date',
+    'moves the marks to the publisher’s table without losing a due date or a pending closing',
     async () => {
       const database = await createDatabase(stack.postgres, 'ticketing_publication_migration');
       const before = await applyMigrations(database, {
@@ -48,24 +50,31 @@ describe('the availability publication migration', () => {
                                    prices_locked_at, version, availability_dirty_since,
                                    availability_published_at, availability_published_sold_out)
            VALUES ($1, 'channel-migration', 10, '[]', 9, 0, 0, '[]', now(), 3, now(), now(), false),
-                  ($2, 'channel-migration', 10, '[]', 10, 0, 0, '[]', now(), 3, NULL, now(), false)`,
-          [MARKED, QUIET],
+                  ($2, 'channel-migration', 10, '[]', 10, 0, 0, '[]', now(), 3, NULL, now(), false),
+                  ($3, 'channel-migration', 10, '[]', 10, 0, 0, '[]', now(), 3, now(), now(), false)`,
+          [MARKED, QUIET, CLOSING],
         );
+        await before.query('UPDATE date_sales SET sales_closed_at = now() WHERE date_id = $1', [
+          CLOSING,
+        ]);
       } finally {
         await before.destroy();
       }
 
       const after: DataSource = await applyMigrations(database, TICKETING_SCHEMA);
       try {
-        const rows = await after.query<{ date_id: string; behind: number; sold_out: boolean }[]>(
+        const rows = await after.query<
+          { date_id: string; behind: number; sold_out: boolean; closing_due: boolean }[]
+        >(
           `SELECT date_id, (availability_moves - published_moves)::int AS behind,
-                  published_sold_out AS sold_out
+                  published_sold_out AS sold_out, closing_due
              FROM date_sales JOIN date_availability_publication USING (date_id)
             ORDER BY date_id`,
         );
         expect(rows).toEqual([
-          { date_id: MARKED, behind: 1, sold_out: false },
-          { date_id: QUIET, behind: 0, sold_out: false },
+          { date_id: MARKED, behind: 1, sold_out: false, closing_due: false },
+          { date_id: QUIET, behind: 0, sold_out: false, closing_due: false },
+          { date_id: CLOSING, behind: 1, sold_out: false, closing_due: true },
         ]);
       } finally {
         await after.destroy();

@@ -27,8 +27,9 @@ function movesAvailability(event: DateSalesEvent): boolean {
 
 /**
  * What the publisher reads, in the transaction that moved the date (adr-ticketing.md §5): an
- *   opening gives it the date's publication row, a move one more on `availability_moves`. The
- *   command already holds the date's row; T3's decrement counts itself in its own statement.
+ *   opening gives it the date's publication row, a move one more on `availability_moves`, a closing
+ *   the flag that keeps the date in the publisher's pass until its last publication. The command
+ *   already holds the date's row; T3's decrement counts itself in its own statement.
  */
 export async function recordAvailabilityMoves(
   manager: EntityManager,
@@ -43,6 +44,14 @@ export async function recordAvailabilityMoves(
     await manager.query(
       'UPDATE date_sales SET availability_moves = availability_moves + 1 WHERE date_id = $1',
       [moved.dateId],
+    );
+  }
+  const closed = events.find((event) => event.kind === 'DateOutcomeRecorded' && event.salesClosed);
+  if (closed !== undefined) {
+    await manager.update(
+      DateAvailabilityPublicationRow,
+      { date_id: closed.dateId },
+      { closing_due: true },
     );
   }
 }

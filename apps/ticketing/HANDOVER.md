@@ -143,6 +143,14 @@ A draft older than the topic's retention is never read: see the deployment order
   hundred-date pass waits 1.2 to 1.3 ms, against 69 to 73 ms when the pass locked every row; the
   pass takes 230 to 300 ms, one transaction per date. A move during a publication held open 300 ms
   does not wait for it.
+- **A pass reads the sales on sale and the closings not yet published, nothing else** (correctness
+  re-review): each branch through a partial index (`idx_date_sales_on_sale`,
+  `idx_date_availability_publication_closing_due`), a closing flagging its publication row in its
+  own transaction and its last publication clearing it. Measured over 50,000 closed dates of
+  history, five idle passes: 1.2 to 1.6 ms, against 32 to 42 ms here (24 to 25 ms in the review)
+  when every pass joined every date. **The bound holds only while sales end**: a date that ends
+  without an outcome stays on sale until T3 ends its sale with the date's window (§2), and stays in
+  the pass until then.
 - **A date that cannot be published holds back no other** (correctness review): its failure is
   logged, its `failed_at` recorded, and it waits `AVAILABILITY_PUBLISH_RETRY_SECONDS` (30) before it
   is tried again, behind the others, still marked; a publication clears it.
@@ -153,8 +161,7 @@ A draft older than the topic's retention is never read: see the deployment order
   (`nestjs-scheduling-events`): no overlapping passes, and `beforeApplicationShutdown` awaits the pass
   in flight. Every replica may run it; `SKIP LOCKED` hands each its own dates, and a missed tick
   loses nothing (`nestjs-queues`' Decide: the recurring work stays in the database it reads). A pass
-  scans the opened sales against their publication rows with no index of its own: fine at this
-  scale, to measure in T3's load test.
+  reads only the sales on sale and the pending closings (above).
 
 ## 0f. Conventions
 
@@ -198,7 +205,8 @@ either service imports the other.
   application code), but load unlocked, or not at all, before its conditional decrement.
 - **`on_sale` has no end in time**: prices locked and not closed. A decrement on `on_sale` alone
   would sell after the show and its replay are over, unless T3 bounds its WHERE by the date's window
-  or a sweeper closes the sale.
+  or a sweeper closes the sale. The publisher's pass reads every sale on sale, so it stays bounded
+  only once sales end: a sweeper closing them is the one that serves both.
 - **The stored snapshot moves both ways**: if T3 also moves the aggregate's counters after its
   decrement, it moves the repository's stored snapshot by the same amount, or the next save applies
   the delta a second time.

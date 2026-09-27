@@ -34,14 +34,22 @@ export const AVAILABILITY_PUBLISH_BATCH = 100;
 export const AVAILABILITY_PUBLISH_RETRY_SECONDS = 30;
 
 /**
- * The candidates: moved since their last publication, and quiet for the interval or flipped
- *   around sold out against what was published, a date whose publication failed only once its
- *   retry delay has passed, and after the others. Read without any lock: the figures are re-read
- *   and the decision taken again under the publication row's.
+ * The candidates, among the sales on sale and the closings not yet published only, each read
+ *   through its partial index, so the history of closed sales costs nothing: moved since their last
+ *   publication, and quiet for the interval or flipped around sold out against what was published,
+ *   a date whose publication failed only once its retry delay has passed, and after the others.
+ *   Read without any lock: the figures are re-read and the decision taken again under the
+ *   publication row's.
  */
 const DUE_DATES = `
+  WITH open_or_closing AS (
+    SELECT date_id FROM date_sales WHERE on_sale
+    UNION
+    SELECT date_id FROM date_availability_publication WHERE closing_due
+  )
   SELECT sales.date_id
-    FROM date_sales AS sales
+    FROM open_or_closing
+    JOIN date_sales AS sales USING (date_id)
     JOIN date_availability_publication AS publication USING (date_id)
    WHERE sales.prices_locked_at IS NOT NULL
      AND sales.availability_moves > publication.published_moves
@@ -134,6 +142,7 @@ export class PublishDueAvailabilityHandler implements ICommandHandler<PublishDue
           published_at: new Date(now),
           published_sold_out: figures.soldOut,
           failed_at: null,
+          closing_due: false,
         },
       );
       return true;

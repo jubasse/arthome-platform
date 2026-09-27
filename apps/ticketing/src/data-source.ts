@@ -10,6 +10,7 @@ import { Initial1790440000000 } from './migrations/1790440000000-initial.js';
 import { AvailabilityPublication1790440100000 } from './migrations/1790440100000-availability-publication.js';
 import { AvailabilityPublicationFailure1790440200000 } from './migrations/1790440200000-availability-publication-failure.js';
 import { TechnicalProvision1790440300000 } from './migrations/1790440300000-technical-provision.js';
+import { AvailabilityScan1790440400000 } from './migrations/1790440400000-availability-scan.js';
 
 /**
  * Used by the three processes AND by the migration CLI. `synchronize` stays false: it would drop
@@ -25,6 +26,7 @@ export const dataSource: DataSource = new DataSource({
     AvailabilityPublication1790440100000,
     AvailabilityPublicationFailure1790440200000,
     TechnicalProvision1790440300000,
+    AvailabilityScan1790440400000,
   ],
   applicationName: Service.TICKETING,
 
