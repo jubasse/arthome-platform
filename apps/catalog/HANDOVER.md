@@ -239,7 +239,10 @@ port, since a read has no invariant to protect.
 `getUncommittedEvents()`, core never mocked (`performance-date.aggregate.spec.ts`). A handler: through
 the real bus against the container database, a testing module with `CqrsModule.forRoot()`, the
 handlers, `CatalogTransactions` and `{ provide: DataSource, useValue: dataSource }`, then `init()`,
-which registers the handlers (`dates.itest.ts`).
+which registers the handlers (`dates.itest.ts`). The wiring: `dates.http.itest.ts` boots the real
+`DatesModule` under `CqrsModule.forRoot()` and calls the routes over HTTP; a migrated route adds its
+request there. Measured: with `DeclareOutcomeHandler` left out of `DatesModule`'s `providers`, the
+route answers 500 and this suite fails; `dates.itest.ts` lists its handlers itself and cannot see it.
 
 Decided here, and each could have gone the other way:
 
