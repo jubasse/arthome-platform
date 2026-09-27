@@ -521,6 +521,9 @@ importers:
 
   libs/http-edge:
     dependencies:
+      '@arthome-platform/config':
+        specifier: workspace:*
+        version: link:../config
       '@arthome-platform/messaging':
         specifier: workspace:*
         version: link:../messaging

@@ -19,6 +19,7 @@
     "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
+    "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome/core": "file:../../vendor/arthome-core-9fb19108c720.tgz",
     "rxjs": "7.8.2",

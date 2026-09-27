@@ -332,7 +332,8 @@ against 400; it recognises the idempotency INSERT by its text, so rewording that
 it) and `dates/performance-date.typeorm-repository.spec.ts` (the order of the row writes). Every
 suite migrates the service's own schema (`itest/schema.ts`, from `dataSource.options`). The wiring:
 `itest/http-app.ts` boots feature modules over HTTP with the service's global providers
-(`EDGE_PROVIDERS`, which `AppModule` binds too), and `dates.http.itest.ts` calls the date routes
+(`EDGE_PROVIDERS`: `@arthome-platform/http-edge`'s `edgeProviders` given catalog's `CLOCK` and
+unique-violation codes, which `AppModule` binds too), and `dates.http.itest.ts` calls the date routes
 through it; a migrated route adds its request there. `boot.itest.ts` boots the two roots themselves,
 `AppModule` with OpenSearch stubbed and `ConsumerModule` with Kafka stubbed. Measured: without
 `CqrsModule.forRoot()` in either, it fails to resolve `EventPublisher`. Measured: with
@@ -362,8 +363,10 @@ review, M4); never a catalog concept and never in arthome-core:
   them, while the type still promised them); a factory handing back another manager is refused.
   `writtenUnversioned` registers a write that leaves the version as loaded, which ticketing's
   conditional decrement is. `frozen` deep-freezes each snapshot an aggregate replaces;
-- `@arthome-platform/http-edge`: `asConflict` (a `DomainError` as the 409 `RefusalException`, its
-  `params` through an optional mapper), `notFound()` and `stateConflict(params)`, and
+- `@arthome-platform/http-edge`: `edgeProviders({ clock, uniqueViolations })`, the global pipe,
+  filter, interceptor and guard and the system clock under the service's token; `asConflict` (a
+  `DomainError` as the 409 `RefusalException`, its `params` through an optional mapper),
+  `notFound()` and `stateConflict(params)`; and
   `runIdempotently`, `runIdempotentlyVersioned`, `idempotentRequestOf` and
   `idempotencyRecordTableDdl()`, which a new service's migration runs the way it runs
   `outboxTableDdl()`. Catalog's own two migrations stay as they are, and

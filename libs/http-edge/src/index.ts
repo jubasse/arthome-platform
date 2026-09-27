@@ -19,6 +19,9 @@ export { asConflict } from './conflict.js';
 
 export { DenyInProductionGuard } from './deny-in-production.guard.js';
 
+export { edgeProviders } from './edge-providers.js';
+export type { EdgeOptions } from './edge-providers.js';
+
 export {
   DEADLINE_HEADER,
   deadlineExceededException,
