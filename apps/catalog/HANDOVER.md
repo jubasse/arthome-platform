@@ -234,9 +234,17 @@ for a replay or a refusal.
 **Controllers dispatch.** They parse the `traceparent`, build the `IdempotentRequest`
 (`idempotencyKeyOf`, `fingerprintOf`), and return `this.commands.execute(new DeclareOutcome(…))` or
 `this.queries.execute(new GetDateSheet(…))`, typed by `Command<R>` / `Query<R>`. `CqrsModule.forRoot()`
-is imported once, in `AppModule`; handlers and `CatalogTransactions` go in the feature module's
-`providers`. When a second module needs `CatalogTransactions`, move it to one module that exports it:
-two listings make two instances.
+is imported once, in `AppModule`; handlers go in the feature module's `providers`, and
+`CatalogTransactions` comes from importing `CatalogTransactionsModule`: two listings make two
+instances.
+
+**The checklist consumer dispatches too.** `consumer.ts` boots `ConsumerModule` (TypeORM,
+`CqrsModule.forRoot()`, `ChecklistConsumerModule`) as an application context, without HTTP, and
+`applyChecklistMessage` turns each message it reads as a fact into `RecordChecklistFact`, whose
+handler claims `processed_message` in the command's transaction. The routing of a failure stays
+AGENTS.md's ("When a message cannot be applied"): the handler refuses a date catalog does not hold
+with core's `DomainError`, which the consumer rethrows as `PermanentError`, dead-lettered at once;
+anything else is retried as transient.
 
 **Queries read rows, never aggregates.** `GetDateSheetHandler` reads through `dataSource.manager`
 (`dateRecordsOf`, `date-records.ts`) and shapes with the pure `dateSheet()`: no transaction and no
@@ -250,6 +258,8 @@ which registers the handlers (`dates.itest.ts`). The wiring: `dates.http.itest.t
 `DatesModule` under `CqrsModule.forRoot()` and calls the routes over HTTP; a migrated route adds its
 request there. Measured: with `DeclareOutcomeHandler` left out of `DatesModule`'s `providers`, the
 route answers 500 and this suite fails; `dates.itest.ts` lists its handlers itself and cannot see it.
+The same suite records the checklist facts through `ChecklistConsumerModule`. Measured: without
+`RecordChecklistFactHandler` in its `providers`, it fails on "No handler found for the command".
 
 **No shared library yet, deliberately.** The product owner allows one under `libs/` for what every
 CQRS service here would share, never a catalog concept and never in arthome-core. Two pieces
@@ -265,8 +275,9 @@ Decided here, and each could have gone the other way:
 
 - **The entities were renamed `PerformanceDateRow` and `PublicationRow`**, so the aggregates carry
   the domain names; the tables did not move.
-- **Handlers throw `RefusalException`**, not domain errors mapped at an edge: every one is reached
-  from HTTP alone. The day a consumer dispatches one, `asConflict` moves to the HTTP edge
+- **Handlers reached from HTTP alone throw `RefusalException`**, not domain errors mapped at an
+  edge. `RecordChecklistFact`, reached from Kafka alone, throws `DomainError`, mapped by the
+  consumer. The day a consumer dispatches an HTTP one, `asConflict` moves to the HTTP edge
   (`nestjs-request-pipeline` rule 1).
 - **A lost race on the version answers the version committed since**, re-read, as a transition
   always did; the outcome path used to answer the one it had read. Only two concurrent commands see

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Module } from '@nestjs/common';
 import { EventPublisher, type IAggregateRoot } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, type EntityManager } from 'typeorm';
@@ -44,3 +44,6 @@ export class CatalogTransactions {
     return result;
   }
 }
+
+@Module({ providers: [CatalogTransactions], exports: [CatalogTransactions] })
+export class CatalogTransactionsModule {}

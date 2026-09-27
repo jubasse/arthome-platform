@@ -64,6 +64,7 @@ import { PerformanceDateRow } from './performance-date.entity.js';
 import { DateOutcomeDeclared, DateRescheduled } from './performance-date.events.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { PublicationRow } from './publication.entity.js';
+import { RecordChecklistFactHandler } from './record-checklist-fact.handler.js';
 import { TransitionPublication } from './transition-publication.command.js';
 import { TransitionPublicationHandler } from './transition-publication.handler.js';
 import type { TransitionPublicationBody } from './transition-publication.schema.js';
@@ -222,7 +223,7 @@ async function satisfyProjectedItems(dateId: string): Promise<void> {
       occurredAt: AT,
     }),
   ]) {
-    expect(await applyChecklistMessage(dataSource, payload)).toBe('applied');
+    expect(await applyChecklistMessage(commands, payload)).toBe('applied');
   }
 }
 
@@ -290,6 +291,7 @@ beforeAll(async () => {
       DeclareOutcomeHandler,
       DraftDateHandler,
       GetDateSheetHandler,
+      RecordChecklistFactHandler,
       TransitionPublicationHandler,
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: new FixedClock('2026-09-26T10:00:00.000Z') },
@@ -530,7 +532,7 @@ describe('a date already published', () => {
       await move(dateId, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
       await move(dateId, PublicationState.TECHNICAL, 2);
       await applyChecklistMessage(
-        dataSource,
+        commands,
         upstream('ticketing.date_sales.pricing_changed.v1', DateSalesPricingChangedSchema, {
           dateId,
           tiers: [{ tier: PriceTier.FULL, active: false }],
@@ -600,9 +602,9 @@ describe('a projected checklist fact', () => {
       const dateId = '01a0e100-0000-7000-8000-000000000301';
       await draft(dateId);
 
-      await applyChecklistMessage(dataSource, pricing(dateId, true, '2026-09-26T10:00:00.000Z'));
+      await applyChecklistMessage(commands, pricing(dateId, true, '2026-09-26T10:00:00.000Z'));
       const late = await applyChecklistMessage(
-        dataSource,
+        commands,
         pricing(dateId, false, '2026-09-26T09:00:00.000Z'),
       );
 
@@ -624,8 +626,8 @@ describe('a projected checklist fact', () => {
         '01a0e2aa-0000-7000-8000-000000000001',
       );
 
-      expect(await applyChecklistMessage(dataSource, once)).toBe('applied');
-      expect(await applyChecklistMessage(dataSource, once)).toBe('duplicate');
+      expect(await applyChecklistMessage(commands, once)).toBe('applied');
+      expect(await applyChecklistMessage(commands, once)).toBe('duplicate');
     },
     CASE_MS,
   );
@@ -636,7 +638,7 @@ describe('a projected checklist fact', () => {
       const messageId = '01a0e2aa-0000-7000-8000-000000000002';
       await expect(
         applyChecklistMessage(
-          dataSource,
+          commands,
           pricing(
             '01a0e100-0000-7000-8000-0000000003ff',
             true,
