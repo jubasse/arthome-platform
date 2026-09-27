@@ -296,6 +296,21 @@ A channel's public face was proven the same way on 2026-09-27:
 | `/fr/a/compagnie-du-port` resolved | the artist, its canonical URL |
 | its slug from another channel; a stale edit | 409 `artist.slug_taken`; 409 `state.conflict` with the version |
 
+The per-language URLs of the tables above were replaced the same day by arthome-core D-075 (no
+language, `/show/…/date/…`, `/artist/…`, short `/s/` and `/a/`), and a date may now be postponed
+three times (D-076). Proven on the stack above on 2026-09-27, `search-indexer` migrated before
+catalog, the three processes running:
+
+| Check | Result |
+| --- | --- |
+| the two migrations | show and date slugs backfilled (`nuits-blanches-a-marseille`, `2026-12-15`, `2026-12-19`); one `DateScheduled` restated per published date; the index documents rewritten with `show_slug`, `slug` and the new URL, nothing replayed by hand |
+| search, the date page, `/show/…/date/…`, `/s/…`, `kind=date&slug={show}/{date}`, `/a/…` through the BFF | the new slug and canonical URL on the card and the page; each form resolved to its page, 10 to 15 ms |
+| an old `/fr/d/…` URL | 404: never served outside development, not carried over |
+| a second postponement | 200; the slug moved to `2026-12-22`, the old one aliased until 27 October and still resolving to the new URL; the index following |
+| a third, a fourth, then a cancellation | 200; 409 `date.postponement_limit_reached` with `max: 3`; 200, the page `cancelled` at its last date |
+| postponing the cancelled date | 409 `state.conflict` naming `outcome` |
+| the artist's slug changed | the old `/a/…` resolving to `/artist/port`; the old slug refused to another channel, 409 `artist.slug_taken` |
+
 ### Search, the date page and link resolution, from the storefront BFF
 
 `GET /v1/search` crosses three processes: `bff-storefront` (on `PORT`, `CATALOG_URL` pointing at

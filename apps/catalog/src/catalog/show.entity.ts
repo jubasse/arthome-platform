@@ -15,6 +15,10 @@ export class Show {
   @PrimaryColumn('uuid')
   id!: string;
 
+  /** Unique across shows and stable: the show's URL is /show/{slug} (D-075). */
+  @Column('text')
+  slug!: string;
+
   /** The workspace that owns the show — `identity.Channel` (§1.5). */
   @Column('text')
   channel_id!: string;

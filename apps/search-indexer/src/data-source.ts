@@ -9,6 +9,7 @@ import { Initial1758700400000 } from './migrations/1758700400000-initial.js';
 import { ReadModel1790430000000 } from './migrations/1790430000000-read-model.js';
 import { DateOutcome1790430100000 } from './migrations/1790430100000-date-outcome.js';
 import { ArtistProjection1790430200000 } from './migrations/1790430200000-artist-projection.js';
+import { MovedSlug1790430300000 } from './migrations/1790430300000-moved-slug.js';
 
 /** Used by the application AND by the migration CLI. */
 export const dataSource: DataSource = new DataSource({
@@ -21,6 +22,7 @@ export const dataSource: DataSource = new DataSource({
     ReadModel1790430000000,
     DateOutcome1790430100000,
     ArtistProjection1790430200000,
+    MovedSlug1790430300000,
   ],
   applicationName: 'search-indexer',
 

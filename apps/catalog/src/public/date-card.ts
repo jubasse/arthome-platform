@@ -43,8 +43,8 @@ export interface PublicDate {
   readonly rights_scope: RightsScope;
   readonly blackout_countries: readonly string[];
   readonly canonical_url: string;
-  readonly slug_fr: string;
-  readonly slug_en: string;
+  readonly show_slug: string;
+  readonly slug: string;
   readonly publication_state: PublicationState;
   readonly outcome: DateOutcome | null;
   readonly rescheduled_to: Instant | null;
@@ -67,14 +67,14 @@ export function timingOf(date: PublicDate): DateTiming {
   };
 }
 
-/** Whether the title, and so the slug, is served in French: the canonical URL's language. */
+/** Whether the title is served in French; a URL carries no language (D-075). */
 export function servedInFrench(date: PublicDate): boolean {
   return canonicalLanguageOf({ fr: date.title_fr, en: date.title_en }) === Locale.FR;
 }
 
 /**
- * The public card, anonymous: no per-viewer overlay, and the title, slug and canonical URL in
- *   the title's own language, because a public read has no viewer language to choose another.
+ * The public card, anonymous: no per-viewer overlay, and the title in its own language, because a
+ *   public read has no viewer language to choose another.
  * The run state is passed as unknown: `streaming` does not publish yet.
  */
 export function dateCardOf(date: PublicDate, now: Instant): DateCard {
@@ -95,7 +95,7 @@ export function dateCardOf(date: PublicDate, now: Instant): DateCard {
     channelId: date.channel_id,
     ...(date.artist_id !== null &&
       date.artist_name !== null && { artist: { id: date.artist_id, name: date.artist_name } }),
-    slug: french ? date.slug_fr : date.slug_en,
+    slug: date.slug,
     canonicalUrl: date.canonical_url,
     title: french ? date.title_fr : date.title_en,
     ...(date.category_id !== null && { categoryId: date.category_id }),

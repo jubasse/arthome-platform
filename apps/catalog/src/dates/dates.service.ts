@@ -112,7 +112,7 @@ export class DatesService {
           [command.dateId, command.expectedVersion],
         );
         if (updated !== 1) throw stateConflict(records.publication);
-        return declareOutcomeIn(manager, records, command, this.clock.now());
+        return declareOutcomeIn(manager, records, command, this.publicWebOrigin, this.clock.now());
       }),
     );
   }
@@ -150,8 +150,8 @@ export class DatesService {
       replay_policy: command.replayPolicy,
       replay_window_hours: command.replayWindowHours,
       rights: worldwideRights(),
-      slug_fr: null,
-      slug_en: null,
+      slug: null,
+      postponements: 0,
     });
     await manager.insert(PerformanceDate, date);
 

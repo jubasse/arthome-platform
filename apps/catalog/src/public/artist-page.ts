@@ -6,7 +6,7 @@ import { DisplayState, type Instant } from '@arthome/core';
 import { dateCardOf, earliestValidUntil, type DateCard } from './date-card.js';
 import type { DateDetailPublic } from './date-detail-public.entity.js';
 import { publicDateOfRow } from './date-detail.js';
-import { artistLanguageOf } from './links.js';
+import { biographyLanguageOf } from './links.js';
 import type { Artist } from '../artists/artist.entity.js';
 
 export type ArtistSummary = z.output<typeof ArtistSummarySchema>;
@@ -54,7 +54,7 @@ export function artistPageOf(
   const pastDates = cards
     .filter((card) => !UPCOMING.has(card.displayState) && card.displayState !== DisplayState.REPLAY)
     .sort((left, right) => byStart(right, left));
-  const language = artistLanguageOf(artist.biography);
+  const language = biographyLanguageOf(artist.biography);
   const biography =
     artist.biography.find((copy) => copy.contentLanguage === language) ?? artist.biography[0];
 

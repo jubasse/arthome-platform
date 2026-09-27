@@ -59,10 +59,10 @@ export class DateDetailPublic {
   rights!: TerritoryRights;
 
   @Column('text')
-  slug_fr!: string;
+  show_slug!: string;
 
   @Column('text')
-  slug_en!: string;
+  slug!: string;
 
   @Column('text')
   publication_state!: PublicationState;

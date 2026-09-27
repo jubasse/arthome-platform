@@ -66,6 +66,8 @@ export type DateFact =
       /** `occurred_at` in epoch milliseconds. */
       readonly version: number;
       readonly startsAt: Date;
+      readonly slug: string | null;
+      readonly canonicalUrl: string | null;
     };
 
 export function dateFactOf(type: string, value: Uint8Array): DateFact {
@@ -90,8 +92,8 @@ export function dateFactOf(type: string, value: Uint8Array): DateFact {
         rights_scope: event.rights === undefined ? null : rightsScopeOf(event.rights.scope),
         blackout_countries: event.rights?.blackoutCountries ?? [],
         canonical_url: event.canonicalUrl,
-        slug_fr: event.slugFr,
-        slug_en: event.slugEn,
+        show_slug: event.showSlug,
+        slug: event.slug,
       },
     };
   }
@@ -114,6 +116,9 @@ export function dateFactOf(type: string, value: Uint8Array): DateFact {
       dateId: event.dateId,
       version: stated(event.occurredAt, `the move of date ${event.dateId}`).getTime(),
       startsAt: timestampDate(event.newStartsAt),
+      // proto3 reads an absent string as empty: a move stated before D-075 carried no slug.
+      slug: event.newSlug === '' ? null : event.newSlug,
+      canonicalUrl: event.newCanonicalUrl === '' ? null : event.newCanonicalUrl,
     };
   }
   const event = fromBinary(PublicationStateChangedSchema, value);
@@ -158,7 +163,13 @@ export function dateAfter(row: DateProjection, fact: DateFact): DateProjection |
       };
     case RESCHEDULED:
       if (!takes(row.moved_version)) return null;
-      return { ...row, moved_starts_at: fact.startsAt, moved_version: String(fact.version) };
+      return {
+        ...row,
+        moved_starts_at: fact.startsAt,
+        moved_slug: fact.slug,
+        moved_canonical_url: fact.canonicalUrl,
+        moved_version: String(fact.version),
+      };
   }
 }
 

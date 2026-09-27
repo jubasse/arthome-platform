@@ -11,7 +11,13 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource, EntityManager } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { CatalogErrorCode, DomainErrorCode, FailureNature, type Clock } from '@arthome/core';
+import {
+  CatalogErrorCode,
+  DomainErrorCode,
+  FailureNature,
+  type Clock,
+  type Instant,
+} from '@arthome/core';
 
 import { Artist, type LocalizedCopy } from './artist.entity.js';
 import type { UpdateIdentityBody } from './update-identity.schema.js';
@@ -20,6 +26,8 @@ import { CLOCK } from '../clock.js';
 import { slugify } from '../dates/slug.js';
 import { runIdempotentlyVersioned, type IdempotentRequest } from '../idempotency/idempotency.js';
 import { projectArtist } from '../public/date-detail-projection.js';
+import { LinkKind } from '../public/resolve-query.schema.js';
+import { UNSCOPED, reservedForAnother, retireSlug, type SlugKey } from '../public/slug-aliases.js';
 
 export interface UpdateIdentityCommand extends UpdateIdentityBody {
   readonly channelId: string;
@@ -92,9 +100,14 @@ export class ArtistsService {
         ...(categoryId === undefined ? [{ path: ['categoryId'] }] : []),
       ]);
     }
-    const slug = command.slug ?? current?.slug ?? (await freeArtistSlug(manager, publicName, id));
-    if (command.slug !== undefined && (await slugHeldByAnother(manager, command.slug, id))) {
+    const now = this.clock.now();
+    const slug =
+      command.slug ?? current?.slug ?? (await freeArtistSlug(manager, publicName, id, now));
+    if (command.slug !== undefined && (await slugHeldByAnother(manager, command.slug, id, now))) {
       throw slugTaken();
+    }
+    if (current !== null && current.slug !== slug) {
+      await retireSlug(manager, artistSlugKey(current.slug), id, now);
     }
 
     const artist = manager.create(Artist, {
@@ -109,7 +122,7 @@ export class ArtistsService {
     await manager.save(Artist, artist);
     await projectArtist(manager, artist);
 
-    const occurredAt = new Date(this.clock.now());
+    const occurredAt = new Date(now);
     await writeCatalogEvent(
       manager,
       {
@@ -145,13 +158,20 @@ export class ArtistsService {
   }
 }
 
+function artistSlugKey(slug: string): SlugKey {
+  return { kind: LinkKind.ARTIST, scope: UNSCOPED, slug };
+}
+
+/** Held by another artist, or still pointing at one that left it less than a month ago (D-075). */
 async function slugHeldByAnother(
   manager: EntityManager,
   slug: string,
   id: string,
+  now: Instant,
 ): Promise<boolean> {
   const holder = await manager.findOneBy(Artist, { slug });
-  return holder !== null && holder.id !== id;
+  if (holder !== null) return holder.id !== id;
+  return reservedForAnother(manager, artistSlugKey(slug), id, now);
 }
 
 /** The name's slug when free, then one carrying the artist's own id; the index settles a race. */
@@ -159,10 +179,11 @@ async function freeArtistSlug(
   manager: EntityManager,
   publicName: string,
   id: string,
+  now: Instant,
 ): Promise<string> {
   const base = slugify(publicName);
   // A name too short for the contract's three characters leaves the id's tail alone.
   if (base.length < 3) return id.slice(-12);
-  if (!(await slugHeldByAnother(manager, base, id))) return base;
+  if (!(await slugHeldByAnother(manager, base, id, now))) return base;
   return `${base}-${id.slice(-8)}`;
 }

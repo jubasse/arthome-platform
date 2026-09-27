@@ -36,7 +36,10 @@ import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500
 import { DateDetailPublic1790420600000 } from '../migrations/1790420600000-date-detail-public.js';
 import { DateOutcome1790420700000 } from '../migrations/1790420700000-date-outcome.js';
 import { Artist1790420800000 } from '../migrations/1790420800000-artist.js';
+import { PublicSlugs1790420900000 } from '../migrations/1790420900000-public-slugs.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';
+import { PublicLinksService } from '../public/public-links.service.js';
+import { SlugAlias } from '../public/slug-alias.entity.js';
 
 /** The channel's public face against a real Postgres: versions, slugs and what it projects. */
 
@@ -73,7 +76,7 @@ beforeAll(async () => {
   stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
   const database = await createDatabase(stack.postgres, 'catalog_artists_itest');
   dataSource = await applyMigrations(database, {
-    entities: [Artist, DateDetailPublic, OutboxEvent],
+    entities: [Artist, DateDetailPublic, SlugAlias, OutboxEvent],
     migrations: [
       Initial1758800000000,
       Idempotency1790420000000,
@@ -85,6 +88,7 @@ beforeAll(async () => {
       DateDetailPublic1790420600000,
       DateOutcome1790420700000,
       Artist1790420800000,
+      PublicSlugs1790420900000,
     ],
   });
   artists = new ArtistsService(dataSource, new FixedClock('2026-09-27T10:00:00.000Z'));
@@ -185,8 +189,8 @@ describe('a channel’s public face', () => {
         replay_policy: ReplayPolicy.NONE,
         replay_window_hours: 0,
         rights: worldwideRights(),
-        slug_fr: 'nuit-blanche-2026-11-04',
-        slug_en: 'white-night-2026-11-04',
+        show_slug: 'nuit-blanche',
+        slug: '2026-11-04',
         publication_state: PublicationState.SCHEDULED,
         outcome: null,
         rescheduled_to: null,
@@ -214,6 +218,40 @@ describe('a channel’s public face', () => {
         artist_id: renamed.envelope.data.artistId,
         artist_name: 'Verticale',
       });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'keeps a replaced slug leading to the artist, for the artist alone to take back (D-075)',
+    async () => {
+      const moved = await edit('channel-a', { expectedVersion: 2, slug: 'verticale' });
+      expect(moved.envelope.data.slug).toBe('verticale');
+
+      const links = new PublicLinksService(
+        dataSource,
+        new FixedClock('2026-09-27T10:00:00.000Z'),
+        'https://arthome.test',
+      );
+      expect(
+        (await links.resolve({ url: 'https://arthome.test/a/compagnie-verticale' })).data,
+      ).toMatchObject({
+        id: moved.envelope.data.artistId,
+        canonicalUrl: 'https://arthome.test/artist/verticale',
+      });
+
+      const squatter = await refusalOf(
+        edit('channel-c', {
+          expectedVersion: 0,
+          publicName: 'Troupe',
+          categoryId: 'theatre',
+          slug: 'compagnie-verticale',
+        }),
+      );
+      expect(squatter.refusal.code).toBe(CatalogErrorCode.ARTIST_SLUG_TAKEN);
+
+      const back = await edit('channel-a', { expectedVersion: 3, slug: 'compagnie-verticale' });
+      expect(back.envelope.data.slug).toBe('compagnie-verticale');
     },
     CASE_MS,
   );

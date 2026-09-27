@@ -22,43 +22,27 @@ export function slugify(text: string): string {
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
-/**
- * The slugs a date may take in one language, most readable first: the title and the day at
- * the venue, then the venue time for a second performance that day, then the date's own id.
- */
-export function slugCandidates(
-  title: Bilingual,
-  language: Locale,
-  startsAt: Instant,
-  timeZone: string,
-  dateId: string,
-): string[] {
-  const preferred = language === Locale.FR ? title.fr : title.en;
-  const fallback = language === Locale.FR ? title.en : title.fr;
-  const wall = wallClockAt(startsAt, venueClockAt(timeZone, startsAt).utcOffsetMinutes);
-  const base = `${slugify(preferred.length > 0 ? preferred : fallback)}-${wall.year}-${pad(wall.month)}-${pad(wall.day)}`;
-  return [base, `${base}-${pad(wall.hour)}${pad(wall.minute)}`, `${base}-${dateId.slice(-8)}`];
-}
-
-export const DATE_SEGMENT = 'd';
-
-/** The URL a date is shared and indexed under, in its title's own language (§2.7). */
-export function canonicalUrl(origin: string, language: Locale, slug: string): string {
-  return `${origin}/${language}/${DATE_SEGMENT}/${slug}`;
-}
-
-/** The language a date is shared and indexed under: its title's own, French when it has one. */
+/** The language a show's title, and so its slug, is read in: French when it has one. */
 export function canonicalLanguageOf(title: Bilingual): Locale {
   return title.fr.length > 0 ? Locale.FR : Locale.EN;
 }
 
-/** A date's canonical URL once published; null before. */
-export function canonicalUrlOf(
-  origin: string,
-  title: Bilingual,
-  slugs: { readonly slug_fr: string | null; readonly slug_en: string | null },
-): string | null {
-  const language = canonicalLanguageOf(title);
-  const slug = language === Locale.FR ? slugs.slug_fr : slugs.slug_en;
-  return slug === null ? null : canonicalUrl(origin, language, slug);
+/**
+ * The slugs a show may take, most readable first: its title, then its title with its own id.
+ *   A title too short for three characters leaves the id's tail alone.
+ */
+export function showSlugCandidates(title: Bilingual, showId: string): string[] {
+  const base = slugify(canonicalLanguageOf(title) === Locale.FR ? title.fr : title.en);
+  if (base.length < 3) return [showId.slice(-12)];
+  return [base, `${base}-${showId.slice(-8)}`];
+}
+
+/**
+ * The slugs a date may take within its show, most readable first: its day at the venue, then
+ *   the venue time for a second performance that day, then the date's own id.
+ */
+export function dateSlugCandidates(startsAt: Instant, timeZone: string, dateId: string): string[] {
+  const wall = wallClockAt(startsAt, venueClockAt(timeZone, startsAt).utcOffsetMinutes);
+  const day = `${wall.year}-${pad(wall.month)}-${pad(wall.day)}`;
+  return [day, `${day}-${pad(wall.hour)}${pad(wall.minute)}`, `${day}-${dateId.slice(-8)}`];
 }

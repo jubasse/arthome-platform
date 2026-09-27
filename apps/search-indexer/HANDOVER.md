@@ -32,17 +32,21 @@ input"; both are marked where they stand.
 - Rows written before the migration have no fields: replay `arthome.catalog.show` to fill them.
 - **The index definitions live in `libs/search-index`** since catalog reads the date index for
   `/v1/search`: the writer and the reader share one mapping and one document type.
-- **A date document also carries `slug_fr`, `slug_en`, `ends_at` and `over_at`**: the slugs from
-  `DateScheduled` (arthome-core `3b6eefa`), the two instants computed by `@arthome/core` when the
-  document is composed, so a query compares instants instead of re-deriving the rule. All four are
-  additive: `ensureIndices` puts them on the live `-v1`. A document written before them lacks them,
-  and catalog's search filters on `over_at`, so such a date is not searchable until recomposed;
-  replaying `arthome.catalog.date` does it, since a duplicate rewrites the document.
+- **A date document also carries `show_slug`, `slug`, `ends_at` and `over_at`**: the slugs from
+  `DateScheduled` (arthome-core D-075; `slug_fr` and `slug_en` before it, still in the `-v1`
+  mapping and no longer written), the two instants computed by `@arthome/core` when the document is
+  composed, so a query compares instants instead of re-deriving the rule. All are additive:
+  `ensureIndices` puts them on the live `-v1`. A document written before them lacks them, and
+  catalog's search filters on `over_at`, so such a date is not searchable until recomposed;
+  replaying `arthome.catalog.date` does it, since a duplicate rewrites the document. Catalog's
+  `PublicSlugs1790420900000` restates every published date's `DateScheduled`, so the slugs arrive
+  without a replay once this service runs the matching migration first.
 - **`DateOutcomeDeclared` and `DateRescheduled` are read too** (2026-09-27): the outcome, versioned
   by its `declared_at`, and the start a postponement moved the date to, versioned by its
   `occurred_at`, each guarded like the other facts. The document carries `outcome` and
-  `rescheduled_to`, and its `starts_at`, `ends_at` and `over_at` follow the move. A move that
-  overtakes `DateScheduled` is kept and applied when the date is scheduled.
+  `rescheduled_to`, and its `starts_at`, `ends_at` and `over_at` follow the move, its `slug` and
+  `canonical_url` too (`moved_slug`, `moved_canonical_url`; null from a move stated before D-075).
+  A move that overtakes `DateScheduled` is kept and applied when the date is scheduled.
 - **`arthome.catalog.artist` is consumed too** (2026-09-27): `artist_projection` keeps each
   channel's face, versioned by `occurred_at`, and a change rewrites every public date of the
   channel with `artist_id` and `artist_name` (analysed, so a search matches it).
@@ -441,10 +445,10 @@ likely I am to be wrong:
   OpenSearch and Postgres (§0). `pnpm run test:integration`; `verify` does not run it.
 - ~~**`catalog.show.updated.v1` is not handled.**~~ **DONE** (§0): a partial update of the
   updatable group; `published_at` is never touched by it.
-- ~~**`arthome.catalog.date` is not consumed.**~~ **DONE** (§0). **`arthome.catalog.artist` still
-  is not**, and the date document carries no artist name.
-- **Not in the date document yet, because no event carries them:** prices (ticketing), the venue's
-  name, and the outcome (`DateOutcomeDeclared`, `DateRescheduled` are not consumed).
+- ~~**`arthome.catalog.date` is not consumed.**~~ **DONE** (§0), and ~~`arthome.catalog.artist`~~
+  **DONE** too: the date document carries the artist's name.
+- **Not in the date document yet, because no event carries them:** prices (ticketing) and the
+  venue's name.
 - **No percolator**, so `SavedSearchMatched` (the proto says it is raised by "the index's
   PERCOLATOR") has no producer. That is the other half of this service and it is not started.
 - **`show_id` is an uuid column.** `ShowIdSchema` is `uuidV7()`, so that holds; but if `catalog`

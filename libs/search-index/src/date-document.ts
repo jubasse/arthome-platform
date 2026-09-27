@@ -31,8 +31,8 @@ export interface DateDocument {
   readonly rights_scope: RightsScope | null;
   readonly blackout_countries: readonly string[];
   readonly canonical_url: string;
-  readonly slug_fr: string;
-  readonly slug_en: string;
+  readonly show_slug: string;
+  readonly slug: string;
   readonly publication_state: PublicationState | null;
   /** `DateOutcomeDeclared`'s, null until one is declared; a postponement also moves `starts_at`. */
   readonly outcome: DateOutcome | null;
@@ -82,8 +82,8 @@ export const DATE_INDEX_PROPERTIES: Record<string, Types.Common_Mapping.Property
   blackout_countries: { type: 'keyword' },
   /** Served, never searched. */
   canonical_url: { type: 'keyword', index: false, doc_values: false },
-  slug_fr: { type: 'keyword', index: false, doc_values: false },
-  slug_en: { type: 'keyword', index: false, doc_values: false },
+  show_slug: { type: 'keyword', index: false, doc_values: false },
+  slug: { type: 'keyword', index: false, doc_values: false },
   publication_state: { type: 'keyword' },
   outcome: { type: 'keyword' },
   rescheduled_to: { type: 'date' },

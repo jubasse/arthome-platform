@@ -13,7 +13,7 @@ const APPLIED = { version: () => 'version + 1', applied_at: () => 'now()' };
 /** Publishing makes a date public: its row is written whole, once, since publishing is one-way. */
 export async function projectPublishedDate(
   manager: EntityManager,
-  date: PerformanceDate & { readonly slug_fr: string; readonly slug_en: string },
+  date: PerformanceDate & { readonly slug: string },
   show: Show,
   venue: Venue,
   state: PublicationState,
@@ -34,8 +34,8 @@ export async function projectPublishedDate(
     replay_policy: date.replay_policy,
     replay_window_hours: date.replay_window_hours ?? 0,
     rights: date.rights,
-    slug_fr: date.slug_fr,
-    slug_en: date.slug_en,
+    show_slug: show.slug,
+    slug: date.slug,
     publication_state: state,
     // The channel's face when it has one, else what the show named: one artist per channel.
     artist_id: artist?.id ?? show.artist_id,
@@ -88,20 +88,21 @@ export async function projectShowCopy(
   );
 }
 
-/** An outcome on a public date; a postponement moves it, so its start moves with it. */
+/** An outcome on a public date; a postponement moves it, its start and its slug with it. */
 export async function projectOutcome(
   manager: EntityManager,
   dateId: string,
   outcome: DateOutcome,
-  rescheduledTo: Date | null,
+  moved: { readonly startsAt: Date; readonly slug: string } | null,
 ): Promise<void> {
   await manager.update(
     DateDetailPublic,
     { date_id: dateId },
     {
       outcome,
-      rescheduled_to: rescheduledTo,
-      ...(rescheduledTo !== null && { starts_at: rescheduledTo }),
+      // "rescheduled_to exists only if outcome = 'postponed'" (§2.2): a cancellation clears it.
+      rescheduled_to: moved?.startsAt ?? null,
+      ...(moved !== null && { starts_at: moved.startsAt, slug: moved.slug }),
       ...APPLIED,
     },
   );

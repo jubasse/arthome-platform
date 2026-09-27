@@ -17,8 +17,8 @@ export interface ScheduledDateFields {
   readonly rights_scope: RightsScope | null;
   readonly blackout_countries: readonly string[];
   readonly canonical_url: string;
-  readonly slug_fr: string;
-  readonly slug_en: string;
+  readonly show_slug: string;
+  readonly slug: string;
 }
 
 /**
@@ -58,9 +58,18 @@ export class DateProjection {
   @Column('bigint', { nullable: true })
   outcome_version!: string | null;
 
-  /** DateRescheduled's new start, which replaces DateScheduled's; versioned by `occurred_at`. */
+  /**
+   * DateRescheduled's new start, slug and URL, which replace DateScheduled's; versioned by
+   *   `occurred_at`. The slug and URL are null from a DateRescheduled older than D-075.
+   */
   @Column('timestamptz', { nullable: true })
   moved_starts_at!: Date | null;
+
+  @Column('text', { nullable: true })
+  moved_slug!: string | null;
+
+  @Column('text', { nullable: true })
+  moved_canonical_url!: string | null;
 
   @Column('bigint', { nullable: true })
   moved_version!: string | null;

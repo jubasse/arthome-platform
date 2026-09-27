@@ -44,6 +44,7 @@ import { Initial1758700400000 } from '../migrations/1758700400000-initial.js';
 import { ReadModel1790430000000 } from '../migrations/1790430000000-read-model.js';
 import { DateOutcome1790430100000 } from '../migrations/1790430100000-date-outcome.js';
 import { ArtistProjection1790430200000 } from '../migrations/1790430200000-artist-projection.js';
+import { MovedSlug1790430300000 } from '../migrations/1790430300000-moved-slug.js';
 
 /**
  * The indexer against a real OpenSearch and a real Postgres. What is proved here and nowhere
@@ -135,9 +136,9 @@ function dateScheduled(dateId: string, showId: string) {
     replayPolicy: WireReplayPolicy.INCLUDED,
     replayWindowHours: 72,
     rights: { scope: WireRightsScope.WORLDWIDE },
-    canonicalUrl: `https://arthome.test/fr/d/${dateId}`,
-    slugFr: `nuit-blanche-${dateId}`,
-    slugEn: `white-night-${dateId}`,
+    canonicalUrl: `https://arthome.test/show/nuit-blanche/date/${dateId}`,
+    showSlug: 'nuit-blanche',
+    slug: dateId,
     occurredAt: at('2026-09-26T10:00:00.000Z'),
   });
 }
@@ -172,6 +173,8 @@ function moved(dateId: string, to: string) {
     dateId,
     previousStartsAt: at('2026-11-04T19:30:00.000Z'),
     newStartsAt: at(to),
+    newSlug: to.slice(0, 10),
+    newCanonicalUrl: `https://arthome.test/show/nuit-blanche/date/${to.slice(0, 10)}`,
     occurredAt: at('2026-09-27T09:00:00.000Z'),
   });
 }
@@ -215,6 +218,7 @@ beforeAll(async () => {
       ReadModel1790430000000,
       DateOutcome1790430100000,
       ArtistProjection1790430200000,
+      MovedSlug1790430300000,
     ],
   });
   openSearchUrl = stack.opensearch.url;
@@ -339,7 +343,7 @@ describe('the date index', () => {
         venue_country: 'FR',
         publication_state: PublicationState.SCHEDULED,
         starts_at: '2026-11-04T19:30:00.000Z',
-        slug_fr: `nuit-blanche-${dateId}`,
+        slug: dateId,
         ends_at: '2026-11-04T21:05:00.000Z',
         over_at: '2026-11-07T21:05:00.000Z',
       });
@@ -437,6 +441,8 @@ describe('a postponed date in the index', () => {
         rescheduled_to: '2026-11-12T19:30:00.000Z',
         starts_at: '2026-11-12T19:30:00.000Z',
         ends_at: '2026-11-12T21:05:00.000Z',
+        slug: '2026-11-12',
+        canonical_url: 'https://arthome.test/show/nuit-blanche/date/2026-11-12',
       });
     },
     CASE_MS,

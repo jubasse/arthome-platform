@@ -15,7 +15,8 @@ describe('dateCardOf', () => {
     expect(DateCardSchema.safeParse(card).success).toBe(true);
     expect(card).toMatchObject({
       title: 'Nuit blanche',
-      slug: 'nuit-blanche-2026-11-04',
+      slug: '2026-11-04',
+      canonicalUrl: 'https://arthome.test/show/nuit-blanche/date/2026-11-04',
       venueClock: { venueTimezone: 'Europe/Paris', venueUtcOffsetMin: 60 },
       roomOpensAt: '2026-11-04T19:00:00.000Z',
       displayState: DisplayState.SCHEDULED,
@@ -34,10 +35,10 @@ describe('dateCardOf', () => {
     expect(card.displayState).toBe(DisplayState.ROOM_OPEN);
   });
 
-  it('serves the title and slug in the language the canonical URL uses', () => {
+  it('serves the title in its own language, and one slug whatever the language (D-075)', () => {
     const card = dateCardOf(publicDate({ title_fr: '' }), BEFORE_THE_ROOM_OPENS);
 
-    expect(card).toMatchObject({ title: 'White night', slug: 'white-night-2026-11-04' });
+    expect(card).toMatchObject({ title: 'White night', slug: '2026-11-04' });
   });
 
   it('holds the state of a date fully over until an event, with no instant to re-run it at', () => {

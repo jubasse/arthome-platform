@@ -34,12 +34,16 @@ export class PerformanceDate {
   @Column('jsonb')
   rights!: TerritoryRights;
 
-  /** Set once at publication, then stable: it is what gets shared and indexed (§2.7). */
+  /**
+   * Its day at the venue, unique within its show, set at publication (§2.7, D-075). A
+   * postponement to another day takes that day's, the former one resolving for a month.
+   */
   @Column('text', { nullable: true })
-  slug_fr!: string | null;
+  slug!: string | null;
 
-  @Column('text', { nullable: true })
-  slug_en!: string | null;
+  /** At most `POSTPONEMENTS_MAX` (D-076). */
+  @Column('integer', { default: 0 })
+  postponements!: number;
 
   /** A fact, never rewritten nor erased (§2.2). */
   @Column('text', { nullable: true })

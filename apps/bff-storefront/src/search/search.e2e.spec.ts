@@ -21,7 +21,14 @@ const PAGE = {
   page: { hasMore: false },
 };
 
-let catalogAnswer: { status: number; body: object } = { status: 200, body: {} };
+function pageAnswer(): { status: number; body: object } {
+  return {
+    status: 200,
+    body: { servedAt: '2026-09-26T20:00:00.000Z', validUntil: '2026-09-26T20:30:00.000Z', ...PAGE },
+  };
+}
+
+let catalogAnswer = pageAnswer();
 let catalogSaw: { url: string; headers: IncomingHttpHeaders } | null = null;
 let catalog: Server;
 let app: NestFastifyApplication;
@@ -51,20 +58,14 @@ beforeAll(async () => {
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   // Measured: under the full verify's parallel load, the first call through a cold app took
-  // longer than the 200 ms search budget, and the case read a 504 instead of the page.
-  await app.inject({
-    method: 'GET',
-    url: '/v1/search',
-    headers: { 'x-arthome-surface': Surface.STOREFRONT_WEB },
-  });
+  // longer than the 200 ms search budget, and the case read a 504 instead of the page. The
+  // warm-up must take the path that succeeds: one refused by the response schema warmed less.
+  await search({ q: 'nuit' });
 });
 
 beforeEach(() => {
   catalogSaw = null;
-  catalogAnswer = {
-    status: 200,
-    body: { servedAt: '2026-09-26T20:00:00.000Z', validUntil: '2026-09-26T20:30:00.000Z', ...PAGE },
-  };
+  catalogAnswer = pageAnswer();
 });
 
 afterAll(async () => {

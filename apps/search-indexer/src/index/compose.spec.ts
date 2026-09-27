@@ -18,15 +18,22 @@ const scheduled: ScheduledDateFields = {
   replay_window_hours: 72,
   rights_scope: RightsScope.WORLDWIDE,
   blackout_countries: [],
-  canonical_url: 'https://arthome.test/fr/d/nuit-blanche-2026-11-04',
-  slug_fr: 'nuit-blanche-2026-11-04',
-  slug_en: 'white-night-2026-11-04',
+  canonical_url: 'https://arthome.test/show/nuit-blanche/date/2026-11-04',
+  show_slug: 'nuit-blanche',
+  slug: '2026-11-04',
 };
 
 function documentFor(
   fields: ScheduledDateFields,
   moved: Partial<
-    Pick<DateProjection, 'outcome' | 'outcome_rescheduled_to' | 'moved_starts_at'>
+    Pick<
+      DateProjection,
+      | 'outcome'
+      | 'outcome_rescheduled_to'
+      | 'moved_starts_at'
+      | 'moved_slug'
+      | 'moved_canonical_url'
+    >
   > = {},
 ) {
   return dateDocumentOf(
@@ -41,6 +48,8 @@ function documentFor(
       outcome_rescheduled_to: null,
       outcome_version: null,
       moved_starts_at: null,
+      moved_slug: null,
+      moved_canonical_url: null,
       moved_version: null,
       doc_version: '1',
       indexed_at: new Date(),
@@ -76,10 +85,15 @@ describe('dateDocumentOf — a postponed date', () => {
       outcome: DateOutcome.POSTPONED,
       outcome_rescheduled_to: new Date('2026-11-12T19:30:00.000Z'),
       moved_starts_at: new Date('2026-11-12T19:30:00.000Z'),
+      moved_slug: '2026-11-12',
+      moved_canonical_url: 'https://arthome.test/show/nuit-blanche/date/2026-11-12',
     });
 
     expect(document).toMatchObject({
       starts_at: '2026-11-12T19:30:00.000Z',
+      show_slug: 'nuit-blanche',
+      slug: '2026-11-12',
+      canonical_url: 'https://arthome.test/show/nuit-blanche/date/2026-11-12',
       ends_at: '2026-11-12T21:05:00.000Z',
       over_at: '2026-11-15T21:05:00.000Z',
       outcome: DateOutcome.POSTPONED,

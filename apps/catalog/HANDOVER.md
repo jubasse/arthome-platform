@@ -29,8 +29,9 @@ indexer. The shapes served are `@arthome/contracts`': `ShowGroup`, `Facet`, the 
 - **`x-arthome-deadline` is required** (transport.md §5.3): absent, 400; past, 504
   `api.deadline_exceeded` before the query; the time left bounds the OpenSearch request, and the
   query is aborted when the caller hangs up (`whenCallerLeaves`, from the response's `close`).
-- **The title, slug and canonical URL are in the title's own language**: the contract gives this
-  read no viewer language, and an anonymous body must be the same for every caller.
+- **The title is in its own language**, the slug and canonical URL in none (arthome-core D-075):
+  the contract gives this read no viewer language, and an anonymous body must be the same for
+  every caller.
 - Readiness does not check OpenSearch (`nestjs-search`): the index down fails the search, 503
   `api.service_unavailable`, not the service.
 - The route is `/v1/search` as transport.md §5.1 shapes a service path. The older routes
@@ -46,7 +47,7 @@ indexer. The shapes served are `@arthome/contracts`': `ShowGroup`, `Facet`, the 
   venue copied in, written by catalog's own commands **in their transaction** — publishing inserts
   the row (`announcePublication`), every transition moves its state, a show update rewrites its
   copy on every public date of the show. It carries a `version` and `applied_at`. The migration
-  that creates it backfills every date already published (a date has slugs exactly once it is),
+  that creates it backfills every date already published (a date has a slug exactly once it is),
   and an integration case proves the rebuild matches.
 - **The page is one query**: the date's row and its show's other rows. `seriesDates` lists the
   show's other dates not yet fully over, soonest first, ten at most, and `totalSeriesDates` counts
@@ -54,11 +55,11 @@ indexer. The shapes served are `@arthome/contracts`': `ShowGroup`, `Facet`, the 
   empty. Prices, cast, chapters, suggestions and the shop wait for the services that own them.
 - **A date fully over or with an outcome keeps its page**: `displayStateValidUntil` is `null`
   there (arthome-core D-073), so a link shared the day after still opens.
-- **`resolve`** reads the link's slug in either column, the link's own language first, and answers
-  the date's current canonical URL and its card. A URL from another origin, another kind of page,
-  or an unknown slug answers 404 `api.not_found`; `kind` other than `date` answers 400 naming
-  `kind` (`show`, `artist` and `category` have no slugs yet); `url` with `kind` or `slug` answers
-  400 naming them.
+- **`resolve`** reads every form of §0e, a live slug first and then a replaced one, and answers
+  the current canonical URL: with the date's card, the artist's summary, or nothing more for a
+  show (the contract has no show summary). A URL from another origin, another kind of page, or an
+  unknown slug answers 404 `api.not_found`; `kind=date` takes `{show-slug}/{date-slug}`;
+  `kind=category` answers 400 naming `kind`; `url` with `kind` or `slug` answers 400 naming them.
 - The card is built by one function for both reads, `src/public/date-card.ts`, from a
   `PublicDate` the index document and the read-model row each map to.
 - `DateDetailSchema`'s declared type in `@arthome/contracts` widens the page's own fields
@@ -73,19 +74,19 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
 - **`expectedVersion` is the publication's**, the only version the studio's sheet serves, and
   declaring an outcome bumps it: a screen that did not see the outcome is stale like any other
   (409 `state.conflict` with the current state and version).
-- **When each outcome fits is core's** (`assertOutcomeDeclarable`): once, on a public date,
-  `postponed` before the show and to a later instant, `interrupted` once it started, `cancelled`
-  until it ends. A refusal is 409 `state.conflict` naming what decided it (`outcome`, `state` or
-  `startsAt`). `rescheduledTo` is required for `postponed` and refused otherwise (400).
-- **A postponement moves the date** (arthome-core D-074): `starts_at` becomes `rescheduled_to` in
-  the same transaction, and `DateRescheduled` follows `DateOutcomeDeclared` on the date's key.
-  The slugs and canonical URL do not move: they are identifiers, set once. `displayState` shows
-  `postponed` until the room opens at the new time, then the time axis again.
+- **When each outcome fits is core's** (`assertOutcomeDeclarable`, arthome-core D-076), on a public
+  date: `postponed` before the show and to a later instant, up to three times; `interrupted` once
+  it started; `cancelled` until it ends, a postponed date included. A cancellation or an
+  interruption is final. A refusal is 409 `state.conflict` naming what decided it (`outcome`,
+  `state` or `startsAt`), or `date.postponement_limit_reached` with `max`. `rescheduledTo` is
+  required for `postponed` and refused otherwise (400).
+- **A postponement moves the date** (arthome-core D-074): `starts_at` becomes `rescheduled_to` and
+  `postponements` counts it in the same transaction, the slug moves to the new day (§0e), and
+  `DateRescheduled` follows `DateOutcomeDeclared` on the date's key with the new slug and URL.
+  `displayState` shows `postponed` until the room opens at the new time, then the time axis again.
 - `date_detail_public` takes the outcome and the new start in the same transaction; the page and
   the search cards show `outcome` and `rescheduledTo`.
-- **Not served**: `moneyEffectCode` and `affectedSeats`, which are ticketing's to compute. A second
-  postponement, or cancelling a postponed date, is refused: the never-rewritten invariant as
-  data-model.md §2.2 writes it (D-074 notes it may need its own arbitration).
+- **Not served**: `moneyEffectCode` and `affectedSeats`, which are ticketing's to compute.
 
 ## 0d. The artist, the channel's public face (2026-09-27)
 
@@ -97,8 +98,8 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
   carries `version` at the envelope's root (`runIdempotentlyVersioned`).
 - **The slug** is the one sent, or the name's, or the name's with the artist's id when another
   artist holds it. A slug sent and held elsewhere is 409 `artist.slug_taken`; the unique index
-  `artist_slug` is the backstop, mapped by `src/unique-violations.ts`. An old slug does not keep
-  resolving after a change: no slug history is kept.
+  `artist_slug` is the backstop, mapped by `src/unique-violations.ts`. A replaced slug keeps
+  leading to the artist for 30 days, and no other artist may take it meanwhile (§0e).
 - **`ArtistUpdated`** carries the whole face on `arthome.catalog.artist`, keyed by `artist_id`.
 - **A card names its channel's artist**: `date_detail_public.artist_id` and `artist_name` take the
   face when it exists (at publication, and on every edit for all the channel's dates), else the
@@ -106,13 +107,33 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
   through `search-indexer`, and a search matches the artist's name.
 - **The page** is the artist and its channel's public dates, two reads and no join: upcoming
   (scheduled to live, and postponed) soonest first, replays soonest to expire first, over (ended,
-  cancelled, interrupted) latest first, twenty each. The biography is served in the language its
-  URL uses.
-- **`resolve` reads `/{language}/a/{slug}`** and `kind=artist`, and answers the artist's summary and
-  canonical URL.
+  cancelled, interrupted) latest first, twenty each. The biography is served in French when it has
+  French or no copy, else in English: a URL carries no language.
+- **`resolve` reads `/artist/{slug}` and `/a/{slug}`** and `kind=artist`, and answers the artist's
+  summary and canonical URL.
 - **Not served**: `avatarAssetId` (accepted only as null: no asset service), `country`,
   `verified`, the media, `followers` and `isLiveNow`, the shop. The **artists tab of the search and
   the directory** (`listArtists`) wait for an artist index.
+
+## 0e. Public URLs and slugs (2026-09-27, arthome-core D-075, D-076)
+
+- **The shapes** (`src/public/links.ts`): `/show/{show-slug}`, short `/s/{show-slug}`;
+  `/show/{show-slug}/date/{date-slug}`; `/artist/{artist-slug}`, short `/a/{artist-slug}`. No
+  language, two levels at most, on `PUBLIC_WEB_ORIGIN`.
+- **A show's slug** is its title's (the French one when it has any), else the title's with the
+  show's id tail; set at publication, in `ShowPublished.slug`, unique (`show_slug`).
+- **A date's slug** is its day at the venue (`2026-12-15`), then `2026-12-15-2000` for a second
+  performance that day, then the day with the date's id tail; unique within its show
+  (`date_show_slug`); set at publication, moved by a postponement.
+- **`public_slug_alias`** keeps a replaced slug (a date's, an artist's) leading to its page for
+  `SLUG_REDIRECT_DAYS` (30), keyed by kind, scope (the show for a date) and slug. While it does, no
+  other page may take the slug; the page itself may take it back.
+- **The migration** (`PublicSlugs1790420900000`) slugs existing shows and dates with the commands'
+  own functions, then writes one `DateScheduled` per published date so the index takes the new
+  URLs; `search-indexer` runs its own migration first. The per-language URLs, never served outside
+  development, are not carried over.
+- **Known gap**: expired aliases are never purged. Each read filters on `expires_at`, so they
+  only take room.
 
 ## 1. What was built
 

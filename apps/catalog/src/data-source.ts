@@ -19,7 +19,9 @@ import { IdempotencyResponseAsJson1790420500000 } from './migrations/17904205000
 import { DateDetailPublic1790420600000 } from './migrations/1790420600000-date-detail-public.js';
 import { DateOutcome1790420700000 } from './migrations/1790420700000-date-outcome.js';
 import { Artist1790420800000 } from './migrations/1790420800000-artist.js';
+import { PublicSlugs1790420900000 } from './migrations/1790420900000-public-slugs.js';
 import { DateDetailPublic } from './public/date-detail-public.entity.js';
+import { SlugAlias } from './public/slug-alias.entity.js';
 import { Venue } from './venues/venue.entity.js';
 
 /**
@@ -39,6 +41,7 @@ export const dataSource: DataSource = new DataSource({
     PublicationChecklistFact,
     DateDetailPublic,
     Artist,
+    SlugAlias,
     ProcessedMessage,
     OutboxEvent,
   ],
@@ -53,6 +56,7 @@ export const dataSource: DataSource = new DataSource({
     DateDetailPublic1790420600000,
     DateOutcome1790420700000,
     Artist1790420800000,
+    PublicSlugs1790420900000,
   ],
   applicationName: Service.CATALOG,
 

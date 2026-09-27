@@ -3,13 +3,16 @@ import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import type { Bilingual, LanguageDependency, MediaSet } from '@arthome/core';
+import type { Bilingual, Instant, LanguageDependency, MediaSet } from '@arthome/core';
 
 import { Show } from './show.entity.js';
 import { writeCatalogEvent } from '../catalog-events.js';
+import { showSlugCandidates } from '../dates/slug.js';
+import { LinkKind } from '../public/resolve-query.schema.js';
+import { UNSCOPED, reservedForAnother } from '../public/slug-aliases.js';
 import { WIRE_LANGUAGE_DEPENDENCY, wireLocalizedTexts } from '../wire.js';
 
 export interface PublishShowCommand {
@@ -72,8 +75,11 @@ export class PublishShowService {
 
     let messageId = '';
     await this.dataSource.transaction(async (manager) => {
+      const slug = await freeShowSlug(manager, command.title, showId, occurredAt.toISOString());
+      event.slug = slug;
       await manager.insert(Show, {
         id: showId,
+        slug,
         channel_id: command.channelId,
         artist_id: command.artistId,
         category_id: command.categoryId,
@@ -104,4 +110,20 @@ export class PublishShowService {
 
     return { showId, messageId };
   }
+}
+
+/** The first candidate no show holds and no retired slug still reserves; the index settles a race. */
+async function freeShowSlug(
+  manager: EntityManager,
+  title: Bilingual,
+  showId: string,
+  now: Instant,
+): Promise<string> {
+  const candidates = showSlugCandidates(title, showId);
+  for (const candidate of candidates) {
+    const held = await manager.existsBy(Show, { slug: candidate });
+    const key = { kind: LinkKind.SHOW, scope: UNSCOPED, slug: candidate };
+    if (!held && !(await reservedForAnother(manager, key, showId, now))) return candidate;
+  }
+  return showId;
 }

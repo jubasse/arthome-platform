@@ -35,8 +35,8 @@ function row(
     replay_policy: ReplayPolicy.NONE,
     replay_window_hours: 0,
     rights: worldwideRights(),
-    slug_fr: `nuit-blanche-${dateId}`,
-    slug_en: `white-night-${dateId}`,
+    show_slug: 'nuit-blanche',
+    slug: dateId,
     publication_state: PublicationState.SCHEDULED,
     outcome: null,
     rescheduled_to: null,
@@ -72,7 +72,7 @@ describe('dateDetailOf', () => {
 
     expect(DateDetailSchema.safeParse(page?.detail).success).toBe(true);
     expect(page?.detail).toMatchObject({
-      canonicalUrl: `${ORIGIN}/fr/d/nuit-blanche-d-page`,
+      canonicalUrl: `${ORIGIN}/show/nuit-blanche/date/d-page`,
       venue: { name: 'Théâtre de la Ville' },
       subtitleLanguages: ['en-GB'],
     });

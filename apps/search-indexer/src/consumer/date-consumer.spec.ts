@@ -35,9 +35,9 @@ function scheduled(occurredAt: string): Uint8Array {
       replayPolicy: WireReplayPolicy.INCLUDED,
       replayWindowHours: 72,
       rights: { scope: WireRightsScope.WORLDWIDE },
-      canonicalUrl: 'https://arthome.test/fr/d/nuit-blanche-2026-11-04',
-      slugFr: 'nuit-blanche-2026-11-04',
-      slugEn: 'white-night-2026-11-04',
+      canonicalUrl: 'https://arthome.test/show/nuit-blanche/date/2026-11-04',
+      showSlug: 'nuit-blanche',
+      slug: '2026-11-04',
       occurredAt: timestampFromDate(new Date(occurredAt)),
     }),
   );
@@ -66,6 +66,8 @@ function emptyRow(): DateProjection {
     outcome_rescheduled_to: null,
     outcome_version: null,
     moved_starts_at: null,
+    moved_slug: null,
+    moved_canonical_url: null,
     moved_version: null,
     doc_version: '0',
     indexed_at: new Date(),
@@ -84,12 +86,14 @@ function outcomeDeclared(declaredAt: string): Uint8Array {
   );
 }
 
-function rescheduled(occurredAt: string, to: string): Uint8Array {
+function rescheduled(occurredAt: string, to: string, slug = ''): Uint8Array {
   return toBinary(
     DateRescheduledSchema,
     create(DateRescheduledSchema, {
       dateId: DATE_ID,
       newStartsAt: timestampFromDate(new Date(to)),
+      newSlug: slug,
+      newCanonicalUrl: slug === '' ? '' : `https://arthome.test/show/nuit-blanche/date/${slug}`,
       occurredAt: timestampFromDate(new Date(occurredAt)),
     }),
   );
@@ -112,8 +116,8 @@ describe('dateFactOf', () => {
         venue_country: 'FR',
         replay_policy: ReplayPolicy.INCLUDED,
         rights_scope: RightsScope.WORLDWIDE,
-        slug_fr: 'nuit-blanche-2026-11-04',
-        slug_en: 'white-night-2026-11-04',
+        show_slug: 'nuit-blanche',
+        slug: '2026-11-04',
       },
     });
   });
@@ -177,5 +181,24 @@ describe('an outcome and a move', () => {
     const moved = dateAfter(emptyRow(), newer);
     expect(moved?.moved_starts_at?.toISOString()).toBe('2026-11-20T19:30:00.000Z');
     expect(moved === null ? null : dateAfter(moved, older)).toBeNull();
+  });
+
+  it('moves the slug and the URL with the start (D-075)', () => {
+    const fact = dateFactOf(
+      RESCHEDULED,
+      rescheduled('2026-09-27T10:00:00.000Z', '2026-11-20T19:30:00.000Z', '2026-11-20'),
+    );
+    expect(dateAfter(emptyRow(), fact)).toMatchObject({
+      moved_slug: '2026-11-20',
+      moved_canonical_url: 'https://arthome.test/show/nuit-blanche/date/2026-11-20',
+    });
+  });
+
+  it('reads a move stated before D-075 as one that says nothing of the slug', () => {
+    const fact = dateFactOf(
+      RESCHEDULED,
+      rescheduled('2026-09-27T10:00:00.000Z', '2026-11-20T19:30:00.000Z'),
+    );
+    expect(fact).toMatchObject({ slug: null, canonicalUrl: null });
   });
 });

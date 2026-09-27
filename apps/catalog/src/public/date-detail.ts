@@ -13,7 +13,7 @@ import {
   type PublicDate,
 } from './date-card.js';
 import type { DateDetailPublic } from './date-detail-public.entity.js';
-import { canonicalUrlOf } from '../dates/slug.js';
+import { dateUrl } from './links.js';
 
 export type DateDetail = z.output<typeof DateDetailSchema>;
 type LocalizedText = z.output<typeof StorefrontLocalizedTextSchema>;
@@ -28,7 +28,7 @@ export function publicDateOfRow(row: DateDetailPublic, origin: string): PublicDa
     rescheduled_to: row.rescheduled_to?.toISOString() ?? null,
     rights_scope: row.rights.scope,
     blackout_countries: row.rights.blackoutCountries,
-    canonical_url: canonicalUrlOf(origin, row.title, row) ?? '',
+    canonical_url: dateUrl(origin, row.show_slug, row.slug),
     title_fr: row.title.fr,
     title_en: row.title.en,
   };

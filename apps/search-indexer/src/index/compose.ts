@@ -54,7 +54,7 @@ export function dateDocumentOf(
 ): DateDocument {
   const { scheduled } = date;
   const updatable = show?.updatable ?? null;
-  // A postponement moved the date: DateRescheduled's start replaces DateScheduled's.
+  // A postponement moved the date: DateRescheduled's start and slug replace DateScheduled's.
   const startsAt = date.moved_starts_at?.toISOString() ?? scheduled.starts_at;
   const timing = timingOf(scheduled, startsAt);
   const endedAt = endsAt(timing);
@@ -72,9 +72,9 @@ export function dateDocumentOf(
     replay_window_hours: scheduled.replay_window_hours,
     rights_scope: scheduled.rights_scope,
     blackout_countries: scheduled.blackout_countries,
-    canonical_url: scheduled.canonical_url,
-    slug_fr: scheduled.slug_fr,
-    slug_en: scheduled.slug_en,
+    canonical_url: date.moved_canonical_url ?? scheduled.canonical_url,
+    show_slug: scheduled.show_slug,
+    slug: date.moved_slug ?? scheduled.slug,
     publication_state: date.publication_state,
     outcome: date.outcome,
     rescheduled_to: date.outcome_rescheduled_to?.toISOString() ?? null,

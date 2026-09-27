@@ -18,13 +18,22 @@ interface Insert {
   readonly manager: object;
 }
 
-/** A DataSource that records what was inserted, and through which manager. */
-function recordingDataSource(inserts: Insert[]): DataSource {
+/**
+ * A DataSource that records what was inserted, and through which manager. `heldSlugs` are the
+ *   show slugs already taken; no retired slug is reserved.
+ */
+function recordingDataSource(
+  inserts: Insert[],
+  heldSlugs: ReadonlySet<string> = new Set(),
+): DataSource {
   const manager = {
     insert: (target: unknown, values: Record<string, unknown>) => {
       inserts.push({ target, values, manager });
       return Promise.resolve();
     },
+    existsBy: (_target: unknown, where: { readonly slug: string }) =>
+      Promise.resolve(heldSlugs.has(where.slug)),
+    findOneBy: () => Promise.resolve(null),
   };
   return {
     transaction: (run: (m: EntityManager) => Promise<unknown>) =>
@@ -137,6 +146,24 @@ describe('PublishShowService', () => {
     // like a duplicate of the first, and consumers silently drop it.
     expect(result.messageId).not.toBe(result.showId);
     expect(inserts[1]?.values.id).toBe(result.messageId);
+  });
+
+  it('slugs the show from its title, and carries the slug in ShowPublished (D-075)', async () => {
+    const inserts: Insert[] = [];
+    await new PublishShowService(recordingDataSource(inserts)).publish(command);
+
+    const payload = inserts[1]?.values.payload as Buffer;
+    expect(inserts[0]?.values.slug).toBe('nuit-blanche');
+    expect(fromBinary(ShowPublishedSchema, new Uint8Array(payload)).slug).toBe('nuit-blanche');
+  });
+
+  it('takes the next candidate when another show holds the title’s slug', async () => {
+    const inserts: Insert[] = [];
+    const result = await new PublishShowService(
+      recordingDataSource(inserts, new Set(['nuit-blanche'])),
+    ).publish(command);
+
+    expect(inserts[0]?.values.slug).toBe(`nuit-blanche-${result.showId.slice(-8)}`);
   });
 
   it('records no actor, because this slice has no verified one', async () => {

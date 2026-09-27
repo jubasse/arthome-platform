@@ -37,8 +37,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
+  CatalogErrorCode,
   DateOutcome,
   DisplayState,
+  DomainConstant,
   DomainErrorCode,
   FixedClock,
   LanguageDependency,
@@ -69,11 +71,13 @@ import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500
 import { DateDetailPublic1790420600000 } from '../migrations/1790420600000-date-detail-public.js';
 import { DateOutcome1790420700000 } from '../migrations/1790420700000-date-outcome.js';
 import { Artist1790420800000 } from '../migrations/1790420800000-artist.js';
+import { PublicSlugs1790420900000 } from '../migrations/1790420900000-public-slugs.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';
 import { PublicArtistsService } from '../public/public-artists.service.js';
 import { PublicDatesService } from '../public/public-dates.service.js';
 import { PublicLinksService } from '../public/public-links.service.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
+import { SlugAlias } from '../public/slug-alias.entity.js';
 import { Venue } from '../venues/venue.entity.js';
 
 /**
@@ -212,6 +216,7 @@ beforeAll(async () => {
       PublicationChecklistFact,
       DateDetailPublic,
       Artist,
+      SlugAlias,
       ProcessedMessage,
       OutboxEvent,
     ],
@@ -226,10 +231,12 @@ beforeAll(async () => {
       DateDetailPublic1790420600000,
       DateOutcome1790420700000,
       Artist1790420800000,
+      PublicSlugs1790420900000,
     ],
   });
   await dataSource.getRepository(Show).insert({
     id: SHOW_ID,
+    slug: 'nuit-blanche',
     channel_id: CHANNEL,
     artist_id: 'artist-itest',
     category_id: 'theatre',
@@ -451,10 +458,9 @@ describe('a publication transition', () => {
         dateId,
         runtimeMin: 95,
         replayWindowHours: 72,
-        canonicalUrl: 'https://arthome.test/fr/d/nuit-blanche-2026-11-04',
-        // No English title, so the English slug falls back to the French one.
-        slugFr: 'nuit-blanche-2026-11-04',
-        slugEn: 'nuit-blanche-2026-11-04',
+        canonicalUrl: 'https://arthome.test/show/nuit-blanche/date/2026-11-04',
+        showSlug: 'nuit-blanche',
+        slug: '2026-11-04',
         venueCity: 'Paris',
         venueCountry: 'FR',
         venueClock: { venueTimezone: 'Europe/Paris', venueUtcOffsetMin: 60 },
@@ -525,7 +531,7 @@ describe('a date already published', () => {
       // on order; that they never share one does not.
       expect(new Set(urls).size).toBe(2);
       for (const url of urls) {
-        expect(url).toMatch(/\/fr\/d\/nuit-blanche-2026-11-04(-\d{4}|-[0-9a-f]{8})?$/);
+        expect(url).toMatch(/\/show\/nuit-blanche\/date\/2026-11-04(-\d{4}|-[0-9a-f]{8})?$/);
       }
     },
     CASE_MS,
@@ -695,7 +701,8 @@ describe('the public date page', () => {
       expect(await rowOf(dateId)).toMatchObject({
         publication_state: PublicationState.SCHEDULED,
         venue_name: 'Théâtre de la Ville',
-        slug_fr: expect.stringMatching(/^nuit-blanche-2026-11-04/) as unknown,
+        show_slug: 'nuit-blanche',
+        slug: expect.stringMatching(/^2026-11-04/) as unknown,
         version: '1',
       });
 
@@ -754,24 +761,33 @@ describe('the public date page', () => {
   );
 
   it(
-    'resolves a canonical URL or a slug to the date, and nothing else',
+    'resolves a canonical URL or a slug to the date or its show, and nothing else',
     async () => {
       const dateId = '01a0e100-0000-7000-8000-0000000004a1';
       const url = (await dates.sheet(dateId)).canonicalUrl ?? '';
-      const slug = url.split('/').at(-1) ?? '';
+      const slug = `nuit-blanche/${url.split('/').at(-1) ?? ''}`;
 
       const byUrl = await publicLinks().resolve({ url });
-      const bySlug = await publicLinks().resolve({ kind: 'date', slug });
-      expect(byUrl.data).toMatchObject({ kind: 'date', id: dateId, canonicalUrl: url });
+      const bySlug = await publicLinks().resolve({ kind: LinkKind.DATE, slug });
+      expect(byUrl.data).toMatchObject({ kind: LinkKind.DATE, id: dateId, canonicalUrl: url });
       expect(bySlug.data.id).toBe(dateId);
+      for (const show of [`${ORIGIN}/show/nuit-blanche`, `${ORIGIN}/s/nuit-blanche`]) {
+        expect((await publicLinks().resolve({ url: show })).data).toEqual({
+          kind: LinkKind.SHOW,
+          id: SHOW_ID,
+          canonicalUrl: `${ORIGIN}/show/nuit-blanche`,
+        });
+      }
 
       for (const dead of [
         { url: url.replace(ORIGIN, 'https://elsewhere.test') },
         { url: `${url}-x` },
+        { url: url.replace('nuit-blanche', 'nuit-noire') },
+        { kind: LinkKind.DATE, slug: url.split('/').at(-1) ?? '' },
       ]) {
         expect((await refusalOf(publicLinks().resolve(dead))).getStatus()).toBe(404);
       }
-      const both = await refusalOf(publicLinks().resolve({ url, kind: 'date', slug }));
+      const both = await refusalOf(publicLinks().resolve({ url, kind: LinkKind.DATE, slug }));
       expect(both.refusal).toMatchObject({
         code: ApiErrorCode.SCHEMA_INVALID,
         params: { fields: ['kind', 'slug'] },
@@ -781,11 +797,14 @@ describe('the public date page', () => {
   );
 
   it(
-    'is rebuilt by its migration from every date already published',
+    'is rebuilt by its migration, and every published date states its facts again with its URL',
     async () => {
       const rows = await dataSource
         .getRepository(DateDetailPublic)
         .find({ order: { date_id: 'ASC' } });
+      const scheduledBefore = (await outboxRowsFor('01a0e100-0000-7000-8000-0000000004a1')).filter(
+        (row) => row.type === 'catalog.date.scheduled.v1',
+      );
       await dataSource.undoLastMigration();
       await dataSource.runMigrations();
       const rebuilt = await dataSource
@@ -805,6 +824,18 @@ describe('the public date page', () => {
           tag_ids,
         ]),
       );
+
+      const scheduledAfter = (await outboxRowsFor('01a0e100-0000-7000-8000-0000000004a1')).filter(
+        (row) => row.type === 'catalog.date.scheduled.v1',
+      );
+      expect(scheduledAfter).toHaveLength(scheduledBefore.length + 1);
+      const restated = fromBinary(
+        DateScheduledSchema,
+        scheduledAfter.at(-1)?.payload ?? new Uint8Array(),
+      );
+      const row = rebuilt.find((candidate) => candidate.date_id === restated.dateId);
+      expect(restated).toMatchObject({ showSlug: 'nuit-blanche', slug: row?.slug });
+      expect(restated.canonicalUrl).toMatch(new RegExp(`/show/nuit-blanche/date/${row?.slug}$`));
     },
     CASE_MS,
   );
@@ -818,6 +849,8 @@ describe('a date outcome', () => {
   };
   const publicDates = (): PublicDatesService =>
     new PublicDatesService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'), ORIGIN);
+  const publicLinks = (at = '2026-09-26T10:00:00.000Z'): PublicLinksService =>
+    new PublicLinksService(dataSource, new FixedClock(at), ORIGIN);
 
   async function published(dateId: string): Promise<void> {
     await draft(dateId);
@@ -842,6 +875,7 @@ describe('a date outcome', () => {
     async () => {
       const dateId = '01a0e100-0000-7000-8000-0000000005a1';
       await published(dateId);
+      const before = (await dates.sheet(dateId)).canonicalUrl;
 
       const response = await declare(dateId, DateOutcome.POSTPONED, 2, '2026-11-12T19:30:00.000Z');
       expect(response.envelope.data).toEqual({
@@ -850,7 +884,12 @@ describe('a date outcome', () => {
       });
 
       const date = await dataSource.getRepository(PerformanceDate).findOneByOrFail({ id: dateId });
-      expect(date).toMatchObject({ outcome: DateOutcome.POSTPONED, outcome_message: MESSAGE });
+      expect(date).toMatchObject({
+        outcome: DateOutcome.POSTPONED,
+        outcome_message: MESSAGE,
+        slug: '2026-11-12',
+        postponements: 1,
+      });
       expect(date.starts_at.toISOString()).toBe('2026-11-12T19:30:00.000Z');
       const publication = await dataSource
         .getRepository(Publication)
@@ -868,9 +907,10 @@ describe('a date outcome', () => {
       expect(rescheduled.previousStartsAt?.seconds).toBe(
         BigInt(Date.parse('2026-11-04T19:30:00.000Z') / 1000),
       );
-      expect(rescheduled.newVenueClock).toMatchObject({
-        venueTimezone: 'Europe/Paris',
-        venueUtcOffsetMin: 60,
+      expect(rescheduled).toMatchObject({
+        newVenueClock: { venueTimezone: 'Europe/Paris', venueUtcOffsetMin: 60 },
+        newSlug: '2026-11-12',
+        newCanonicalUrl: `${ORIGIN}/show/nuit-blanche/date/2026-11-12`,
       });
 
       const page = await publicDates().detail(dateId);
@@ -880,13 +920,21 @@ describe('a date outcome', () => {
         outcome: DateOutcome.POSTPONED,
         rescheduledTo: '2026-11-12T19:30:00.000Z',
         startsAt: '2026-11-12T19:30:00.000Z',
+        slug: '2026-11-12',
+        canonicalUrl: `${ORIGIN}/show/nuit-blanche/date/2026-11-12`,
+      });
+      // D-075: the URL shared before the move still leads to the date, under its new form.
+      expect((await publicLinks().resolve({ url: before ?? '' })).data).toMatchObject({
+        kind: LinkKind.DATE,
+        id: dateId,
+        canonicalUrl: `${ORIGIN}/show/nuit-blanche/date/2026-11-12`,
       });
     },
     CASE_MS,
   );
 
   it(
-    'never rewrites an outcome, and refuses a screen that did not see it',
+    'refuses a stale screen, postpones up to three times, then only cancels (D-076)',
     async () => {
       const dateId = '01a0e100-0000-7000-8000-0000000005a1';
 
@@ -895,9 +943,60 @@ describe('a date outcome', () => {
         code: DomainErrorCode.STATE_CONFLICT,
         params: { state: PublicationState.SCHEDULED, version: 3 },
       });
-      const again = await refusalOf(declare(dateId, DateOutcome.CANCELLED, 3));
-      expect(again.getStatus()).toBe(409);
-      expect(again.refusal.params).toEqual({ outcome: DateOutcome.POSTPONED });
+      await declare(dateId, DateOutcome.POSTPONED, 3, '2026-11-19T19:30:00.000Z');
+      await declare(dateId, DateOutcome.POSTPONED, 4, '2026-11-26T19:30:00.000Z');
+
+      const fourth = await refusalOf(
+        declare(dateId, DateOutcome.POSTPONED, 5, '2026-12-03T19:30:00.000Z'),
+      );
+      expect(fourth.getStatus()).toBe(409);
+      expect(fourth.refusal).toMatchObject({
+        code: CatalogErrorCode.POSTPONEMENT_LIMIT_REACHED,
+        params: { max: DomainConstant.POSTPONEMENTS_MAX },
+      });
+
+      await declare(dateId, DateOutcome.CANCELLED, 5);
+      const date = await dataSource.getRepository(PerformanceDate).findOneByOrFail({ id: dateId });
+      expect(date).toMatchObject({
+        outcome: DateOutcome.CANCELLED,
+        rescheduled_to: null,
+        slug: '2026-11-26',
+        postponements: 3,
+      });
+      expect(date.starts_at.toISOString()).toBe('2026-11-26T19:30:00.000Z');
+
+      const final = await refusalOf(
+        declare(dateId, DateOutcome.POSTPONED, 6, '2026-12-03T19:30:00.000Z'),
+      );
+      expect(final.refusal.params).toEqual({ outcome: DateOutcome.CANCELLED });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'lets every slug a move replaced lead to the date for a month, and no longer',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-0000000005a1';
+      const aliases = await dataSource
+        .getRepository(SlugAlias)
+        .findBy({ kind: LinkKind.DATE, target_id: dateId });
+      expect(aliases.map((alias) => alias.slug).sort()).toEqual([
+        expect.stringMatching(/^2026-11-04/) as unknown,
+        '2026-11-12',
+        '2026-11-19',
+      ]);
+
+      const retired = `${ORIGIN}/show/nuit-blanche/date/2026-11-12`;
+      expect((await publicLinks().resolve({ url: retired })).data).toMatchObject({
+        id: dateId,
+        canonicalUrl: `${ORIGIN}/show/nuit-blanche/date/2026-11-26`,
+      });
+      const monthLater = new Date(
+        Date.parse('2026-09-26T10:00:00.000Z') + DomainConstant.SLUG_REDIRECT_DAYS * 86_400_000,
+      ).toISOString();
+      expect((await refusalOf(publicLinks(monthLater).resolve({ url: retired }))).getStatus()).toBe(
+        404,
+      );
     },
     CASE_MS,
   );
@@ -972,12 +1071,12 @@ describe('an artist’s page', () => {
       expect(past).toContain('01a0e100-0000-7000-8000-0000000005a2');
 
       const resolved = await new PublicLinksService(dataSource, clock, ORIGIN).resolve({
-        url: `${ORIGIN}/fr/a/compagnie-verticale`,
+        url: `${ORIGIN}/a/compagnie-verticale`,
       });
       expect(resolved.data).toMatchObject({
         kind: LinkKind.ARTIST,
         id: artistId,
-        canonicalUrl: `${ORIGIN}/fr/a/compagnie-verticale`,
+        canonicalUrl: `${ORIGIN}/artist/compagnie-verticale`,
       });
     },
     CASE_MS,
