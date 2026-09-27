@@ -339,14 +339,18 @@ an aggregate would only compare what the handler had already read. Their wiring 
 HTTP by `catalog/catalog.http.itest.ts`: without `CreateVenueHandler` in `VenuesModule`, 500.
 
 **No shared library yet, deliberately.** The product owner allows one under `libs/` for what every
-CQRS service here would share, never a catalog concept and never in arthome-core. Two pieces
-qualify, and neither has a second consumer: `src/transaction-runner.ts` (`TransactionRunner`,
-`AggregateTracker`, `saveVersioned`), which imports nothing of catalog's and moves as it is, and
-`runIdempotently` with its `idempotency_record` table (not CQRS-specific, and its DDL would move the
-way `outboxTableDdl()` lives in `libs/messaging`). Nothing else is generic: aggregates extend `@nestjs/cqrs`'s
-`AggregateRoot` as it is, and the events-to-outbox mapping builds catalog's own payloads over
-`writeOutboxEvent`, already shared. Both move into a library when ticketing writes its first command
-handler, so the second consumer shapes the interface rather than a guess (`nestjs-monorepo` rule 6).
+CQRS service here would share, never a catalog concept and never in arthome-core. Three pieces
+qualify:
+- `src/transaction-runner.ts` (`TransactionRunner`, `AggregateTracker`, `saveVersioned`), which
+  imports nothing of catalog's and moves as it is;
+- `runIdempotently` with its `idempotency_record` table (not CQRS-specific; its DDL would move the
+  way `outboxTableDdl()` lives in `libs/messaging`);
+- the processed-message claim, already copied in three consumers.
+
+Nothing else is generic: aggregates extend `@nestjs/cqrs`'s `AggregateRoot` as it is, and the
+events-to-outbox mapping builds catalog's own payloads over `writeOutboxEvent`, already shared. The
+three move into `libs/` as ticketing's first change (arthome-core `adr-ticketing.md` §11), so the
+second consumer shapes the interface rather than a guess (`nestjs-monorepo` rule 6).
 
 Decided here, and each could have gone the other way:
 
@@ -375,8 +379,6 @@ Known and left as they are:
   model depend on the write side rather than the reverse.
 - `PublicationChecklistIncomplete` carries `missing` beside core's scalar `params`: only
   `asConflict` serves it, and a path that let it escape unwrapped would answer 400 without the list.
-- `adr-ticketing.md` speaks of the catalog refactor's shared library; there is none yet (above), and
-  that sentence is arthome-core's to correct.
 
 ## 1. What was built
 
