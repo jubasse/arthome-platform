@@ -206,10 +206,12 @@ one to one, share one version (the publication's, which the studio names, §0c),
 writes both. One repository loads both rows, the publication's `FOR UPDATE` to the commit, and
 remembers the version it read; `save` writes both, the publication's row first with the
 version-conditional UPDATE (`WHERE date_id AND version = <loaded>`, `affected === 1`,
-`nestjs-typeorm` rule 7), then the date's, never one without the other. A second command on the
+`nestjs-typeorm` rule 7), then the date's when it changed, never the date's without the
+publication's, so the date's `updated_at` says when the date itself did. A second command on the
 date waits at its load for the first's commit, then is refused `state.conflict` by the version
 check, with the state and version it left; the conditional UPDATE stays the save's own guard, and
-refuses the same way with the row re-read. `save` inserts a date it did not load, which only `PerformanceDate.draft` creates, the
+refuses the same way with the row re-read. `save` inserts a date it did not load, which only
+`PerformanceDate.draft` creates, the
 date's row first since the publication's references it. The handler calls one method
 (`transitionPublication`, `declareOutcome`) and one `save`; publishing makes the date public inside
 `transitionPublication`, which refuses a date that already has a slug.

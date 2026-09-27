@@ -12,6 +12,8 @@ type PublicationColumns = Omit<PublicationRow, 'date_id' | 'updated_at'>;
 
 export class TypeOrmPerformanceDateRepository extends PerformanceDateRepository {
   private readonly tracker: AggregateTracker<PerformanceDate>;
+  /** The date's snapshot as last read or written: the aggregate replaces it on every change. */
+  private readonly storedSnapshots = new WeakMap<PerformanceDate, PerformanceDateSnapshot>();
 
   public constructor(
     private readonly manager: EntityManager,
@@ -33,16 +35,19 @@ export class TypeOrmPerformanceDateRepository extends PerformanceDateRepository 
     });
     if (publication === null) return null;
     const row = await this.manager.findOneByOrFail(PerformanceDateRow, { id });
-    return this.tracker.loaded(
-      PerformanceDate.restore(performanceDateSnapshotOf(row), publicationSnapshotOf(publication)),
-      publication.version,
+    const date = PerformanceDate.restore(
+      performanceDateSnapshotOf(row),
+      publicationSnapshotOf(publication),
     );
+    this.storedSnapshots.set(date, date.snapshot);
+    return this.tracker.loaded(date, publication.version);
   }
 
   /**
-   * The publication's row first, conditioned on the loaded version: its row lock orders two
-   *   concurrent commands before either writes the date. A draft inserts the date first, which
-   *   its publication's row references.
+   * The publication's row first, conditioned on the loaded version: it guards the aggregate, and
+   *   its row lock orders two concurrent commands before either writes the date. The date's row
+   *   follows only when it changed, so its `updated_at` says when the date did. A draft inserts
+   *   the date first, which its publication's row references.
    */
   public async save(date: PerformanceDate): Promise<void> {
     const { id } = date.snapshot;
@@ -62,8 +67,11 @@ export class TypeOrmPerformanceDateRepository extends PerformanceDateRepository 
         publicationColumnsOf(date.publication),
         ({ state, version }) => ({ state, version }),
       );
-      await this.manager.update(PerformanceDateRow, { id }, dateColumnsOf(date.snapshot));
+      if (date.snapshot !== this.storedSnapshots.get(date)) {
+        await this.manager.update(PerformanceDateRow, { id }, dateColumnsOf(date.snapshot));
+      }
     }
+    this.storedSnapshots.set(date, date.snapshot);
     this.tracker.written(date, date.publication.version);
   }
 }
