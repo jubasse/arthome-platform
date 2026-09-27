@@ -22,7 +22,7 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | --- | --- |
 | `apps/identity` | `POST /accounts`, the outbox producer |
 | `apps/catalog` | shows, venues, dates and their publication, the checklist consumer, the search over the date index, the public date page from `date_detail_public`, and the artist |
-| `apps/ticketing` | a date's commercial face, `DateSales`: capacity by tiers, prices and their lock, the studio's pane, the public availability read, the facts it takes from catalog, and `availability_changed` at a bounded rate |
+| `apps/ticketing` | a date's commercial face, `DateSales`: capacity by tiers and its technical provision, prices and their lock, the studio's pane, the public availability read, the facts it takes from catalog, and `availability_changed` at a bounded rate |
 | `apps/notifications` | the idempotent consumer, with retries and dead-lettering |
 | `apps/bff-storefront` | the storefront's BFF: search, the date and artist pages, link resolution, from catalog, with the deadline and the error mapping |
 | `apps/search-indexer` | the catalog projection into OpenSearch, composed from a read model of its own |

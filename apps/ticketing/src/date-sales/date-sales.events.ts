@@ -57,6 +57,19 @@ export class CapacityTierOpened implements IEvent {
   ) {}
 }
 
+/** The capacity the infrastructure is provisioned for, recorded or revised by the studio (D-088). */
+export class TechnicalProvisionSet implements IEvent {
+  public readonly kind = 'TechnicalProvisionSet';
+
+  public constructor(
+    public readonly dateId: string,
+    public readonly channelId: string,
+    public readonly capacityTotal: number,
+    public readonly provision: TechnicalProvision,
+    public readonly occurredAt: Instant,
+  ) {}
+}
+
 /** The date's start as catalog last stated it, scheduled or moved: the provision counts back from it. */
 export class DateScheduleRecorded implements IEvent {
   public readonly kind = 'DateScheduleRecorded';
@@ -93,5 +106,6 @@ export type DateSalesEvent =
   | DatePricesSet
   | DatePricesLocked
   | CapacityTierOpened
+  | TechnicalProvisionSet
   | DateScheduleRecorded
   | DateOutcomeRecorded;

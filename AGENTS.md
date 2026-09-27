@@ -361,6 +361,7 @@ prices, each with an `Idempotency-Key` and the version the pane served:
 ```
 POST /v1/dates/:dateId/capacity-tiers   { additionalCapacity, expectedVersion, notifyWaitlist }
 PUT  /v1/dates/:dateId/prices           { expectedVersion, tiers: [{ tier, amountMinor, currencyCode, active }] }
+PUT  /v1/dates/:dateId/technical-provision  { provisionedCapacity, expectedVersion }; past core's TECHNICAL_PROVISION_THRESHOLD
 GET  /v1/dates/:dateId/panes/tickets
 GET  /v1/dates/:dateId/availability     x-arthome-deadline required; 404 unless on sale
 ```

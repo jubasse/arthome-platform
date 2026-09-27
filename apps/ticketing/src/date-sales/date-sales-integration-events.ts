@@ -47,10 +47,13 @@ function integrationEventOf(
     case 'DatePricesLocked':
       return pricingChanged(event, true, context);
     case 'CapacityTierOpened':
+    case 'TechnicalProvisionSet':
       return capacitySet(event, context);
     case 'DateScheduleRecorded':
-      // A start moves the revision deadline, which only a required provision has.
-      return event.provision.required ? capacitySet(event, context) : null;
+      // A start moves the revision deadline, which matters once a provision is required or recorded.
+      return event.provision.required || event.provision.provisionedCapacity !== null
+        ? capacitySet(event, context)
+        : null;
     default:
       return assertNever(event);
   }
@@ -98,7 +101,7 @@ interface CapacityFacts {
 }
 
 function capacitySet(facts: CapacityFacts, context: DateSalesWireContext): TicketingEvent {
-  const { revisableUntil } = facts.provision;
+  const { revisableUntil, provisionedCapacity } = facts.provision;
   return {
     type: 'ticketing.date_sales.capacity_set.v1',
     key: facts.dateId,
@@ -112,6 +115,7 @@ function capacitySet(facts: CapacityFacts, context: DateSalesWireContext): Ticke
         ...(revisableUntil !== null && {
           provisionRevisableUntil: timestampFromDate(new Date(revisableUntil)),
         }),
+        ...(provisionedCapacity !== null && { provisionedCapacity }),
         occurredAt: timestampFromDate(new Date(facts.occurredAt)),
       }),
     ),

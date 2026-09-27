@@ -28,6 +28,9 @@ export class DateSalesRow {
   @Column('integer')
   capacity_total!: number;
 
+  @Column('integer', { nullable: true })
+  provisioned_capacity!: number | null;
+
   @Column('jsonb')
   capacity_tiers!: CapacityTierColumn[];
 

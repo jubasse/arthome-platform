@@ -41,11 +41,14 @@ development stack the backlog was within the retention and opened every date dra
 - **Prices** are replaced whole until the sale opens, then refused `date.prices_locked` with
   `lockedAt`. The sale opens when `catalog.publication.engaged` names the prices; `on_sale` is a
   column Postgres generates from the lock and the close, for T3's WHERE.
-- **The technical provision** is `technicalProvisionOf` (`technical-provision.ts`): core's
-  threshold, `requiresTechnicalProvision`, and core's `provisionRevisableUntil` once catalog has
-  stated a start. `openCapacityTier` calls core's `assertTechnicalProvisionCovers`: a capacity past
-  the threshold that no recorded provision covers is refused 409 `date.technical_provision_required`,
-  naming the threshold, the capacity asked for and the deadline.
+- **The technical provision** (D-088) is `technicalProvisionOf` (`technical-provision.ts`): core's
+  threshold and `requiresTechnicalProvision`, the capacity the studio's recorded provision covers,
+  and core's `provisionRevisableUntil` whenever catalog has stated a start. `setTechnicalProvision`
+  records or revises it through core's `assertTechnicalProvisionRecordable`: refused 409
+  `date.provision_deadline_passed` from the deadline on, `date.provision_below_capacity` below the
+  capacity already open. `openCapacityTier` passes it to core's `assertTechnicalProvisionCovers`: a
+  capacity past the threshold it does not cover is refused 409 `date.technical_provision_required`,
+  naming the threshold, the capacity asked for, the provision and the deadline.
 - **One currency per sale** is core's `assertPricesShareCurrency`, called by `setPrices`: 409
   `date.prices_currency_mismatch`, naming the stray tier, its currency and the expected one.
 - **The version** counts every load-modify-save, a studio command's or a consumed fact's: a studio
@@ -56,13 +59,15 @@ development stack the backlog was within the retention and opened every date dra
 
 ## 0b. The studio's operations
 
-`PUT /v1/dates/:dateId/prices`, `POST /v1/dates/:dateId/capacity-tiers` and
-`GET /v1/dates/:dateId/panes/tickets`, in `openapi/studio.yaml`'s shapes.
+`PUT /v1/dates/:dateId/prices`, `POST /v1/dates/:dateId/capacity-tiers`,
+`PUT /v1/dates/:dateId/technical-provision` and `GET /v1/dates/:dateId/panes/tickets`, in
+`openapi/studio.yaml`'s shapes.
 
-- The two commands take an `Idempotency-Key` (`runIdempotentlyVersioned`: the version at the
+- The three commands take an `Idempotency-Key` (`runIdempotentlyVersioned`: the version at the
   envelope's root), answer the pane read off the row inside their transaction, and refuse 409 with
   the domain's code: `state.conflict` with `version`, `date.prices_locked`,
-  `date.prices_currency_mismatch`, `capacity.tier_must_widen`, `date.technical_provision_required`.
+  `date.prices_currency_mismatch`, `capacity.tier_must_widen`, `date.technical_provision_required`,
+  `date.provision_deadline_passed`, `date.provision_below_capacity`.
 - `setDatePrices` refuses 400 naming `tiers` a tier sent twice: a malformed body. Two currencies
   are a well-formed body a rule refuses, 409 above.
 - `openCapacityTier` accepts `notifyWaitlist` and records nothing for it: the waiting list is T5's.
@@ -107,7 +112,10 @@ A draft older than the topic's retention is never read: see the deployment order
 
 - `date_sales.capacity_set` and `date_sales.pricing_changed` are outbox rows written by the command
   from the aggregate's uncommitted events (`date-sales-integration-events.ts`), in the order it
-  applied them, on the date's key.
+  applied them, on the date's key. `capacity_set` is written by `openCapacityTier` and by
+  `setTechnicalProvision`, with `provisioned_capacity` once a provision is recorded, and again when
+  a start moves the deadline of a provision required or recorded, so streaming provisions from one
+  fact.
 - **`date_sales.availability_changed` is published at a bounded rate** (ADR §5), when the last
   publication is `AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS` old, or at once when the date sold out
   or came back. The value published is core's `availabilityOf`; the SQL `seats_available = 0` only
@@ -158,7 +166,7 @@ Refusals: the aggregate throws core's `DomainError`; the studio handlers wrap it
 | Suite | What |
 | --- | --- |
 | `date-sales.aggregate.spec.ts` | 19 cases, plain Vitest, core never mocked |
-| `date-sales.itest.ts` | the commands through the buses: replay, key reuse, stale version, two commands from one version, the lock, the counters as deltas under a hold, two currencies and an unprovisioned capacity past the threshold refused, domain events after commit only, the outbox's rows in order |
+| `date-sales.itest.ts` | the commands through the buses: replay, key reuse, stale version, two commands from one version, the lock, the counters as deltas under a hold, two currencies and an unprovisioned capacity past the threshold refused, a provision recorded and its two refusals, a tier past the threshold it covers, its deadline restated when the date moves, domain events after commit only, the outbox's rows in order |
 | `catalog-date-consumer.itest.ts` | real Kafka: duplicate, superseded start and outcome, ignored, a fact before its draft retried then applied, poison dead-lettered |
 | `publish-due-availability.itest.ts` | the rate bound (a seat every 500 ms for 12 s: four publications), selling out and back at once, a closing, a draft unpublished, a date a command holds published without waiting, `SKIP LOCKED` and four racing passes, a move during a publication neither waiting nor lost, the hold's wait behind a hundred-date pass, a date that cannot be published set aside and tried again |
 | `migrations/availability-publication.itest.ts` | the publication table's migration on a database that already holds dates |
@@ -204,9 +212,9 @@ The three interims of the first handover are core's rules now (arthome-core PR #
 `AVAILABILITY_VALID_SECONDS` and `availabilityValidUntil`, `provisionRevisableUntil` and
 `assertTechnicalProvisionCovers`, `assertPricesShareCurrency`.
 
-**No command records a technical provision yet**, so `openCapacityTier` passes none to
-`assertTechnicalProvisionCovers` and every capacity past the threshold is refused. arthome-core
-recommends a studio `setTechnicalProvision` (D-088). The penalty exposure has no rule in core.
+The technical provision is recorded by `setTechnicalProvision` (D-088, arthome-core PR #3,
+7b271c7). The penalty exposure for a forecast far above the real figure has no rule in core yet
+(D-088), so the pane serves none.
 
 Known and left, each judged:
 

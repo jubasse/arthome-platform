@@ -35,7 +35,11 @@ export function dateSalesPaneOf(row: DateSalesRow): DateSalesPane {
     promotions: [],
     pricesLocked: row.prices_locked_at !== null,
     technicalProvision: {
-      ...technicalProvisionOf(row.capacity_total, row.starts_at?.toISOString() ?? null),
+      ...technicalProvisionOf(
+        row.capacity_total,
+        row.provisioned_capacity,
+        row.starts_at?.toISOString() ?? null,
+      ),
     },
     version: row.version,
   };

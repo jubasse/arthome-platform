@@ -18,6 +18,7 @@ function movesAvailability(event: DateSalesEvent): boolean {
       return event.salesClosed;
     case 'DateSalesOpened':
     case 'DateScheduleRecorded':
+    case 'TechnicalProvisionSet':
       return false;
     default:
       return assertNever(event);

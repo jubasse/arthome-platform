@@ -101,6 +101,7 @@ export function dateSalesSnapshotOf(row: DateSalesRow): DateSalesSnapshot {
     dateId: row.date_id,
     channelId: row.channel_id,
     capacityTotal: row.capacity_total,
+    provisionedCapacity: row.provisioned_capacity,
     capacityTiers: row.capacity_tiers.map(({ id, capacity, openedAt }) => ({
       id,
       capacity,
@@ -124,6 +125,7 @@ function stateColumnsOf(sales: DateSalesSnapshot): StateColumns {
   return {
     channel_id: sales.channelId,
     capacity_total: sales.capacityTotal,
+    provisioned_capacity: sales.provisionedCapacity,
     capacity_tiers: sales.capacityTiers.map(({ id, capacity, openedAt }) => ({
       id,
       capacity,

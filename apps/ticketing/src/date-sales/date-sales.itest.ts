@@ -42,12 +42,15 @@ import { OpenCapacityTierHandler } from './open-capacity-tier.handler.js';
 import { SetDatePrices } from './set-date-prices.command.js';
 import { SetDatePricesHandler } from './set-date-prices.handler.js';
 import type { SetDatePricesBody } from './set-date-prices.schema.js';
+import { SetTechnicalProvision } from './set-technical-provision.command.js';
+import { SetTechnicalProvisionHandler } from './set-technical-provision.handler.js';
 import { CLOCK } from '../clock.js';
 import {
   delivered,
   drafted,
   engaged,
   outcomeDeclared,
+  rescheduled,
   scheduled,
 } from '../itest/catalog-messages.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
@@ -117,6 +120,17 @@ function openTier(dateId: string, expectedVersion: number, additionalCapacity: n
   );
 }
 
+function setProvision(dateId: string, expectedVersion: number, provisionedCapacity: number) {
+  return commands.execute(
+    new SetTechnicalProvision(
+      dateId,
+      { expectedVersion, provisionedCapacity },
+      null,
+      idempotency(`${dateId}:provision:${String(expectedVersion)}`),
+    ),
+  );
+}
+
 async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
   try {
     await attempt;
@@ -154,6 +168,7 @@ beforeAll(async () => {
       GetDateTicketsPaneHandler,
       OpenCapacityTierHandler,
       SetDatePricesHandler,
+      SetTechnicalProvisionHandler,
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: new FixedClock(NOW) },
     ],
@@ -447,6 +462,83 @@ describe('openCapacityTier', () => {
       );
       const unknown = await refusalOf(openTier('01a0f2aa-0000-7000-8000-000000000001', 1, 10));
       expect(unknown.getStatus()).toBe(404);
+    },
+    CASE_MS,
+  );
+});
+
+describe('setTechnicalProvision', () => {
+  it(
+    'records a provision, opens a tier past the threshold it covers, and states both on capacity_set',
+    async () => {
+      const dateId = await openedDate();
+      const startsAt = '2026-12-12T19:00:00.000Z';
+      const movedTo = '2026-12-19T19:00:00.000Z';
+      await applyCatalogDateMessage(commands, delivered(scheduled(dateId, startsAt, NOW)));
+
+      const provisioned = await setProvision(dateId, 2, 15_000);
+      const opened = await openTier(dateId, 3, 12_000);
+      await applyCatalogDateMessage(
+        commands,
+        delivered(rescheduled(dateId, movedTo, '2026-09-28T10:00:00.000Z')),
+      );
+
+      expect(provisioned.envelope).toMatchObject({ version: 3 });
+      expect(DateSalesPaneSchema.safeParse(provisioned.envelope.data).success).toBe(true);
+      expect(provisioned.envelope.data.technicalProvision).toEqual({
+        required: false,
+        threshold: TECHNICAL_PROVISION_THRESHOLD,
+        provisionedCapacity: 15_000,
+        revisableUntil: provisionRevisableUntil(startsAt),
+      });
+      expect(opened.envelope.data.sales).toMatchObject({
+        capacityTotal: 12_000,
+        technicalProvision: { required: true, provisionedCapacity: 15_000 },
+      });
+      const stated = (await outboxRowsFor(dateId)).map(({ type, payload }) => {
+        expect(type).toBe('ticketing.date_sales.capacity_set.v1');
+        const event = fromBinary(DateSalesCapacitySetSchema, payload);
+        return [
+          event.capacityTotal,
+          event.technicalProvisionRequired,
+          event.provisionedCapacity,
+          event.provisionRevisableUntil &&
+            timestampDate(event.provisionRevisableUntil).toISOString(),
+        ];
+      });
+      expect(stated).toEqual([
+        [0, false, 15_000, provisionRevisableUntil(startsAt)],
+        [12_000, true, 15_000, provisionRevisableUntil(startsAt)],
+        [12_000, true, 15_000, provisionRevisableUntil(movedTo)],
+      ]);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'refuses a provision past its deadline, and one below the capacity already open',
+    async () => {
+      const soon = await openedDate();
+      await applyCatalogDateMessage(
+        commands,
+        delivered(scheduled(soon, '2026-09-29T19:00:00.000Z', NOW)),
+      );
+      const open = await openedDate();
+      await openTier(open, 1, 500);
+
+      const late = await refusalOf(setProvision(soon, 2, 15_000));
+      const below = await refusalOf(setProvision(open, 2, 400));
+
+      expect(late.getStatus()).toBe(409);
+      expect(late.refusal).toMatchObject({
+        code: CatalogErrorCode.PROVISION_DEADLINE_PASSED,
+        params: { revisableUntil: '2026-09-26T19:00:00.000Z' },
+      });
+      expect(below.refusal).toMatchObject({
+        code: CatalogErrorCode.PROVISION_BELOW_CAPACITY,
+        params: { capacityTotal: 500, provisionedCapacity: 400 },
+      });
+      expect((await rowOf(open)).provisioned_capacity).toBeNull();
     },
     CASE_MS,
   );

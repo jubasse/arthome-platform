@@ -8,6 +8,7 @@ import {
   DomainErrorCode,
   assertPricesShareCurrency,
   assertTechnicalProvisionCovers,
+  assertTechnicalProvisionRecordable,
   assertTierWidens,
   isBefore,
   type Instant,
@@ -21,6 +22,7 @@ import {
   DatePricesSet,
   DateSalesOpened,
   DateScheduleRecorded,
+  TechnicalProvisionSet,
   type CapacityTier,
   type DateSalesEvent,
 } from './date-sales.events.js';
@@ -30,6 +32,8 @@ export interface DateSalesSnapshot {
   readonly dateId: string;
   readonly channelId: string;
   readonly capacityTotal: number;
+  /** The capacity the recorded technical provision covers; null while none is (D-088). */
+  readonly provisionedCapacity: number | null;
   readonly capacityTiers: readonly CapacityTier[];
   /**
    * The three counters as loaded. The repository writes each as a delta from what it read, never
@@ -94,6 +98,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
       dateId,
       channelId,
       capacityTotal: 0,
+      provisionedCapacity: null,
       capacityTiers: [],
       seatsAvailable: 0,
       seatsSold: 0,
@@ -135,15 +140,15 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
 
   /**
    * Widens the capacity by one tier, the first included, and the seats available with it; a sale
-   *   an outcome closed is refused, naming it, and so is a capacity past core's threshold that no
-   *   recorded provision covers. No command records one yet, so none covers. The waiting list's
-   *   notification is T5's: nothing is recorded for it yet.
+   *   an outcome closed is refused, naming it, and so is a capacity past core's threshold that the
+   *   recorded provision does not cover. The waiting list's notification is T5's: nothing is
+   *   recorded for it yet.
    */
   public openCapacityTier(expectedVersion: number, additionalCapacity: number, now: Instant): void {
     const version = this.advancedFrom(expectedVersion);
     const { dateId, channelId, capacityTotal, capacityTiers, seatsAvailable, startsAt } =
       this.current;
-    const { salesClosedAt, outcome } = this.current;
+    const { provisionedCapacity, salesClosedAt, outcome } = this.current;
     if (salesClosedAt !== null && outcome !== null) {
       throw new DomainError({
         code: DomainErrorCode.STATE_CONFLICT,
@@ -152,7 +157,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
     }
     const widened = capacityTotal + additionalCapacity;
     assertTierWidens(capacityTotal, widened);
-    assertTechnicalProvisionCovers(widened, null, startsAt);
+    assertTechnicalProvisionCovers(widened, provisionedCapacity, startsAt);
     const tier: CapacityTier = { id: uuidv7(), capacity: additionalCapacity, openedAt: now };
     this.current = frozen({
       ...this.current,
@@ -167,7 +172,31 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
         channelId,
         tier,
         widened,
-        technicalProvisionOf(widened, startsAt),
+        technicalProvisionOf(widened, provisionedCapacity, startsAt),
+        now,
+      ),
+    );
+  }
+
+  /**
+   * Records or revises the capacity the infrastructure is provisioned for, until core's revision
+   *   deadline and never below the capacity already open (D-088).
+   */
+  public setTechnicalProvision(
+    expectedVersion: number,
+    provisionedCapacity: number,
+    now: Instant,
+  ): void {
+    const version = this.advancedFrom(expectedVersion);
+    const { dateId, channelId, capacityTotal, startsAt } = this.current;
+    assertTechnicalProvisionRecordable(capacityTotal, provisionedCapacity, startsAt, now);
+    this.current = frozen({ ...this.current, provisionedCapacity, version });
+    this.apply(
+      new TechnicalProvisionSet(
+        dateId,
+        channelId,
+        capacityTotal,
+        technicalProvisionOf(capacityTotal, provisionedCapacity, startsAt),
         now,
       ),
     );
@@ -184,7 +213,8 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
 
   /** A start as scheduled or moved by a postponement; false when a newer one was recorded. */
   public recordSchedule(startsAt: Instant, statedAt: Instant, now: Instant): boolean {
-    const { dateId, channelId, capacityTotal, scheduleStatedAt, version } = this.current;
+    const { dateId, channelId, capacityTotal, provisionedCapacity, scheduleStatedAt, version } =
+      this.current;
     if (isStale(statedAt, scheduleStatedAt)) return false;
     this.current = frozen({
       ...this.current,
@@ -198,7 +228,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
         channelId,
         startsAt,
         capacityTotal,
-        technicalProvisionOf(capacityTotal, startsAt),
+        technicalProvisionOf(capacityTotal, provisionedCapacity, startsAt),
         now,
       ),
     );

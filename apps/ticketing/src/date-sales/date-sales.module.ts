@@ -6,6 +6,7 @@ import { DateSalesController } from './date-sales.controller.js';
 import { GetDateTicketsPaneHandler } from './get-date-tickets-pane.handler.js';
 import { OpenCapacityTierHandler } from './open-capacity-tier.handler.js';
 import { SetDatePricesHandler } from './set-date-prices.handler.js';
+import { SetTechnicalProvisionHandler } from './set-technical-provision.handler.js';
 import { CLOCK } from '../clock.js';
 import { TicketingTransactionsModule } from '../ticketing-transactions.js';
 
@@ -17,6 +18,7 @@ import { TicketingTransactionsModule } from '../ticketing-transactions.js';
     GetDateTicketsPaneHandler,
     OpenCapacityTierHandler,
     SetDatePricesHandler,
+    SetTechnicalProvisionHandler,
     { provide: CLOCK, useValue: new SystemClock() },
   ],
 })

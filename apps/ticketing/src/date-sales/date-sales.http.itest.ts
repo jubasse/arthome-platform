@@ -219,6 +219,37 @@ describe('POST /v1/dates/:dateId/capacity-tiers', () => {
   );
 });
 
+describe('PUT /v1/dates/:dateId/technical-provision', () => {
+  it(
+    'records the provision and answers the pane, refuses a provision of nothing',
+    async () => {
+      const dateId = await openedDate();
+      const put = (payload: object) =>
+        app.inject({
+          method: 'PUT',
+          url: `/v1/dates/${dateId}/technical-provision`,
+          headers: { 'content-type': 'application/json', 'idempotency-key': nextKey() },
+          payload,
+        });
+
+      const recorded = await put({ provisionedCapacity: 15_000, expectedVersion: 1 });
+      const nothing = await put({ provisionedCapacity: 0, expectedVersion: 2 });
+
+      expect(recorded.statusCode).toBe(200);
+      expect(recorded.headers['cache-control']).toBe('no-store');
+      expect(recorded.json()).toMatchObject({
+        version: 2,
+        data: { technicalProvision: { provisionedCapacity: 15_000, revisableUntil: null } },
+      });
+      expect(nothing.statusCode).toBe(400);
+      expect(nothing.json()).toMatchObject({
+        error: { params: { fields: ['provisionedCapacity'] } },
+      });
+    },
+    CASE_MS,
+  );
+});
+
 describe('GET /v1/dates/:dateId/panes/tickets', () => {
   it(
     'serves the pane, 404 for a date ticketing never opened, 400 for an id that is none',

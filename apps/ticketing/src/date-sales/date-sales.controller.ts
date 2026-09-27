@@ -14,6 +14,11 @@ import { OpenCapacityTier, type OpenedCapacityTier } from './open-capacity-tier.
 import { OpenCapacityTierSchema, type OpenCapacityTierBody } from './open-capacity-tier.schema.js';
 import { SetDatePrices } from './set-date-prices.command.js';
 import { SetDatePricesSchema, type SetDatePricesBody } from './set-date-prices.schema.js';
+import { SetTechnicalProvision } from './set-technical-provision.command.js';
+import {
+  SetTechnicalProvisionSchema,
+  type SetTechnicalProvisionBody,
+} from './set-technical-provision.schema.js';
 
 /** The studio's ticketing operations on one date (openapi/studio.yaml, tag `ticketing`). */
 @Controller('v1/dates/:dateId')
@@ -38,6 +43,31 @@ export class DateSalesController {
         body,
         parseTraceparent(traceparent)?.traceparent ?? null,
         idempotentRequestOf('PUT', `/v1/dates/${dateId}/prices`, body, 200, idempotencyKey),
+      ),
+    );
+  }
+
+  @Put('technical-provision')
+  @HttpCode(200)
+  @Header('cache-control', 'no-store')
+  public setTechnicalProvision(
+    @Param('dateId', { schema: DateIdSchema }) dateId: string,
+    @Body({ schema: SetTechnicalProvisionSchema }) body: SetTechnicalProvisionBody,
+    @Headers('idempotency-key') idempotencyKey?: string,
+    @Headers('traceparent') traceparent?: string,
+  ): Promise<MemorisedResponse<DateSalesPane>> {
+    return this.commands.execute(
+      new SetTechnicalProvision(
+        dateId,
+        body,
+        parseTraceparent(traceparent)?.traceparent ?? null,
+        idempotentRequestOf(
+          'PUT',
+          `/v1/dates/${dateId}/technical-provision`,
+          body,
+          200,
+          idempotencyKey,
+        ),
       ),
     );
   }

@@ -9,18 +9,21 @@ import {
 export interface TechnicalProvision {
   readonly required: boolean;
   readonly threshold: number;
-  /** Null while no provision is required, or while the date has no start to count back from. */
+  /** The capacity the recorded provision covers; null while none is recorded (D-088). */
+  readonly provisionedCapacity: number | null;
+  /** Null while the date has no start to count back from. */
   readonly revisableUntil: Instant | null;
 }
 
 export function technicalProvisionOf(
   capacityTotal: number,
+  provisionedCapacity: number | null,
   startsAt: Instant | null,
 ): TechnicalProvision {
-  const required = requiresTechnicalProvision(capacityTotal);
   return {
-    required,
+    required: requiresTechnicalProvision(capacityTotal),
     threshold: TECHNICAL_PROVISION_THRESHOLD,
-    revisableUntil: required && startsAt !== null ? provisionRevisableUntil(startsAt) : null,
+    provisionedCapacity,
+    revisableUntil: startsAt === null ? null : provisionRevisableUntil(startsAt),
   };
 }

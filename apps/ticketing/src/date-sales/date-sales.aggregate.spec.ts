@@ -29,6 +29,7 @@ function restored(overrides: Partial<DateSalesSnapshot> = {}): DateSales {
     dateId: DATE_ID,
     channelId: CHANNEL_ID,
     capacityTotal: 0,
+    provisionedCapacity: null,
     capacityTiers: [],
     seatsAvailable: 0,
     seatsSold: 0,
@@ -212,6 +213,93 @@ describe('openCapacityTier', () => {
     sales.openCapacityTier(3, 10, NOW);
 
     expect(sales.snapshot.capacityTotal).toBe(10);
+  });
+});
+
+describe('setTechnicalProvision', () => {
+  it('records the provision, stating it with the capacity and the deadline', () => {
+    const sales = restored({ capacityTotal: 8_000, startsAt: STARTS_AT });
+
+    sales.setTechnicalProvision(3, 15_000, NOW);
+
+    expect(sales.snapshot).toMatchObject({ provisionedCapacity: 15_000, version: 4 });
+    expect(sales.getUncommittedEvents()).toMatchObject([
+      {
+        kind: 'TechnicalProvisionSet',
+        capacityTotal: 8_000,
+        provision: {
+          required: false,
+          provisionedCapacity: 15_000,
+          revisableUntil: provisionRevisableUntil(STARTS_AT),
+        },
+      },
+    ]);
+  });
+
+  it('refuses a provision from the revision deadline on, naming it', () => {
+    const sales = restored({ startsAt: STARTS_AT });
+    const deadline = provisionRevisableUntil(STARTS_AT);
+
+    const refusal = refusalOf(() => sales.setTechnicalProvision(3, 15_000, deadline));
+
+    expect(refusal.code).toBe(CatalogErrorCode.PROVISION_DEADLINE_PASSED);
+    expect(refusal.params).toEqual({ revisableUntil: deadline });
+    expect(sales.snapshot.provisionedCapacity).toBeNull();
+  });
+
+  it('refuses a provision below the capacity already open, naming both', () => {
+    const refusal = refusalOf(() =>
+      restored({ capacityTotal: 200 }).setTechnicalProvision(3, 150, NOW),
+    );
+
+    expect(refusal.code).toBe(CatalogErrorCode.PROVISION_BELOW_CAPACITY);
+    expect(refusal.params).toEqual({ capacityTotal: 200, provisionedCapacity: 150 });
+  });
+
+  it('refuses a stale screen', () => {
+    expect(refusalOf(() => restored().setTechnicalProvision(2, 15_000, NOW)).code).toBe(
+      DomainErrorCode.STATE_CONFLICT,
+    );
+  });
+});
+
+describe('a capacity past the threshold', () => {
+  it('opens once the recorded provision covers it', () => {
+    const sales = restored({
+      capacityTotal: TECHNICAL_PROVISION_THRESHOLD,
+      provisionedCapacity: 15_000,
+      startsAt: STARTS_AT,
+    });
+
+    sales.openCapacityTier(3, 2_000, NOW);
+
+    expect(sales.snapshot.capacityTotal).toBe(12_000);
+    expect(sales.getUncommittedEvents()).toMatchObject([
+      {
+        kind: 'CapacityTierOpened',
+        provision: {
+          required: true,
+          provisionedCapacity: 15_000,
+          revisableUntil: provisionRevisableUntil(STARTS_AT),
+        },
+      },
+    ]);
+  });
+
+  it('is refused beyond the recorded provision, naming it', () => {
+    const sales = restored({
+      capacityTotal: TECHNICAL_PROVISION_THRESHOLD,
+      provisionedCapacity: 11_000,
+    });
+
+    const refusal = refusalOf(() => sales.openCapacityTier(3, 2_000, NOW));
+
+    expect(refusal.code).toBe(CatalogErrorCode.TECHNICAL_PROVISION_REQUIRED);
+    expect(refusal.params).toEqual({
+      threshold: TECHNICAL_PROVISION_THRESHOLD,
+      capacityTotal: 12_000,
+      provisionedCapacity: 11_000,
+    });
   });
 });
 
