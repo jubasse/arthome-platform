@@ -8,11 +8,14 @@ export { ErrorEnvelopeFilter } from './error-envelope.filter.js';
 export {
   RefusalException,
   isMappedStatus,
+  notFound,
   refusalForStatus,
   schemaInvalidException,
   schemaInvalidRefusal,
+  stateConflict,
 } from './refusal.js';
 export type { Refusal, UniqueViolationCode } from './refusal.js';
+export { asConflict } from './conflict.js';
 
 export { DenyInProductionGuard } from './deny-in-production.guard.js';
 

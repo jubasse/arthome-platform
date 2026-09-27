@@ -28,7 +28,7 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | `apps/search-indexer` | the catalog projection into OpenSearch, composed from a read model of its own |
 | `libs/messaging` | the outbox, the processed-message claim (`claimMessage`, `messageIdOf`: a message-id that is not a UUID is dead-lettered at once), failure classification, retry, dead-lettering — shared by every service |
 | `libs/events` | the Protobuf wire types, generated from arthome-core's `proto/` |
-| `libs/http-edge` | the success and error envelopes, validation refusals, the deadline, idempotent commands and their table — every HTTP service's edge |
+| `libs/http-edge` | the success and error envelopes, validation refusals, the refusals a handler raises (`asConflict`, `notFound`, `stateConflict`), the deadline, idempotent commands and their table — every HTTP service's edge |
 | `libs/search-index` | the index mappings and document shapes, shared by the indexer and catalog's search |
 | `libs/transactions` | the transaction a CQRS command runs in, its domain events published after the commit, and `frozen`, which holds an aggregate's snapshot |
 | `libs/config`, `libs/testing` | the environment, and a harness that starts real containers |

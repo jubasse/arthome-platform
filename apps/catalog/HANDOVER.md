@@ -241,12 +241,12 @@ other `DomainError` in the handler (a `media.*` or `content.*` value) is a fault
 carried, so it stays unwrapped and `ErrorEnvelopeFilter` answers it 400, as on main
 (`transition-publication.handler.spec.ts`). The stale version is a refusal too, checked before any
 rule, as before: core's `assertCommandedTransition` for a transition, `Publication.advancedFrom` for
-an outcome. A 404 or a 400 stays the `RefusalException` it was, built from `src/refusals.ts`
-(`notFound()`, `stateConflict(params)`) or `schemaInvalidException`. Two refusals are still built
+an outcome. A 404 or a 400 stays the `RefusalException` it was, built by `@arthome-platform/http-edge`
+(`notFound()`, `stateConflict(params)`, `schemaInvalidException`). Two refusals are still built
 where they are raised, each with one caller: the artist's `slugTaken` and the search's 503.
 `publication.checklist_incomplete` names a list, which core's `MessageParams` cannot carry:
-`PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and `asConflict`
-answers `{ missing }`.
+`PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and the transition
+handler hands `asConflict` a mapper that answers `{ missing }`.
 
 **What happened becomes rows from the uncommitted events, inside the transaction.** A method changes
 the snapshot, then `apply()`s one event per fact (no `on<Event>` handlers: nothing is replayed).
@@ -353,7 +353,8 @@ would only compare what the handler had already read. Their wiring is proven ove
 `catalog/catalog.http.itest.ts`: without `CreateVenueHandler` in `VenuesModule`, 500.
 
 **What every CQRS service here shares is in `libs/`**, lifted as ticketing's first change
-(arthome-core `adr-ticketing.md` §11), never a catalog concept and never in arthome-core:
+(arthome-core `adr-ticketing.md` §11), then the service glue ticketing had copied (T2's architecture
+review, M4); never a catalog concept and never in arthome-core:
 
 - `@arthome-platform/transactions` (`libs/transactions`): `TransactionRunner`, `AggregateTracker`
   and `saveVersioned`. The factory hands back the transaction's manager itself and its result
@@ -361,9 +362,11 @@ would only compare what the handler had already read. Their wiring is proven ove
   them, while the type still promised them); a factory handing back another manager is refused.
   `writtenUnversioned` registers a write that leaves the version as loaded, which ticketing's
   conditional decrement is. `frozen` deep-freezes each snapshot an aggregate replaces;
-- `@arthome-platform/http-edge`: `runIdempotently`, `runIdempotentlyVersioned`,
-  `idempotentRequestOf` and `idempotencyRecordTableDdl()`, which a new service's migration runs
-  the way it runs `outboxTableDdl()`. Catalog's own two migrations stay as they are, and
+- `@arthome-platform/http-edge`: `asConflict` (a `DomainError` as the 409 `RefusalException`, its
+  `params` through an optional mapper), `notFound()` and `stateConflict(params)`, and
+  `runIdempotently`, `runIdempotentlyVersioned`, `idempotentRequestOf` and
+  `idempotencyRecordTableDdl()`, which a new service's migration runs the way it runs
+  `outboxTableDdl()`. Catalog's own two migrations stay as they are, and
   `migrations/idempotency-record.itest.ts` fails the day they and the DDL stop making one table;
   the library's scenarios run on the DDL's;
 - `@arthome-platform/messaging`: `claimMessage(manager, messageId, topic)`, the processed-message
@@ -381,8 +384,8 @@ Decided here, and each could have gone the other way:
   entity carry the domain names; the tables did not move.
 - **Handlers reached from HTTP alone throw `RefusalException`**, not domain errors mapped at an
   edge. `RecordChecklistFact`, reached from Kafka alone, throws `DomainError`, mapped by the
-  consumer. The day a consumer dispatches an HTTP one, `asConflict` moves to the HTTP edge
-  (`nestjs-request-pipeline` rule 1).
+  consumer. The day a consumer dispatches an HTTP one, its `asConflict` calls move from the handler
+  to the controller (`nestjs-request-pipeline` rule 1).
 - **A lost race on the version answers the version committed since**, re-read, as a transition
   always did; the outcome path used to answer the one it had read. Only two concurrent commands see
   the difference.
@@ -400,8 +403,9 @@ Known and left as they are:
 - `satisfiedChecklistItems`, the input of publishing's checklist rule, is computed in
   `date-sheet.ts`, the sheet's shaping module; moving it beside the aggregate would make the read
   model depend on the write side rather than the reverse.
-- `PublicationChecklistIncomplete` carries `missing` beside core's scalar `params`: only
-  `asConflict` serves it, and a path that let it escape unwrapped would answer 400 without the list.
+- `PublicationChecklistIncomplete` carries `missing` beside core's scalar `params`: only the
+  transition handler's `asConflict` serves it, and a path that let it escape unwrapped would answer
+  400 without the list.
 
 ## 1. What was built
 

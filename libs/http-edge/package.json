@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The HTTP edge every service shares: the exception filter, the production guard, the traceparent parser, idempotent commands.",
+  "description": "The HTTP edge every service shares: the exception filter, the production guard, the traceparent parser, the refusals a handler raises, idempotent commands.",
   "license": "UNLICENSED",
   "exports": {
     ".": {

@@ -1,4 +1,4 @@
-import { PerishableResponse } from '@arthome-platform/http-edge';
+import { notFound, PerishableResponse } from '@arthome-platform/http-edge';
 import { Inject } from '@nestjs/common';
 import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -12,7 +12,6 @@ import { GetArtistDetail } from './get-artist-detail.query.js';
 import { Artist } from '../artists/artist.entity.js';
 import { CLOCK } from '../clock.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
-import { notFound } from '../refusals.js';
 
 @QueryHandler(GetArtistDetail)
 export class GetArtistDetailHandler implements IQueryHandler<GetArtistDetail> {

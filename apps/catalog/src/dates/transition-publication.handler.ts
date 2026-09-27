@@ -1,19 +1,26 @@
-import { runIdempotently, type MemorisedResponse } from '@arthome-platform/http-edge';
+import { asConflict, runIdempotently, type MemorisedResponse } from '@arthome-platform/http-edge';
 import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
-import type { Clock } from '@arthome/core';
+import type { Clock, DomainError } from '@arthome/core';
 
-import { asConflict } from './conflict.js';
 import { publicationView, satisfiedChecklistItems, type PublicationView } from './date-sheet.js';
 import { freeDateSlug } from './free-date-slug.js';
 import { loadDate } from './load-date.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
+import { PublicationChecklistIncomplete } from './publication.js';
 import { recordDateEvents } from './record-date-events.js';
 import { TransitionPublication } from './transition-publication.command.js';
 import { CatalogTransactions, type CatalogTransaction } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
+
+/** `publication.checklist_incomplete` names a list, which travels beside core's scalar `params`. */
+function refusalParamsOf(error: DomainError): Readonly<Record<string, unknown>> {
+  return error instanceof PublicationChecklistIncomplete
+    ? { missing: error.missing }
+    : error.params;
+}
 
 @CommandHandler(TransitionPublication)
 export class TransitionPublicationHandler implements ICommandHandler<TransitionPublication> {
@@ -52,15 +59,17 @@ export class TransitionPublicationHandler implements ICommandHandler<TransitionP
             now,
           )
         : null;
-    await asConflict(() =>
-      date.transitionPublication(
-        {
-          to: body.to,
-          expectedVersion: body.expectedVersion,
-          acknowledgedPromise: body.acknowledgedPromiseCode,
-        },
-        { satisfied, freeSlug, showRuntimeMin: show.runtime_min, now },
-      ),
+    await asConflict(
+      () =>
+        date.transitionPublication(
+          {
+            to: body.to,
+            expectedVersion: body.expectedVersion,
+            acknowledgedPromise: body.acknowledgedPromiseCode,
+          },
+          { satisfied, freeSlug, showRuntimeMin: show.runtime_min, now },
+        ),
+      refusalParamsOf,
     );
 
     await asConflict(() => dates.save(date));

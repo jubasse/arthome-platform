@@ -1,10 +1,9 @@
-import { runIdempotently, type MemorisedResponse } from '@arthome-platform/http-edge';
+import { asConflict, runIdempotently, type MemorisedResponse } from '@arthome-platform/http-edge';
 import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
 import { DateOutcome, type Clock, type OutcomeDeclaration } from '@arthome/core';
 
-import { asConflict } from './conflict.js';
 import { DeclareOutcome, type DeclaredOutcome } from './declare-outcome.command.js';
 import type { DeclareOutcomeBody } from './declare-outcome.schema.js';
 import { freeDateSlug } from './free-date-slug.js';

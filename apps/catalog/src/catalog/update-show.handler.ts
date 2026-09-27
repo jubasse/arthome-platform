@@ -1,4 +1,5 @@
 import { ShowUpdatedSchema } from '@arthome-platform/events';
+import { notFound } from '@arthome-platform/http-edge';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Inject } from '@nestjs/common';
@@ -13,7 +14,6 @@ import { writeCatalogEvent } from '../catalog-events.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import { projectShowCopy } from '../public/date-detail-projection.js';
-import { notFound } from '../refusals.js';
 import { WIRE_LANGUAGE_DEPENDENCY, wireLocalizedTexts } from '../wire.js';
 
 @CommandHandler(UpdateShow)
