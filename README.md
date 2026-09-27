@@ -22,6 +22,7 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | --- | --- |
 | `apps/identity` | `POST /accounts`, the outbox producer |
 | `apps/catalog` | shows, venues, dates and their publication, the checklist consumer, the search over the date index, the public date page from `date_detail_public`, and the artist |
+| `apps/ticketing` | a date's commercial face, `DateSales`: capacity by tiers, prices and their lock, the studio's pane, the public availability read, the facts it takes from catalog, and `availability_changed` at a bounded rate |
 | `apps/notifications` | the idempotent consumer, with retries and dead-lettering |
 | `apps/bff-storefront` | the storefront's BFF: search, the date and artist pages, link resolution, from catalog, with the deadline and the error mapping |
 | `apps/search-indexer` | the catalog projection into OpenSearch, composed from a read model of its own |
@@ -32,7 +33,8 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | `libs/transactions` | the transaction a CQRS command runs in, and its domain events published after the commit |
 | `libs/config`, `libs/testing` | the environment, and a harness that starts real containers |
 
-**What is NOT built, said plainly.** `ticketing`, `streaming`, `chat` and `payouts` do not exist.
+**What is NOT built, said plainly.** `streaming`, `chat` and `payouts` do not exist, and `ticketing`
+sells nothing yet: holds, orders and payment come next.
 `notifications` is only its consumer half. Redis runs in the development stack and nothing uses it
 yet: ticketing brings its queues and waiting room. There is no MinIO. There is no authentication:
 `adr-auth.md` gives it to better-auth in its own schema, and that is deliberately deferred.
