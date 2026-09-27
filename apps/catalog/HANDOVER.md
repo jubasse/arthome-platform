@@ -223,12 +223,16 @@ the new public row with the old copy, for good, and two dates of one show publis
 onto one day at once lost one to `date_show_slug`, answered 500.
 
 **Refusals keep their code and params.** The aggregate and the repository throw core's
-`DomainError`; a date handler wraps the aggregate's method call and its `save` in `asConflict`, which
-rethrows one as a 409 `RefusalException` with the same `code`, `params` and `nature`. Any other
-`DomainError` in the handler stays unwrapped, and `ErrorEnvelopeFilter` answers it 400, as before the
-move (`transition-publication.handler.spec.ts`). The stale version is one too, checked before any rule, as before:
-core's `assertCommandedTransition` for a transition, `Publication.advancedFrom` for an outcome. A
-404 or a 400 stays the `RefusalException` it was; a handler builds one from `src/refusals.ts`
+`DomainError`. A date handler wraps exactly two calls in `asConflict`, which rethrows one as a 409
+`RefusalException` with the same `code`, `params` and `nature`: the aggregate's method
+(`transitionPublication`, `declareOutcome`) and `dates.save`, whose `saveVersioned` refuses a change
+committed since the load. Those are the refusals the contract answers 409 (`moveDatePublicationState`,
+`decideDateOutcome`): a state or rule said no. Any other `DomainError` in the handler (a `media.*`
+or `content.*` value) is a fault in what the request carried, so it stays unwrapped and
+`ErrorEnvelopeFilter` answers it 400, as on main (`transition-publication.handler.spec.ts`). The
+stale version is a refusal too, checked before any rule, as before: core's
+`assertCommandedTransition` for a transition, `Publication.advancedFrom` for an outcome. A 404 or a
+400 stays the `RefusalException` it was; a handler builds one from `src/refusals.ts`
 (`notFound()`, `stateConflict(params)`) or `schemaInvalidException`, never by hand.
 `publication.checklist_incomplete` names a list, which core's `MessageParams` cannot carry:
 `PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and `asConflict`
