@@ -36,13 +36,11 @@ export class TransitionPublicationHandler implements ICommandHandler<TransitionP
   }
 
   private async transitionIn(
-    { manager, dates, publications }: CatalogTransaction,
+    { manager, dates }: CatalogTransaction,
     { dateId, body, traceparent }: TransitionPublication,
   ): Promise<PublicationView> {
     const date = await dates.findById(dateId);
     if (date === null) throw dateNotFound();
-    const publication = await publications.findByDateId(dateId);
-    if (publication === null) throw new Error(`date ${dateId} has no publication`);
     const { showId, venueId, startsAt, slug } = date.snapshot;
     const show = await manager.findOneByOrFail(Show, { id: showId });
     const venue = await manager.findOneByOrFail(Venue, { id: venueId });
@@ -50,28 +48,29 @@ export class TransitionPublicationHandler implements ICommandHandler<TransitionP
     const satisfied = satisfiedChecklistItems(show, projectedFacts);
 
     const now = this.clock.now();
-    const command = {
-      to: body.to,
-      expectedVersion: body.expectedVersion,
-      acknowledgedPromise: body.acknowledgedPromiseCode,
-    };
-    const published = asConflict(() => publication.transition(command, { satisfied, now }));
-    if (published) {
-      const free =
-        slug ??
-        (await freeDateSlug(
-          manager,
-          { id: dateId, show_id: showId },
-          startsAt,
-          venue.time_zone,
-          now,
-        ));
-      date.makePublic(free, show.runtime_min, now);
-    }
+    const freeSlug =
+      slug === null
+        ? await freeDateSlug(
+            manager,
+            { id: dateId, show_id: showId },
+            startsAt,
+            venue.time_zone,
+            now,
+          )
+        : null;
+    asConflict(() =>
+      date.transitionPublication(
+        {
+          to: body.to,
+          expectedVersion: body.expectedVersion,
+          acknowledgedPromise: body.acknowledgedPromiseCode,
+        },
+        { satisfied, freeSlug, showRuntimeMin: show.runtime_min, now },
+      ),
+    );
 
-    await publications.save(publication);
-    if (published) await dates.save(date);
-    const events = [...publication.getUncommittedEvents(), ...date.getUncommittedEvents()];
+    await dates.save(date);
+    const events = date.getUncommittedEvents();
     await projectDateEvents(manager, events, { show, venue });
     await writeDateIntegrationEvents(manager, events, {
       origin: this.publicWebOrigin,
@@ -79,6 +78,6 @@ export class TransitionPublicationHandler implements ICommandHandler<TransitionP
       venue,
       traceparent,
     });
-    return publicationView(publication.snapshot, satisfied);
+    return publicationView(date.publication, satisfied);
   }
 }

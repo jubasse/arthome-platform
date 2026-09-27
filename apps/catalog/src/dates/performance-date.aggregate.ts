@@ -2,11 +2,14 @@ import { AggregateRoot } from '@nestjs/cqrs';
 
 import {
   DomainConstant,
+  DomainError,
+  DomainErrorCode,
   assertOutcomeDeclarable,
   type DateOutcome,
   type Instant,
   type OutcomeDeclaration,
-  type PublicationState,
+  type PublicationChecklistItem,
+  type PublicationTransitionCommand,
   type ReplayPolicy,
   type TerritoryRights,
   worldwideRights,
@@ -20,6 +23,7 @@ import {
   type OutcomeMessage,
   type PerformanceDateEvent,
 } from './performance-date.events.js';
+import { Publication, type PublicationSnapshot } from './publication.js';
 
 export interface PerformanceDateSnapshot {
   readonly id: string;
@@ -53,38 +57,56 @@ export type DateDraft = Pick<
   | 'replayWindowHours'
 >;
 
+export interface PublicationContext {
+  /** Every checklist item satisfied now: publishing needs each blocking one (§2.3). */
+  readonly satisfied: readonly PublicationChecklistItem[];
+  /** The first slug free on its day (`freeDateSlug`) while the date has none: publishing takes it. */
+  readonly freeSlug: string | null;
+  /** Its show's running time now, which publishing freezes on the date (§2.2). */
+  readonly showRuntimeMin: number;
+  readonly now: Instant;
+}
+
 export interface OutcomeContext {
-  readonly publicationState: PublicationState;
   /** The first slug free at a postponement's new start (`freeDateSlug`); null otherwise. */
   readonly slugAtNewStart: string | null;
   readonly now: Instant;
 }
 
 /**
- * data-model.md §2.2's `Date`. It has no version of its own: every command on it is conditioned
- *   on its publication's, which the studio's sheet serves.
+ * data-model.md §2.2's `Date`, owning its `Publication` (D-085): two rows, one aggregate, one
+ *   version, the publication's, which the studio's sheet serves and every command names.
  */
 export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
-  private constructor(private current: PerformanceDateSnapshot) {
+  private constructor(
+    private current: PerformanceDateSnapshot,
+    private currentPublication: Publication,
+  ) {
     super();
   }
 
-  public static restore(snapshot: PerformanceDateSnapshot): PerformanceDate {
-    return new PerformanceDate(snapshot);
+  public static restore(
+    snapshot: PerformanceDateSnapshot,
+    publication: PublicationSnapshot,
+  ): PerformanceDate {
+    return new PerformanceDate(snapshot, Publication.restore(publication));
   }
 
   /** Worldwide until its rights are restricted, and without a slug until its publication. */
   public static draft(draft: DateDraft, now: Instant): PerformanceDate {
-    const date = new PerformanceDate({
-      ...draft,
-      rights: worldwideRights(),
-      slug: null,
-      postponements: 0,
-      outcome: null,
-      rescheduledTo: null,
-      outcomeDeclaredAt: null,
-      outcomeMessage: null,
-    });
+    const date = new PerformanceDate(
+      {
+        ...draft,
+        rights: worldwideRights(),
+        slug: null,
+        postponements: 0,
+        outcome: null,
+        rescheduledTo: null,
+        outcomeDeclaredAt: null,
+        outcomeMessage: null,
+      },
+      Publication.draft(draft.id, draft.channelId),
+    );
     date.apply(new DateDrafted(draft.id, draft.channelId, draft.showId, draft.venueId, now));
     return date;
   }
@@ -93,31 +115,55 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
     return this.current;
   }
 
-  /**
-   * Its publication makes the date public under `slug`, the first free on its day
-   *   (`freeDateSlug`), and freezes the running time its show has now.
-   */
-  public makePublic(slug: string, runtimeMin: number, now: Instant): void {
-    const date = { ...this.current, slug, runtimeMin };
-    this.current = date;
-    this.apply(new DateScheduled(date, now));
+  public get publication(): PublicationSnapshot {
+    return this.currentPublication.snapshot;
   }
 
   /**
-   * An outcome, when core's rule allows it (D-076). A postponement moves the date and its slug in
-   *   the same act (D-074, D-075), so `DateRescheduled` follows `DateOutcomeDeclared`.
+   * A commanded transition of its publication. Publishing makes the date public in the same act,
+   *   `DateScheduled` between the state change and what it engaged: no consumer may read the lock
+   *   before the date's public facts.
+   */
+  public transitionPublication(
+    command: PublicationTransitionCommand,
+    context: PublicationContext,
+  ): void {
+    const { publication, changed, engaged } = this.currentPublication.transitioned(
+      command,
+      context.satisfied,
+      context.now,
+    );
+    if (engaged === null) {
+      this.currentPublication = publication;
+      this.apply(changed);
+      return;
+    }
+    const date = this.madePublic(context);
+    this.currentPublication = publication;
+    this.current = date;
+    this.apply(changed);
+    this.apply(new DateScheduled(date, context.now));
+    this.apply(engaged);
+  }
+
+  /**
+   * An outcome, when core's rule allows it (D-076), from the version the screen read. A
+   *   postponement moves the date and its slug in the same act (D-074, D-075), so
+   *   `DateRescheduled` follows `DateOutcomeDeclared`.
    */
   public declareOutcome(
+    expectedVersion: number,
     declaration: OutcomeDeclaration,
     message: OutcomeMessage,
-    { publicationState, slugAtNewStart, now }: OutcomeContext,
+    { slugAtNewStart, now }: OutcomeContext,
   ): void {
+    const publication = this.currentPublication.advancedFrom(expectedVersion);
     const date = this.current;
     assertOutcomeDeclarable(
       {
         outcome: date.outcome,
         postponements: date.postponements,
-        publicationState,
+        publicationState: publication.snapshot.state,
         timing: {
           startsAt: date.startsAt,
           runtimeMin: date.runtimeMin,
@@ -139,6 +185,7 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
       slug = slugAtNewStart;
     }
 
+    this.currentPublication = publication;
     this.current = {
       ...date,
       outcome: declaration.outcome,
@@ -157,5 +204,18 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
         new DateRescheduled(date.id, date.showId, date.startsAt, movedTo, previousSlug, slug, now),
       );
     }
+  }
+
+  /** Publishing happens once: a date that already holds a slug is refused, naming it. */
+  private madePublic({
+    freeSlug,
+    showRuntimeMin,
+  }: PublicationContext): PerformanceDateSnapshot & { readonly slug: string } {
+    const { slug } = this.current;
+    if (slug !== null) {
+      throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { slug } });
+    }
+    if (freeSlug === null) throw new Error('publishing a date without its free slug');
+    return { ...this.current, slug: freeSlug, runtimeMin: showRuntimeMin };
   }
 }

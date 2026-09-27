@@ -8,7 +8,6 @@ import { writeDateIntegrationEvents } from './date-integration-events.js';
 import { dateSheet, type DateSheet } from './date-sheet.js';
 import { DraftDate } from './draft-date.command.js';
 import { PerformanceDate } from './performance-date.aggregate.js';
-import { Publication } from './publication.aggregate.js';
 import { Show } from '../catalog/show.entity.js';
 import { CatalogTransactions, type CatalogTransaction } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
@@ -37,7 +36,7 @@ export class DraftDateHandler implements ICommandHandler<DraftDate> {
    * contract creates a draft "with its publication and its checklist" (openapi/studio.yaml).
    */
   private async draftIn(
-    { manager, dates, publications }: CatalogTransaction,
+    { manager, dates }: CatalogTransaction,
     { channelId, body, traceparent }: DraftDate,
   ): Promise<DateSheet> {
     const show = await manager.findOneBy(Show, { id: body.showId });
@@ -67,11 +66,7 @@ export class DraftDateHandler implements ICommandHandler<DraftDate> {
       },
       this.clock.now(),
     );
-    const publication = Publication.draft(body.dateId, channelId);
-
-    // The date first: the publication's row references it.
     await dates.save(date);
-    await publications.save(publication);
     await writeDateIntegrationEvents(manager, date.getUncommittedEvents(), {
       origin: this.publicWebOrigin,
       show,
@@ -79,7 +74,7 @@ export class DraftDateHandler implements ICommandHandler<DraftDate> {
       traceparent,
     });
     return dateSheet(
-      { date: date.snapshot, publication: publication.snapshot, show, venue, projectedFacts: [] },
+      { date: date.snapshot, publication: date.publication, show, venue, projectedFacts: [] },
       this.publicWebOrigin,
     );
   }

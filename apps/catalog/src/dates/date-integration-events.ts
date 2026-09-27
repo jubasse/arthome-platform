@@ -18,12 +18,10 @@ import {
   DateOutcomeDeclared,
   DateRescheduled,
   DateScheduled,
-} from './performance-date.events.js';
-import {
-  PublicationEngaged,
   PublicationStateChanged,
-  type DateOrPublicationEvent,
-} from './publication.events.js';
+  type PerformanceDateEvent,
+  type PublicationEngaged,
+} from './performance-date.events.js';
 import type { Show } from '../catalog/show.entity.js';
 import { writeCatalogEvent, type CatalogEvent } from '../catalog-events.js';
 import { dateUrl } from '../public/links.js';
@@ -45,20 +43,13 @@ export interface DateWireContext {
   readonly traceparent: string | null;
 }
 
-/**
- * One outbox row per event, all keyed by the date, in the order they were applied, except
- *   `PublicationEngaged`, written last: no consumer may read the lock before the date's public facts.
- */
+/** One outbox row per event, all keyed by the date, in the order the aggregate applied them. */
 export async function writeDateIntegrationEvents(
   manager: EntityManager,
-  events: readonly DateOrPublicationEvent[],
+  events: readonly PerformanceDateEvent[],
   context: DateWireContext,
 ): Promise<void> {
-  const lockLast = [
-    ...events.filter((event) => !(event instanceof PublicationEngaged)),
-    ...events.filter((event) => event instanceof PublicationEngaged),
-  ];
-  for (const event of lockLast) {
+  for (const event of events) {
     await writeCatalogEvent(
       manager,
       integrationEventOf(event, context),
@@ -87,7 +78,7 @@ export async function writeDateScheduled(
   });
 }
 
-function integrationEventOf(event: DateOrPublicationEvent, context: DateWireContext): CatalogEvent {
+function integrationEventOf(event: PerformanceDateEvent, context: DateWireContext): CatalogEvent {
   if (event instanceof DateDrafted) return drafted(event, context);
   if (event instanceof DateScheduled) return scheduled(event, context);
   if (event instanceof DateOutcomeDeclared) return outcomeDeclared(event, context);

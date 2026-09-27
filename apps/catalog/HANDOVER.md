@@ -151,20 +151,21 @@ they did before it, and `*.http.itest.ts` prove each module's wiring over HTTP.
 | `declare-outcome.command.ts` | `DeclareOutcome extends Command<R>`: route params, validated body, `traceparent`, `idempotency` |
 | `declare-outcome.handler.ts` | `@CommandHandler(DeclareOutcome) DeclareOutcomeHandler` |
 | `get-date-sheet.query.ts`, `get-date-sheet.handler.ts` | `GetDateSheet extends Query<R>`, its `@QueryHandler` |
-| `performance-date.aggregate.ts` | `PerformanceDate extends AggregateRoot<PerformanceDateEvent>` |
-| `performance-date.events.ts` | its domain events: classes, past tense, ids and facts, each with `occurredAt` |
-| `performance-date.repository.ts` | the port: an abstract class, domain types only |
-| `performance-date.typeorm-repository.ts` | the adapter and its row ↔ snapshot mapping |
-| `performance-date.entity.ts` | `PerformanceDateRow`, the persistence model |
+| `performance-date.aggregate.ts` | `PerformanceDate extends AggregateRoot<PerformanceDateEvent>`, owning its `Publication` |
+| `publication.ts` | `Publication`, the entity of the aggregate (D-085): immutable, called by the root alone |
+| `performance-date.events.ts` | its domain events, the publication's included: classes, past tense, ids and facts, each with `occurredAt` |
+| `performance-date.repository.ts` | the port: an abstract class, domain types only, one for both rows |
+| `performance-date.typeorm-repository.ts` | the adapter and its row ↔ snapshot mappings |
+| `performance-date.entity.ts`, `publication.entity.ts` | `PerformanceDateRow` and `PublicationRow`, the persistence model |
 
 Messages carry no suffix (`DeclareOutcome`, `GetDateSheet`); handlers do.
 
-**An aggregate is not its entity.** Every read path (the sheet, the public pages, the consumer, the
+**An aggregate is not its rows.** Every read path (the sheet, the public pages, the consumer, the
 migrations) reads rows, whose public fields anyone can assign. The aggregate keeps an immutable
 `snapshot` that only its methods replace, speaks core's types (instants as strings), and is built by
 `restore()` from the row, so TypeORM never calls its constructor (`nestjs-ddd` rule 13). Its methods
-call core's pure rules (`assertOutcomeDeclarable`) and never restate them; what a rule needs beyond
-the aggregate is an argument (the publication's state, `now`). A method never awaits: an I/O lookup
+call core's pure rules (`assertOutcomeDeclarable`, `assertCommandedTransition`) and never restate
+them; what a rule needs beyond the aggregate is an argument (the checklist facts, a free slug, `now`). A method never awaits: an I/O lookup
 (the free slug of a postponement) is made by the handler first.
 
 **One transaction per command: `CatalogTransactions.run(work)`** (`src/catalog-transactions.ts`).
@@ -186,36 +187,40 @@ execute(command: DeclareOutcome) {
 
 `runIdempotentlyVersioned` goes in the same place when the answer carries the version. The
 idempotency record is claimed first, in the transaction; a replay loads no aggregate, so publishes
-nothing. Inside, in this order: load (a missing date is `dateNotFound()`, 404), check the version,
-decide through the aggregates, save the publication then the date, write the consequences, answer.
+nothing. Inside, in this order: load (a missing date is `dateNotFound()`, 404), decide through one
+method of the aggregate, which checks the version first, save it, write the consequences, answer.
 A handler never opens a transaction itself and never calls `commit()`.
 
-**Loading and saving.** A repository restores what it loads and remembers it; `save` inserts an
-aggregate it did not load, which only a draft's factory creates (`PerformanceDate.draft`,
-`Publication.draft`). `PublicationRepository.save` on a loaded one is the version-conditional UPDATE (`WHERE date_id AND version = <loaded>`, `affected === 1`,
-`nestjs-typeorm` rule 7); a change committed since the load answers 409 `state.conflict` with the
-current state and version, re-read. **The date has no version of its own**: its commands are
-conditioned on the publication's (§0c). That is why the publication is saved first: its row lock
-orders two concurrent commands before either writes the date. A draft inserts the date first: the
-publication's row references it, and no command can race on a row that does not exist yet.
+**One aggregate, two rows (arthome-core D-085).** `PerformanceDate` owns its `Publication`: they are
+one to one, share one version (the publication's, which the studio names, §0c), and every command
+writes both. One repository loads both rows and remembers the version it read; `save` writes both,
+the publication's row first with the version-conditional UPDATE (`WHERE date_id AND version =
+<loaded>`, `affected === 1`, `nestjs-typeorm` rule 7), then the date's, never one without the
+other. A change committed since the load answers 409 `state.conflict` with the current state and
+version, re-read, and the publication's row lock orders two concurrent commands before either writes
+the date. `save` inserts a date it did not load, which only `PerformanceDate.draft` creates, the
+date's row first since the publication's references it. The handler calls one method
+(`transitionPublication`, `declareOutcome`) and one `save`; publishing makes the date public inside
+`transitionPublication`, which refuses a date that already has a slug.
 
 **Refusals keep their code and params.** An aggregate throws core's `DomainError`; the handler wraps
 each decision in `asConflict(() => aggregate.method(…))`, which rethrows it as a 409
 `RefusalException` with the same `code`, `params` and `nature`. Unwrapped, `ErrorEnvelopeFilter`
-answers a `DomainError` 400. The stale version is one too (`Publication.advanceVersionFrom`),
-checked before any rule, as before. A 404 or a 400 stays the `RefusalException` it was.
+answers a `DomainError` 400. The stale version is one too, checked before any rule, as before:
+core's `assertCommandedTransition` for a transition, `Publication.advancedFrom` for an outcome. A
+404 or a 400 stays the `RefusalException` it was.
 `publication.checklist_incomplete` names a list, which core's `MessageParams` cannot carry:
 `PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and `asConflict`
 answers `{ missing }`.
 
 **What happened becomes rows from the uncommitted events, inside the transaction.** A method changes
 the snapshot, then `apply()`s one event per fact (no `on<Event>` handlers: nothing is replayed).
-After the saves the handler passes `getUncommittedEvents()` to:
+After the save the handler passes `getUncommittedEvents()` to:
 
 - `writeDateIntegrationEvents` (`date-integration-events.ts`): one outbox row per event through
-  `writeCatalogEvent`, in apply order, the publication's before the date's, except
-  `PublicationEngaged`, written last so no consumer reads the lock first; the Protobuf payload is
-  built there. `writeDateScheduled`, with which the public-slugs migration restates a published date,
+  `writeCatalogEvent`, in the order the aggregate applied them: publishing applies the state
+  change, `DateScheduled`, then `PublicationEngaged`, so no consumer reads the lock first; the
+  Protobuf payload is built there. `writeDateScheduled`, with which the public-slugs migration restates a published date,
   moved here from `announce-publication.ts`, so one builder writes `DateScheduled`. A domain event is never the
   wire format (`nestjs-ddd` rule 11); what the wire needs beyond it — canonical URL, venue clock,
   `traceparent` — comes in a context.
@@ -298,8 +303,8 @@ handler, so the second consumer shapes the interface rather than a guess (`nestj
 
 Decided here, and each could have gone the other way:
 
-- **The entities were renamed `PerformanceDateRow` and `PublicationRow`**, so the aggregates carry
-  the domain names; the tables did not move.
+- **The entities were renamed `PerformanceDateRow` and `PublicationRow`**, so the aggregate and its
+  entity carry the domain names; the tables did not move.
 - **Handlers reached from HTTP alone throw `RefusalException`**, not domain errors mapped at an
   edge. `RecordChecklistFact`, reached from Kafka alone, throws `DomainError`, mapped by the
   consumer. The day a consumer dispatches an HTTP one, `asConflict` moves to the HTTP edge

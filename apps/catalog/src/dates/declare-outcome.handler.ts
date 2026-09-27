@@ -47,18 +47,15 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
   }
 
   private async declareIn(
-    { manager, dates, publications }: CatalogTransaction,
+    { manager, dates }: CatalogTransaction,
     { dateId, body, traceparent }: DeclareOutcome,
   ): Promise<DeclaredOutcome> {
     const date = await dates.findById(dateId);
     if (date === null) throw dateNotFound();
-    const publication = await publications.findByDateId(dateId);
-    if (publication === null) throw new Error(`date ${dateId} has no publication`);
     const { showId, venueId } = date.snapshot;
     const show = await manager.findOneByOrFail(Show, { id: showId });
     const venue = await manager.findOneByOrFail(Venue, { id: venueId });
 
-    asConflict(() => publication.advanceVersionFrom(body.expectedVersion));
     const now = this.clock.now();
     const declaration = declarationOf(body);
     const movedTo = declaration.rescheduledTo;
@@ -73,14 +70,12 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
             now,
           );
     asConflict(() =>
-      date.declareOutcome(declaration, body.message, {
-        publicationState: publication.snapshot.state,
+      date.declareOutcome(body.expectedVersion, declaration, body.message, {
         slugAtNewStart,
         now,
       }),
     );
 
-    await publications.save(publication);
     await dates.save(date);
     const events = date.getUncommittedEvents();
     await retireSlugsMovedFrom(manager, events);

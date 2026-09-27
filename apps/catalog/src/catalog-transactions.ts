@@ -5,20 +5,16 @@ import { DataSource, type EntityManager } from 'typeorm';
 
 import type { PerformanceDateRepository } from './dates/performance-date.repository.js';
 import { TypeOrmPerformanceDateRepository } from './dates/performance-date.typeorm-repository.js';
-import type { PublicationRepository } from './dates/publication.repository.js';
-import { TypeOrmPublicationRepository } from './dates/publication.typeorm-repository.js';
 
 /** One transaction: its repositories, and its manager for the rest of what the command writes. */
 export class CatalogTransaction {
   public readonly dates: PerformanceDateRepository;
-  public readonly publications: PublicationRepository;
 
   public constructor(
     public readonly manager: EntityManager,
     saved: (aggregate: IAggregateRoot) => void,
   ) {
     this.dates = new TypeOrmPerformanceDateRepository(manager, saved);
-    this.publications = new TypeOrmPublicationRepository(manager, saved);
   }
 }
 

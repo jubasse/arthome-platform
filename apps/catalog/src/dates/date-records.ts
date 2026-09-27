@@ -6,10 +6,12 @@ import { ApiErrorCode, FailureNature } from '@arthome/core';
 
 import type { DateRecords } from './date-sheet.js';
 import { PerformanceDateRow } from './performance-date.entity.js';
-import { performanceDateSnapshotOf } from './performance-date.typeorm-repository.js';
+import {
+  performanceDateSnapshotOf,
+  publicationSnapshotOf,
+} from './performance-date.typeorm-repository.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { PublicationRow } from './publication.entity.js';
-import { publicationSnapshotOf } from './publication.typeorm-repository.js';
 import { Show } from '../catalog/show.entity.js';
 import { Venue } from '../venues/venue.entity.js';
 

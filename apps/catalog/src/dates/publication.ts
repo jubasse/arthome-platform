@@ -1,5 +1,3 @@
-import { AggregateRoot } from '@nestjs/cqrs';
-
 import {
   DomainError,
   DomainErrorCode,
@@ -12,17 +10,13 @@ import {
   type PublicationTransitionCommand,
 } from '@arthome/core';
 
-import {
-  PublicationEngaged,
-  PublicationStateChanged,
-  type PublicationEvent,
-} from './publication.events.js';
+import { PublicationEngaged, PublicationStateChanged } from './performance-date.events.js';
 
 export interface PublicationSnapshot {
   readonly dateId: string;
   readonly channelId: string;
   readonly state: PublicationState;
-  /** The version the studio's sheet serves: every command on the date is conditioned on it. */
+  /** The date aggregate's version, the one the studio's sheet serves and every command names. */
   readonly version: number;
   readonly publishedAt: Instant | null;
   readonly pricesLockedAt: Instant | null;
@@ -39,17 +33,20 @@ export class PublicationChecklistIncomplete extends DomainError {
   }
 }
 
-export interface TransitionContext {
-  /** Every checklist item satisfied now: publishing needs each blocking one (§2.3). */
-  readonly satisfied: readonly PublicationChecklistItem[];
-  readonly now: Instant;
+export interface PublicationTransitioned {
+  readonly publication: Publication;
+  readonly changed: PublicationStateChanged;
+  /** Null for every transition but the one that publishes. */
+  readonly engaged: PublicationEngaged | null;
 }
 
-/** data-model.md §2.3, one per date. */
-export class Publication extends AggregateRoot<PublicationEvent> {
-  private constructor(private current: PublicationSnapshot) {
-    super();
-  }
+/**
+ * data-model.md §2.3, an entity of the `PerformanceDate` aggregate (D-085), which alone calls it.
+ *   Each decision returns the publication it leads to, so a refusal later in the same command leaves
+ *   the aggregate as it was.
+ */
+export class Publication {
+  private constructor(public readonly snapshot: PublicationSnapshot) {}
 
   public static restore(snapshot: PublicationSnapshot): Publication {
     return new Publication(snapshot);
@@ -67,31 +64,25 @@ export class Publication extends AggregateRoot<PublicationEvent> {
     });
   }
 
-  public get snapshot(): PublicationSnapshot {
-    return this.current;
-  }
-
   /**
    * Refuses a screen that read another version, with the current state and version, then counts
    *   one more change: a screen that did not see this one is stale like any other.
    */
-  public advanceVersionFrom(expectedVersion: number): void {
-    const { state, version } = this.current;
+  public advancedFrom(expectedVersion: number): Publication {
+    const { state, version } = this.snapshot;
     if (version !== expectedVersion) {
       throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { state, version } });
     }
-    this.current = { ...this.current, version: version + 1 };
+    return new Publication({ ...this.snapshot, version: version + 1 });
   }
 
-  /**
-   * A commanded transition, when core's rules allow it and, to publish, the checklist is complete.
-   *   Returns true when it published the date, which its date then makes public.
-   */
-  public transition(
+  /** A commanded transition, when core's rules allow it and, to publish, the checklist is complete. */
+  public transitioned(
     command: PublicationTransitionCommand,
-    { satisfied, now }: TransitionContext,
-  ): boolean {
-    const publication = this.current;
+    satisfied: readonly PublicationChecklistItem[],
+    now: Instant,
+  ): PublicationTransitioned {
+    const publication = this.snapshot;
     const { state: from, version } = publication;
     // Every caller may decide while tokens are not verified, as `publicationView` offers.
     const transition = assertCommandedTransition({ state: from, version }, command, true);
@@ -103,17 +94,19 @@ export class Publication extends AggregateRoot<PublicationEvent> {
       if (!ready) throw new PublicationChecklistIncomplete(missing);
     }
 
-    this.current = {
-      ...publication,
-      state: command.to,
-      version: version + 1,
-      publishedAt: publishing ? (publication.publishedAt ?? now) : publication.publishedAt,
-      pricesLockedAt: publishing ? (publication.pricesLockedAt ?? now) : publication.pricesLockedAt,
-      replayOnlineAt:
-        command.to === PublicationState.REPLAY_ONLINE ? now : publication.replayOnlineAt,
-    };
-    this.apply(
-      new PublicationStateChanged(
+    return {
+      publication: new Publication({
+        ...publication,
+        state: command.to,
+        version: version + 1,
+        publishedAt: publishing ? (publication.publishedAt ?? now) : publication.publishedAt,
+        pricesLockedAt: publishing
+          ? (publication.pricesLockedAt ?? now)
+          : publication.pricesLockedAt,
+        replayOnlineAt:
+          command.to === PublicationState.REPLAY_ONLINE ? now : publication.replayOnlineAt,
+      }),
+      changed: new PublicationStateChanged(
         publication.dateId,
         publication.channelId,
         from,
@@ -122,10 +115,9 @@ export class Publication extends AggregateRoot<PublicationEvent> {
         transition.irreversiblePromiseCode !== null,
         now,
       ),
-    );
-    if (publishing) {
-      this.apply(new PublicationEngaged(publication.dateId, publication.channelId, now));
-    }
-    return publishing;
+      engaged: publishing
+        ? new PublicationEngaged(publication.dateId, publication.channelId, now)
+        : null,
+    };
   }
 }

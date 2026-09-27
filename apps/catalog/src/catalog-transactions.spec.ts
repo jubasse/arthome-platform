@@ -13,6 +13,7 @@ import {
 import { CatalogTransactions, type CatalogTransaction } from './catalog-transactions.js';
 import type { PerformanceDateRow } from './dates/performance-date.entity.js';
 import { DateOutcomeDeclared } from './dates/performance-date.events.js';
+import { PublicationRow } from './dates/publication.entity.js';
 
 const ROW: Omit<PerformanceDateRow, 'created_at' | 'updated_at'> = {
   id: 'date-1',
@@ -32,8 +33,18 @@ const ROW: Omit<PerformanceDateRow, 'created_at' | 'updated_at'> = {
   outcome_message: null,
 };
 
+const PUBLICATION: Omit<PublicationRow, 'updated_at'> = {
+  date_id: 'date-1',
+  channel_id: 'channel-1',
+  state: PublicationState.SCHEDULED,
+  version: 2,
+  published_at: new Date('2026-09-26T10:00:00.000Z'),
+  prices_locked_at: new Date('2026-09-26T10:00:00.000Z'),
+  replay_online_at: null,
+};
+
 const manager = {
-  findOneBy: () => Promise.resolve(ROW),
+  findOneBy: (entity: unknown) => Promise.resolve(entity === PublicationRow ? PUBLICATION : ROW),
   update: () => Promise.resolve({ affected: 1 }),
 } as unknown as EntityManager;
 
@@ -57,13 +68,10 @@ async function cancelAndSave({ dates }: CatalogTransaction): Promise<void> {
   const date = await dates.findById('date-1');
   if (date === null) throw new Error('the fake manager always finds the date');
   date.declareOutcome(
+    2,
     { outcome: DateOutcome.CANCELLED, rescheduledTo: null },
     { contentLanguage: Locale.FR, text: 'Annulé.' },
-    {
-      publicationState: PublicationState.SCHEDULED,
-      slugAtNewStart: null,
-      now: '2026-09-26T10:00:00.000Z',
-    },
+    { slugAtNewStart: null, now: '2026-09-26T10:00:00.000Z' },
   );
   await dates.save(date);
 }

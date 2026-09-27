@@ -3,8 +3,8 @@ import { HttpStatus } from '@nestjs/common';
 
 import { DomainErrorCode, FailureNature, isDomainError } from '@arthome/core';
 
-import { PublicationChecklistIncomplete } from './publication.aggregate.js';
 import type { PublicationRow } from './publication.entity.js';
+import { PublicationChecklistIncomplete } from './publication.js';
 
 /** The publication path answers its refusals 409, as the contract's `moveDatePublicationState`. */
 export function asConflict<T>(decide: () => T): T {

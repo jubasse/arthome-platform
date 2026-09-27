@@ -14,7 +14,7 @@ import {
 import { ownChecklistFacts } from './own-checklist.js';
 import type { PerformanceDateSnapshot } from './performance-date.aggregate.js';
 import type { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
-import type { PublicationSnapshot } from './publication.aggregate.js';
+import type { PublicationSnapshot } from './publication.js';
 import type { Show } from '../catalog/show.entity.js';
 import { dateUrl } from '../public/links.js';
 import { venueClockAt } from '../venues/venue-clock.js';

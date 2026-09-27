@@ -8,8 +8,8 @@ import {
   isDomainError,
 } from '@arthome/core';
 
-import { Publication, PublicationChecklistIncomplete } from './publication.aggregate.js';
-import { PublicationEngaged, PublicationStateChanged } from './publication.events.js';
+import { PublicationEngaged, PublicationStateChanged } from './performance-date.events.js';
+import { Publication, PublicationChecklistIncomplete } from './publication.js';
 
 const NOW = '2026-09-26T10:00:00.000Z';
 
@@ -46,14 +46,13 @@ function refusalOf(decide: () => unknown): unknown {
 
 describe('Publication', () => {
   it('counts one more change from the version the screen read', () => {
-    const publication = scheduledAt(2);
-    publication.advanceVersionFrom(2);
+    const publication = scheduledAt(2).advancedFrom(2);
     expect(publication.snapshot.version).toBe(3);
   });
 
   it('refuses a screen that read another version, naming the current state and version', () => {
     const publication = scheduledAt(3);
-    const refusal = refusalOf(() => publication.advanceVersionFrom(2));
+    const refusal = refusalOf(() => publication.advancedFrom(2));
 
     expect(isDomainError(refusal) && [refusal.code, refusal.params]).toEqual([
       DomainErrorCode.STATE_CONFLICT,
@@ -63,19 +62,19 @@ describe('Publication', () => {
   });
 
   it('moves a draft into reserve without publishing it', () => {
-    const publication = Publication.draft('date-1', 'channel-1');
-    const published = publication.transition(
+    const { publication, changed, engaged } = Publication.draft('date-1', 'channel-1').transitioned(
       { to: PublicationState.RESERVE, expectedVersion: 1, acknowledgedPromise: null },
-      { satisfied: [], now: NOW },
+      [],
+      NOW,
     );
 
-    expect(published).toBe(false);
+    expect(engaged).toBeNull();
     expect(publication.snapshot).toMatchObject({
       state: PublicationState.RESERVE,
       version: 2,
       publishedAt: null,
     });
-    expect(publication.getUncommittedEvents()).toEqual([
+    expect(changed).toEqual(
       new PublicationStateChanged(
         'date-1',
         'channel-1',
@@ -85,20 +84,21 @@ describe('Publication', () => {
         false,
         NOW,
       ),
-    ]);
+    );
   });
 
   it('refuses to publish while a blocking item is missing, naming them, and changes nothing', () => {
     const publication = Publication.draft('date-1', 'channel-1');
     const before = publication.snapshot;
     const refusal = refusalOf(() =>
-      publication.transition(
+      publication.transitioned(
         {
           to: PublicationState.SCHEDULED,
           expectedVersion: 1,
           acknowledgedPromise: PublicationPromise.PRICES_ENGAGED,
         },
-        { satisfied: [PublicationChecklistItem.POSTER], now: NOW },
+        [PublicationChecklistItem.POSTER],
+        NOW,
       ),
     );
 
@@ -110,28 +110,26 @@ describe('Publication', () => {
       PublicationChecklistItem.CAPACITY,
     );
     expect(publication.snapshot).toBe(before);
-    expect(publication.getUncommittedEvents()).toEqual([]);
   });
 
   it('publishes a complete draft: the prices locked, then what it engaged', () => {
-    const publication = Publication.draft('date-1', 'channel-1');
-    const published = publication.transition(
+    const { publication, changed, engaged } = Publication.draft('date-1', 'channel-1').transitioned(
       {
         to: PublicationState.SCHEDULED,
         expectedVersion: 1,
         acknowledgedPromise: PublicationPromise.PRICES_ENGAGED,
       },
-      { satisfied: EVERY_BLOCKING_ITEM, now: NOW },
+      EVERY_BLOCKING_ITEM,
+      NOW,
     );
 
-    expect(published).toBe(true);
     expect(publication.snapshot).toMatchObject({
       state: PublicationState.SCHEDULED,
       version: 2,
       publishedAt: NOW,
       pricesLockedAt: NOW,
     });
-    expect(publication.getUncommittedEvents()).toEqual([
+    expect([changed, engaged]).toEqual([
       new PublicationStateChanged(
         'date-1',
         'channel-1',
@@ -146,17 +144,16 @@ describe('Publication', () => {
   });
 
   it('does not publish again on the way back from technical, checklist or not', () => {
-    const publication = Publication.restore({
+    const { publication, engaged } = Publication.restore({
       ...scheduledAt(3).snapshot,
       state: PublicationState.TECHNICAL,
-    });
-    const published = publication.transition(
+    }).transitioned(
       { to: PublicationState.SCHEDULED, expectedVersion: 3, acknowledgedPromise: null },
-      { satisfied: [], now: '2026-09-27T10:00:00.000Z' },
+      [],
+      '2026-09-27T10:00:00.000Z',
     );
 
-    expect(published).toBe(false);
+    expect(engaged).toBeNull();
     expect(publication.snapshot.publishedAt).toBe('2026-09-26T10:00:00.000Z');
-    expect(publication.getUncommittedEvents()).toHaveLength(1);
   });
 });

@@ -8,7 +8,7 @@ import {
 } from '@arthome/core';
 
 import { publicationView } from './date-sheet.js';
-import type { PublicationSnapshot } from './publication.aggregate.js';
+import type { PublicationSnapshot } from './publication.js';
 
 function publicationIn(state: PublicationState): PublicationSnapshot {
   return {

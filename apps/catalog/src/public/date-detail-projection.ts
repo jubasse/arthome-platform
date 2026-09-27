@@ -8,11 +8,9 @@ import {
   DateOutcomeDeclared,
   DateRescheduled,
   DateScheduled,
-} from '../dates/performance-date.events.js';
-import {
   PublicationStateChanged,
-  type DateOrPublicationEvent,
-} from '../dates/publication.events.js';
+  type PerformanceDateEvent,
+} from '../dates/performance-date.events.js';
 import type { Venue } from '../venues/venue.entity.js';
 
 const APPLIED = { version: () => 'version + 1', applied_at: () => 'now()' };
@@ -56,7 +54,7 @@ export interface DateCopies {
  */
 export async function projectDateEvents(
   manager: EntityManager,
-  events: readonly DateOrPublicationEvent[],
+  events: readonly PerformanceDateEvent[],
   copies: DateCopies,
 ): Promise<void> {
   const changes = events.reduce<DateChanges>(
@@ -73,7 +71,7 @@ export async function projectDateEvents(
   await manager.update(DateDetailPublic, { date_id: first.dateId }, { ...changes, ...APPLIED });
 }
 
-function changesOf(event: DateOrPublicationEvent): DateChanges {
+function changesOf(event: PerformanceDateEvent): DateChanges {
   if (event instanceof PublicationStateChanged) return { publication_state: event.to };
   if (event instanceof DateOutcomeDeclared) {
     return {
