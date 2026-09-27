@@ -119,7 +119,9 @@ A draft older than the topic's retention is never read: see the deployment order
   applied them, on the date's key. `capacity_set` is written by `openCapacityTier` and by
   `setTechnicalProvision`, with `provisioned_capacity` once a provision is recorded, and again when
   a start moves the deadline of a provision required or recorded, so streaming provisions from one
-  fact.
+  fact. It states `provision_revisable_until` only then, while a provision is required or
+  recorded, so no event keeps a deadline a postponement left stale (correctness re-review); the
+  pane serves the deadline whenever the date has a start.
 - **`date_sales.availability_changed` is published at a bounded rate** (ADR §5), when the last
   publication is `AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS` old, or at once when the date sold out
   or came back. The value published is core's `availabilityOf`; the SQL `seats_available = 0` only

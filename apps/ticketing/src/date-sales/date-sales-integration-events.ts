@@ -50,7 +50,7 @@ function integrationEventOf(
     case 'TechnicalProvisionSet':
       return capacitySet(event, context);
     case 'DateScheduleRecorded':
-      // A start moves the revision deadline, which matters once a provision is required or recorded.
+      // Restated exactly when `capacitySet` states the deadline the start moves.
       return event.provision.required || event.provision.provisionedCapacity !== null
         ? capacitySet(event, context)
         : null;
@@ -100,8 +100,14 @@ interface CapacityFacts {
   readonly occurredAt: Instant;
 }
 
+/**
+ * The deadline travels only while a provision is required or recorded, which is exactly when a
+ *   start that moves restates it: an event never states a deadline a postponement leaves stale.
+ *   The pane serves it whenever the date has a start.
+ */
 function capacitySet(facts: CapacityFacts, context: DateSalesWireContext): TicketingEvent {
-  const { revisableUntil, provisionedCapacity } = facts.provision;
+  const { required, revisableUntil, provisionedCapacity } = facts.provision;
+  const deadline = required || provisionedCapacity !== null ? revisableUntil : null;
   return {
     type: 'ticketing.date_sales.capacity_set.v1',
     key: facts.dateId,
@@ -111,9 +117,9 @@ function capacitySet(facts: CapacityFacts, context: DateSalesWireContext): Ticke
         dateId: facts.dateId,
         channelId: facts.channelId,
         capacityTotal: facts.capacityTotal,
-        technicalProvisionRequired: facts.provision.required,
-        ...(revisableUntil !== null && {
-          provisionRevisableUntil: timestampFromDate(new Date(revisableUntil)),
+        technicalProvisionRequired: required,
+        ...(deadline !== null && {
+          provisionRevisableUntil: timestampFromDate(new Date(deadline)),
         }),
         ...(provisionedCapacity !== null && { provisionedCapacity }),
         occurredAt: timestampFromDate(new Date(facts.occurredAt)),

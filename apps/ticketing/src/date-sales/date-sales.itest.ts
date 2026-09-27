@@ -404,6 +404,34 @@ describe('openCapacityTier', () => {
   );
 
   it(
+    'states no deadline on a capacity no provision concerns, which the pane still serves',
+    async () => {
+      const dateId = await openedDate();
+      const startsAt = '2026-12-12T19:00:00.000Z';
+      await applyCatalogDateMessage(commands, delivered(scheduled(dateId, startsAt, NOW)));
+
+      const opened = await openTier(dateId, 2, 300);
+      await applyCatalogDateMessage(
+        commands,
+        delivered(rescheduled(dateId, '2026-12-19T19:00:00.000Z', '2026-09-28T10:00:00.000Z')),
+      );
+
+      expect(opened.envelope.data.sales.technicalProvision).toMatchObject({
+        required: false,
+        provisionedCapacity: null,
+        revisableUntil: provisionRevisableUntil(startsAt),
+      });
+      const [stated, ...restated] = await outboxRowsFor(dateId);
+      expect(restated).toEqual([]);
+      expect(
+        fromBinary(DateSalesCapacitySetSchema, stated?.payload ?? Buffer.alloc(0))
+          .provisionRevisableUntil,
+      ).toBeUndefined();
+    },
+    CASE_MS,
+  );
+
+  it(
     'keeps what a hold took between the load and the save: the counters move by a delta',
     async () => {
       const dateId = await openedDate();
