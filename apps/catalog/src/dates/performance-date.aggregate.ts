@@ -223,7 +223,7 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
       outcome: declaration.outcome,
       rescheduledTo: movedTo,
       outcomeDeclaredAt: now,
-      outcomeMessage: message,
+      outcomeMessage: structuredClone(message),
       startsAt: movedTo ?? date.startsAt,
       slug,
       postponements: date.postponements + (movedTo === null ? 0 : 1),

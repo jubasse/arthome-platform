@@ -1,6 +1,7 @@
 /**
  * Deeply, so that a nested array written in place throws as well: an aggregate replaces its
- *   snapshot, never edits it.
+ *   snapshot, never edits it. Everything reachable is frozen, so an aggregate copies what a caller
+ *   hands it before keeping it.
  */
 export function frozen<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {

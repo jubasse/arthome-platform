@@ -166,7 +166,9 @@ Messages carry no suffix (`DeclareOutcome`, `GetDateSheet`); handlers do.
 **An aggregate is not its rows.** Every read path (the sheet, the public pages, the consumer, the
 migrations) reads rows, whose public fields anyone can assign. The aggregate keeps an immutable
 `snapshot` that only its methods replace, speaks core's types (instants as strings), and is built by
-`restore()` from the row, so TypeORM never calls its constructor (`nestjs-ddd` rule 13). Its methods
+`restore()` from the row, so TypeORM never calls its constructor (`nestjs-ddd` rule 13). The snapshot
+is frozen deeply, so a method copies what it keeps of its arguments (the outcome's message) rather
+than freezing the caller's object. Its methods
 call core's pure rules (`assertOutcomeDeclarable`, `assertCommandedTransition`) and never restate
 them; what a rule needs beyond the aggregate is an argument (the checklist facts, a free slug,
 `now`). A method never awaits: an I/O lookup (the free slug of a postponement) is made by the

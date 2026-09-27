@@ -286,6 +286,21 @@ describe('PerformanceDate', () => {
     expect(Object.isFrozen(publishedDate().snapshot)).toBe(true);
   });
 
+  it('freezes its own copy of the outcome message, never the request’s', () => {
+    const message = { ...MESSAGE };
+    const date = publishedDate();
+    date.declareOutcome(
+      2,
+      { outcome: DateOutcome.CANCELLED, rescheduledTo: null },
+      message,
+      scheduled(),
+    );
+
+    expect(date.snapshot.outcomeMessage).toEqual(message);
+    expect(Object.isFrozen(date.snapshot.outcomeMessage)).toBe(true);
+    expect(Object.isFrozen(message)).toBe(false);
+  });
+
   it('refuses what core refuses, and changes nothing', () => {
     const date = publishedDate();
     const before = date.snapshot;

@@ -399,4 +399,16 @@ describe('the snapshot', () => {
       (sales.snapshot.priceTiers as TierPrice[]).push(REDUCED);
     }).toThrow(TypeError);
   });
+
+  it('freezes its own copy of the prices it is handed, never the caller’s', () => {
+    const tiers = [{ tier: PriceTier.REDUCED, amount: money(1600, 'EUR'), active: true }];
+    const sales = restored();
+
+    sales.setPrices(3, tiers, NOW);
+
+    expect(sales.snapshot.priceTiers).toEqual(tiers);
+    expect(Object.isFrozen(sales.snapshot.priceTiers[0]?.amount)).toBe(true);
+    expect(Object.isFrozen(tiers)).toBe(false);
+    expect(Object.isFrozen(tiers[0]?.amount)).toBe(false);
+  });
 });

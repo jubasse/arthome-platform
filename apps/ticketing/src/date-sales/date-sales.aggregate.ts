@@ -126,7 +126,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
       });
     }
     assertPricesShareCurrency(tiers);
-    this.current = frozen({ ...this.current, priceTiers: tiers, version });
+    this.current = frozen({ ...this.current, priceTiers: structuredClone(tiers), version });
     this.apply(new DatePricesSet(dateId, channelId, tiers, now));
   }
 
