@@ -248,5 +248,6 @@ Known and left, each judged:
   `pricing_changed` and `capacity_set`, the sweeper's for `availability_changed`, compared by
   latest-wins consumers. It takes a skew larger than the seconds between two facts, NTP makes that
   unlikely, and catalog does the same: a platform pattern, not T2's alone.
-- Proven on the development stack on 2026-09-27 at 630dbd5 (AGENTS.md); the fixes since are proven
-  on containers only.
+- Proven on the development stack on 2026-09-27 at 630dbd5, and again at e0967b4 (AGENTS.md). The
+  re-review's three fixes since, and their migration `1790440400000`, are proven on containers
+  only.
