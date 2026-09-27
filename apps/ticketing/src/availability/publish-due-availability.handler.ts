@@ -7,10 +7,19 @@ import { AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS, type Clock } from '@arthome/
 import { availabilityChanged } from './availability-changed.js';
 import { PublishDueAvailability } from './publish-due-availability.command.js';
 import { CLOCK } from '../clock.js';
-import { availabilityFiguresOf } from '../date-sales/date-sales-figures.js';
+import {
+  availabilityFiguresOf,
+  type AvailabilityFigures,
+} from '../date-sales/date-sales-figures.js';
 import { DateSalesRow } from '../date-sales/date-sales.entity.js';
 import { writeTicketingEvent } from '../ticketing-events.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
+
+/** A closed sale offers nothing: its last publication says so, whatever seats were left. */
+function offeredFiguresOf(row: DateSalesRow): AvailabilityFigures {
+  const figures = availabilityFiguresOf(row);
+  return row.on_sale ? figures : { ...figures, seatsAvailable: 0, soldOut: true };
+}
 
 /** Dates claimed per pass: each row stays locked until the pass commits. */
 export const AVAILABILITY_PUBLISH_BATCH = 100;
@@ -20,7 +29,8 @@ export const AVAILABILITY_PUBLISH_BATCH = 100;
  *   every `AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS` while it keeps moving, and at once when it
  *   sells out or comes back. `SKIP LOCKED`: two publishers claim disjoint dates, and a date a
  *   command holds waits for the next pass rather than stalling this one. Only a sale that opened
- *   is published; a draft's moves wait for its opening, which moves it too.
+ *   is published; a draft's moves wait for its opening, which moves it too, and a closing
+ *   publishes a last time, offering no seat.
  */
 @CommandHandler(PublishDueAvailability)
 export class PublishDueAvailabilityHandler implements ICommandHandler<PublishDueAvailability> {
@@ -47,7 +57,7 @@ export class PublishDueAvailabilityHandler implements ICommandHandler<PublishDue
               // Sold out, or back from it, against what was published last. The value published
               //   is core's (`availabilityOf`); this only finds the candidates.
               .orWhere(
-                '(sales.seats_available = 0) IS DISTINCT FROM sales.availability_published_sold_out',
+                '(sales.seats_available = 0 OR NOT sales.on_sale) IS DISTINCT FROM sales.availability_published_sold_out',
               ),
           ),
         )
@@ -58,7 +68,7 @@ export class PublishDueAvailabilityHandler implements ICommandHandler<PublishDue
         .getMany();
 
       for (const row of due) {
-        const figures = availabilityFiguresOf(row);
+        const figures = offeredFiguresOf(row);
         await writeTicketingEvent(
           manager,
           availabilityChanged(row.date_id, row.channel_id, figures, now),

@@ -3,16 +3,20 @@ import type { EntityManager } from 'typeorm';
 import { assertNever } from '../assert-never.js';
 import type { DateSalesEvent } from '../date-sales/date-sales.events.js';
 
-/** Whether the event moves a figure `availability_changed` carries: a seat count or a price. */
+/**
+ * Whether the event moves what `availability_changed` carries: a seat count, a price, or the sale
+ *   itself closing, which offers no seat from then on.
+ */
 function movesAvailability(event: DateSalesEvent): boolean {
   switch (event.kind) {
     case 'DatePricesSet':
     case 'DatePricesLocked':
     case 'CapacityTierOpened':
       return true;
+    case 'DateOutcomeRecorded':
+      return event.salesClosed;
     case 'DateSalesOpened':
     case 'DateScheduleRecorded':
-    case 'DateOutcomeRecorded':
       return false;
     default:
       return assertNever(event);

@@ -18,7 +18,8 @@ import { notFound } from '../refusals.js';
 
 /**
  * Read live off the row: `refreshDateAvailability` is the truth at command time, the event the
- *   hint (adr-ticketing.md §5). A date whose sale never opened is not public yet: 404.
+ *   hint (adr-ticketing.md §5). Only a sale on sale is served: one not open yet, or closed by a
+ *   cancellation or an interruption, answers 404 rather than seats nobody can buy.
  */
 @QueryHandler(GetDateAvailability)
 export class GetDateAvailabilityHandler implements IQueryHandler<GetDateAvailability> {
@@ -31,7 +32,7 @@ export class GetDateAvailabilityHandler implements IQueryHandler<GetDateAvailabi
     dateId,
   }: GetDateAvailability): Promise<PerishableResponse<DateAvailability>> {
     const row = await this.dataSource.manager.findOneBy(DateSalesRow, { date_id: dateId });
-    if (row?.prices_locked_at == null) throw notFound();
+    if (row?.on_sale !== true) throw notFound();
     return new PerishableResponse(
       dateAvailabilityOf(row),
       availabilityValidUntil(this.clock.now()),

@@ -51,7 +51,9 @@ retention answer `degraded`.
   the domain's code: `state.conflict` with `version`, `date.prices_locked`, `capacity.tier_must_widen`.
 - `setDatePrices` refuses 400 naming `tiers` a tier sent twice or two currencies in one sale.
 - `openCapacityTier` accepts `notifyWaitlist` and records nothing for it: the waiting list is T5's.
-  It answers `waitlistNotified: 0`, true while no list exists, and no `priorityUntil`.
+  It answers `waitlistNotified: 0`, true while no list exists, and no `priorityUntil`. On a sale a
+  cancellation or an interruption closed, it refuses 409 `state.conflict` naming the version and
+  the outcome.
 - **The pane** is `DateSalesPaneSchema`'s, parsed in the suites. Absent: `serviceFeePerSeat` and
   `replayUnitPrice` (no schedule is set anywhere), `complimentaries`, the penalty exposure (no rule
   in core), `grossRevenue` (it needs `canRevenue` and a sale). `promotions` is empty.
@@ -64,8 +66,9 @@ retention answer `degraded`.
 tiers, read live off the row, each through core (`date-sales-figures.ts`, which the pane and the
 event share). It requires `x-arthome-deadline`, answers `no-store` (the BFF sets `public,
 max-age=15`, the operation's freshness, transport.md §5.9), and carries `validUntil` 60 s after
-`servedAt`, `AVAILABILITY_VALID_SECONDS`, whose number data-model §3.1 owns (§3). A date whose sale
-has not opened is not public: 404, and the publisher does not publish it either.
+`servedAt`, `AVAILABILITY_VALID_SECONDS`, whose number data-model §3.1 owns (§3). **Only a sale on
+sale is served** (`on_sale`): before it opens, and once a cancellation or an interruption closed it,
+the read answers 404 rather than seats nobody can buy.
 
 ## 0d. What ticketing takes from catalog
 
@@ -95,7 +98,8 @@ partition. Unreadable bytes and a missing or malformed `message-id` are dead-let
   LOCKED`, a hundred per pass, and writes their latest figures when the last publication is
   `AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS` old, or at once when the date sold out or came back.
   The value published is core's `availabilityOf`; the SQL `seats_available = 0` only finds the
-  candidates.
+  candidates. A draft is never published. **A closing publishes a last time, at once**, offering no
+  seat (`seats_available` 0, sold out), so the cards and the index stop offering the date.
 - **It runs in the sweeper process, its own, on a one-second loop**, not in the consumer and not on
   BullMQ. The sweeper needs Postgres alone: in the consumer's process a Kafka outage would stop it
   at boot, and on a queue a Redis outage would; T3's hold expiry lives here and must return capacity
@@ -155,8 +159,6 @@ arthome-core:
 Known and left:
 
 - `market_id` and the service-fee schedule have no source yet; neither is stored.
-- `openCapacityTier` is not refused on a closed sale: the contract names no refusal, and T3 refuses
-  the purchase on `on_sale`.
 - `itest/http-app.ts` is catalog's, copied: the second consumer of a harness that could move to
   `libs/testing`. The aggregate's `frozen` helper is catalog's too.
 - The path has not been run on the development stack; the lead runs that proof.

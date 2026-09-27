@@ -1,4 +1,7 @@
-import { DateSalesAvailabilityChangedSchema } from '@arthome-platform/events';
+import {
+  DateOutcome as WireDateOutcome,
+  DateSalesAvailabilityChangedSchema,
+} from '@arthome-platform/events';
 import { OutboxEvent } from '@arthome-platform/messaging';
 import {
   applyMigrations,
@@ -24,7 +27,7 @@ import { OpenCapacityTier } from '../date-sales/open-capacity-tier.command.js';
 import { OpenCapacityTierHandler } from '../date-sales/open-capacity-tier.handler.js';
 import { SetDatePrices } from '../date-sales/set-date-prices.command.js';
 import { SetDatePricesHandler } from '../date-sales/set-date-prices.handler.js';
-import { delivered, drafted, engaged } from '../itest/catalog-messages.js';
+import { delivered, drafted, engaged, outcomeDeclared } from '../itest/catalog-messages.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 
@@ -214,6 +217,29 @@ describe('the availability publisher', () => {
           )
         )[0]?.dirty,
       ).toBe(true);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'publishes a closing at once, offering no seat, and nothing after it',
+    async () => {
+      const dateId = await openSale(10);
+      await publish();
+
+      clock.advance(1_000);
+      await applyCatalogDateMessage(
+        commands,
+        delivered(outcomeDeclared(dateId, WireDateOutcome.CANCELLED, clock.now())),
+      );
+      await publish();
+
+      const events = await published(dateId);
+      expect(events.map(({ event }) => [event.seatsAvailable, event.soldOut])).toEqual([
+        [10, false],
+        [0, true],
+      ]);
+      expect(await publish()).toBe(0);
     },
     CASE_MS,
   );

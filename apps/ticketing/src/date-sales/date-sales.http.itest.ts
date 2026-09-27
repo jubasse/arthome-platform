@@ -1,3 +1,4 @@
+import { DateOutcome as WireDateOutcome } from '@arthome-platform/events';
 import {
   applyMigrations,
   createDatabase,
@@ -23,7 +24,7 @@ import { applyCatalogDateMessage } from './catalog-date-messages.js';
 import { CatalogFactsModule } from './catalog-facts.module.js';
 import { DateSalesModule } from './date-sales.module.js';
 import { AvailabilityModule } from '../availability/availability.module.js';
-import { delivered, drafted, engaged } from '../itest/catalog-messages.js';
+import { delivered, drafted, engaged, outcomeDeclared } from '../itest/catalog-messages.js';
 import { httpApp } from '../itest/http-app.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 
@@ -277,6 +278,27 @@ describe('GET /v1/dates/:dateId/availability', () => {
       expect(withoutDeadline.json()).toMatchObject({
         error: { params: { fields: ['x-arthome-deadline'] } },
       });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'stops serving seats once an outcome closes the sale',
+    async () => {
+      const dateId = await openedDate();
+      await postTier(dateId, { additionalCapacity: 25, expectedVersion: 1 });
+      const commands = app.get(CommandBus);
+      await applyCatalogDateMessage(commands, delivered(engaged(dateId, NOW)));
+      expect((await getAvailability(dateId)).statusCode).toBe(200);
+
+      await applyCatalogDateMessage(
+        commands,
+        delivered(outcomeDeclared(dateId, WireDateOutcome.INTERRUPTED, NOW)),
+      );
+
+      const closed = await getAvailability(dateId);
+      expect(closed.statusCode).toBe(404);
+      expect(closed.json()).toMatchObject({ error: { code: ApiErrorCode.NOT_FOUND } });
     },
     CASE_MS,
   );

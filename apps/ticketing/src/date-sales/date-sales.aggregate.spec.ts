@@ -173,6 +173,29 @@ describe('openCapacityTier', () => {
       DomainErrorCode.STATE_CONFLICT,
     );
   });
+
+  it('refuses a tier on a sale an outcome closed, naming the outcome', () => {
+    const sales = restored({
+      capacityTotal: 200,
+      outcome: DateOutcome.CANCELLED,
+      outcomeStatedAt: STATED_AT,
+      salesClosedAt: STATED_AT,
+    });
+
+    const refusal = refusalOf(() => sales.openCapacityTier(3, 10, NOW));
+
+    expect(refusal.code).toBe(DomainErrorCode.STATE_CONFLICT);
+    expect(refusal.params).toEqual({ version: 3, outcome: DateOutcome.CANCELLED });
+    expect(sales.snapshot.capacityTotal).toBe(200);
+  });
+
+  it('keeps widening a postponed date, whose sale goes on', () => {
+    const sales = restored({ outcome: DateOutcome.POSTPONED, outcomeStatedAt: STATED_AT });
+
+    sales.openCapacityTier(3, 10, NOW);
+
+    expect(sales.snapshot.capacityTotal).toBe(10);
+  });
 });
 
 describe('lockPrices', () => {

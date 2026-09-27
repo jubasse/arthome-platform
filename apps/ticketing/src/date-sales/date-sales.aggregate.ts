@@ -128,13 +128,21 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
   }
 
   /**
-   * Widens the capacity by one tier, the first included, and the seats available with it. The
-   *   waiting list's notification is T5's: nothing is recorded for it yet.
+   * Widens the capacity by one tier, the first included, and the seats available with it; a sale
+   *   an outcome closed is refused, naming it. The waiting list's notification is T5's: nothing is
+   *   recorded for it yet.
    */
   public openCapacityTier(expectedVersion: number, additionalCapacity: number, now: Instant): void {
     const version = this.advancedFrom(expectedVersion);
     const { dateId, channelId, capacityTotal, capacityTiers, seatsAvailable, startsAt } =
       this.current;
+    const { salesClosedAt, outcome } = this.current;
+    if (salesClosedAt !== null && outcome !== null) {
+      throw new DomainError({
+        code: DomainErrorCode.STATE_CONFLICT,
+        params: { version: expectedVersion, outcome },
+      });
+    }
     const widened = capacityTotal + additionalCapacity;
     assertTierWidens(capacityTotal, widened);
     const tier: CapacityTier = { id: uuidv7(), capacity: additionalCapacity, openedAt: now };

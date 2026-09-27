@@ -1,4 +1,5 @@
 import {
+  DateOutcome as WireDateOutcome,
   DateSalesCapacitySetSchema,
   DateSalesPricingChangedSchema,
   PriceTier as WirePriceTier,
@@ -22,6 +23,7 @@ import { DateSalesPaneSchema } from '@arthome/contracts/studio-money';
 import {
   ApiErrorCode,
   CatalogErrorCode,
+  DateOutcome,
   DomainErrorCode,
   FixedClock,
   PROVISION_REVISION_HOURS,
@@ -42,7 +44,14 @@ import { SetDatePrices } from './set-date-prices.command.js';
 import { SetDatePricesHandler } from './set-date-prices.handler.js';
 import type { SetDatePricesBody } from './set-date-prices.schema.js';
 import { CLOCK } from '../clock.js';
-import { delivered, drafted, engaged, rescheduled, scheduled } from '../itest/catalog-messages.js';
+import {
+  delivered,
+  drafted,
+  engaged,
+  outcomeDeclared,
+  rescheduled,
+  scheduled,
+} from '../itest/catalog-messages.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 
@@ -425,6 +434,31 @@ describe('openCapacityTier', () => {
       );
       const unknown = await refusalOf(openTier('01a0f2aa-0000-7000-8000-000000000001', 1, 10));
       expect(unknown.getStatus()).toBe(404);
+    },
+    CASE_MS,
+  );
+});
+
+describe('a sale an outcome closed', () => {
+  it(
+    'refuses a new tier with the outcome that closed it',
+    async () => {
+      const dateId = await openedDate();
+      await openTier(dateId, 1, 50);
+      await applyCatalogDateMessage(commands, delivered(engaged(dateId, NOW)));
+      await applyCatalogDateMessage(
+        commands,
+        delivered(outcomeDeclared(dateId, WireDateOutcome.CANCELLED, NOW)),
+      );
+
+      const refusal = await refusalOf(openTier(dateId, 4, 10));
+
+      expect(refusal.getStatus()).toBe(409);
+      expect(refusal.refusal).toMatchObject({
+        code: DomainErrorCode.STATE_CONFLICT,
+        params: { version: 4, outcome: DateOutcome.CANCELLED },
+      });
+      expect((await rowOf(dateId)).capacity_total).toBe(50);
     },
     CASE_MS,
   );
