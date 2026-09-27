@@ -4,15 +4,16 @@ import {
   deadlineExceededException,
 } from '@arthome-platform/http-edge';
 import { DATE_INDEX_ALIAS } from '@arthome-platform/search-index';
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject } from '@nestjs/common';
+import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { Client, errors } from '@opensearch-project/opensearch';
 
 import { ApiErrorCode, FailureNature, type Clock } from '@arthome/core';
 
 import { searchBodyOf } from './search-body.js';
+import { SearchCatalog } from './search-catalog.query.js';
 import { offsetOf } from './search-cursor.js';
 import { searchPageOf, type SearchPage, type SearchResponseBody } from './search-page.js';
-import type { SearchQuery } from './search-query.schema.js';
 import { CLOCK } from '../clock.js';
 
 export const OPENSEARCH: unique symbol = Symbol('OpenSearch');
@@ -32,18 +33,18 @@ function mapped(error: unknown): unknown {
   return error;
 }
 
-@Injectable()
-export class SearchService {
+@QueryHandler(SearchCatalog)
+export class SearchCatalogHandler implements IQueryHandler<SearchCatalog> {
   public constructor(
     @Inject(OPENSEARCH) private readonly client: Client,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  public async search(
-    query: SearchQuery,
-    remainingMs: number,
-    callerLeft: AbortSignal,
-  ): Promise<CollectionResponse<SearchPage>> {
+  public async execute({
+    query,
+    remainingMs,
+    callerLeft,
+  }: SearchCatalog): Promise<CollectionResponse<SearchPage>> {
     const now = this.clock.now();
     const nowMs = this.clock.nowMs();
     const offset = offsetOf(query.cursor, nowMs);

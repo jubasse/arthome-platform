@@ -4,8 +4,8 @@ import { Client } from '@opensearch-project/opensearch';
 
 import { SystemClock } from '@arthome/core';
 
+import { OPENSEARCH, SearchCatalogHandler } from './search-catalog.handler.js';
 import { SearchController } from './search.controller.js';
-import { OPENSEARCH, SearchService } from './search.service.js';
 import { CLOCK } from '../clock.js';
 
 /** The client has no Nest hook of its own: without this its sockets outlive `app.close()`. */
@@ -28,7 +28,7 @@ class SearchIndexShutdown implements OnApplicationShutdown {
       useFactory: (): Client => new Client({ node: readOpenSearchUrl(), maxRetries: 0 }),
     },
     SearchIndexShutdown,
-    SearchService,
+    SearchCatalogHandler,
     { provide: CLOCK, useValue: new SystemClock() },
   ],
 })

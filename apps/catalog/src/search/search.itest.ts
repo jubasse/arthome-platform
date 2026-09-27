@@ -12,6 +12,7 @@ import {
 import { startStack, type StartedStack } from '@arthome-platform/testing';
 import { StandardSchemaValidationPipe } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE, HttpAdapterHost } from '@nestjs/core';
+import { CqrsModule } from '@nestjs/cqrs';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { Client } from '@opensearch-project/opensearch';
@@ -19,10 +20,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ApiErrorCode, DisplayState, FixedClock, ReplayPolicy } from '@arthome/core';
 
+import { OPENSEARCH } from './search-catalog.handler.js';
 import { dateDocument } from './search-fixtures.js';
 import { SearchSort, SearchTab } from './search-query.schema.js';
 import { SearchModule } from './search.module.js';
-import { OPENSEARCH } from './search.service.js';
 import type { ServableDateDocument } from './servable-document.js';
 import { CLOCK } from '../clock.js';
 
@@ -150,7 +151,7 @@ beforeAll(async () => {
 
   const clock = new FixedClock(NOW);
   const moduleRef = await Test.createTestingModule({
-    imports: [SearchModule],
+    imports: [CqrsModule.forRoot(), SearchModule],
     providers: [
       {
         provide: APP_PIPE,
@@ -175,6 +176,10 @@ beforeAll(async () => {
   });
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
+  // Measured: with three agents' containers running (load average 20), the first search on the
+  // cold cluster outlasted the 1 s budget twice in five runs, and the first case read a 504. The
+  // warm-up takes the path that succeeds, with a deadline it cannot miss.
+  await search({ sort: SearchSort.SOON }, addHours(NOW, 1));
 }, STARTUP_MS);
 
 afterAll(async () => {

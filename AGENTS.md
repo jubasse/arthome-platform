@@ -285,7 +285,7 @@ An outcome was proven on the same stack on 2026-09-27, the indexer, catalog and 
 
 That last row is a defect the run found: catalog crashed on the first abort, because its listener
 returned the OpenSearch request, a thenable, and Node's `EventTarget` reports a listener's rejected
-thenable as an uncaught exception. Fixed, and held by `search.service.spec.ts`.
+thenable as an uncaught exception. Fixed, and held by `search-catalog.handler.spec.ts`.
 
 A channel's public face was proven the same way on 2026-09-27:
 
