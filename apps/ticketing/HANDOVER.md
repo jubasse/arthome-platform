@@ -107,6 +107,13 @@ A draft older than the topic's retention is never read: see the deployment order
   publication is `AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS` old, or at once when the date sold out
   or came back. The value published is core's `availabilityOf`; the SQL `seats_available = 0` only
   finds the candidates. A draft is never published.
+- **A closing publishes a last time**, within the interval, offering no seat: `seats_available` 0
+  and **not** sold out, so the cards and the index stop offering the date while no surface offers
+  its waiting list. Sold out is what makes `decideWatch` offer `join_waitlist` (D-042 to D-044),
+  and a waiting list on a cancelled date is a promise nobody can keep. Checked against core's
+  `decideWatch`: its inputs carry no seat count, a cancelled date answers `date_cancelled` with
+  `see_other_dates` before any seat action, and an interrupted one falls to the replay refusals,
+  so nothing buyable is offered whichever way `waitlistOpen` reads.
 - **The publisher never locks `date_sales`**, the row ADR §3 budgets for the hot decrement alone
   (both reviews, 2026-09-27). A move of what the event carries (a tier, a price, the opening, a
   closing, T3's holds) adds one to `date_sales.availability_moves`, in the statement that makes it.
@@ -121,8 +128,7 @@ A draft older than the topic's retention is never read: see the deployment order
   does not wait for it.
 - **A date that cannot be published holds back no other** (correctness review): its failure is
   logged, its `failed_at` recorded, and it waits `AVAILABILITY_PUBLISH_RETRY_SECONDS` (30) before it
-  is tried again, behind the others, still marked; a publication clears it. **A closing publishes a last time, at once**, offering no
-  seat (`seats_available` 0, sold out), so the cards and the index stop offering the date.
+  is tried again, behind the others, still marked; a publication clears it.
 - **It runs in the sweeper process, its own, on a one-second loop**, not in the consumer and not on
   BullMQ. The sweeper needs Postgres alone: in the consumer's process a Kafka outage would stop it
   at boot, and on a queue a Redis outage would; T3's hold expiry lives here and must return capacity

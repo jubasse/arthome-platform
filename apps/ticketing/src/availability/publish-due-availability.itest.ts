@@ -229,7 +229,7 @@ describe('the availability publisher', () => {
   );
 
   it(
-    'publishes a closing at once, offering no seat, and nothing after it',
+    'publishes a closing as no seat and not sold out, and a sold-out closing at once',
     async () => {
       const dateId = await openSale(10);
       await publish();
@@ -240,13 +240,33 @@ describe('the availability publisher', () => {
         delivered(outcomeDeclared(dateId, WireDateOutcome.CANCELLED, clock.now())),
       );
       await publish();
+      expect(await published(dateId)).toHaveLength(1);
+      clock.advance(INTERVAL_MS);
+      await publish();
 
-      const events = await published(dateId);
-      expect(events.map(({ event }) => [event.seatsAvailable, event.soldOut])).toEqual([
+      expect(
+        (await published(dateId)).map(({ event }) => [event.seatsAvailable, event.soldOut]),
+      ).toEqual([
         [10, false],
-        [0, true],
+        [0, false],
       ]);
       expect(await publish()).toBe(0);
+
+      const soldOut = await openSale(2);
+      await move(soldOut, 2);
+      await publish();
+      clock.advance(1_000);
+      await applyCatalogDateMessage(
+        commands,
+        delivered(outcomeDeclared(soldOut, WireDateOutcome.INTERRUPTED, clock.now())),
+      );
+      await publish();
+      expect(
+        (await published(soldOut)).map(({ event }) => [event.seatsAvailable, event.soldOut]),
+      ).toEqual([
+        [0, true],
+        [0, false],
+      ]);
     },
     CASE_MS,
   );

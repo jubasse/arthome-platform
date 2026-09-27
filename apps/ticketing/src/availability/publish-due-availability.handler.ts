@@ -17,10 +17,14 @@ import { DateSalesRow } from '../date-sales/date-sales.entity.js';
 import { writeTicketingEvent } from '../ticketing-events.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 
-/** A closed sale offers nothing: its last publication says so, whatever seats were left. */
+/**
+ * A closed sale offers no seat, and is not sold out either: sold out is what offers the waiting
+ *   list (D-042 to D-044), which a cancelled date cannot keep. Its outcome reaches the cards
+ *   through catalog.
+ */
 function offeredFiguresOf(row: DateSalesRow): AvailabilityFigures {
   const figures = availabilityFiguresOf(row);
-  return row.on_sale ? figures : { ...figures, seatsAvailable: 0, soldOut: true };
+  return row.on_sale ? figures : { ...figures, seatsAvailable: 0, soldOut: false };
 }
 
 /** Dates a pass looks at; each is then published in a transaction of its own. */
@@ -44,7 +48,7 @@ const DUE_DATES = `
      AND (publication.failed_at IS NULL OR publication.failed_at <= $3)
      AND (publication.published_at IS NULL
           OR publication.published_at <= $1
-          OR (sales.seats_available = 0 OR NOT sales.on_sale)
+          OR (sales.on_sale AND sales.seats_available = 0)
              IS DISTINCT FROM publication.published_sold_out)
    ORDER BY publication.failed_at ASC NULLS FIRST, publication.published_at ASC NULLS FIRST
    LIMIT $2
