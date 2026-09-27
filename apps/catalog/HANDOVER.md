@@ -244,6 +244,16 @@ which registers the handlers (`dates.itest.ts`). The wiring: `dates.http.itest.t
 request there. Measured: with `DeclareOutcomeHandler` left out of `DatesModule`'s `providers`, the
 route answers 500 and this suite fails; `dates.itest.ts` lists its handlers itself and cannot see it.
 
+**No shared library yet, deliberately.** The product owner allows one under `libs/` for what every
+CQRS service here would share, never a catalog concept and never in arthome-core. Two pieces
+qualify, and neither has a second consumer: `CatalogTransactions.run`'s commit-after-commit (about
+ten lines; the repositories it binds are catalog's) and `runIdempotently` with its
+`idempotency_record` table (not CQRS-specific, and its DDL would move the way `outboxTableDdl()`
+lives in `libs/messaging`). Nothing else is generic: aggregates extend `@nestjs/cqrs`'s
+`AggregateRoot` as it is, and the events-to-outbox mapping builds catalog's own payloads over
+`writeOutboxEvent`, already shared. Both move into a library when ticketing writes its first command
+handler, so the second consumer shapes the interface rather than a guess (`nestjs-monorepo` rule 6).
+
 Decided here, and each could have gone the other way:
 
 - **The entities were renamed `PerformanceDateRow` and `PublicationRow`**, so the aggregates carry
