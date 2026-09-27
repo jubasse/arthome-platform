@@ -65,6 +65,12 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 - **The domain is not defined here.** Entities, vocabularies, error codes and boundary DTOs come
   from `@arthome/core` and `@arthome/contracts`. A string literal that duplicates a vocabulary value
   is caught by `pnpm run check:enums`, and the fix is always the import, never the literal.
+- **A library declares `@nestjs/*` and `typeorm` as peers, pinned to the apps' exact versions**
+  (`nestjs-monorepo` rule 8), **without `injected`** in the apps: an injected copy stops an app
+  reading the library's live source. So nothing but the pins keeps one copy of each installed, and
+  no gate checks it yet: a bump that misses one library's pin makes a second `@nestjs/common`, and
+  a `RefusalException` from that copy is no longer an `HttpException` to the error filter. Bump them
+  everywhere at once, and check `node_modules/.pnpm` holds one version of each after install.
 - **`vendor/` is build output of another repository.** Do not edit anything inside it. To pick up a
   change made in arthome-core, run `pnpm run bootstrap`.
 - **After `pnpm run bootstrap`, restart your editor's ESLint server.** Bootstrap re-packs
