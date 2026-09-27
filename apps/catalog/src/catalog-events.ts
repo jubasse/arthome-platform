@@ -1,5 +1,4 @@
-import { writeOutboxEvent } from '@arthome-platform/messaging';
-import type { EntityManager } from 'typeorm';
+import { outboxWriter, type OutboxWriter, type ServiceEvent } from '@arthome-platform/messaging';
 
 /**
  * The topic of every event catalog publishes, named by its aggregate type. The publication's
@@ -20,31 +19,7 @@ export const CATALOG_EVENT_TOPICS = {
 
 export type CatalogEventType = keyof typeof CATALOG_EVENT_TOPICS;
 
-export interface CatalogEvent {
-  readonly type: CatalogEventType;
-  /** The partition key: the aggregate's id, `show_id`, `date_id` or `artist_id`. */
-  readonly key: string;
-  readonly payload: Uint8Array;
-  readonly traceparent: string | null;
-}
+/** Keyed by the aggregate's id: `show_id`, `date_id` or `artist_id`. */
+export type CatalogEvent = ServiceEvent<CatalogEventType>;
 
-export function writeCatalogEvent(
-  manager: EntityManager,
-  event: CatalogEvent,
-  occurredAt: Date,
-): Promise<string> {
-  return writeOutboxEvent(
-    manager,
-    {
-      aggregateType: CATALOG_EVENT_TOPICS[event.type],
-      aggregateId: event.key,
-      type: event.type,
-      payload: event.payload,
-      traceparent: event.traceparent,
-      // No verified actor while tokens are not verified (critical-rules #4): an unverified name
-      // in a journal that decides money is worse than none.
-      actorId: null,
-    },
-    occurredAt,
-  );
-}
+export const writeCatalogEvent: OutboxWriter<CatalogEventType> = outboxWriter(CATALOG_EVENT_TOPICS);

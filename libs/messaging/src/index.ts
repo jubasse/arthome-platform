@@ -11,8 +11,8 @@ export {
   purgeProcessedMessages,
 } from './retention.js';
 export type { PurgeOutcome } from './retention.js';
-export { writeOutboxEvent } from './write.js';
-export type { OutboxFact } from './write.js';
+export { outboxWriter, writeOutboxEvent } from './write.js';
+export type { OutboxFact, OutboxWriter, ServiceEvent } from './write.js';
 
 export {
   ATTEMPT_HEADER,

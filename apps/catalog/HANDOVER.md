@@ -373,11 +373,12 @@ review, M4); never a catalog concept and never in arthome-core:
   `migrations/idempotency-record.itest.ts` fails the day they and the DDL stop making one table;
   the library's scenarios run on the DDL's;
 - `@arthome-platform/messaging`: `claimMessage(manager, messageId, topic)`, the processed-message
-  claim the three consumers each held a copy of, and `messageIdOf(payload)`, which refuses an
-  absent or malformed `message-id` as permanent at the consume edge.
+  claim the three consumers each held a copy of, `messageIdOf(payload)`, which refuses an absent or
+  malformed `message-id` as permanent at the consume edge, and `outboxWriter(topics)`, a service's
+  `writeOutboxEvent` over its table of each event type's topic (`writeCatalogEvent` is one).
 
 Nothing else is generic: aggregates extend `@nestjs/cqrs`'s `AggregateRoot` as it is, and the
-events-to-outbox mapping builds catalog's own payloads over `writeOutboxEvent`, already shared.
+events-to-outbox mapping builds catalog's own payloads over `writeCatalogEvent`.
 Ticketing is the second consumer, which shapes the interface rather than a guess
 (`nestjs-monorepo` rule 6).
 

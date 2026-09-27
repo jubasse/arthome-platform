@@ -44,3 +44,42 @@ export async function writeOutboxEvent(
   });
   return messageId;
 }
+
+/** An event a service publishes, named by its type, from which its writer finds the topic. */
+export interface ServiceEvent<Type extends string> {
+  readonly type: Type;
+  /** The partition key: the id of the aggregate the event is about. */
+  readonly key: string;
+  readonly payload: Uint8Array;
+  readonly traceparent: string | null;
+}
+
+export type OutboxWriter<Type extends string> = (
+  manager: EntityManager,
+  event: ServiceEvent<Type>,
+  occurredAt: Date,
+) => Promise<string>;
+
+/**
+ * A service's `writeOutboxEvent` over its table of each event type's aggregate type, which names the
+ *   topic: a caller names the type, never the topic.
+ */
+export function outboxWriter<Type extends string>(
+  topics: Readonly<Record<Type, string>>,
+): OutboxWriter<Type> {
+  return (manager, event, occurredAt) =>
+    writeOutboxEvent(
+      manager,
+      {
+        aggregateType: topics[event.type],
+        aggregateId: event.key,
+        type: event.type,
+        payload: event.payload,
+        traceparent: event.traceparent,
+        // No verified actor while tokens are not verified (critical-rules #4): an unverified name
+        // in a journal that decides money is worse than none.
+        actorId: null,
+      },
+      occurredAt,
+    );
+}
