@@ -13,7 +13,7 @@ import { PerformanceDateRow } from './performance-date.entity.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { PublicationRow } from './publication.entity.js';
 import { Show } from '../catalog/show.entity.js';
-import { CatalogTransactions } from '../catalog-transactions.js';
+import { CatalogTransactionsModule } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { Venue } from '../venues/venue.entity.js';
@@ -28,11 +28,11 @@ import { Venue } from '../venues/venue.entity.js';
       Venue,
       OutboxEvent,
     ]),
+    CatalogTransactionsModule,
   ],
   controllers: [DatesController],
   providers: [
     DatesService,
-    CatalogTransactions,
     DeclareOutcomeHandler,
     GetDateSheetHandler,
     { provide: CLOCK, useValue: new SystemClock() },

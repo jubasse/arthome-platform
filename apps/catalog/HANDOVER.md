@@ -227,9 +227,9 @@ for a replay or a refusal.
 **Controllers dispatch.** They parse the `traceparent`, build the `IdempotentRequest`
 (`idempotencyKeyOf`, `fingerprintOf`), and return `this.commands.execute(new DeclareOutcome(…))` or
 `this.queries.execute(new GetDateSheet(…))`, typed by `Command<R>` / `Query<R>`. `CqrsModule.forRoot()`
-is imported once, in `AppModule`; handlers and `CatalogTransactions` go in the feature module's
-`providers`. When a second module needs `CatalogTransactions`, move it to one module that exports it:
-two listings make two instances.
+is imported once, in `AppModule`; handlers go in the feature module's `providers`, and
+`CatalogTransactionsModule` in its `imports`: it lists `CatalogTransactions` once, since two
+listings make two instances.
 
 **Queries read rows, never aggregates.** `GetDateSheetHandler` reads through `dataSource.manager`
 (`dateRecordsOf`, `date-records.ts`) and shapes with the pure `dateSheet()`: no transaction and no
@@ -243,6 +243,16 @@ which registers the handlers (`dates.itest.ts`). The wiring: `dates.http.itest.t
 `DatesModule` under `CqrsModule.forRoot()` and calls the routes over HTTP; a migrated route adds its
 request there. Measured: with `DeclareOutcomeHandler` left out of `DatesModule`'s `providers`, the
 route answers 500 and this suite fails; `dates.itest.ts` lists its handlers itself and cannot see it.
+
+**No aggregate where no invariant earns one.** The show, the venue and the artist are on the
+`CommandBus` (`PublishShow`, `UpdateShow`, `CreateVenue`, `UpdateChannelIdentity`) with plain
+handlers: each runs in `CatalogTransactions.run` and writes through its `manager`, with no port and
+no domain event, so nothing reaches the bus. §12 names none of them, and none holds a rule across
+entities (`nestjs-ddd` rule 1). A venue is plain data. A show has no version and no state: its slug
+is chosen once from lookups a method could not await, and an update replaces copy. The artist is
+one row, its version checked under the row lock it always took and its slug rules all lookups, so
+an aggregate would only compare what the handler had already read. Their wiring is proven over
+HTTP by `catalog/catalog.http.itest.ts`: without `CreateVenueHandler` in `VenuesModule`, 500.
 
 **No shared library yet, deliberately.** The product owner allows one under `libs/` for what every
 CQRS service here would share, never a catalog concept and never in arthome-core. Two pieces
@@ -273,10 +283,10 @@ Decided here, and each could have gone the other way:
 | --- | --- |
 | `src/catalog/show.entity.ts` | the slice of the `Show` aggregate the `ShowPublished` contract exercises |
 | `src/migrations/1758800000000-initial.ts` | the `show` table, its channel index, and the outbox from `outboxTableDdl()` — guards included, in one step |
-| `src/catalog/publish-show.service.ts` | the one-transaction write via `writeOutboxEvent` |
+| `src/catalog/publish-show.handler.ts` | the one-transaction write via `writeOutboxEvent` |
 | `src/catalog/catalog.controller.ts` | `POST /shows`, 201, `cache-control: no-store` |
 | `src/catalog/catalog.module.ts`, `src/app.module.ts`, `src/main.ts`, `src/data-source.ts` | the wiring, copied from identity |
-| `src/catalog/publish-show.service.spec.ts` | 8 tests |
+| `src/catalog/publish-show.handler.spec.ts` | 8 tests |
 | `src/catalog/catalog.controller.spec.ts` | 7 tests — not on the deliverable list; see §2(f). **Rewritten 2026-09-25**: the two `languageDependency` cases moved to `publish-show.schema.spec.ts` with the guard, and cases for the domain media rule and the malformed traceparent were added |
 
 **Added 2026-09-25 (the HTTP edge — §2(l)):**
@@ -439,7 +449,7 @@ Judgement calls inside that:
 
 ### (f) The `languageDependency` encoding, and why it is not a parallel literal table
 
-`WIRE_LANGUAGE_DEPENDENCY` in `publish-show.service.ts` maps `@arthome/core`'s
+`WIRE_LANGUAGE_DEPENDENCY` in `wire.ts` maps `@arthome/core`'s
 `LanguageDependency` to the generated Protobuf enum. §5.2 says "a transform is the parallel
 literal table wearing a codec's costume", so this needed justifying rather than just
 writing:
@@ -516,7 +526,7 @@ Two things make this more than a style note for `catalog` specifically:
 
 - **The collision it predicts would land on this service's import first.** Catalog's
   `LanguageDependency` already collides by name with `@arthome/core`'s — a Protobuf number
-  against a domain string — and `publish-show.service.ts` has to alias one of them. That is
+  against a domain string — and `wire.ts` has to alias one of them. That is
   the near miss, one package short of being a real conflict.
 - **The headroom is measured, not assumed.** Recounted on 2026-09-26 when catalog began
   consuming ticketing, streaming and chat: common exports 15 names, identity 35, catalog 41,
@@ -740,7 +750,7 @@ both exist.
   >
   > It does fail. On the installed `@bufbuild/protobuf` 2.15.0, `assertUInt32`
   > (`binary-encoding.js:692-702`) throws on a negative, on a non-integer **and** on a
-  > non-number, and `toBinary` runs **inside** the transaction (`publish-show.service.ts:154`),
+  > non-number, and `toBinary` runs **inside** the transaction (`publish-show.handler.ts`),
   > so `runtimeMin: -1` rolls back and publishes nothing — a 500 for a bad request, which is the
   > wrong status but not a corrupt record.
   >
