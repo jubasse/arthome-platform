@@ -391,8 +391,18 @@ topics provisioned, catalog's API and consumer and ticketing's three processes r
 | the public availability | 200 with `validUntil` 60 s out; without `x-arthome-deadline`, 400 |
 | ticketing's outbox for the date | `capacity_set`, `pricing_changed`, `pricing_changed` (the lock), then `availability_changed` from the sweeper half a second after the sale opened |
 
-That run was at 630dbd5, before the reviews' fixes: their two migrations, the publisher's own table
-and its retry of a failed date, are proven on containers only so far.
+That run was at 630dbd5, before the reviews' fixes. Proven again at e0967b4, after them and after
+core's rules and D-088, the three new migrations run on the database that already held those dates:
+
+| Check | Result |
+| --- | --- |
+| a tier past 10,000 with no provision | 409 `date.technical_provision_required`, naming the threshold, the capacity and `revisableUntil` |
+| `setTechnicalProvision` 12,000, then a tier to 12,000 | 200 and 200; both wrote a `capacity_set`, and the sweeper published the new availability 0.4 s later |
+| a provision of 11,000 under 12,000 open | 409 `date.provision_below_capacity` |
+| prices in EUR and CHF on a fresh draft | 409 `date.prices_currency_mismatch`, naming the tier and both currencies |
+| the date cancelled in catalog | the sale closed in ticketing: the availability read 404, a new tier 409 `state.conflict` naming the outcome, and a last `availability_changed` of 0 seats, `sold_out` false, 0.7 s after the cancellation |
+
+The failed-date retry is still proven on containers only: nothing on the stack failed to publish.
 
 ### Search, the date page and link resolution, from the storefront BFF
 
