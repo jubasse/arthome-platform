@@ -6,12 +6,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { SystemClock } from '@arthome/core';
 
 import { DatesController } from './dates.controller.js';
-import { DatesService } from './dates.service.js';
 import { DeclareOutcomeHandler } from './declare-outcome.handler.js';
+import { DraftDateHandler } from './draft-date.handler.js';
 import { GetDateSheetHandler } from './get-date-sheet.handler.js';
 import { PerformanceDateRow } from './performance-date.entity.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { PublicationRow } from './publication.entity.js';
+import { TransitionPublicationHandler } from './transition-publication.handler.js';
 import { Show } from '../catalog/show.entity.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
@@ -31,10 +32,11 @@ import { Venue } from '../venues/venue.entity.js';
   ],
   controllers: [DatesController],
   providers: [
-    DatesService,
     CatalogTransactions,
     DeclareOutcomeHandler,
+    DraftDateHandler,
     GetDateSheetHandler,
+    TransitionPublicationHandler,
     { provide: CLOCK, useValue: new SystemClock() },
     { provide: PUBLIC_WEB_ORIGIN, useValue: readPublicWebOrigin() },
   ],

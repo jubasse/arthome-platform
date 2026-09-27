@@ -19,22 +19,28 @@ export class TypeOrmPerformanceDateRepository extends PerformanceDateRepository 
   public async findById(id: string): Promise<PerformanceDate | null> {
     const row = await this.manager.findOneBy(PerformanceDateRow, { id });
     if (row === null) return null;
-    const date = PerformanceDate.restore(snapshotOf(row));
+    const date = PerformanceDate.restore(performanceDateSnapshotOf(row));
     this.loaded.add(date);
     return date;
   }
 
-  /** Unconditioned: the date's commands are conditioned on its publication, saved before it. */
+  /**
+   * Inserts a date it did not load, a draft; updates one it did, unconditioned: the date's
+   *   commands are conditioned on its publication, saved before it.
+   */
   public async save(date: PerformanceDate): Promise<void> {
     const { id } = date.snapshot;
-    // The draft command brings the INSERT, with the factory that creates a date.
-    if (!this.loaded.has(date)) throw new Error(`date ${id} was not loaded in this transaction`);
-    await this.manager.update(PerformanceDateRow, { id }, columnsOf(date.snapshot));
+    if (this.loaded.has(date)) {
+      await this.manager.update(PerformanceDateRow, { id }, columnsOf(date.snapshot));
+    } else {
+      await this.manager.insert(PerformanceDateRow, { id, ...columnsOf(date.snapshot) });
+      this.loaded.add(date);
+    }
     this.onSaved(date);
   }
 }
 
-function snapshotOf(row: PerformanceDateRow): PerformanceDateSnapshot {
+export function performanceDateSnapshotOf(row: PerformanceDateRow): PerformanceDateSnapshot {
   return {
     id: row.id,
     showId: row.show_id,

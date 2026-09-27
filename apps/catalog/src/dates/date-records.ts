@@ -6,8 +6,10 @@ import { ApiErrorCode, FailureNature } from '@arthome/core';
 
 import type { DateRecords } from './date-sheet.js';
 import { PerformanceDateRow } from './performance-date.entity.js';
+import { performanceDateSnapshotOf } from './performance-date.typeorm-repository.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { PublicationRow } from './publication.entity.js';
+import { publicationSnapshotOf } from './publication.typeorm-repository.js';
 import { Show } from '../catalog/show.entity.js';
 import { Venue } from '../venues/venue.entity.js';
 
@@ -23,8 +25,10 @@ export async function dateRecordsOf(manager: EntityManager, dateId: string): Pro
   const date = await manager.findOneBy(PerformanceDateRow, { id: dateId });
   if (date === null) throw dateNotFound();
   return {
-    date,
-    publication: await manager.findOneByOrFail(PublicationRow, { date_id: dateId }),
+    date: performanceDateSnapshotOf(date),
+    publication: publicationSnapshotOf(
+      await manager.findOneByOrFail(PublicationRow, { date_id: dateId }),
+    ),
     show: await manager.findOneByOrFail(Show, { id: date.show_id }),
     venue: await manager.findOneByOrFail(Venue, { id: date.venue_id }),
     projectedFacts: await manager.findBy(PublicationChecklistFact, { date_id: dateId }),

@@ -12,9 +12,9 @@ import {
 } from '@arthome/core';
 
 import { ownChecklistFacts } from './own-checklist.js';
-import type { PerformanceDateRow } from './performance-date.entity.js';
+import type { PerformanceDateSnapshot } from './performance-date.aggregate.js';
 import type { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
-import type { PublicationRow } from './publication.entity.js';
+import type { PublicationSnapshot } from './publication.aggregate.js';
 import type { Show } from '../catalog/show.entity.js';
 import { dateUrl } from '../public/links.js';
 import { venueClockAt } from '../venues/venue-clock.js';
@@ -64,8 +64,8 @@ export interface DateSheet {
 }
 
 export interface DateRecords {
-  readonly date: PerformanceDateRow;
-  readonly publication: PublicationRow;
+  readonly date: PerformanceDateSnapshot;
+  readonly publication: PublicationSnapshot;
   readonly show: Show;
   readonly venue: Venue;
   readonly projectedFacts: readonly PublicationChecklistFact[];
@@ -87,18 +87,18 @@ export function satisfiedChecklistItems(
  * production by `DenyInProductionGuard`, so no real operator reaches this without rights.
  */
 export function publicationView(
-  publication: PublicationRow,
+  publication: PublicationSnapshot,
   satisfied: readonly PublicationChecklistItem[],
 ): PublicationView {
   const readiness = publicationReadiness(satisfied);
   return {
-    dateId: publication.date_id,
+    dateId: publication.dateId,
     state: publication.state,
     orderRank: orderRankOf(publication.state),
     version: publication.version,
-    publishedAt: publication.published_at?.toISOString() ?? null,
-    pricesLockedAt: publication.prices_locked_at?.toISOString() ?? null,
-    replayOnlineAt: publication.replay_online_at?.toISOString() ?? null,
+    publishedAt: publication.publishedAt,
+    pricesLockedAt: publication.pricesLockedAt,
+    replayOnlineAt: publication.replayOnlineAt,
     checklist: readiness.entries.map((entry) => ({
       id: entry.item,
       satisfied: entry.satisfied,
@@ -116,17 +116,16 @@ export function publicationView(
 
 export function dateSheet(records: DateRecords, origin: string): DateSheet {
   const { date, publication, show, venue, projectedFacts } = records;
-  const startsAt = date.starts_at.toISOString();
   return {
     dateId: date.id,
-    channelId: date.channel_id,
-    showId: date.show_id,
-    venueId: date.venue_id,
-    startsAt,
-    venueClock: venueClockAt(venue.time_zone, startsAt),
-    runtimeMin: date.runtime_min,
-    replayPolicy: date.replay_policy,
-    replayWindowHours: date.replay_window_hours,
+    channelId: date.channelId,
+    showId: date.showId,
+    venueId: date.venueId,
+    startsAt: date.startsAt,
+    venueClock: venueClockAt(venue.time_zone, date.startsAt),
+    runtimeMin: date.runtimeMin,
+    replayPolicy: date.replayPolicy,
+    replayWindowHours: date.replayWindowHours,
     rights: date.rights,
     canonicalUrl: date.slug === null ? null : dateUrl(origin, show.slug, date.slug),
     publication: publicationView(publication, satisfiedChecklistItems(show, projectedFacts)),

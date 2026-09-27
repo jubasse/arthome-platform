@@ -5,11 +5,12 @@ import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { DateIdSchema } from '@arthome/core/schema';
 
 import type { DateSheet, PublicationView } from './date-sheet.js';
-import { DatesService } from './dates.service.js';
 import { DeclareOutcome, type DeclaredOutcome } from './declare-outcome.command.js';
 import { DeclareOutcomeSchema, type DeclareOutcomeBody } from './declare-outcome.schema.js';
+import { DraftDate } from './draft-date.command.js';
 import { DraftDateSchema, type DraftDateBody } from './draft-date.schema.js';
 import { GetDateSheet } from './get-date-sheet.query.js';
+import { TransitionPublication } from './transition-publication.command.js';
 import {
   TransitionPublicationSchema,
   type TransitionPublicationBody,
@@ -20,7 +21,6 @@ import { fingerprintOf, idempotencyKeyOf } from '../idempotency/idempotency.js';
 @Controller()
 export class DatesController {
   public constructor(
-    private readonly dates: DatesService,
     private readonly commands: CommandBus,
     private readonly queries: QueryBus,
   ) {}
@@ -35,14 +35,13 @@ export class DatesController {
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<DateSheet>> {
     const trace = parseTraceparent(traceparent);
-    return this.dates.draft(
-      { channelId, ...body, traceparent: trace === null ? null : trace.traceparent },
-      {
+    return this.commands.execute(
+      new DraftDate(channelId, body, trace === null ? null : trace.traceparent, {
         key: idempotencyKeyOf(idempotencyKey),
         accountId: null,
         fingerprint: fingerprintOf('POST', `/channels/${channelId}/dates`, body),
         statusCode: 201,
-      },
+      }),
     );
   }
 
@@ -56,20 +55,13 @@ export class DatesController {
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<PublicationView>> {
     const trace = parseTraceparent(traceparent);
-    return this.dates.transition(
-      {
-        dateId,
-        to: body.to,
-        expectedVersion: body.expectedVersion,
-        acknowledgedPromise: body.acknowledgedPromiseCode,
-        traceparent: trace === null ? null : trace.traceparent,
-      },
-      {
+    return this.commands.execute(
+      new TransitionPublication(dateId, body, trace === null ? null : trace.traceparent, {
         key: idempotencyKeyOf(idempotencyKey),
         accountId: null,
         fingerprint: fingerprintOf('POST', `/dates/${dateId}/publication/transitions`, body),
         statusCode: 200,
-      },
+      }),
     );
   }
 
