@@ -82,9 +82,10 @@ import { DateOutcome1790420700000 } from '../migrations/1790420700000-date-outco
 import { Artist1790420800000 } from '../migrations/1790420800000-artist.js';
 import { PublicSlugs1790420900000 } from '../migrations/1790420900000-public-slugs.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';
-import { PublicArtistsService } from '../public/public-artists.service.js';
-import { PublicDatesService } from '../public/public-dates.service.js';
-import { PublicLinksService } from '../public/public-links.service.js';
+import { GetArtistDetail } from '../public/get-artist-detail.query.js';
+import { GetDateDetail } from '../public/get-date-detail.query.js';
+import { publicQueryBus } from '../public/public-fixtures.js';
+import { ResolvePublicLink } from '../public/resolve-public-link.query.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
 import { SlugAlias } from '../public/slug-alias.entity.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
@@ -712,10 +713,8 @@ describe('a show update', () => {
 
 describe('the public date page', () => {
   const ORIGIN = 'https://arthome.test';
-  const publicDates = (): PublicDatesService =>
-    new PublicDatesService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'), ORIGIN);
-  const publicLinks = (): PublicLinksService =>
-    new PublicLinksService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'), ORIGIN);
+  const publicQueries = () =>
+    publicQueryBus(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'), ORIGIN);
   const rowOf = (dateId: string) =>
     dataSource.getRepository(DateDetailPublic).findOneBy({ date_id: dateId });
 
@@ -749,7 +748,7 @@ describe('the public date page', () => {
     'serves the page with the show’s copy and its other public dates, and 404 for a draft',
     async () => {
       const dateId = '01a0e100-0000-7000-8000-0000000004a1';
-      const { data } = await publicDates().detail(dateId);
+      const { data } = await publicQueries().execute(new GetDateDetail(dateId));
 
       expect(data).toMatchObject({
         id: dateId,
@@ -767,7 +766,9 @@ describe('the public date page', () => {
 
       const draftOnly = '01a0e100-0000-7000-8000-0000000004a2';
       await draft(draftOnly);
-      expect((await refusalOf(publicDates().detail(draftOnly))).getStatus()).toBe(404);
+      expect(
+        (await refusalOf(publicQueries().execute(new GetDateDetail(draftOnly)))).getStatus(),
+      ).toBe(404);
     },
     CASE_MS,
   );
@@ -797,12 +798,14 @@ describe('the public date page', () => {
       const url = (await sheet(dateId)).canonicalUrl ?? '';
       const slug = `nuit-blanche/${url.split('/').at(-1) ?? ''}`;
 
-      const byUrl = await publicLinks().resolve({ url });
-      const bySlug = await publicLinks().resolve({ kind: LinkKind.DATE, slug });
+      const byUrl = await publicQueries().execute(new ResolvePublicLink({ url }));
+      const bySlug = await publicQueries().execute(
+        new ResolvePublicLink({ kind: LinkKind.DATE, slug }),
+      );
       expect(byUrl.data).toMatchObject({ kind: LinkKind.DATE, id: dateId, canonicalUrl: url });
       expect(bySlug.data.id).toBe(dateId);
       for (const show of [`${ORIGIN}/show/nuit-blanche`, `${ORIGIN}/s/nuit-blanche`]) {
-        expect((await publicLinks().resolve({ url: show })).data).toEqual({
+        expect((await publicQueries().execute(new ResolvePublicLink({ url: show }))).data).toEqual({
           kind: LinkKind.SHOW,
           id: SHOW_ID,
           canonicalUrl: `${ORIGIN}/show/nuit-blanche`,
@@ -815,9 +818,13 @@ describe('the public date page', () => {
         { url: url.replace('nuit-blanche', 'nuit-noire') },
         { kind: LinkKind.DATE, slug: url.split('/').at(-1) ?? '' },
       ]) {
-        expect((await refusalOf(publicLinks().resolve(dead))).getStatus()).toBe(404);
+        expect(
+          (await refusalOf(publicQueries().execute(new ResolvePublicLink(dead)))).getStatus(),
+        ).toBe(404);
       }
-      const both = await refusalOf(publicLinks().resolve({ url, kind: LinkKind.DATE, slug }));
+      const both = await refusalOf(
+        publicQueries().execute(new ResolvePublicLink({ url, kind: LinkKind.DATE, slug })),
+      );
       expect(both.refusal).toMatchObject({
         code: ApiErrorCode.SCHEMA_INVALID,
         params: { fields: ['kind', 'slug'] },
@@ -877,10 +884,8 @@ describe('a date outcome', () => {
     contentLanguage: Locale.FR,
     text: 'Report au 12 novembre. Vos places restent valables.',
   };
-  const publicDates = (): PublicDatesService =>
-    new PublicDatesService(dataSource, new FixedClock('2026-09-26T10:00:00.000Z'), ORIGIN);
-  const publicLinks = (at = '2026-09-26T10:00:00.000Z'): PublicLinksService =>
-    new PublicLinksService(dataSource, new FixedClock(at), ORIGIN);
+  const publicQueries = (at = '2026-09-26T10:00:00.000Z') =>
+    publicQueryBus(dataSource, new FixedClock(at), ORIGIN);
 
   async function published(dateId: string): Promise<void> {
     await draft(dateId);
@@ -949,7 +954,7 @@ describe('a date outcome', () => {
         newCanonicalUrl: `${ORIGIN}/show/nuit-blanche/date/2026-11-12`,
       });
 
-      const page = await publicDates().detail(dateId);
+      const page = await publicQueries().execute(new GetDateDetail(dateId));
       expect(page.data).toMatchObject({
         displayState: DisplayState.POSTPONED,
         displayStateValidUntil: '2026-11-12T19:00:00.000Z',
@@ -960,7 +965,9 @@ describe('a date outcome', () => {
         canonicalUrl: `${ORIGIN}/show/nuit-blanche/date/2026-11-12`,
       });
       // D-075: the URL shared before the move still leads to the date, under its new form.
-      expect((await publicLinks().resolve({ url: before ?? '' })).data).toMatchObject({
+      expect(
+        (await publicQueries().execute(new ResolvePublicLink({ url: before ?? '' }))).data,
+      ).toMatchObject({
         kind: LinkKind.DATE,
         id: dateId,
         canonicalUrl: `${ORIGIN}/show/nuit-blanche/date/2026-11-12`,
@@ -1025,16 +1032,22 @@ describe('a date outcome', () => {
       ]);
 
       const retired = `${ORIGIN}/show/nuit-blanche/date/2026-11-12`;
-      expect((await publicLinks().resolve({ url: retired })).data).toMatchObject({
+      expect(
+        (await publicQueries().execute(new ResolvePublicLink({ url: retired }))).data,
+      ).toMatchObject({
         id: dateId,
         canonicalUrl: `${ORIGIN}/show/nuit-blanche/date/2026-11-26`,
       });
       const monthLater = new Date(
         Date.parse('2026-09-26T10:00:00.000Z') + DomainConstant.SLUG_REDIRECT_DAYS * 86_400_000,
       ).toISOString();
-      expect((await refusalOf(publicLinks(monthLater).resolve({ url: retired }))).getStatus()).toBe(
-        404,
-      );
+      expect(
+        (
+          await refusalOf(
+            publicQueries(monthLater).execute(new ResolvePublicLink({ url: retired })),
+          )
+        ).getStatus(),
+      ).toBe(404);
     },
     CASE_MS,
   );
@@ -1055,7 +1068,7 @@ describe('a date outcome', () => {
       const types = (await outboxRowsFor(dateId)).map((row) => row.type);
       expect(types.at(-1)).toBe('catalog.date.outcome_declared.v1');
       expect(types).not.toContain('catalog.date.rescheduled.v1');
-      expect((await publicDates().detail(dateId)).data).toMatchObject({
+      expect((await publicQueries().execute(new GetDateDetail(dateId))).data).toMatchObject({
         displayState: DisplayState.CANCELLED,
         displayStateValidUntil: null,
         outcome: DateOutcome.CANCELLED,
@@ -1125,11 +1138,13 @@ describe('an artist’s page', () => {
       await satisfyProjectedItems(published);
       await move(published, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
 
-      const card = (await new PublicDatesService(dataSource, clock, ORIGIN).detail(published)).data;
+      const card = (
+        await publicQueryBus(dataSource, clock, ORIGIN).execute(new GetDateDetail(published))
+      ).data;
       expect(card.artist).toEqual({ id: artistId, name: 'Compagnie Verticale' });
 
-      const { data: page } = await new PublicArtistsService(dataSource, clock, ORIGIN).page(
-        artistId,
+      const { data: page } = await publicQueryBus(dataSource, clock, ORIGIN).execute(
+        new GetArtistDetail(artistId),
       );
       expect(page).toMatchObject({
         id: artistId,
@@ -1143,9 +1158,9 @@ describe('an artist’s page', () => {
       // The cancelled date of the outcome cases is this channel's too, and it is over for good.
       expect(past).toContain('01a0e100-0000-7000-8000-0000000005a2');
 
-      const resolved = await new PublicLinksService(dataSource, clock, ORIGIN).resolve({
-        url: `${ORIGIN}/a/compagnie-verticale`,
-      });
+      const resolved = await publicQueryBus(dataSource, clock, ORIGIN).execute(
+        new ResolvePublicLink({ url: `${ORIGIN}/a/compagnie-verticale` }),
+      );
       expect(resolved.data).toMatchObject({
         kind: LinkKind.ARTIST,
         id: artistId,

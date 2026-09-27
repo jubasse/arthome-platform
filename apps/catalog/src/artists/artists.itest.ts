@@ -38,7 +38,8 @@ import { DateOutcome1790420700000 } from '../migrations/1790420700000-date-outco
 import { Artist1790420800000 } from '../migrations/1790420800000-artist.js';
 import { PublicSlugs1790420900000 } from '../migrations/1790420900000-public-slugs.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';
-import { PublicLinksService } from '../public/public-links.service.js';
+import { publicQueryBus } from '../public/public-fixtures.js';
+import { ResolvePublicLink } from '../public/resolve-public-link.query.js';
 import { SlugAlias } from '../public/slug-alias.entity.js';
 
 /** The channel's public face against a real Postgres: versions, slugs and what it projects. */
@@ -228,13 +229,17 @@ describe('a channel’s public face', () => {
       const moved = await edit('channel-a', { expectedVersion: 2, slug: 'verticale' });
       expect(moved.envelope.data.slug).toBe('verticale');
 
-      const links = new PublicLinksService(
+      const links = publicQueryBus(
         dataSource,
         new FixedClock('2026-09-27T10:00:00.000Z'),
         'https://arthome.test',
       );
       expect(
-        (await links.resolve({ url: 'https://arthome.test/a/compagnie-verticale' })).data,
+        (
+          await links.execute(
+            new ResolvePublicLink({ url: 'https://arthome.test/a/compagnie-verticale' }),
+          )
+        ).data,
       ).toMatchObject({
         id: moved.envelope.data.artistId,
         canonicalUrl: 'https://arthome.test/artist/verticale',
