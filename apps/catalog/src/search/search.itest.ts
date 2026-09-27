@@ -116,11 +116,14 @@ interface Envelope {
   readonly error?: { readonly code: string; readonly params: Record<string, unknown> };
 }
 
-const IN_A_SECOND = addHours(NOW, 1 / 3600);
+// Out of reach for any case but the deadline's own. Measured with a one-second budget and three
+// agents' containers running (load average 20): the first search on the cold cluster ran out twice
+// in five runs, and its case read a 504.
+const IN_AN_HOUR = addHours(NOW, 1);
 
 async function search(
   query: Record<string, string | string[]>,
-  deadline: string | null = IN_A_SECOND,
+  deadline: string | null = IN_AN_HOUR,
 ): Promise<{ readonly status: number; readonly body: Envelope }> {
   const response = await app.inject({
     method: 'GET',
@@ -176,10 +179,6 @@ beforeAll(async () => {
   });
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
-  // Measured: with three agents' containers running (load average 20), the first search on the
-  // cold cluster outlasted the 1 s budget twice in five runs, and the first case read a 504. The
-  // warm-up takes the path that succeeds, with a deadline it cannot miss.
-  await search({ sort: SearchSort.SOON }, addHours(NOW, 1));
 }, STARTUP_MS);
 
 afterAll(async () => {
