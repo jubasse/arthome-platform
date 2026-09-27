@@ -52,6 +52,22 @@ export function fingerprintOf(method: string, path: string, body: unknown): stri
     .digest('hex');
 }
 
+/** `statusCode` is the one the route answers, which a replay answers again. */
+export function idempotentRequestOf(
+  method: string,
+  path: string,
+  body: unknown,
+  statusCode: number,
+  idempotencyKey: string | undefined,
+): IdempotentRequest {
+  return {
+    key: idempotencyKeyOf(idempotencyKey),
+    accountId: null,
+    fingerprint: fingerprintOf(method, path, body),
+    statusCode,
+  };
+}
+
 /**
  * transport.md §5.4 inside the command's own transaction. The record is inserted first, so a
  * second attempt with the same key waits on it; it is completed with the envelope before the

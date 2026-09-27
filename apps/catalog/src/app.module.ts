@@ -1,11 +1,6 @@
-import { isProductionEnvironment } from '@arthome-platform/config';
 import {
-  DenyInProductionGuard,
-  ErrorEnvelopeFilter,
   HealthController,
   READINESS_CHECKS,
-  SuccessEnvelopeInterceptor,
-  schemaInvalidException,
   type ReadinessCheck,
 } from '@arthome-platform/http-edge';
 import {
@@ -15,33 +10,27 @@ import {
   checkReplicationSlot,
   outboxSlotName,
 } from '@arthome-platform/messaging';
-import { Module, StandardSchemaValidationPipe } from '@nestjs/common';
-import {
-  APP_FILTER,
-  APP_GUARD,
-  APP_INTERCEPTOR,
-  APP_PIPE,
-  HttpAdapterHost,
-  Reflector,
-} from '@nestjs/core';
+import { Module } from '@nestjs/common';
+import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { Service, SystemClock } from '@arthome/core';
+import { Service } from '@arthome/core';
 
 import { ArtistsModule } from './artists/artists.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { dataSource } from './data-source.js';
 import { DatesModule } from './dates/dates.module.js';
+import { EDGE_PROVIDERS } from './edge-providers.js';
 import { PublicModule } from './public/public.module.js';
 import { SearchModule } from './search/search.module.js';
-import { UNIQUE_VIOLATION_CODES } from './unique-violations.js';
 import { VenuesModule } from './venues/venues.module.js';
 
 @Module({
   controllers: [HealthController],
   imports: [
     TypeOrmModule.forRoot(dataSource.options),
+    CqrsModule.forRoot(),
     CatalogModule,
     VenuesModule,
     DatesModule,
@@ -50,40 +39,7 @@ import { VenuesModule } from './venues/venues.module.js';
     SearchModule,
   ],
   providers: [
-    /**
-     * A schema on a `@Body()` parameter is metadata: without this pipe reading it, nothing
-     *   validates. Global rather than `@UsePipes` on a method, where the schema would run on
-     *   every parameter of the handler, `@Param('id')` included.
-     */
-    {
-      provide: APP_PIPE,
-      useValue: new StandardSchemaValidationPipe({ exceptionFactory: schemaInvalidException }),
-    },
-    /**
-     * `useFactory` rather than `useGlobalFilters`, which cannot inject the `HttpAdapterHost`
-     *   this filter replies through. Adding a `UNIQUE` to this schema means adding its code
-     *   here too, or the violation answers 500.
-     */
-    {
-      provide: APP_FILTER,
-      inject: [HttpAdapterHost],
-      useFactory: (adapterHost: HttpAdapterHost): ErrorEnvelopeFilter =>
-        new ErrorEnvelopeFilter(adapterHost, new SystemClock(), UNIQUE_VIOLATION_CODES),
-    },
-    // §5.5's envelope on the success path, symmetric with the filter on the error path: both
-    // take the `Clock` rather than reading the machine's time.
-    {
-      provide: APP_INTERCEPTOR,
-      useFactory: (): SuccessEnvelopeInterceptor =>
-        new SuccessEnvelopeInterceptor(new SystemClock()),
-    },
-    /** It refuses EVERY route, so a liveness probe will need an exemption. */
-    {
-      provide: APP_GUARD,
-      inject: [Reflector],
-      useFactory: (reflector: Reflector): DenyInProductionGuard =>
-        new DenyInProductionGuard(isProductionEnvironment(), reflector),
-    },
+    ...EDGE_PROVIDERS,
     {
       provide: READINESS_CHECKS,
       inject: [DataSource],

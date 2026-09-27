@@ -5,9 +5,9 @@ import { Service } from '@arthome/core';
 
 import { Artist } from './artists/artist.entity.js';
 import { Show } from './catalog/show.entity.js';
-import { PerformanceDate } from './dates/performance-date.entity.js';
+import { PerformanceDateRow } from './dates/performance-date.entity.js';
 import { PublicationChecklistFact } from './dates/publication-checklist-fact.entity.js';
-import { Publication } from './dates/publication.entity.js';
+import { PublicationRow } from './dates/publication.entity.js';
 import { env } from './env.js';
 import { Initial1758800000000 } from './migrations/1758800000000-initial.js';
 import { Idempotency1790420000000 } from './migrations/1790420000000-idempotency.js';
@@ -36,8 +36,8 @@ export const dataSource: DataSource = new DataSource({
   entities: [
     Show,
     Venue,
-    PerformanceDate,
-    Publication,
+    PerformanceDateRow,
+    PublicationRow,
     PublicationChecklistFact,
     DateDetailPublic,
     Artist,

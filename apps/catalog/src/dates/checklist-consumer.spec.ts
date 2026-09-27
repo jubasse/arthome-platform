@@ -3,12 +3,14 @@ import {
   DateChatPolicyChangedSchema,
   DateSalesPricingChangedSchema,
 } from '@arthome-platform/events';
-import { PermanentError } from '@arthome-platform/messaging';
+import { ATTEMPT_HEADER, PermanentError, dispatch, retryTopic } from '@arthome-platform/messaging';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
-import type { EachMessagePayload } from 'kafkajs';
-import type { DataSource } from 'typeorm';
+import type { CommandBus } from '@nestjs/cqrs';
+import type { EachMessagePayload, Producer, ProducerRecord } from 'kafkajs';
 import { describe, expect, it } from 'vitest';
+
+import { DomainError, DomainErrorCode, Service } from '@arthome/core';
 
 import { applyChecklistMessage } from './checklist-consumer.js';
 
@@ -28,10 +30,10 @@ function message(type: string | null, value: Uint8Array | null, messageId: strin
 }
 
 const untouchable = {
-  transaction: () => {
-    throw new Error('no transaction expected');
+  execute: () => {
+    throw new Error('no command expected');
   },
-} as unknown as DataSource;
+} as unknown as CommandBus;
 
 describe('applyChecklistMessage, before any write', () => {
   it('ignores a type that says nothing about the checklist', async () => {
@@ -72,10 +74,60 @@ describe('applyChecklistMessage, before any write', () => {
       }),
     );
     const reachedTheWrite = {
-      transaction: () => Promise.resolve('applied'),
-    } as unknown as DataSource;
+      execute: () => Promise.resolve('applied'),
+    } as unknown as CommandBus;
     await expect(
       applyChecklistMessage(reachedTheWrite, message('chat.date_chat_policy.changed.v1', policy)),
     ).resolves.toBe('applied');
+  });
+
+  it('retries what the bus fails with, short of a refusal, as transient', async () => {
+    const sent: ProducerRecord[] = [];
+    const producer = {
+      send: (record: ProducerRecord) => {
+        sent.push(record);
+        return Promise.resolve([]);
+      },
+    } as unknown as Producer;
+    const unreachable = {
+      execute: () => Promise.reject(new Error('Connection terminated unexpectedly')),
+    } as unknown as CommandBus;
+    const policy = toBinary(
+      DateChatPolicyChangedSchema,
+      create(DateChatPolicyChangedSchema, {
+        dateId: 'date-1',
+        mode: ChatMode.OPEN,
+        occurredAt: timestampFromDate(new Date('2026-09-26T10:00:00.000Z')),
+      }),
+    );
+
+    const disposition = await dispatch(
+      (payload) => applyChecklistMessage(unreachable, payload),
+      producer,
+      Service.CATALOG,
+      message('chat.date_chat_policy.changed.v1', policy),
+    );
+
+    expect(disposition).toBe('retried');
+    expect(sent.map((record) => record.topic)).toEqual([retryTopic(Service.CATALOG)]);
+    expect(sent[0]?.messages[0]?.headers?.[ATTEMPT_HEADER]).toBe('1');
+  });
+
+  it('dead-letters a refusal other than an unknown date under its code, not as unknown', async () => {
+    const refusing = {
+      execute: () => Promise.reject(new DomainError({ code: DomainErrorCode.STATE_CONFLICT })),
+    } as unknown as CommandBus;
+    const policy = toBinary(
+      DateChatPolicyChangedSchema,
+      create(DateChatPolicyChangedSchema, {
+        dateId: 'date-1',
+        mode: ChatMode.OPEN,
+        occurredAt: timestampFromDate(new Date('2026-09-26T10:00:00.000Z')),
+      }),
+    );
+
+    await expect(
+      applyChecklistMessage(refusing, message('chat.date_chat_policy.changed.v1', policy)),
+    ).rejects.toThrow('message m-1 is about date date-1, refused state.conflict');
   });
 });

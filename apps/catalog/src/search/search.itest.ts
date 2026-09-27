@@ -1,30 +1,22 @@
 import {
-  ErrorEnvelopeFilter,
-  SuccessEnvelopeInterceptor,
-  schemaInvalidException,
-} from '@arthome-platform/http-edge';
-import {
   DATE_INDEX_ALIAS,
   DATE_INDEX_CONCRETE,
   DATE_INDEX_MAPPING,
   INDEX_SETTINGS,
 } from '@arthome-platform/search-index';
 import { startStack, type StartedStack } from '@arthome-platform/testing';
-import { StandardSchemaValidationPipe } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE, HttpAdapterHost } from '@nestjs/core';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { Test } from '@nestjs/testing';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Client } from '@opensearch-project/opensearch';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ApiErrorCode, DisplayState, FixedClock, ReplayPolicy } from '@arthome/core';
 
+import { OPENSEARCH } from './search-catalog.handler.js';
 import { dateDocument } from './search-fixtures.js';
 import { SearchSort, SearchTab } from './search-query.schema.js';
 import { SearchModule } from './search.module.js';
-import { OPENSEARCH } from './search.service.js';
 import type { ServableDateDocument } from './servable-document.js';
-import { CLOCK } from '../clock.js';
+import { httpApp } from '../itest/http-app.js';
 
 /**
  * The search against a real OpenSearch, through the HTTP edge. What only a cluster proves:
@@ -115,11 +107,14 @@ interface Envelope {
   readonly error?: { readonly code: string; readonly params: Record<string, unknown> };
 }
 
-const IN_A_SECOND = addHours(NOW, 1 / 3600);
+// Out of reach for any case but the deadline's own. Measured with a one-second budget and three
+// agents' containers running (load average 20): the first search on the cold cluster ran out twice
+// in five runs, and its case read a 504.
+const IN_AN_HOUR = addHours(NOW, 1);
 
 async function search(
   query: Record<string, string | string[]>,
-  deadline: string | null = IN_A_SECOND,
+  deadline: string | null = IN_AN_HOUR,
 ): Promise<{ readonly status: number; readonly body: Envelope }> {
   const response = await app.inject({
     method: 'GET',
@@ -148,33 +143,11 @@ beforeAll(async () => {
   }
   await client.indices.refresh({ index: DATE_INDEX_ALIAS });
 
-  const clock = new FixedClock(NOW);
-  const moduleRef = await Test.createTestingModule({
+  app = await httpApp({
     imports: [SearchModule],
-    providers: [
-      {
-        provide: APP_PIPE,
-        useValue: new StandardSchemaValidationPipe({ exceptionFactory: schemaInvalidException }),
-      },
-      {
-        provide: APP_FILTER,
-        inject: [HttpAdapterHost],
-        useFactory: (host: HttpAdapterHost): ErrorEnvelopeFilter =>
-          new ErrorEnvelopeFilter(host, clock),
-      },
-      { provide: APP_INTERCEPTOR, useValue: new SuccessEnvelopeInterceptor(clock) },
-    ],
-  })
-    .overrideProvider(OPENSEARCH)
-    .useValue(client)
-    .overrideProvider(CLOCK)
-    .useValue(clock)
-    .compile();
-  app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
-    logger: false,
+    clock: new FixedClock(NOW),
+    overrides: [[OPENSEARCH, client]],
   });
-  await app.init();
-  await app.getHttpAdapter().getInstance().ready();
 }, STARTUP_MS);
 
 afterAll(async () => {

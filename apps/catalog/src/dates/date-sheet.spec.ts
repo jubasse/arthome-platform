@@ -8,18 +8,17 @@ import {
 } from '@arthome/core';
 
 import { publicationView } from './date-sheet.js';
-import type { Publication } from './publication.entity.js';
+import type { PublicationSnapshot } from './publication.js';
 
-function publicationIn(state: PublicationState): Publication {
+function publicationIn(state: PublicationState): PublicationSnapshot {
   return {
-    date_id: 'date-1',
-    channel_id: 'channel-1',
+    dateId: 'date-1',
+    channelId: 'channel-1',
     state,
     version: 3,
-    published_at: null,
-    prices_locked_at: null,
-    replay_online_at: null,
-    updated_at: new Date(),
+    publishedAt: null,
+    pricesLockedAt: null,
+    replayOnlineAt: null,
   };
 }
 

@@ -26,7 +26,9 @@ debugging NestJS code, load `nestjs-how-to` and the skills it routes to.** Alway
 - `nestjs-typeorm` (typeorm, @nestjs/typeorm) · `nestjs-kafka` (kafkajs) · `nestjs-event-driven`
   (the outbox and the idempotent consumers) · `nestjs-performance` (@nestjs/platform-fastify) ·
   `nestjs-monorepo` (pnpm workspace) · `nestjs-search` (@opensearch-project/opensearch) ·
-  `nestjs-bff-gateway` (`apps/bff-storefront`)
+  `nestjs-bff-gateway` (`apps/bff-storefront`) · `nestjs-cqrs` (@nestjs/cqrs, `apps/catalog`, whose
+  conventions are `apps/catalog/HANDOVER.md` §0f) ·
+  `nestjs-ddd` (catalog's aggregates and repository ports, which `nestjs-cqrs` routes to)
 
 Project decisions — the ADRs and `DECISIONS.md` in arthome-core — take precedence over these
 community defaults, and a recorded decision is never reopened.
@@ -284,7 +286,7 @@ An outcome was proven on the same stack on 2026-09-27, the indexer, catalog and 
 
 That last row is a defect the run found: catalog crashed on the first abort, because its listener
 returned the OpenSearch request, a thenable, and Node's `EventTarget` reports a listener's rejected
-thenable as an uncaught exception. Fixed, and held by `search.service.spec.ts`.
+thenable as an uncaught exception. Fixed, and held by `search-catalog.handler.spec.ts`.
 
 A channel's public face was proven the same way on 2026-09-27:
 
@@ -310,6 +312,25 @@ catalog, the three processes running:
 | a third, a fourth, then a cancellation | 200; 409 `date.postponement_limit_reached` with `max: 3`; 200, the page `cancelled` at its last date |
 | postponing the cancelled date | 409 `state.conflict` naming `outcome` |
 | the artist's slug changed | the old `/a/…` resolving to `/artist/port`; the old slug refused to another channel, 409 `artist.slug_taken` |
+
+Catalog moved to `@nestjs/cqrs` the same day (arthome-core D-084, D-085; the conventions are
+`apps/catalog/HANDOVER.md` §0f). Proven on the stack above, the API, the checklist consumer, the
+indexer and the BFF all built from that code, the facts sent on the three source topics by a
+producer script:
+
+| Check | Result |
+| --- | --- |
+| a draft, then the same key again | 201; replayed 201 with `Idempotency-Replayed: true` |
+| the four checklist facts through Kafka | `applied` four times; the same `message-id` again, `duplicate` |
+| facts about a date catalog does not hold | `dead-lettered` at once: attempt 0, reason `permanent`, "… is about date …, unknown here" |
+| a `message-id` that is not a UUID | retried as transient on `arthome.catalog.retry`, since `processed_message.id` refuses it: a malformed id should be permanent, left open |
+| publishing | 200, version 2; slug `2027-03-10`, running time frozen at 110; on the date's key `drafted`, `state_changed`, `date.scheduled`, `engaged`; indexed; resolved through the BFF in 57 ms |
+| postponing, then a stale command | 200, slug `2027-03-17`, the old one aliased; `outcome_declared` then `rescheduled`; 409 `state.conflict` with version 3 |
+| the show retitled, the artist renamed | the old URL resolves to the new one, with the new title and the new name |
+| SIGTERM to the consumer | both groups stopped, exit in 2.2 s, no connection left in `pg_stat_activity` |
+
+The `TimeoutNegativeWarning` a KafkaJS client prints at start comes from KafkaJS 2.2.4 on Node 24:
+a bare producer script prints it too.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

@@ -2,14 +2,15 @@ import { Not, type EntityManager } from 'typeorm';
 
 import type { Instant } from '@arthome/core';
 
-import { PerformanceDate } from './performance-date.entity.js';
+import { PerformanceDateRow } from './performance-date.entity.js';
 import { dateSlugCandidates } from './slug.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
 import { reservedForAnother } from '../public/slug-aliases.js';
 
 /**
  * The first slug for `startsAt` no other date of the show holds or still reserves (D-075). The
- *   last candidate carries the date's own id; the unique index settles a race.
+ *   last candidate carries the date's own id. Called under the show's row lock (`loadDate`): no
+ *   other date of the show picks one meanwhile.
  */
 export async function freeDateSlug(
   manager: EntityManager,
@@ -20,7 +21,7 @@ export async function freeDateSlug(
 ): Promise<string> {
   const candidates = dateSlugCandidates(startsAt, timeZone, date.id);
   for (const candidate of candidates) {
-    const held = await manager.existsBy(PerformanceDate, {
+    const held = await manager.existsBy(PerformanceDateRow, {
       show_id: date.show_id,
       slug: candidate,
       id: Not(date.id),

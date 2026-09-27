@@ -5,27 +5,15 @@ import {
   DateSalesPricingChangedSchema,
   TechnicalCheckPassedSchema,
 } from '@arthome-platform/events';
-import {
-  PermanentError,
-  ProcessedMessage,
-  header,
-  type Outcome,
-} from '@arthome-platform/messaging';
+import { PermanentError, header, type Outcome } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
 import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
+import type { CommandBus } from '@nestjs/cqrs';
 import type { EachMessagePayload } from 'kafkajs';
-import type { DataSource } from 'typeorm';
 
-import { PublicationChecklistItem } from '@arthome/core';
+import { ApiErrorCode, PublicationChecklistItem, isDomainError } from '@arthome/core';
 
-import { PerformanceDate } from './performance-date.entity.js';
-
-interface ChecklistFact {
-  readonly dateId: string;
-  readonly item: PublicationChecklistItem;
-  readonly satisfied: boolean;
-  readonly occurredAt: Date;
-}
+import { RecordChecklistFact, type ChecklistFact } from './record-checklist-fact.command.js';
 
 function stated(timestamp: Timestamp | undefined): Date {
   if (timestamp === undefined) throw new Error('no occurred_at');
@@ -73,7 +61,7 @@ const READERS: Readonly<Record<string, (value: Uint8Array) => ChecklistFact>> = 
 };
 
 export function applyChecklistMessage(
-  dataSource: DataSource,
+  commands: CommandBus,
   payload: EachMessagePayload,
 ): Promise<Outcome> {
   const messageId = header(payload, 'message-id');
@@ -93,36 +81,14 @@ export function applyChecklistMessage(
     throw new PermanentError(`message ${messageId} does not read as ${type}: ${String(cause)}`);
   }
 
-  return dataSource.transaction(async (manager) => {
-    const claimed = await manager
-      .createQueryBuilder()
-      .insert()
-      .into(ProcessedMessage)
-      .values({ id: messageId, topic: payload.topic })
-      .orIgnore()
-      .returning('id')
-      .execute();
-    if ((claimed.raw as unknown[]).length === 0) return 'duplicate';
-
-    // Catalog emits DateDrafted before any other context knows the date, so an unknown one is
-    // a fault to look at, not a race to wait out.
-    if (!(await manager.existsBy(PerformanceDate, { id: fact.dateId }))) {
-      throw new PermanentError(`message ${messageId} is about date ${fact.dateId}, unknown here`);
-    }
-
-    // A retry topic can bring an older fact after a newer one for the same item: the WHERE is
-    // what keeps it from winning.
-    const written = await manager.query<unknown[]>(
-      `INSERT INTO publication_checklist_fact (date_id, item, satisfied, occurred_at)
-            VALUES ($1, $2, $3, $4)
-       ON CONFLICT (date_id, item) DO UPDATE
-               SET satisfied = excluded.satisfied,
-                   occurred_at = excluded.occurred_at,
-                   updated_at = now()
-             WHERE excluded.occurred_at >= publication_checklist_fact.occurred_at
-       RETURNING date_id`,
-      [fact.dateId, fact.item, fact.satisfied, fact.occurredAt],
-    );
-    return written.length === 1 ? 'applied' : 'superseded';
-  });
+  return commands
+    .execute(new RecordChecklistFact(messageId, payload.topic, fact))
+    .catch((error: unknown) => {
+      // A refusal is a business rejection no retry changes: dead-lettered at once, its code in the
+      // header. Anything else is retried as transient.
+      if (!isDomainError(error)) throw error;
+      const refusal =
+        error.code === ApiErrorCode.NOT_FOUND ? 'unknown here' : `refused ${error.code}`;
+      throw new PermanentError(`message ${messageId} is about date ${fact.dateId}, ${refusal}`);
+    });
 }

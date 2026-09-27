@@ -1,13 +1,12 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { Venue } from './venue.entity.js';
+import { CreateVenueHandler } from './create-venue.handler.js';
 import { VenuesController } from './venues.controller.js';
-import { VenuesService } from './venues.service.js';
+import { CatalogTransactionsModule } from '../catalog-transactions.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Venue])],
+  imports: [CatalogTransactionsModule],
   controllers: [VenuesController],
-  providers: [VenuesService],
+  providers: [CreateVenueHandler],
 })
 export class VenuesModule {}

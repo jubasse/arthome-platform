@@ -50,7 +50,7 @@ describe('the POST /shows body', () => {
   });
 
   it('refuses genreIds sent as a string, which used to invent three genres nobody sent', async () => {
-    // THE CASE THIS FILE EXISTS FOR. `publish-show.service.ts` spreads the value
+    // THE CASE THIS FILE EXISTS FOR. `PublishShowHandler` spreads the value
     //   twice — once into the event, once into the row — and spreading `'abc'`
     //   yields `['a','b','c']`. Three genre ids the caller never sent were
     //   committed, published in `ShowPublished.genre_ids`, and indexed, with no

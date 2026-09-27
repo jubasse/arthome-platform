@@ -2,9 +2,9 @@ import { Column, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
 import type { PublicationState } from '@arthome/core';
 
-/** data-model.md §2.3, one per date; its transitions are conditioned on `version`. */
+/** The row of the `Publication` aggregate; its writes are conditioned on `version`. */
 @Entity('publication')
-export class Publication {
+export class PublicationRow {
   @PrimaryColumn('uuid')
   date_id!: string;
 

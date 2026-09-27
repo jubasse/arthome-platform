@@ -6,49 +6,25 @@ import {
 } from '@arthome-platform/http-edge';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource, EntityManager } from 'typeorm';
+import { HttpStatus, Inject } from '@nestjs/common';
+import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
+import type { EntityManager } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import {
-  CatalogErrorCode,
-  DomainErrorCode,
-  FailureNature,
-  type Clock,
-  type Instant,
-} from '@arthome/core';
+import { CatalogErrorCode, FailureNature, type Clock, type Instant } from '@arthome/core';
 
-import { Artist, type LocalizedCopy } from './artist.entity.js';
-import type { UpdateIdentityBody } from './update-identity.schema.js';
+import { Artist } from './artist.entity.js';
+import { holdChannelFace } from './channel-face-lock.js';
+import { UpdateChannelIdentity, type ChannelIdentity } from './update-channel-identity.command.js';
 import { writeCatalogEvent } from '../catalog-events.js';
+import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import { slugify } from '../dates/slug.js';
-import { runIdempotentlyVersioned, type IdempotentRequest } from '../idempotency/idempotency.js';
+import { runIdempotentlyVersioned } from '../idempotency/idempotency.js';
 import { projectArtist } from '../public/date-detail-projection.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
 import { UNSCOPED, reservedForAnother, retireSlug, type SlugKey } from '../public/slug-aliases.js';
-
-export interface UpdateIdentityCommand extends UpdateIdentityBody {
-  readonly channelId: string;
-  readonly traceparent: string | null;
-}
-
-export interface ChannelIdentity {
-  readonly artistId: string;
-  readonly publicName: string;
-  readonly slug: string;
-  readonly categoryId: string;
-  readonly biography: readonly LocalizedCopy[];
-}
-
-function conflict(version: number): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, {
-    code: DomainErrorCode.STATE_CONFLICT,
-    params: { version },
-    nature: FailureNature.REFUSED,
-  });
-}
+import { stateConflict } from '../refusals.js';
 
 function slugTaken(): RefusalException {
   return new RefusalException(HttpStatus.CONFLICT, {
@@ -58,23 +34,16 @@ function slugTaken(): RefusalException {
   });
 }
 
-@Injectable()
-export class ArtistsService {
+@CommandHandler(UpdateChannelIdentity)
+export class UpdateChannelIdentityHandler implements ICommandHandler<UpdateChannelIdentity> {
   public constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly transactions: CatalogTransactions,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  /**
-   * The channel's public face. `expectedVersion: 0` creates it, and only on a channel that has
-   *   none; every later edit names the version it read.
-   */
-  public updateIdentity(
-    command: UpdateIdentityCommand,
-    idempotency: IdempotentRequest,
-  ): Promise<MemorisedResponse<ChannelIdentity>> {
-    return this.dataSource.transaction((manager) =>
-      runIdempotentlyVersioned(manager, idempotency, this.clock, () =>
+  public execute(command: UpdateChannelIdentity): Promise<MemorisedResponse<ChannelIdentity>> {
+    return this.transactions.run(({ manager }) =>
+      runIdempotentlyVersioned(manager, command.idempotency, this.clock, () =>
         this.updateIn(manager, command),
       ),
     );
@@ -82,18 +51,19 @@ export class ArtistsService {
 
   private async updateIn(
     manager: EntityManager,
-    command: UpdateIdentityCommand,
+    { channelId, body, traceparent }: UpdateChannelIdentity,
   ): Promise<{ readonly data: ChannelIdentity; readonly version: number }> {
+    await holdChannelFace(manager, channelId);
     const current = await manager.findOne(Artist, {
-      where: { channel_id: command.channelId },
+      where: { channel_id: channelId },
       lock: { mode: 'pessimistic_write' },
     });
     const version = current?.version ?? 0;
-    if (command.expectedVersion !== version) throw conflict(version);
+    if (body.expectedVersion !== version) throw stateConflict({ version });
 
     const id = current?.id ?? uuidv7();
-    const publicName = command.publicName ?? current?.public_name;
-    const categoryId = command.categoryId ?? current?.category_id;
+    const publicName = body.publicName ?? current?.public_name;
+    const categoryId = body.categoryId ?? current?.category_id;
     if (publicName === undefined || categoryId === undefined) {
       throw schemaInvalidException([
         ...(publicName === undefined ? [{ path: ['publicName'] }] : []),
@@ -101,9 +71,8 @@ export class ArtistsService {
       ]);
     }
     const now = this.clock.now();
-    const slug =
-      command.slug ?? current?.slug ?? (await freeArtistSlug(manager, publicName, id, now));
-    if (command.slug !== undefined && (await slugHeldByAnother(manager, command.slug, id, now))) {
+    const slug = body.slug ?? current?.slug ?? (await freeArtistSlug(manager, publicName, id, now));
+    if (body.slug !== undefined && (await slugHeldByAnother(manager, body.slug, id, now))) {
       throw slugTaken();
     }
     if (current !== null && current.slug !== slug) {
@@ -112,10 +81,10 @@ export class ArtistsService {
 
     const artist = manager.create(Artist, {
       id,
-      channel_id: command.channelId,
+      channel_id: channelId,
       public_name: publicName,
       slug,
-      biography: command.biography ?? current?.biography ?? [],
+      biography: body.biography ?? current?.biography ?? [],
       category_id: categoryId,
       version: version + 1,
     });
@@ -140,7 +109,7 @@ export class ArtistsService {
             occurredAt: timestampFromDate(occurredAt),
           }),
         ),
-        traceparent: command.traceparent,
+        traceparent,
       },
       occurredAt,
     );

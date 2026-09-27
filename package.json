@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit && pnpm --filter \"./libs/*\" run typecheck",
     "test": "vitest run",
     "test:integration": "pnpm -r --if-present run test:integration",
-    "check:versions": "arthome-check-versions",
+    "check:versions": "arthome-check-versions --repo arthome-platform",
     "check:tsconfig": "arthome-check-tsconfig",
     "check:enums": "arthome-check-enums",
     "check:language": "arthome-check-language",

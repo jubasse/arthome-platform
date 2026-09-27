@@ -8,7 +8,9 @@ import {
   type StartedStack,
 } from '@arthome-platform/testing';
 import { fromBinary } from '@bufbuild/protobuf';
-import type { DataSource } from 'typeorm';
+import { CommandBus, CqrsModule } from '@nestjs/cqrs';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -23,23 +25,16 @@ import {
   worldwideRights,
 } from '@arthome/core';
 
-import { Artist } from './artist.entity.js';
-import { ArtistsService, type UpdateIdentityCommand } from './artists.service.js';
+import { UpdateChannelIdentity } from './update-channel-identity.command.js';
+import { UpdateChannelIdentityHandler } from './update-channel-identity.handler.js';
+import type { UpdateIdentityBody } from './update-identity.schema.js';
+import { CatalogTransactions } from '../catalog-transactions.js';
+import { CLOCK } from '../clock.js';
 import type { IdempotentRequest } from '../idempotency/idempotency.js';
-import { Initial1758800000000 } from '../migrations/1758800000000-initial.js';
-import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
-import { ShowCopyAndVenue1790420100000 } from '../migrations/1790420100000-show-copy-and-venue.js';
-import { DateAndPublication1790420200000 } from '../migrations/1790420200000-date-and-publication.js';
-import { ChecklistProjection1790420300000 } from '../migrations/1790420300000-checklist-projection.js';
-import { DateSlugs1790420400000 } from '../migrations/1790420400000-date-slugs.js';
-import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500000-idempotency-response-as-json.js';
-import { DateDetailPublic1790420600000 } from '../migrations/1790420600000-date-detail-public.js';
-import { DateOutcome1790420700000 } from '../migrations/1790420700000-date-outcome.js';
-import { Artist1790420800000 } from '../migrations/1790420800000-artist.js';
-import { PublicSlugs1790420900000 } from '../migrations/1790420900000-public-slugs.js';
+import { publicQueryBus } from '../itest/public-query-bus.js';
+import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';
-import { PublicLinksService } from '../public/public-links.service.js';
-import { SlugAlias } from '../public/slug-alias.entity.js';
+import { ResolvePublicLink } from '../public/resolve-public-link.query.js';
 
 /** The channel's public face against a real Postgres: versions, slugs and what it projects. */
 
@@ -48,10 +43,11 @@ const CASE_MS = 30_000;
 
 let stack: StartedStack;
 let dataSource: DataSource;
-let artists: ArtistsService;
+let cqrs: TestingModule;
+let commands: CommandBus;
 let keys = 0;
 
-function edit(channelId: string, body: Omit<UpdateIdentityCommand, 'channelId' | 'traceparent'>) {
+function edit(channelId: string, body: UpdateIdentityBody) {
   keys += 1;
   const key: IdempotentRequest = {
     key: `01a0e8ff-0000-7000-8000-${String(keys).padStart(12, '0')}`,
@@ -59,7 +55,7 @@ function edit(channelId: string, body: Omit<UpdateIdentityCommand, 'channelId' |
     fingerprint: `${channelId}:${keys}`,
     statusCode: 200,
   };
-  return artists.updateIdentity({ channelId, ...body, traceparent: null }, key);
+  return commands.execute(new UpdateChannelIdentity(channelId, body, null, key));
 }
 
 async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
@@ -75,26 +71,23 @@ async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
 beforeAll(async () => {
   stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
   const database = await createDatabase(stack.postgres, 'catalog_artists_itest');
-  dataSource = await applyMigrations(database, {
-    entities: [Artist, DateDetailPublic, SlugAlias, OutboxEvent],
-    migrations: [
-      Initial1758800000000,
-      Idempotency1790420000000,
-      ShowCopyAndVenue1790420100000,
-      DateAndPublication1790420200000,
-      ChecklistProjection1790420300000,
-      DateSlugs1790420400000,
-      IdempotencyResponseAsJson1790420500000,
-      DateDetailPublic1790420600000,
-      DateOutcome1790420700000,
-      Artist1790420800000,
-      PublicSlugs1790420900000,
+  dataSource = await applyMigrations(database, CATALOG_SCHEMA);
+  cqrs = await Test.createTestingModule({
+    imports: [CqrsModule.forRoot()],
+    providers: [
+      CatalogTransactions,
+      UpdateChannelIdentityHandler,
+      { provide: DataSource, useValue: dataSource },
+      { provide: CLOCK, useValue: new FixedClock('2026-09-27T10:00:00.000Z') },
     ],
-  });
-  artists = new ArtistsService(dataSource, new FixedClock('2026-09-27T10:00:00.000Z'));
+  }).compile();
+  // Handlers register with the bus when the module initialises.
+  await cqrs.init();
+  commands = cqrs.get(CommandBus);
 }, STARTUP_MS);
 
 afterAll(async () => {
+  await cqrs?.close();
   await dataSource?.destroy();
   await stack?.stop();
 });
@@ -228,13 +221,17 @@ describe('a channel’s public face', () => {
       const moved = await edit('channel-a', { expectedVersion: 2, slug: 'verticale' });
       expect(moved.envelope.data.slug).toBe('verticale');
 
-      const links = new PublicLinksService(
+      const links = publicQueryBus(
         dataSource,
         new FixedClock('2026-09-27T10:00:00.000Z'),
         'https://arthome.test',
       );
       expect(
-        (await links.resolve({ url: 'https://arthome.test/a/compagnie-verticale' })).data,
+        (
+          await links.execute(
+            new ResolvePublicLink({ url: 'https://arthome.test/a/compagnie-verticale' }),
+          )
+        ).data,
       ).toMatchObject({
         id: moved.envelope.data.artistId,
         canonicalUrl: 'https://arthome.test/artist/verticale',

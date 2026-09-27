@@ -1,26 +1,20 @@
-import { PerishableResponse, RefusalException } from '@arthome-platform/http-edge';
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { PerishableResponse } from '@arthome-platform/http-edge';
+import { Inject } from '@nestjs/common';
+import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 
-import { ApiErrorCode, FailureNature, type Clock } from '@arthome/core';
+import type { Clock } from '@arthome/core';
 
 import { DateDetailPublic } from './date-detail-public.entity.js';
 import { dateDetailOf, type DateDetail } from './date-detail.js';
+import { GetDateDetail } from './get-date-detail.query.js';
 import { CLOCK } from '../clock.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
+import { notFound } from '../refusals.js';
 
-/** api.not_found is "a route that does not resolve", which is exactly what a dead link is. */
-export function notFound(): RefusalException {
-  return new RefusalException(HttpStatus.NOT_FOUND, {
-    code: ApiErrorCode.NOT_FOUND,
-    params: {},
-    nature: FailureNature.REFUSED,
-  });
-}
-
-@Injectable()
-export class PublicDatesService {
+@QueryHandler(GetDateDetail)
+export class GetDateDetailHandler implements IQueryHandler<GetDateDetail> {
   public constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -28,7 +22,7 @@ export class PublicDatesService {
   ) {}
 
   /** One query: the date's row and its show's other public rows. */
-  public async detail(dateId: string): Promise<PerishableResponse<DateDetail>> {
+  public async execute({ dateId }: GetDateDetail): Promise<PerishableResponse<DateDetail>> {
     const rows = await this.dataSource.manager
       .createQueryBuilder(DateDetailPublic, 'row')
       .where('row.show_id = (SELECT show_id FROM date_detail_public WHERE date_id = :dateId)', {

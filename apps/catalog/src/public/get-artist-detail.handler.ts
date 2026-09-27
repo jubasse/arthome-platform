@@ -1,19 +1,21 @@
 import { PerishableResponse } from '@arthome-platform/http-edge';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
+import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 
 import type { Clock } from '@arthome/core';
 
 import { artistPageOf, type ArtistDetail } from './artist-page.js';
 import { DateDetailPublic } from './date-detail-public.entity.js';
-import { notFound } from './public-dates.service.js';
+import { GetArtistDetail } from './get-artist-detail.query.js';
 import { Artist } from '../artists/artist.entity.js';
 import { CLOCK } from '../clock.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
+import { notFound } from '../refusals.js';
 
-@Injectable()
-export class PublicArtistsService {
+@QueryHandler(GetArtistDetail)
+export class GetArtistDetailHandler implements IQueryHandler<GetArtistDetail> {
   public constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -21,7 +23,7 @@ export class PublicArtistsService {
   ) {}
 
   /** Two reads, no join: the artist, then its channel's public dates. */
-  public async page(artistId: string): Promise<PerishableResponse<ArtistDetail>> {
+  public async execute({ artistId }: GetArtistDetail): Promise<PerishableResponse<ArtistDetail>> {
     const artist = await this.dataSource.manager.findOneBy(Artist, { id: artistId });
     if (artist === null) throw notFound();
     const rows = await this.dataSource.manager.findBy(DateDetailPublic, {

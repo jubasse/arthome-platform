@@ -1,20 +1,20 @@
+import type { CommandBus } from '@nestjs/cqrs';
 import { describe, expect, it } from 'vitest';
 
 import { DomainErrorCode, LanguageDependency, isDomainError, rendition } from '@arthome/core';
 
 import { CatalogController } from './catalog.controller.js';
+import type { PublishShow } from './publish-show.command.js';
 import type { PublishShowBody } from './publish-show.schema.js';
-import type { PublishShowCommand, PublishShowService } from './publish-show.service.js';
-import type { UpdateShowService } from './update-show.service.js';
 
-/** A service that records the command it was handed, and publishes nothing. */
-function recordingService(commands: PublishShowCommand[]): PublishShowService {
+/** A bus that records the command it was handed, and publishes nothing. */
+function recordingBus(commands: PublishShow[]): CommandBus {
   return {
-    publish: (command: PublishShowCommand) => {
+    execute: (command: PublishShow) => {
       commands.push(command);
       return Promise.resolve({ showId: 'show-1', messageId: 'message-1' });
     },
-  } as unknown as PublishShowService;
+  } as unknown as CommandBus;
 }
 
 const body: PublishShowBody = {
@@ -36,23 +36,20 @@ const body: PublishShowBody = {
   synopsis: { fr: '', en: '' },
 };
 
-/** The POST route is under test; the PATCH service is never reached. */
-const UNUSED_UPDATE = {} as unknown as UpdateShowService;
-
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 
 describe('CatalogController', () => {
   it('carries the traceparent the request arrived with', async () => {
-    const commands: PublishShowCommand[] = [];
-    const controller = new CatalogController(recordingService(commands), UNUSED_UPDATE);
+    const commands: PublishShow[] = [];
+    const controller = new CatalogController(recordingBus(commands));
 
     await controller.publish(body, TRACEPARENT);
     expect(commands[0]?.traceparent).toBe(TRACEPARENT);
   });
 
   it('carries null rather than an empty traceparent when the header is absent', async () => {
-    const commands: PublishShowCommand[] = [];
-    const controller = new CatalogController(recordingService(commands), UNUSED_UPDATE);
+    const commands: PublishShow[] = [];
+    const controller = new CatalogController(recordingBus(commands));
 
     const result = await controller.publish(body);
     expect(commands[0]?.traceparent).toBeNull();
@@ -65,8 +62,8 @@ describe('CatalogController', () => {
     //   happen. The second is why the check exists — the value would otherwise
     //   reach `outbox_event.tracecontext`, the one outbox column with no CHECK
     //   constraint, and from there a Kafka header on `arthome.catalog.show`.
-    const commands: PublishShowCommand[] = [];
-    const controller = new CatalogController(recordingService(commands), UNUSED_UPDATE);
+    const commands: PublishShow[] = [];
+    const controller = new CatalogController(recordingBus(commands));
 
     const result = await controller.publish(body, '00-not-hex-00f067aa0ba902b7-01');
 
@@ -78,8 +75,8 @@ describe('CatalogController', () => {
     // `rendition()` owns this rule and carries `media.size_invalid`. The schema
     // checked that `widthPx` is a NUMBER; that zero is not a width is the domain's
     // to say, and saying it twice is what critical-rules #2 forbids.
-    const commands: PublishShowCommand[] = [];
-    const controller = new CatalogController(recordingService(commands), UNUSED_UPDATE);
+    const commands: PublishShow[] = [];
+    const controller = new CatalogController(recordingBus(commands));
 
     await expect(
       controller.publish({
@@ -96,8 +93,8 @@ describe('CatalogController', () => {
   });
 
   it('refuses an empty rendition url with the domain code', async () => {
-    const commands: PublishShowCommand[] = [];
-    const controller = new CatalogController(recordingService(commands), UNUSED_UPDATE);
+    const commands: PublishShow[] = [];
+    const controller = new CatalogController(recordingBus(commands));
 
     await expect(
       controller.publish({
@@ -110,25 +107,22 @@ describe('CatalogController', () => {
     expect(commands).toHaveLength(0);
   });
 
-  it('hands the service a MediaSet built by the domain, not the raw body object', async () => {
+  it('hands the handler a MediaSet built by the domain, not the raw body object', async () => {
     // Before this, `body.media` was passed straight through as a `MediaSet` with
     // nothing having checked it — the type said `MediaSet` and no value had earned
     // the name.
-    const commands: PublishShowCommand[] = [];
-    await new CatalogController(recordingService(commands), UNUSED_UPDATE).publish(
-      body,
-      TRACEPARENT,
-    );
+    const commands: PublishShow[] = [];
+    await new CatalogController(recordingBus(commands)).publish(body, TRACEPARENT);
 
-    expect(commands[0]?.media).toEqual({
+    expect(commands[0]?.show.media).toEqual({
       wide: [{ url: 'https://cdn.example.test/w-640.jpg', widthPx: 640, heightPx: 360 }],
       poster: [{ url: 'https://cdn.example.test/p-480.jpg', widthPx: 480, heightPx: 720 }],
     });
   });
 
-  it('hands the service the language dependency already narrowed to a member', async () => {
-    const commands: PublishShowCommand[] = [];
-    await new CatalogController(recordingService(commands), UNUSED_UPDATE).publish(body);
-    expect(commands[0]?.languageDependency).toBe(LanguageDependency.ESSENTIAL);
+  it('hands the handler the language dependency already narrowed to a member', async () => {
+    const commands: PublishShow[] = [];
+    await new CatalogController(recordingBus(commands)).publish(body);
+    expect(commands[0]?.show.languageDependency).toBe(LanguageDependency.ESSENTIAL);
   });
 });

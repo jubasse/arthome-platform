@@ -2,8 +2,9 @@ import { MoreThan, type EntityManager } from 'typeorm';
 
 import { DomainConstant, type Instant } from '@arthome/core';
 
-import type { LinkKind } from './resolve-query.schema.js';
+import { LinkKind } from './resolve-query.schema.js';
 import { SlugAlias } from './slug-alias.entity.js';
+import { DateRescheduled, type PerformanceDateEvent } from '../dates/performance-date.events.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -30,6 +31,18 @@ export async function retireSlug(
     'scope',
     'slug',
   ]);
+}
+
+/** The slug a move replaced keeps leading to its date, like any retired slug. */
+export async function retireSlugsMovedFrom(
+  manager: EntityManager,
+  events: readonly PerformanceDateEvent[],
+): Promise<void> {
+  for (const event of events) {
+    if (!(event instanceof DateRescheduled) || event.newSlug === event.previousSlug) continue;
+    const key = { kind: LinkKind.DATE, scope: event.showId, slug: event.previousSlug };
+    await retireSlug(manager, key, event.dateId, event.occurredAt);
+  }
 }
 
 /** The page a retired slug still points at, null once it expired or when none held it. */
