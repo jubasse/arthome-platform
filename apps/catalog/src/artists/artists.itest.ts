@@ -1,5 +1,5 @@
 import { ArtistUpdatedSchema } from '@arthome-platform/events';
-import { RefusalException } from '@arthome-platform/http-edge';
+import { RefusalException, type IdempotentRequest } from '@arthome-platform/http-edge';
 import { OutboxEvent } from '@arthome-platform/messaging';
 import {
   applyMigrations,
@@ -30,7 +30,6 @@ import { UpdateChannelIdentityHandler } from './update-channel-identity.handler.
 import type { UpdateIdentityBody } from './update-identity.schema.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
-import type { IdempotentRequest } from '../idempotency/idempotency.js';
 import { publicQueryBus } from '../itest/public-query-bus.js';
 import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';

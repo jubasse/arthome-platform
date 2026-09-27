@@ -1,6 +1,7 @@
 import { ArtistUpdatedSchema } from '@arthome-platform/events';
 import {
   RefusalException,
+  runIdempotentlyVersioned,
   schemaInvalidException,
   type MemorisedResponse,
 } from '@arthome-platform/http-edge';
@@ -20,7 +21,6 @@ import { writeCatalogEvent } from '../catalog-events.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import { slugify } from '../dates/slug.js';
-import { runIdempotentlyVersioned } from '../idempotency/idempotency.js';
 import { projectArtist } from '../public/date-detail-projection.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
 import { UNSCOPED, reservedForAnother, retireSlug, type SlugKey } from '../public/slug-aliases.js';

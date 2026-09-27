@@ -359,8 +359,12 @@ would only compare what the handler had already read. Their wiring is proven ove
   them, while the type still promised them); a factory handing back another manager is refused.
   `writtenUnversioned` registers a write that leaves the version as loaded, which ticketing's
   conditional decrement is;
-- still here, lifted next: `runIdempotently` with its `idempotency_record` table, and the
-  processed-message claim copied in three consumers.
+- `@arthome-platform/http-edge`: `runIdempotently`, `runIdempotentlyVersioned`,
+  `idempotentRequestOf` and `idempotencyRecordTableDdl()`, which a new service's migration runs
+  the way it runs `outboxTableDdl()`. Catalog's own two migrations stay as they are, and
+  `migrations/idempotency-record.itest.ts` fails the day they and the DDL stop making one table;
+  the library's scenarios run on the DDL's;
+- still here, lifted next: the processed-message claim copied in three consumers.
 
 Nothing else is generic: aggregates extend `@nestjs/cqrs`'s `AggregateRoot` as it is, and the
 events-to-outbox mapping builds catalog's own payloads over `writeOutboxEvent`, already shared.

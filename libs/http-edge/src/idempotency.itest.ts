@@ -1,23 +1,37 @@
-import { RefusalException } from '@arthome-platform/http-edge';
 import {
   applyMigrations,
   createDatabase,
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
-import type { DataSource } from 'typeorm';
+import type { DataSource, MigrationInterface, QueryRunner } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ApiErrorCode, FixedClock } from '@arthome/core';
 
-import { runIdempotently, type IdempotentRequest } from './idempotency.js';
-import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
-import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500000-idempotency-response-as-json.js';
+import {
+  idempotencyRecordTableDdl,
+  runIdempotently,
+  type IdempotentRequest,
+} from './idempotency.js';
+import { RefusalException } from './refusal.js';
 
 /**
  * The store against a real Postgres: what makes a concurrent retry wait, replay or give up is
  * the unique constraint and `lock_timeout`, which no fake reproduces.
  */
+
+class IdempotencyRecord1790500000000 implements MigrationInterface {
+  name = 'IdempotencyRecord1790500000000';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(idempotencyRecordTableDdl());
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query('DROP TABLE idempotency_record');
+  }
+}
 
 const STARTUP_MS = 240_000;
 const CASE_MS = 30_000;
@@ -51,10 +65,10 @@ async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
 
 beforeAll(async () => {
   stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
-  const database = await createDatabase(stack.postgres, 'catalog_idempotency_itest');
+  const database = await createDatabase(stack.postgres, 'http_edge_idempotency_itest');
   dataSource = await applyMigrations(database, {
     entities: [],
-    migrations: [Idempotency1790420000000, IdempotencyResponseAsJson1790420500000],
+    migrations: [IdempotencyRecord1790500000000],
   });
 }, STARTUP_MS);
 

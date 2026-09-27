@@ -1,16 +1,13 @@
 import { createHash } from 'node:crypto';
 
-import {
-  MemorisedResponse,
-  RefusalException,
-  schemaInvalidException,
-  type SuccessEnvelope,
-} from '@arthome-platform/http-edge';
 import { HttpStatus } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { z } from 'zod';
 
 import { ApiErrorCode, FailureNature, type Clock } from '@arthome/core';
+
+import { RefusalException, schemaInvalidException } from './refusal.js';
+import { MemorisedResponse, type SuccessEnvelope } from './success-envelope.interceptor.js';
 
 /** transport.md §5.4. */
 export const IDEMPOTENCY_KEY_LIFETIME_HOURS = 24;
@@ -20,6 +17,32 @@ const FIRST_ATTEMPT_WAIT_MS = 5_000;
 const RETRY_AFTER_MS = 1_000;
 
 const LOCK_NOT_AVAILABLE = '55P03';
+
+/** The claim's `ON CONFLICT` names it, so the table and the claim read it from here. */
+const SCOPE_CONSTRAINT = 'idempotency_record_scope';
+
+/**
+ * transport.md §5.4's store, for a new service's migration. Its primary key is
+ *   `(account_id, key)`; here a unique constraint with NULLS NOT DISTINCT, because `account_id`
+ *   stays null until tokens are verified. `response_body` is `json`, not `jsonb`: a replay answers
+ *   the first response byte for byte, and `jsonb` reorders an object's keys.
+ */
+export function idempotencyRecordTableDdl(): string {
+  return `
+    CREATE TABLE idempotency_record (
+      key           text        NOT NULL,
+      account_id    uuid        NULL,
+      fingerprint   text        NOT NULL,
+      state         text        NOT NULL CHECK (state IN ('in_flight', 'completed')),
+      status_code   integer     NULL,
+      response_body json        NULL,
+      created_at    timestamptz NOT NULL DEFAULT now(),
+      expires_at    timestamptz NOT NULL,
+      CONSTRAINT ${SCOPE_CONSTRAINT} UNIQUE NULLS NOT DISTINCT (account_id, key)
+    );
+    CREATE INDEX idx_idempotency_record_expires_at ON idempotency_record (expires_at)
+  `;
+}
 
 export interface IdempotentRequest {
   readonly key: string;
@@ -123,7 +146,7 @@ async function claim(manager: EntityManager, request: IdempotentRequest): Promis
     claimed = await manager.query<unknown[]>(
       `INSERT INTO idempotency_record (key, account_id, fingerprint, state, expires_at)
        VALUES ($1, $2, $3, 'in_flight', now() + ($4 || ' hours')::interval)
-       ON CONFLICT ON CONSTRAINT idempotency_record_scope DO NOTHING
+       ON CONFLICT ON CONSTRAINT ${SCOPE_CONSTRAINT} DO NOTHING
        RETURNING key`,
       [request.key, request.accountId, request.fingerprint, String(IDEMPOTENCY_KEY_LIFETIME_HOURS)],
     );

@@ -1,9 +1,8 @@
-import type { MemorisedResponse } from '@arthome-platform/http-edge';
+import type { IdempotentRequest, MemorisedResponse } from '@arthome-platform/http-edge';
 import { Command } from '@nestjs/cqrs';
 
 import type { LocalizedCopy } from './artist.entity.js';
 import type { UpdateIdentityBody } from './update-identity.schema.js';
-import type { IdempotentRequest } from '../idempotency/idempotency.js';
 
 export interface ChannelIdentity {
   readonly artistId: string;

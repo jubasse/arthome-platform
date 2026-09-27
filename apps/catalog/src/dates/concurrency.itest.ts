@@ -6,6 +6,7 @@ import {
   PriceTier,
   TechnicalCheckPassedSchema,
 } from '@arthome-platform/events';
+import type { IdempotentRequest } from '@arthome-platform/http-edge';
 import {
   applyMigrations,
   createDatabase,
@@ -46,7 +47,6 @@ import { UpdateShow } from '../catalog/update-show.command.js';
 import { UpdateShowHandler } from '../catalog/update-show.handler.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
-import type { IdempotentRequest } from '../idempotency/idempotency.js';
 import { untilBlockedOrSettled } from '../itest/lock-waits.js';
 import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { projectArtist, projectShowCopy } from '../public/date-detail-projection.js';

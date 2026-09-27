@@ -1,7 +1,7 @@
-import { RefusalException } from '@arthome-platform/http-edge';
 import { describe, expect, it } from 'vitest';
 
 import { fingerprintOf, idempotencyKeyOf } from './idempotency.js';
+import { RefusalException } from './refusal.js';
 
 describe('idempotencyKeyOf', () => {
   it('accepts a UUID', () => {

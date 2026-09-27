@@ -1,4 +1,4 @@
-import type { MemorisedResponse } from '@arthome-platform/http-edge';
+import { runIdempotently, type MemorisedResponse } from '@arthome-platform/http-edge';
 import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
@@ -13,7 +13,6 @@ import { recordDateEvents } from './record-date-events.js';
 import { TransitionPublication } from './transition-publication.command.js';
 import { CatalogTransactions, type CatalogTransaction } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
-import { runIdempotently } from '../idempotency/idempotency.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 
 @CommandHandler(TransitionPublication)

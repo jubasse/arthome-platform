@@ -1,10 +1,9 @@
-import type { MemorisedResponse } from '@arthome-platform/http-edge';
+import type { IdempotentRequest, MemorisedResponse } from '@arthome-platform/http-edge';
 import { Command } from '@nestjs/cqrs';
 
 import type { DateOutcome, Instant } from '@arthome/core';
 
 import type { DeclareOutcomeBody } from './declare-outcome.schema.js';
-import type { IdempotentRequest } from '../idempotency/idempotency.js';
 
 export interface DeclaredOutcome {
   readonly outcome: DateOutcome;

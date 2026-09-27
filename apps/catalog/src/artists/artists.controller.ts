@@ -1,11 +1,14 @@
-import { parseTraceparent, type MemorisedResponse } from '@arthome-platform/http-edge';
+import {
+  idempotentRequestOf,
+  parseTraceparent,
+  type MemorisedResponse,
+} from '@arthome-platform/http-edge';
 import { Body, Controller, Header, Headers, HttpCode, Param, Patch } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 
 import { UpdateChannelIdentity, type ChannelIdentity } from './update-channel-identity.command.js';
 import { UpdateIdentitySchema, type UpdateIdentityBody } from './update-identity.schema.js';
 import { ChannelIdParam } from '../channel-id.schema.js';
-import { idempotentRequestOf } from '../idempotency/idempotency.js';
 
 @Controller('v1')
 export class ArtistsController {

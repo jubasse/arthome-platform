@@ -15,7 +15,7 @@ import {
   ShowUpdatedSchema,
   TechnicalCheckPassedSchema,
 } from '@arthome-platform/events';
-import { RefusalException } from '@arthome-platform/http-edge';
+import { RefusalException, type IdempotentRequest } from '@arthome-platform/http-edge';
 import {
   ATTEMPT_HEADER,
   DLQ_REASON_HEADER,
@@ -85,7 +85,6 @@ import { UpdateShow } from '../catalog/update-show.command.js';
 import { UpdateShowHandler } from '../catalog/update-show.handler.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
-import type { IdempotentRequest } from '../idempotency/idempotency.js';
 import { publicQueryBus } from '../itest/public-query-bus.js';
 import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';

@@ -37,3 +37,14 @@ export type { SuccessEnvelope } from './success-envelope.interceptor.js';
 export { AllowInProduction } from './allow-in-production.js';
 export { HealthController, READINESS_CHECKS } from './health.controller.js';
 export type { ReadinessCheck, ReadinessReport } from './health.controller.js';
+
+export {
+  IDEMPOTENCY_KEY_LIFETIME_HOURS,
+  fingerprintOf,
+  idempotencyKeyOf,
+  idempotencyRecordTableDdl,
+  idempotentRequestOf,
+  runIdempotently,
+  runIdempotentlyVersioned,
+} from './idempotency.js';
+export type { IdempotentRequest } from './idempotency.js';

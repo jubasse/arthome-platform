@@ -1,4 +1,8 @@
-import { schemaInvalidException, type MemorisedResponse } from '@arthome-platform/http-edge';
+import {
+  runIdempotently,
+  schemaInvalidException,
+  type MemorisedResponse,
+} from '@arthome-platform/http-edge';
 import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
@@ -11,7 +15,6 @@ import { recordDateEvents } from './record-date-events.js';
 import { Show } from '../catalog/show.entity.js';
 import { CatalogTransactions, type CatalogTransaction } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
-import { runIdempotently } from '../idempotency/idempotency.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { Venue } from '../venues/venue.entity.js';
 
