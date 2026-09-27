@@ -1,24 +1,24 @@
 import type { EntityManager } from 'typeorm';
 
-import { stateConflict } from './conflict.js';
 import { PerformanceDate, type PerformanceDateSnapshot } from './performance-date.aggregate.js';
 import { PerformanceDateRow } from './performance-date.entity.js';
 import { PerformanceDateRepository } from './performance-date.repository.js';
 import { PublicationRow } from './publication.entity.js';
+import { AggregateTracker, saveVersioned, type Track } from '../transaction-runner.js';
 import type { PublicationSnapshot } from './publication.js';
 
 type DateColumns = Omit<PerformanceDateRow, 'id' | 'created_at' | 'updated_at'>;
 type PublicationColumns = Omit<PublicationRow, 'date_id' | 'updated_at'>;
 
 export class TypeOrmPerformanceDateRepository extends PerformanceDateRepository {
-  /** The version each loaded date was read at: the condition of its save. */
-  private readonly loadedVersions = new WeakMap<PerformanceDate, number>();
+  private readonly tracker: AggregateTracker<PerformanceDate>;
 
   public constructor(
     private readonly manager: EntityManager,
-    private readonly onSaved: (date: PerformanceDate) => void,
+    track: Track,
   ) {
     super();
+    this.tracker = new AggregateTracker(track);
   }
 
   public async findById(id: string): Promise<PerformanceDate | null> {
@@ -26,22 +26,20 @@ export class TypeOrmPerformanceDateRepository extends PerformanceDateRepository 
     if (row === null) return null;
     const publication = await this.manager.findOneBy(PublicationRow, { date_id: id });
     if (publication === null) throw new Error(`date ${id} has no publication`);
-    const date = PerformanceDate.restore(
-      performanceDateSnapshotOf(row),
-      publicationSnapshotOf(publication),
+    return this.tracker.loaded(
+      PerformanceDate.restore(performanceDateSnapshotOf(row), publicationSnapshotOf(publication)),
+      publication.version,
     );
-    this.loadedVersions.set(date, publication.version);
-    return date;
   }
 
   /**
-   * The publication's row first, conditioned on the loaded version (`nestjs-typeorm` rule 7): its
-   *   row lock orders two concurrent commands before either writes the date. A draft inserts the
-   *   date first, which its publication's row references.
+   * The publication's row first, conditioned on the loaded version: its row lock orders two
+   *   concurrent commands before either writes the date. A draft inserts the date first, which
+   *   its publication's row references.
    */
   public async save(date: PerformanceDate): Promise<void> {
     const { id } = date.snapshot;
-    const loadedVersion = this.loadedVersions.get(date);
+    const loadedVersion = this.tracker.versionOf(date);
     if (loadedVersion === undefined) {
       await this.manager.insert(PerformanceDateRow, { id, ...dateColumnsOf(date.snapshot) });
       await this.manager.insert(PublicationRow, {
@@ -49,18 +47,17 @@ export class TypeOrmPerformanceDateRepository extends PerformanceDateRepository 
         ...publicationColumnsOf(date.publication),
       });
     } else {
-      const { affected } = await this.manager.update(
+      await saveVersioned(
+        this.manager,
         PublicationRow,
-        { date_id: id, version: loadedVersion },
+        { date_id: id },
+        loadedVersion,
         publicationColumnsOf(date.publication),
+        ({ state, version }) => ({ state, version }),
       );
-      if (affected !== 1) {
-        throw stateConflict(await this.manager.findOneByOrFail(PublicationRow, { date_id: id }));
-      }
       await this.manager.update(PerformanceDateRow, { id }, dateColumnsOf(date.snapshot));
     }
-    this.loadedVersions.set(date, date.publication.version);
-    this.onSaved(date);
+    this.tracker.written(date, date.publication.version);
   }
 }
 

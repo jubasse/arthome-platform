@@ -169,17 +169,23 @@ them; what a rule needs beyond the aggregate is an argument (the checklist facts
 (the free slug of a postponement) is made by the handler first.
 
 **One transaction per command: `CatalogTransactions.run(work)`** (`src/catalog-transactions.ts`).
-It opens `dataSource.transaction`, hands `work` a `CatalogTransaction` whose repositories are bound
-to that transaction's manager (`nestjs-typeorm` rule 3), and once it has committed merges every
-aggregate saved in it with `EventPublisher` and calls `commit()`. A rejection publishes nothing
-(`catalog-transactions.spec.ts`). A new aggregate adds its repository to `CatalogTransaction`. Its
-`manager` carries the command's other writes, which are all functions of an `EntityManager` already.
+It is `TransactionRunner` (`src/transaction-runner.ts`, which imports nothing of catalog's) over
+catalog's repository factory. It opens `dataSource.transaction`, hands `work` a
+`CatalogTransaction`, the repositories bound to that transaction's manager (`nestjs-typeorm` rule 3)
+and the manager itself, and once it has committed merges every aggregate written in it with
+`EventPublisher` and calls `commit()`. A rejection publishes nothing, a command may run two in
+turn, and one opened inside another is refused (`catalog-transactions.spec.ts`). An adapter keeps
+its loaded versions and registers each write through one `AggregateTracker`, and its
+version-conditional UPDATE is `saveVersioned`, which refuses with core's `DomainError`
+(`STATE_CONFLICT`, the row's current state and version), never an HTTP exception. A new aggregate
+adds its repository to `catalogRepositoriesOf`. The `manager` carries the command's other writes,
+which are all functions of an `EntityManager` already.
 
 ```ts
 execute(command: DeclareOutcome) {
   return this.transactions.run((transaction) =>
     runIdempotently(transaction.manager, command.idempotency, this.clock, () =>
-      this.declareIn(transaction, command),
+      asConflict(() => this.declareIn(transaction, command)),
     ),
   );
 }
@@ -187,8 +193,9 @@ execute(command: DeclareOutcome) {
 
 `runIdempotentlyVersioned` goes in the same place when the answer carries the version. The
 idempotency record is claimed first, in the transaction; a replay loads no aggregate, so publishes
-nothing. Inside, in this order: load (a missing date is `dateNotFound()`, 404), decide through one
-method of the aggregate, which checks the version first, save it, write the consequences, answer.
+nothing. Inside, in this order: `loadDate` (the date, its show and its venue; a missing date is
+404), decide through one method of the aggregate, which checks the version first, `save`,
+`recordDateEvents`, answer.
 A handler never opens a transaction itself and never calls `commit()`.
 
 **One aggregate, two rows (arthome-core D-085).** `PerformanceDate` owns its `Publication`: they are
@@ -196,15 +203,15 @@ one to one, share one version (the publication's, which the studio names, §0c),
 writes both. One repository loads both rows and remembers the version it read; `save` writes both,
 the publication's row first with the version-conditional UPDATE (`WHERE date_id AND version =
 <loaded>`, `affected === 1`, `nestjs-typeorm` rule 7), then the date's, never one without the
-other. A change committed since the load answers 409 `state.conflict` with the current state and
+other. A change committed since the load is refused `state.conflict` with the current state and
 version, re-read, and the publication's row lock orders two concurrent commands before either writes
 the date. `save` inserts a date it did not load, which only `PerformanceDate.draft` creates, the
 date's row first since the publication's references it. The handler calls one method
 (`transitionPublication`, `declareOutcome`) and one `save`; publishing makes the date public inside
 `transitionPublication`, which refuses a date that already has a slug.
 
-**Refusals keep their code and params.** An aggregate throws core's `DomainError`; the handler wraps
-each decision in `asConflict(() => aggregate.method(…))`, which rethrows it as a 409
+**Refusals keep their code and params.** The aggregate and the repository throw core's
+`DomainError`; a date handler wraps its whole work in `asConflict`, which rethrows one as a 409
 `RefusalException` with the same `code`, `params` and `nature`. Unwrapped, `ErrorEnvelopeFilter`
 answers a `DomainError` 400. The stale version is one too, checked before any rule, as before:
 core's `assertCommandedTransition` for a transition, `Publication.advancedFrom` for an outcome. A
@@ -215,7 +222,9 @@ answers `{ missing }`.
 
 **What happened becomes rows from the uncommitted events, inside the transaction.** A method changes
 the snapshot, then `apply()`s one event per fact (no `on<Event>` handlers: nothing is replayed).
-After the save the handler passes `getUncommittedEvents()` to:
+After the save the handler passes `getUncommittedEvents()` to `recordDateEvents`
+(`record-date-events.ts`), once, whatever it decided; it runs these three, each ignoring the events
+it does not concern:
 
 - `writeDateIntegrationEvents` (`date-integration-events.ts`): one outbox row per event through
   `writeCatalogEvent`, in the order the aggregate applied them: publishing applies the state
@@ -296,10 +305,10 @@ HTTP by `catalog/catalog.http.itest.ts`: without `CreateVenueHandler` in `Venues
 
 **No shared library yet, deliberately.** The product owner allows one under `libs/` for what every
 CQRS service here would share, never a catalog concept and never in arthome-core. Two pieces
-qualify, and neither has a second consumer: `CatalogTransactions.run`'s commit-after-commit (about
-ten lines; the repositories it binds are catalog's) and `runIdempotently` with its
-`idempotency_record` table (not CQRS-specific, and its DDL would move the way `outboxTableDdl()`
-lives in `libs/messaging`). Nothing else is generic: aggregates extend `@nestjs/cqrs`'s
+qualify, and neither has a second consumer: `src/transaction-runner.ts` (`TransactionRunner`,
+`AggregateTracker`, `saveVersioned`), which imports nothing of catalog's and moves as it is, and
+`runIdempotently` with its `idempotency_record` table (not CQRS-specific, and its DDL would move the
+way `outboxTableDdl()` lives in `libs/messaging`). Nothing else is generic: aggregates extend `@nestjs/cqrs`'s
 `AggregateRoot` as it is, and the events-to-outbox mapping builds catalog's own payloads over
 `writeOutboxEvent`, already shared. Both move into a library when ticketing writes its first command
 handler, so the second consumer shapes the interface rather than a guess (`nestjs-monorepo` rule 6).

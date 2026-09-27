@@ -5,19 +5,15 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { DateOutcome, type Clock, type OutcomeDeclaration } from '@arthome/core';
 
 import { asConflict } from './conflict.js';
-import { writeDateIntegrationEvents } from './date-integration-events.js';
-import { dateNotFound } from './date-records.js';
 import { DeclareOutcome, type DeclaredOutcome } from './declare-outcome.command.js';
 import type { DeclareOutcomeBody } from './declare-outcome.schema.js';
 import { freeDateSlug } from './free-date-slug.js';
-import { Show } from '../catalog/show.entity.js';
+import { loadDate } from './load-date.js';
+import { recordDateEvents } from './record-date-events.js';
 import { CatalogTransactions, type CatalogTransaction } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import { runIdempotently } from '../idempotency/idempotency.js';
-import { projectDateEvents } from '../public/date-detail-projection.js';
-import { retireSlugsMovedFrom } from '../public/slug-aliases.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
-import { Venue } from '../venues/venue.entity.js';
 
 function declarationOf(body: DeclareOutcomeBody): OutcomeDeclaration {
   if (body.outcome !== DateOutcome.POSTPONED) return { outcome: body.outcome, rescheduledTo: null };
@@ -41,20 +37,17 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
   public execute(command: DeclareOutcome): Promise<MemorisedResponse<DeclaredOutcome>> {
     return this.transactions.run((transaction) =>
       runIdempotently(transaction.manager, command.idempotency, this.clock, () =>
-        this.declareIn(transaction, command),
+        asConflict(() => this.declareIn(transaction, command)),
       ),
     );
   }
 
   private async declareIn(
-    { manager, dates }: CatalogTransaction,
+    transaction: CatalogTransaction,
     { dateId, body, traceparent }: DeclareOutcome,
   ): Promise<DeclaredOutcome> {
-    const date = await dates.findById(dateId);
-    if (date === null) throw dateNotFound();
-    const { showId, venueId } = date.snapshot;
-    const show = await manager.findOneByOrFail(Show, { id: showId });
-    const venue = await manager.findOneByOrFail(Venue, { id: venueId });
+    const { manager, dates } = transaction;
+    const { date, show, venue } = await loadDate(transaction, dateId);
 
     const now = this.clock.now();
     const declaration = declarationOf(body);
@@ -64,23 +57,15 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
         ? null
         : await freeDateSlug(
             manager,
-            { id: dateId, show_id: showId },
+            { id: dateId, show_id: date.snapshot.showId },
             movedTo,
             venue.time_zone,
             now,
           );
-    asConflict(() =>
-      date.declareOutcome(body.expectedVersion, declaration, body.message, {
-        slugAtNewStart,
-        now,
-      }),
-    );
+    date.declareOutcome(body.expectedVersion, declaration, body.message, { slugAtNewStart, now });
 
     await dates.save(date);
-    const events = date.getUncommittedEvents();
-    await retireSlugsMovedFrom(manager, events);
-    await projectDateEvents(manager, events, { show, venue });
-    await writeDateIntegrationEvents(manager, events, {
+    await recordDateEvents(manager, date.getUncommittedEvents(), {
       origin: this.publicWebOrigin,
       show,
       venue,

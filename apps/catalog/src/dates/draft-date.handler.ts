@@ -4,10 +4,10 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
 import type { Clock } from '@arthome/core';
 
-import { writeDateIntegrationEvents } from './date-integration-events.js';
 import { dateSheet, type DateSheet } from './date-sheet.js';
 import { DraftDate } from './draft-date.command.js';
 import { PerformanceDate } from './performance-date.aggregate.js';
+import { recordDateEvents } from './record-date-events.js';
 import { Show } from '../catalog/show.entity.js';
 import { CatalogTransactions, type CatalogTransaction } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
@@ -67,7 +67,7 @@ export class DraftDateHandler implements ICommandHandler<DraftDate> {
       this.clock.now(),
     );
     await dates.save(date);
-    await writeDateIntegrationEvents(manager, date.getUncommittedEvents(), {
+    await recordDateEvents(manager, date.getUncommittedEvents(), {
       origin: this.publicWebOrigin,
       show,
       venue,

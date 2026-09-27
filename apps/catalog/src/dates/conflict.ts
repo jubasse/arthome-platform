@@ -1,15 +1,17 @@
 import { RefusalException } from '@arthome-platform/http-edge';
 import { HttpStatus } from '@nestjs/common';
 
-import { DomainErrorCode, FailureNature, isDomainError } from '@arthome/core';
+import { isDomainError } from '@arthome/core';
 
-import type { PublicationRow } from './publication.entity.js';
 import { PublicationChecklistIncomplete } from './publication.js';
 
-/** The publication path answers its refusals 409, as the contract's `moveDatePublicationState`. */
-export function asConflict<T>(decide: () => T): T {
+/**
+ * The date commands answer every refusal 409, as the contract's `moveDatePublicationState` and
+ *   `decideDateOutcome`: the aggregate's decisions and the version-conditional save alike.
+ */
+export async function asConflict<T>(command: () => Promise<T>): Promise<T> {
   try {
-    return decide();
+    return await command();
   } catch (error) {
     if (!isDomainError(error)) throw error;
     throw new RefusalException(HttpStatus.CONFLICT, {
@@ -19,12 +21,4 @@ export function asConflict<T>(decide: () => T): T {
       nature: error.nature,
     });
   }
-}
-
-export function stateConflict(current: PublicationRow): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, {
-    code: DomainErrorCode.STATE_CONFLICT,
-    params: { state: current.state, version: current.version },
-    nature: FailureNature.REFUSED,
-  });
 }

@@ -6,7 +6,8 @@ export abstract class PerformanceDateRepository {
 
   /**
    * Both rows, conditioned on the version the date was loaded at: a change committed since is
-   *   refused. A date it did not load is a draft's, inserted with its publication.
+   *   refused with core's `STATE_CONFLICT`, naming the current state and version. A date it did
+   *   not load is a draft's, inserted with its publication.
    */
   public abstract save(date: PerformanceDate): Promise<void>;
 }

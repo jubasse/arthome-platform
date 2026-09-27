@@ -5,19 +5,16 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import type { Clock } from '@arthome/core';
 
 import { asConflict } from './conflict.js';
-import { writeDateIntegrationEvents } from './date-integration-events.js';
-import { dateNotFound } from './date-records.js';
 import { publicationView, satisfiedChecklistItems, type PublicationView } from './date-sheet.js';
 import { freeDateSlug } from './free-date-slug.js';
+import { loadDate } from './load-date.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
+import { recordDateEvents } from './record-date-events.js';
 import { TransitionPublication } from './transition-publication.command.js';
-import { Show } from '../catalog/show.entity.js';
 import { CatalogTransactions, type CatalogTransaction } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import { runIdempotently } from '../idempotency/idempotency.js';
-import { projectDateEvents } from '../public/date-detail-projection.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
-import { Venue } from '../venues/venue.entity.js';
 
 @CommandHandler(TransitionPublication)
 export class TransitionPublicationHandler implements ICommandHandler<TransitionPublication> {
@@ -30,24 +27,22 @@ export class TransitionPublicationHandler implements ICommandHandler<TransitionP
   public execute(command: TransitionPublication): Promise<MemorisedResponse<PublicationView>> {
     return this.transactions.run((transaction) =>
       runIdempotently(transaction.manager, command.idempotency, this.clock, () =>
-        this.transitionIn(transaction, command),
+        asConflict(() => this.transitionIn(transaction, command)),
       ),
     );
   }
 
   private async transitionIn(
-    { manager, dates }: CatalogTransaction,
+    transaction: CatalogTransaction,
     { dateId, body, traceparent }: TransitionPublication,
   ): Promise<PublicationView> {
-    const date = await dates.findById(dateId);
-    if (date === null) throw dateNotFound();
-    const { showId, venueId, startsAt, slug } = date.snapshot;
-    const show = await manager.findOneByOrFail(Show, { id: showId });
-    const venue = await manager.findOneByOrFail(Venue, { id: venueId });
+    const { manager, dates } = transaction;
+    const { date, show, venue } = await loadDate(transaction, dateId);
     const projectedFacts = await manager.findBy(PublicationChecklistFact, { date_id: dateId });
     const satisfied = satisfiedChecklistItems(show, projectedFacts);
 
     const now = this.clock.now();
+    const { showId, startsAt, slug } = date.snapshot;
     const freeSlug =
       slug === null
         ? await freeDateSlug(
@@ -58,21 +53,17 @@ export class TransitionPublicationHandler implements ICommandHandler<TransitionP
             now,
           )
         : null;
-    asConflict(() =>
-      date.transitionPublication(
-        {
-          to: body.to,
-          expectedVersion: body.expectedVersion,
-          acknowledgedPromise: body.acknowledgedPromiseCode,
-        },
-        { satisfied, freeSlug, showRuntimeMin: show.runtime_min, now },
-      ),
+    date.transitionPublication(
+      {
+        to: body.to,
+        expectedVersion: body.expectedVersion,
+        acknowledgedPromise: body.acknowledgedPromiseCode,
+      },
+      { satisfied, freeSlug, showRuntimeMin: show.runtime_min, now },
     );
 
     await dates.save(date);
-    const events = date.getUncommittedEvents();
-    await projectDateEvents(manager, events, { show, venue });
-    await writeDateIntegrationEvents(manager, events, {
+    await recordDateEvents(manager, date.getUncommittedEvents(), {
       origin: this.publicWebOrigin,
       show,
       venue,

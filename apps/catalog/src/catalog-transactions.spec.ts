@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DateOutcome,
+  DomainErrorCode,
   Locale,
   PublicationState,
   ReplayPolicy,
+  isDomainError,
   worldwideRights,
 } from '@arthome/core';
 
@@ -43,13 +45,21 @@ const PUBLICATION: Omit<PublicationRow, 'updated_at'> = {
   replay_online_at: null,
 };
 
-const manager = {
-  findOneBy: (entity: unknown) => Promise.resolve(entity === PublicationRow ? PUBLICATION : ROW),
-  update: () => Promise.resolve({ affected: 1 }),
-} as unknown as EntityManager;
+/** `affected` is what the version-conditional UPDATE matches: 0 once another command committed. */
+function managerMatching(affected: number): EntityManager {
+  return {
+    findOneBy: (entity: unknown) => Promise.resolve(entity === PublicationRow ? PUBLICATION : ROW),
+    findOneByOrFail: () => Promise.resolve({ ...PUBLICATION, version: 3 }),
+    update: () => Promise.resolve({ affected }),
+  } as unknown as EntityManager;
+}
 
 /** `settle` is what the database does once the work has resolved: commit, or fail to. */
-function transactions(delivered: IEvent[], settle: () => Promise<void>): CatalogTransactions {
+function transactions(
+  delivered: IEvent[],
+  settle: () => Promise<void>,
+  manager = managerMatching(1),
+): CatalogTransactions {
   const dataSource = {
     transaction: async (work: (m: EntityManager) => Promise<unknown>) => {
       const result = await work(manager);
@@ -104,5 +114,28 @@ describe('CatalogTransactions', () => {
 
     await expect(run).rejects.toThrow('serialization failure');
     expect(delivered).toEqual([]);
+  });
+
+  it('refuses a save when another command committed since the load, naming the row as it stands', async () => {
+    const delivered: IEvent[] = [];
+    const refusal = await transactions(delivered, () => Promise.resolve(), managerMatching(0))
+      .run(cancelAndSave)
+      .catch((error: unknown) => error);
+
+    expect(isDomainError(refusal) && [refusal.code, refusal.params]).toEqual([
+      DomainErrorCode.STATE_CONFLICT,
+      { state: PublicationState.SCHEDULED, version: 3 },
+    ]);
+    expect(delivered).toEqual([]);
+  });
+
+  it('runs two transactions in turn, and refuses one opened inside another', async () => {
+    const runner = transactions([], () => Promise.resolve());
+    await runner.run(() => Promise.resolve());
+    await runner.run(() => Promise.resolve());
+
+    await expect(runner.run(() => runner.run(() => Promise.resolve()))).rejects.toThrow(
+      'does not nest',
+    );
   });
 });
