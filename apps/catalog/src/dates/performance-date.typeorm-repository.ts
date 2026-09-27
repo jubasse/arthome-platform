@@ -1,10 +1,10 @@
+import { AggregateTracker, saveVersioned, type Track } from '@arthome-platform/transactions';
 import type { EntityManager } from 'typeorm';
 
 import { PerformanceDate, type PerformanceDateSnapshot } from './performance-date.aggregate.js';
 import { PerformanceDateRow } from './performance-date.entity.js';
 import { PerformanceDateRepository } from './performance-date.repository.js';
 import { PublicationRow } from './publication.entity.js';
-import { AggregateTracker, saveVersioned, type Track } from '../transaction-runner.js';
 import type { PublicationSnapshot } from './publication.js';
 
 type DateColumns = Omit<PerformanceDateRow, 'id' | 'created_at' | 'updated_at'>;

@@ -19,6 +19,7 @@
     "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome-platform/search-index": "workspace:*",
+    "@arthome-platform/transactions": "workspace:*",
     "@arthome/contracts": "file:../../vendor/arthome-contracts-3278da8d4868.tgz",
     "@arthome/core": "file:../../vendor/arthome-core-dead8045fc64.tgz",
     "@bufbuild/protobuf": "2.15.0",

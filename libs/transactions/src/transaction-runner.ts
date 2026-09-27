@@ -15,11 +15,20 @@ import { DomainError, DomainErrorCode, type MessageParams } from '@arthome/core'
 /** Registers an aggregate an adapter wrote, for the commit after the transaction's. */
 export type Track = (aggregate: IAggregateRoot) => void;
 
-/** Binds a transaction's repositories to its manager. */
-export type RepositoryFactory<R> = (manager: EntityManager, track: Track) => R;
-
 /** A transaction's repositories, and its manager for what the command writes beside them. */
-export type Transaction<R> = R & { readonly manager: EntityManager };
+export interface TransactionScope {
+  readonly manager: EntityManager;
+}
+
+/**
+ * Binds a transaction's repositories to its manager, and hands that manager back as `manager`.
+ *   Its result reaches `work` untouched, so a class instance keeps its methods and getters: a
+ *   spread copied the own fields alone, and the type still promised the rest.
+ */
+export type RepositoryFactory<R extends TransactionScope> = (
+  manager: EntityManager,
+  track: Track,
+) => R;
 
 const openTransaction = new AsyncLocalStorage<true>();
 
@@ -31,22 +40,26 @@ const openTransaction = new AsyncLocalStorage<true>();
  *   A command may run two in turn; one opened inside another is refused, since it would commit on
  *   its own connection whatever the outer one then does.
  */
-export class TransactionRunner<R> {
+export class TransactionRunner<R extends TransactionScope> {
   public constructor(
     private readonly dataSource: DataSource,
     private readonly publisher: EventPublisher,
     private readonly repositoriesOf: RepositoryFactory<R>,
   ) {}
 
-  public async run<T>(work: (transaction: Transaction<R>) => Promise<T>): Promise<T> {
+  public async run<T>(work: (transaction: R) => Promise<T>): Promise<T> {
     if (openTransaction.getStore() === true) {
       throw new Error('a transaction is already open: TransactionRunner.run does not nest');
     }
     const written = new Set<IAggregateRoot>();
     const result = await openTransaction.run(true, () =>
-      this.dataSource.transaction((manager) =>
-        work({ ...this.repositoriesOf(manager, (aggregate) => written.add(aggregate)), manager }),
-      ),
+      this.dataSource.transaction((manager) => {
+        const transaction = this.repositoriesOf(manager, (aggregate) => written.add(aggregate));
+        if (transaction.manager !== manager) {
+          throw new Error("the repository factory must hand back the transaction's own manager");
+        }
+        return work(transaction);
+      }),
     );
     for (const aggregate of written) this.publisher.mergeObjectContext(aggregate).commit();
     return result;
@@ -55,8 +68,7 @@ export class TransactionRunner<R> {
 
 /**
  * What every aggregate adapter keeps: the version each aggregate was loaded or last written at,
- *   and the registration of each write. A write method that skips `written` publishes nothing and
- *   saves a second time against a stale version.
+ *   and the registration of each write. A write method that registers nothing publishes nothing.
  */
 export class AggregateTracker<A extends IAggregateRoot> {
   private readonly versions = new WeakMap<A, number>();
@@ -73,8 +85,14 @@ export class AggregateTracker<A extends IAggregateRoot> {
     return this.versions.get(aggregate);
   }
 
+  /** A save that moved the version: without it, a second save compares against a stale one. */
   public written(aggregate: A, version: number): void {
     this.versions.set(aggregate, version);
+    this.track(aggregate);
+  }
+
+  /** A write that leaves the version as it was loaded, such as a conditional decrement. */
+  public writtenUnversioned(aggregate: A): void {
     this.track(aggregate);
   }
 }

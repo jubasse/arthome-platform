@@ -29,6 +29,7 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | `libs/events` | the Protobuf wire types, generated from arthome-core's `proto/` |
 | `libs/http-edge` | the success and error envelopes, validation refusals, the deadline — every HTTP service's edge |
 | `libs/search-index` | the index mappings and document shapes, shared by the indexer and catalog's search |
+| `libs/transactions` | the transaction a CQRS command runs in, and its domain events published after the commit |
 | `libs/config`, `libs/testing` | the environment, and a harness that starts real containers |
 
 **What is NOT built, said plainly.** `ticketing`, `streaming`, `chat` and `payouts` do not exist.

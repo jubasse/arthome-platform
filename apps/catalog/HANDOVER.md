@@ -173,17 +173,17 @@ them; what a rule needs beyond the aggregate is an argument (the checklist facts
 handler first.
 
 **One transaction per command: `CatalogTransactions.run(work)`** (`src/catalog-transactions.ts`). It
-is `TransactionRunner` (`src/transaction-runner.ts`, which imports nothing of catalog's) over
-catalog's repository factory. It opens `dataSource.transaction`, hands `work` a
-`CatalogTransaction`, the repositories bound to that transaction's manager (`nestjs-typeorm` rule 3)
-and the manager itself, and once it has committed merges every aggregate written in it with
+is `TransactionRunner`, from `@arthome-platform/transactions`, over catalog's factory
+`catalogTransactionOf`. It opens `dataSource.transaction`, hands `work` the `CatalogTransaction` that
+factory built, the repositories bound to that transaction's manager (`nestjs-typeorm` rule 3) and
+the manager itself, and once it has committed merges every aggregate written in it with
 `EventPublisher` and calls `commit()`. A rejection publishes nothing, a command may run two in turn,
-and one opened inside another is refused (`catalog-transactions.spec.ts`). An adapter keeps its
-loaded versions and registers each write through one `AggregateTracker`, and its version-conditional
-UPDATE is `saveVersioned`, which refuses with core's `DomainError` (`STATE_CONFLICT`, the row's
-current state and version), never an HTTP exception. A new aggregate adds its repository to
-`catalogRepositoriesOf`. The `manager` carries the command's other writes, which are all functions
-of an `EntityManager` already.
+and one opened inside another is refused (the library's own spec, on a toy aggregate, and
+`catalog-transactions.spec.ts` on the date). An adapter keeps its loaded versions and registers each
+write through one `AggregateTracker`, and its version-conditional UPDATE is `saveVersioned`, which
+refuses with core's `DomainError` (`STATE_CONFLICT`, the row's current state and version), never an
+HTTP exception. A new aggregate adds its repository to `catalogTransactionOf`. The `manager` carries
+the command's other writes, which are all functions of an `EntityManager` already.
 
 ```ts
 execute(command: DeclareOutcome) {
@@ -350,20 +350,22 @@ version checked under the row lock it always took and its slug rules all lookups
 would only compare what the handler had already read. Their wiring is proven over HTTP by
 `catalog/catalog.http.itest.ts`: without `CreateVenueHandler` in `VenuesModule`, 500.
 
-**No shared library yet, deliberately.** The product owner allows one under `libs/` for what every
-CQRS service here would share, never a catalog concept and never in arthome-core. Three pieces
-qualify:
+**What every CQRS service here shares is in `libs/`**, lifted as ticketing's first change
+(arthome-core `adr-ticketing.md` §11), never a catalog concept and never in arthome-core:
 
-- `src/transaction-runner.ts` (`TransactionRunner`, `AggregateTracker`, `saveVersioned`), which
-  imports nothing of catalog's and moves as it is;
-- `runIdempotently` with its `idempotency_record` table (not CQRS-specific; its DDL would move the
-  way `outboxTableDdl()` lives in `libs/messaging`);
-- the processed-message claim, already copied in three consumers.
+- `@arthome-platform/transactions` (`libs/transactions`): `TransactionRunner`, `AggregateTracker`
+  and `saveVersioned`. The factory hands back the transaction's manager itself and its result
+  reaches `work` untouched, so a class instance keeps its methods (the spread it replaced dropped
+  them, while the type still promised them); a factory handing back another manager is refused.
+  `writtenUnversioned` registers a write that leaves the version as loaded, which ticketing's
+  conditional decrement is;
+- still here, lifted next: `runIdempotently` with its `idempotency_record` table, and the
+  processed-message claim copied in three consumers.
 
 Nothing else is generic: aggregates extend `@nestjs/cqrs`'s `AggregateRoot` as it is, and the
-events-to-outbox mapping builds catalog's own payloads over `writeOutboxEvent`, already shared. The
-three move into `libs/` as ticketing's first change (arthome-core `adr-ticketing.md` §11), so the
-second consumer shapes the interface rather than a guess (`nestjs-monorepo` rule 6).
+events-to-outbox mapping builds catalog's own payloads over `writeOutboxEvent`, already shared.
+Ticketing is the second consumer, which shapes the interface rather than a guess
+(`nestjs-monorepo` rule 6).
 
 Decided here, and each could have gone the other way:
 
