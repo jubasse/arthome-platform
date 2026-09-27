@@ -402,7 +402,16 @@ core's rules and D-088, the three new migrations run on the database that alread
 | prices in EUR and CHF on a fresh draft | 409 `date.prices_currency_mismatch`, naming the tier and both currencies |
 | the date cancelled in catalog | the sale closed in ticketing: the availability read 404, a new tier 409 `state.conflict` naming the outcome, and a last `availability_changed` of 0 seats, `sold_out` false, 0.7 s after the cancellation |
 
-The failed-date retry is still proven on containers only: nothing on the stack failed to publish.
+Proven a third time at 70307cb, after the re-review's fixes, their migration `1790440400000` run
+on the database that already held those dates. The unpublishable date is a hand edit, the same one
+the container suite makes: no validated write stores such a price.
+
+| Check | Result |
+| --- | --- |
+| two tiers on a date on sale, one second apart | the first published 0.9 s after it, the second 5.2 s after the first publication, as the interval holds it |
+| a date whose price core refuses (`amountMinor` 1.5), moved | `money.amount_not_integer` logged, `failed_at` set; tried again every 10.1 s; a tier opened meanwhile on another date published in the same pass |
+| that price put back | published at the next retry, `failed_at` cleared |
+| a date on sale cancelled in catalog | the sale closed in ticketing 0.3 s after catalog's answer; its closing, no longer on sale, reached through `closing_due` and published once 1.6 s later: 0 seats, `sold_out` false; the availability read 404 |
 
 ### Search, the date page and link resolution, from the storefront BFF
 
