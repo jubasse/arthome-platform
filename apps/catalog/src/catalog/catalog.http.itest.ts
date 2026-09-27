@@ -1,9 +1,4 @@
 import { ShowUpdatedSchema } from '@arthome-platform/events';
-import {
-  ErrorEnvelopeFilter,
-  SuccessEnvelopeInterceptor,
-  schemaInvalidException,
-} from '@arthome-platform/http-edge';
 import { OutboxEvent } from '@arthome-platform/messaging';
 import {
   applyMigrations,
@@ -12,12 +7,7 @@ import {
   type StartedStack,
 } from '@arthome-platform/testing';
 import { fromBinary } from '@bufbuild/protobuf';
-import { StandardSchemaValidationPipe } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE, HttpAdapterHost } from '@nestjs/core';
-import { CqrsModule } from '@nestjs/cqrs';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { Test } from '@nestjs/testing';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -32,24 +22,10 @@ import {
 
 import { CatalogModule } from './catalog.module.js';
 import { Show } from './show.entity.js';
-import { Artist } from '../artists/artist.entity.js';
 import { ArtistsModule } from '../artists/artists.module.js';
-import { CLOCK } from '../clock.js';
+import { httpApp } from '../itest/http-app.js';
 import { untilBlockedOrSettled } from '../itest/lock-waits.js';
-import { Initial1758800000000 } from '../migrations/1758800000000-initial.js';
-import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
-import { ShowCopyAndVenue1790420100000 } from '../migrations/1790420100000-show-copy-and-venue.js';
-import { DateAndPublication1790420200000 } from '../migrations/1790420200000-date-and-publication.js';
-import { ChecklistProjection1790420300000 } from '../migrations/1790420300000-checklist-projection.js';
-import { DateSlugs1790420400000 } from '../migrations/1790420400000-date-slugs.js';
-import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500000-idempotency-response-as-json.js';
-import { DateDetailPublic1790420600000 } from '../migrations/1790420600000-date-detail-public.js';
-import { DateOutcome1790420700000 } from '../migrations/1790420700000-date-outcome.js';
-import { Artist1790420800000 } from '../migrations/1790420800000-artist.js';
-import { PublicSlugs1790420900000 } from '../migrations/1790420900000-public-slugs.js';
-import { DateDetailPublic } from '../public/date-detail-public.entity.js';
-import { SlugAlias } from '../public/slug-alias.entity.js';
-import { UNIQUE_VIOLATION_CODES } from '../unique-violations.js';
+import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { Venue } from '../venues/venue.entity.js';
 import { VenuesModule } from '../venues/venues.module.js';
 
@@ -84,58 +60,13 @@ function send(method: 'POST' | 'PATCH', url: string, payload: object, idempotenc
 beforeAll(async () => {
   stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
   const database = await createDatabase(stack.postgres, 'catalog_studio_http_itest');
-  dataSource = await applyMigrations(database, {
-    entities: [Show, Venue, Artist, DateDetailPublic, SlugAlias, OutboxEvent],
-    migrations: [
-      Initial1758800000000,
-      Idempotency1790420000000,
-      ShowCopyAndVenue1790420100000,
-      DateAndPublication1790420200000,
-      ChecklistProjection1790420300000,
-      DateSlugs1790420400000,
-      IdempotencyResponseAsJson1790420500000,
-      DateDetailPublic1790420600000,
-      DateOutcome1790420700000,
-      Artist1790420800000,
-      PublicSlugs1790420900000,
-    ],
-  });
+  dataSource = await applyMigrations(database, CATALOG_SCHEMA);
 
-  const clock = new FixedClock(NOW);
-  const moduleRef = await Test.createTestingModule({
-    imports: [
-      // The harness's DataSource, so the app and the seeding share one pool on the migrated schema.
-      TypeOrmModule.forRootAsync({
-        useFactory: () => dataSource.options,
-        dataSourceFactory: () => Promise.resolve(dataSource),
-      }),
-      CqrsModule.forRoot(),
-      CatalogModule,
-      VenuesModule,
-      ArtistsModule,
-    ],
-    providers: [
-      {
-        provide: APP_PIPE,
-        useValue: new StandardSchemaValidationPipe({ exceptionFactory: schemaInvalidException }),
-      },
-      {
-        provide: APP_FILTER,
-        inject: [HttpAdapterHost],
-        useFactory: (host: HttpAdapterHost): ErrorEnvelopeFilter =>
-          new ErrorEnvelopeFilter(host, clock, UNIQUE_VIOLATION_CODES),
-      },
-      { provide: APP_INTERCEPTOR, useValue: new SuccessEnvelopeInterceptor(clock) },
-    ],
-  })
-    .overrideProvider(CLOCK)
-    .useValue(clock)
-    .compile();
-  app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
-    logger: false,
+  app = await httpApp({
+    imports: [CatalogModule, VenuesModule, ArtistsModule],
+    clock: new FixedClock(NOW),
+    dataSource,
   });
-  await app.init();
-  await app.getHttpAdapter().getInstance().ready();
 }, STARTUP_MS);
 
 // Closing the app destroys the DataSource the TypeORM module was handed.

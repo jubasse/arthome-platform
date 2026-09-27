@@ -16,7 +16,7 @@ import {
   type TransitionPublicationBody,
 } from './transition-publication.schema.js';
 import { ChannelIdParam } from '../channel-id.schema.js';
-import { fingerprintOf, idempotencyKeyOf } from '../idempotency/idempotency.js';
+import { idempotentRequestOf } from '../idempotency/idempotency.js';
 
 @Controller()
 export class DatesController {
@@ -36,12 +36,12 @@ export class DatesController {
   ): Promise<MemorisedResponse<DateSheet>> {
     const trace = parseTraceparent(traceparent);
     return this.commands.execute(
-      new DraftDate(channelId, body, trace === null ? null : trace.traceparent, {
-        key: idempotencyKeyOf(idempotencyKey),
-        accountId: null,
-        fingerprint: fingerprintOf('POST', `/channels/${channelId}/dates`, body),
-        statusCode: 201,
-      }),
+      new DraftDate(
+        channelId,
+        body,
+        trace === null ? null : trace.traceparent,
+        idempotentRequestOf('POST', `/channels/${channelId}/dates`, body, 201, idempotencyKey),
+      ),
     );
   }
 
@@ -56,12 +56,18 @@ export class DatesController {
   ): Promise<MemorisedResponse<PublicationView>> {
     const trace = parseTraceparent(traceparent);
     return this.commands.execute(
-      new TransitionPublication(dateId, body, trace === null ? null : trace.traceparent, {
-        key: idempotencyKeyOf(idempotencyKey),
-        accountId: null,
-        fingerprint: fingerprintOf('POST', `/dates/${dateId}/publication/transitions`, body),
-        statusCode: 200,
-      }),
+      new TransitionPublication(
+        dateId,
+        body,
+        trace === null ? null : trace.traceparent,
+        idempotentRequestOf(
+          'POST',
+          `/dates/${dateId}/publication/transitions`,
+          body,
+          200,
+          idempotencyKey,
+        ),
+      ),
     );
   }
 
@@ -76,12 +82,12 @@ export class DatesController {
   ): Promise<MemorisedResponse<DeclaredOutcome>> {
     const trace = parseTraceparent(traceparent);
     return this.commands.execute(
-      new DeclareOutcome(dateId, body, trace === null ? null : trace.traceparent, {
-        key: idempotencyKeyOf(idempotencyKey),
-        accountId: null,
-        fingerprint: fingerprintOf('POST', `/v1/dates/${dateId}/outcome`, body),
-        statusCode: 200,
-      }),
+      new DeclareOutcome(
+        dateId,
+        body,
+        trace === null ? null : trace.traceparent,
+        idempotentRequestOf('POST', `/v1/dates/${dateId}/outcome`, body, 200, idempotencyKey),
+      ),
     );
   }
 

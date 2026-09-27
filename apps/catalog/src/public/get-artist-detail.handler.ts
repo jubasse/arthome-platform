@@ -9,10 +9,10 @@ import type { Clock } from '@arthome/core';
 import { artistPageOf, type ArtistDetail } from './artist-page.js';
 import { DateDetailPublic } from './date-detail-public.entity.js';
 import { GetArtistDetail } from './get-artist-detail.query.js';
-import { notFound } from './not-found.js';
 import { Artist } from '../artists/artist.entity.js';
 import { CLOCK } from '../clock.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
+import { notFound } from '../refusals.js';
 
 @QueryHandler(GetArtistDetail)
 export class GetArtistDetailHandler implements IQueryHandler<GetArtistDetail> {

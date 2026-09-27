@@ -25,28 +25,16 @@ import {
   worldwideRights,
 } from '@arthome/core';
 
-import { Artist } from './artist.entity.js';
 import { UpdateChannelIdentity } from './update-channel-identity.command.js';
 import { UpdateChannelIdentityHandler } from './update-channel-identity.handler.js';
 import type { UpdateIdentityBody } from './update-identity.schema.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import type { IdempotentRequest } from '../idempotency/idempotency.js';
-import { Initial1758800000000 } from '../migrations/1758800000000-initial.js';
-import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
-import { ShowCopyAndVenue1790420100000 } from '../migrations/1790420100000-show-copy-and-venue.js';
-import { DateAndPublication1790420200000 } from '../migrations/1790420200000-date-and-publication.js';
-import { ChecklistProjection1790420300000 } from '../migrations/1790420300000-checklist-projection.js';
-import { DateSlugs1790420400000 } from '../migrations/1790420400000-date-slugs.js';
-import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500000-idempotency-response-as-json.js';
-import { DateDetailPublic1790420600000 } from '../migrations/1790420600000-date-detail-public.js';
-import { DateOutcome1790420700000 } from '../migrations/1790420700000-date-outcome.js';
-import { Artist1790420800000 } from '../migrations/1790420800000-artist.js';
-import { PublicSlugs1790420900000 } from '../migrations/1790420900000-public-slugs.js';
+import { publicQueryBus } from '../itest/public-query-bus.js';
+import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';
-import { publicQueryBus } from '../public/public-fixtures.js';
 import { ResolvePublicLink } from '../public/resolve-public-link.query.js';
-import { SlugAlias } from '../public/slug-alias.entity.js';
 
 /** The channel's public face against a real Postgres: versions, slugs and what it projects. */
 
@@ -83,22 +71,7 @@ async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
 beforeAll(async () => {
   stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
   const database = await createDatabase(stack.postgres, 'catalog_artists_itest');
-  dataSource = await applyMigrations(database, {
-    entities: [Artist, DateDetailPublic, SlugAlias, OutboxEvent],
-    migrations: [
-      Initial1758800000000,
-      Idempotency1790420000000,
-      ShowCopyAndVenue1790420100000,
-      DateAndPublication1790420200000,
-      ChecklistProjection1790420300000,
-      DateSlugs1790420400000,
-      IdempotencyResponseAsJson1790420500000,
-      DateDetailPublic1790420600000,
-      DateOutcome1790420700000,
-      Artist1790420800000,
-      PublicSlugs1790420900000,
-    ],
-  });
+  dataSource = await applyMigrations(database, CATALOG_SCHEMA);
   cqrs = await Test.createTestingModule({
     imports: [CqrsModule.forRoot()],
     providers: [

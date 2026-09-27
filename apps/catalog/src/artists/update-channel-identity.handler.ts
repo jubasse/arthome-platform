@@ -11,13 +11,7 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import type { EntityManager } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import {
-  CatalogErrorCode,
-  DomainErrorCode,
-  FailureNature,
-  type Clock,
-  type Instant,
-} from '@arthome/core';
+import { CatalogErrorCode, FailureNature, type Clock, type Instant } from '@arthome/core';
 
 import { Artist } from './artist.entity.js';
 import { UpdateChannelIdentity, type ChannelIdentity } from './update-channel-identity.command.js';
@@ -29,14 +23,7 @@ import { runIdempotentlyVersioned } from '../idempotency/idempotency.js';
 import { projectArtist } from '../public/date-detail-projection.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
 import { UNSCOPED, reservedForAnother, retireSlug, type SlugKey } from '../public/slug-aliases.js';
-
-function conflict(version: number): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, {
-    code: DomainErrorCode.STATE_CONFLICT,
-    params: { version },
-    nature: FailureNature.REFUSED,
-  });
-}
+import { stateConflict } from '../refusals.js';
 
 function slugTaken(): RefusalException {
   return new RefusalException(HttpStatus.CONFLICT, {
@@ -70,7 +57,7 @@ export class UpdateChannelIdentityHandler implements ICommandHandler<UpdateChann
       lock: { mode: 'pessimistic_write' },
     });
     const version = current?.version ?? 0;
-    if (body.expectedVersion !== version) throw conflict(version);
+    if (body.expectedVersion !== version) throw stateConflict({ version });
 
     const id = current?.id ?? uuidv7();
     const publicName = body.publicName ?? current?.public_name;

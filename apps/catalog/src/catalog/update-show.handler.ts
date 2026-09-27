@@ -1,8 +1,7 @@
 import { ShowUpdatedSchema } from '@arthome-platform/events';
-import { RefusalException, refusalForStatus } from '@arthome-platform/http-edge';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
-import { HttpStatus, Inject } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import type { EntityManager } from 'typeorm';
 
@@ -14,6 +13,7 @@ import { writeCatalogEvent } from '../catalog-events.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import { projectShowCopy } from '../public/date-detail-projection.js';
+import { notFound } from '../refusals.js';
 import { WIRE_LANGUAGE_DEPENDENCY, wireLocalizedTexts } from '../wire.js';
 
 @CommandHandler(UpdateShow)
@@ -35,7 +35,7 @@ export class UpdateShowHandler implements ICommandHandler<UpdateShow> {
   ): Promise<void> {
     const show = await manager.findOneBy(Show, { id: showId });
     if (show === null) {
-      throw new RefusalException(HttpStatus.NOT_FOUND, refusalForStatus(HttpStatus.NOT_FOUND));
+      throw notFound();
     }
 
     const next = {

@@ -11,16 +11,16 @@ import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import type { EntityManager } from 'typeorm';
 
-import type { DateRecords } from './date-sheet.js';
-import type { PerformanceDateSnapshot } from './performance-date.aggregate.js';
-import {
-  DateScheduled,
-  type DateDrafted,
-  type DateOutcomeDeclared,
-  type DateRescheduled,
-  type PerformanceDateEvent,
-  type PublicationEngaged,
-  type PublicationStateChanged,
+import type { Instant } from '@arthome/core';
+
+import type {
+  DateDrafted,
+  DateOutcomeDeclared,
+  DateRescheduled,
+  PerformanceDateEvent,
+  PublicationEngaged,
+  PublicationStateChanged,
+  PublicDateFacts,
 } from './performance-date.events.js';
 import { assertNever } from '../assert-never.js';
 import type { Show } from '../catalog/show.entity.js';
@@ -60,23 +60,16 @@ export async function writeDateIntegrationEvents(
 }
 
 /**
- * The date's public facts as they stand. Publication states them first; a change to how they are
+ * A published date's facts as they stand. Publication states them first; a change to how they are
  *   written, such as a new URL form, states them again (`PublicSlugs1790420900000`).
  */
 export async function writeDateScheduled(
   manager: EntityManager,
-  records: DateRecords & { readonly date: PerformanceDateSnapshot & { readonly slug: string } },
-  origin: string,
-  occurredAt: Date,
-  traceparent: string | null,
+  facts: PublicDateFacts,
+  occurredAt: Instant,
+  context: DateWireContext,
 ): Promise<void> {
-  const { date, show, venue } = records;
-  await writeDateIntegrationEvents(manager, [new DateScheduled(date, occurredAt.toISOString())], {
-    origin,
-    show,
-    venue,
-    traceparent,
-  });
+  await writeCatalogEvent(manager, scheduled(facts, occurredAt, context), new Date(occurredAt));
 }
 
 function integrationEventOf(event: PerformanceDateEvent, context: DateWireContext): CatalogEvent {
@@ -84,7 +77,7 @@ function integrationEventOf(event: PerformanceDateEvent, context: DateWireContex
     case 'DateDrafted':
       return drafted(event, context);
     case 'DateScheduled':
-      return scheduled(event, context);
+      return scheduled(event.facts, event.occurredAt, context);
     case 'DateOutcomeDeclared':
       return outcomeDeclared(event, context);
     case 'DateRescheduled':
@@ -116,16 +109,20 @@ function drafted(event: DateDrafted, context: DateWireContext): CatalogEvent {
   };
 }
 
-function scheduled({ date, occurredAt }: DateScheduled, context: DateWireContext): CatalogEvent {
+function scheduled(
+  date: PublicDateFacts,
+  occurredAt: Instant,
+  context: DateWireContext,
+): CatalogEvent {
   const { show, venue } = context;
   const venueClock = venueClockAt(venue.time_zone, date.startsAt);
   return {
     type: 'catalog.date.scheduled.v1',
-    key: date.id,
+    key: date.dateId,
     payload: toBinary(
       DateScheduledSchema,
       create(DateScheduledSchema, {
-        dateId: date.id,
+        dateId: date.dateId,
         channelId: date.channelId,
         showId: date.showId,
         venueId: date.venueId,

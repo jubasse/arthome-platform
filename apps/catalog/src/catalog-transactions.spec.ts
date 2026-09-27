@@ -48,8 +48,10 @@ const PUBLICATION: Omit<PublicationRow, 'updated_at'> = {
 /** `affected` is what the version-conditional UPDATE matches: 0 once another command committed. */
 function managerMatching(affected: number): EntityManager {
   return {
-    findOneBy: (entity: unknown) => Promise.resolve(entity === PublicationRow ? PUBLICATION : ROW),
-    findOneByOrFail: () => Promise.resolve({ ...PUBLICATION, version: 3 }),
+    findOne: () => Promise.resolve(PUBLICATION),
+    // The date's row at load; the publication's re-read after a refused save.
+    findOneByOrFail: (entity: unknown) =>
+      Promise.resolve(entity === PublicationRow ? { ...PUBLICATION, version: 3 } : ROW),
     update: () => Promise.resolve({ affected }),
   } as unknown as EntityManager;
 }

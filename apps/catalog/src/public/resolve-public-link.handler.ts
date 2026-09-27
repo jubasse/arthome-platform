@@ -11,7 +11,6 @@ import { dateCardOf } from './date-card.js';
 import { DateDetailPublic } from './date-detail-public.entity.js';
 import { publicDateOfRow } from './date-detail.js';
 import { artistUrl, kindLinkOf, publicLinkOf, showUrl, type PublicLink } from './links.js';
-import { notFound } from './not-found.js';
 import { ResolvePublicLink, type ResolvedLink } from './resolve-public-link.query.js';
 import { LinkKind, type ResolveQuery } from './resolve-query.schema.js';
 import { UNSCOPED, aliasTargetOf } from './slug-aliases.js';
@@ -19,6 +18,7 @@ import { Artist } from '../artists/artist.entity.js';
 import { Show } from '../catalog/show.entity.js';
 import { CLOCK } from '../clock.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
+import { notFound } from '../refusals.js';
 
 type LinkTo<K extends LinkKind> = Extract<PublicLink, { readonly kind: K }>;
 

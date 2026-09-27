@@ -10,7 +10,7 @@ import type { CommandBus } from '@nestjs/cqrs';
 import type { EachMessagePayload, Producer, ProducerRecord } from 'kafkajs';
 import { describe, expect, it } from 'vitest';
 
-import { Service } from '@arthome/core';
+import { DomainError, DomainErrorCode, Service } from '@arthome/core';
 
 import { applyChecklistMessage } from './checklist-consumer.js';
 
@@ -111,5 +111,23 @@ describe('applyChecklistMessage, before any write', () => {
     expect(disposition).toBe('retried');
     expect(sent.map((record) => record.topic)).toEqual([retryTopic(Service.CATALOG)]);
     expect(sent[0]?.messages[0]?.headers?.[ATTEMPT_HEADER]).toBe('1');
+  });
+
+  it('dead-letters a refusal other than an unknown date under its code, not as unknown', async () => {
+    const refusing = {
+      execute: () => Promise.reject(new DomainError({ code: DomainErrorCode.STATE_CONFLICT })),
+    } as unknown as CommandBus;
+    const policy = toBinary(
+      DateChatPolicyChangedSchema,
+      create(DateChatPolicyChangedSchema, {
+        dateId: 'date-1',
+        mode: ChatMode.OPEN,
+        occurredAt: timestampFromDate(new Date('2026-09-26T10:00:00.000Z')),
+      }),
+    );
+
+    await expect(
+      applyChecklistMessage(refusing, message('chat.date_chat_policy.changed.v1', policy)),
+    ).rejects.toThrow('message m-1 is about date date-1, refused state.conflict');
   });
 });

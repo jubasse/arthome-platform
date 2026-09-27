@@ -5,6 +5,7 @@ import { DateOutcome, type Bilingual } from '@arthome/core';
 
 import { writeDateScheduled } from '../dates/date-integration-events.js';
 import { dateRecordsOf } from '../dates/date-records.js';
+import { publicFactsOf } from '../dates/performance-date.aggregate.js';
 import { dateSlugCandidates, showSlugCandidates } from '../dates/slug.js';
 
 /**
@@ -85,14 +86,18 @@ export class PublicSlugs1790420900000 implements MigrationInterface {
       'CREATE UNIQUE INDEX date_detail_public_slug ON date_detail_public (show_id, slug)',
     );
 
-    const occurredAt = new Date();
+    const occurredAt = new Date().toISOString();
     const origin = readPublicWebOrigin();
     for (const { id } of dates) {
-      const records = await dateRecordsOf(queryRunner.manager, id);
-      const { slug } = records.date;
+      const { date, show, venue } = await dateRecordsOf(queryRunner.manager, id);
+      const { slug } = date;
       if (slug === null) throw new Error(`date ${id} lost the slug it was just given`);
-      const date = { ...records.date, slug };
-      await writeDateScheduled(queryRunner.manager, { ...records, date }, origin, occurredAt, null);
+      await writeDateScheduled(queryRunner.manager, publicFactsOf({ ...date, slug }), occurredAt, {
+        origin,
+        show,
+        venue,
+        traceparent: null,
+      });
     }
 
     // `scope` narrows a date's slug to its show; it is empty for a show and an artist.

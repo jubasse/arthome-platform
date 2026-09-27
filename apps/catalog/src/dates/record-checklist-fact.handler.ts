@@ -3,7 +3,7 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
 import { ApiErrorCode, DomainError } from '@arthome/core';
 
-import { PerformanceDateRow } from './performance-date.entity.js';
+import { PublicationRow } from './publication.entity.js';
 import { RecordChecklistFact } from './record-checklist-fact.command.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 
@@ -28,8 +28,13 @@ export class RecordChecklistFactHandler implements ICommandHandler<RecordCheckli
       if ((claimed.raw as unknown[]).length === 0) return 'duplicate';
 
       // Catalog emits DateDrafted before any other context knows the date, so an unknown one is
-      // a fault to look at, not a race to wait out.
-      if (!(await manager.existsBy(PerformanceDateRow, { id: fact.dateId }))) {
+      // a fault to look at, not a race to wait out. Shared lock to the commit: a publication
+      // deciding on the checklist holds the row, and this fact waits for it or it for this.
+      const publication = await manager.findOne(PublicationRow, {
+        where: { date_id: fact.dateId },
+        lock: { mode: 'pessimistic_read' },
+      });
+      if (publication === null) {
         throw new DomainError({ code: ApiErrorCode.NOT_FOUND, params: { dateId: fact.dateId } });
       }
 

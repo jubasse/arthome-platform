@@ -4,8 +4,11 @@ import { DateDetailPublic } from './date-detail-public.entity.js';
 import { Artist } from '../artists/artist.entity.js';
 import { assertNever } from '../assert-never.js';
 import type { Show } from '../catalog/show.entity.js';
-import type { PerformanceDateSnapshot } from '../dates/performance-date.aggregate.js';
-import { DateScheduled, type PerformanceDateEvent } from '../dates/performance-date.events.js';
+import {
+  DateScheduled,
+  type PerformanceDateEvent,
+  type PublicDateFacts,
+} from '../dates/performance-date.events.js';
 import type { Venue } from '../venues/venue.entity.js';
 
 const APPLIED = { version: () => 'version + 1', applied_at: () => 'now()' };
@@ -58,7 +61,7 @@ export async function projectDateEvents(
   );
   const scheduled = events.find((event) => event instanceof DateScheduled);
   if (scheduled !== undefined) {
-    await insertPublicDate(manager, scheduled.date, copies, changes);
+    await insertPublicDate(manager, scheduled.facts, copies, changes);
     return;
   }
   const [first] = events;
@@ -91,7 +94,7 @@ function changesOf(event: PerformanceDateEvent): DateChanges {
 /** Publishing is one-way, so the row is written whole once, with the state it published in. */
 async function insertPublicDate(
   manager: EntityManager,
-  date: PerformanceDateSnapshot & { readonly slug: string },
+  date: PublicDateFacts,
   { show, venue }: DateCopies,
   changes: DateChanges,
 ): Promise<void> {
@@ -102,7 +105,7 @@ async function insertPublicDate(
   });
   await manager.insert(DateDetailPublic, {
     artist_name: artist?.public_name ?? null,
-    date_id: date.id,
+    date_id: date.dateId,
     show_id: date.showId,
     channel_id: date.channelId,
     venue_id: venue.id,

@@ -1,0 +1,9 @@
+import type { MigrationPlan } from '@arthome-platform/testing';
+
+import { dataSource } from '../data-source.js';
+
+/** The service's own entities and migrations, so a new migration reaches every suite at once. */
+export const CATALOG_SCHEMA: MigrationPlan = {
+  entities: dataSource.options.entities ?? [],
+  migrations: dataSource.options.migrations ?? [],
+};

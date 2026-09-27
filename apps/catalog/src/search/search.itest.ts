@@ -1,20 +1,11 @@
 import {
-  ErrorEnvelopeFilter,
-  SuccessEnvelopeInterceptor,
-  schemaInvalidException,
-} from '@arthome-platform/http-edge';
-import {
   DATE_INDEX_ALIAS,
   DATE_INDEX_CONCRETE,
   DATE_INDEX_MAPPING,
   INDEX_SETTINGS,
 } from '@arthome-platform/search-index';
 import { startStack, type StartedStack } from '@arthome-platform/testing';
-import { StandardSchemaValidationPipe } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE, HttpAdapterHost } from '@nestjs/core';
-import { CqrsModule } from '@nestjs/cqrs';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { Test } from '@nestjs/testing';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Client } from '@opensearch-project/opensearch';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -25,7 +16,7 @@ import { dateDocument } from './search-fixtures.js';
 import { SearchSort, SearchTab } from './search-query.schema.js';
 import { SearchModule } from './search.module.js';
 import type { ServableDateDocument } from './servable-document.js';
-import { CLOCK } from '../clock.js';
+import { httpApp } from '../itest/http-app.js';
 
 /**
  * The search against a real OpenSearch, through the HTTP edge. What only a cluster proves:
@@ -152,33 +143,11 @@ beforeAll(async () => {
   }
   await client.indices.refresh({ index: DATE_INDEX_ALIAS });
 
-  const clock = new FixedClock(NOW);
-  const moduleRef = await Test.createTestingModule({
-    imports: [CqrsModule.forRoot(), SearchModule],
-    providers: [
-      {
-        provide: APP_PIPE,
-        useValue: new StandardSchemaValidationPipe({ exceptionFactory: schemaInvalidException }),
-      },
-      {
-        provide: APP_FILTER,
-        inject: [HttpAdapterHost],
-        useFactory: (host: HttpAdapterHost): ErrorEnvelopeFilter =>
-          new ErrorEnvelopeFilter(host, clock),
-      },
-      { provide: APP_INTERCEPTOR, useValue: new SuccessEnvelopeInterceptor(clock) },
-    ],
-  })
-    .overrideProvider(OPENSEARCH)
-    .useValue(client)
-    .overrideProvider(CLOCK)
-    .useValue(clock)
-    .compile();
-  app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
-    logger: false,
+  app = await httpApp({
+    imports: [SearchModule],
+    clock: new FixedClock(NOW),
+    overrides: [[OPENSEARCH, client]],
   });
-  await app.init();
-  await app.getHttpAdapter().getInstance().ready();
 }, STARTUP_MS);
 
 afterAll(async () => {

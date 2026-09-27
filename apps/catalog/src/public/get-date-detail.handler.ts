@@ -9,9 +9,9 @@ import type { Clock } from '@arthome/core';
 import { DateDetailPublic } from './date-detail-public.entity.js';
 import { dateDetailOf, type DateDetail } from './date-detail.js';
 import { GetDateDetail } from './get-date-detail.query.js';
-import { notFound } from './not-found.js';
 import { CLOCK } from '../clock.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
+import { notFound } from '../refusals.js';
 
 @QueryHandler(GetDateDetail)
 export class GetDateDetailHandler implements IQueryHandler<GetDateDetail> {

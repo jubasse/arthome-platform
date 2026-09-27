@@ -21,11 +21,18 @@ export class TypeOrmPerformanceDateRepository extends PerformanceDateRepository 
     this.tracker = new AggregateTracker(track);
   }
 
+  /**
+   * The publication's row first, under its lock to the commit: a command's reads (the checklist
+   *   facts, which `RecordChecklistFact` writes under a shared lock on the same row) then describe
+   *   the version it decides on.
+   */
   public async findById(id: string): Promise<PerformanceDate | null> {
-    const row = await this.manager.findOneBy(PerformanceDateRow, { id });
-    if (row === null) return null;
-    const publication = await this.manager.findOneBy(PublicationRow, { date_id: id });
-    if (publication === null) throw new Error(`date ${id} has no publication`);
+    const publication = await this.manager.findOne(PublicationRow, {
+      where: { date_id: id },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (publication === null) return null;
+    const row = await this.manager.findOneByOrFail(PerformanceDateRow, { id });
     return this.tracker.loaded(
       PerformanceDate.restore(performanceDateSnapshotOf(row), publicationSnapshotOf(publication)),
       publication.version,

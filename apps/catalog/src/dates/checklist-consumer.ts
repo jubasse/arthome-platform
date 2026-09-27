@@ -11,7 +11,7 @@ import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
 import type { CommandBus } from '@nestjs/cqrs';
 import type { EachMessagePayload } from 'kafkajs';
 
-import { PublicationChecklistItem, isDomainError } from '@arthome/core';
+import { ApiErrorCode, PublicationChecklistItem, isDomainError } from '@arthome/core';
 
 import { RecordChecklistFact, type ChecklistFact } from './record-checklist-fact.command.js';
 
@@ -84,9 +84,11 @@ export function applyChecklistMessage(
   return commands
     .execute(new RecordChecklistFact(messageId, payload.topic, fact))
     .catch((error: unknown) => {
-      // Its one refusal, a date catalog does not hold, is a business rejection no retry changes:
-      // dead-lettered at once. Anything else is retried as transient.
+      // A refusal is a business rejection no retry changes: dead-lettered at once, its code in the
+      // header. Anything else is retried as transient.
       if (!isDomainError(error)) throw error;
-      throw new PermanentError(`message ${messageId} is about date ${fact.dateId}, unknown here`);
+      const refusal =
+        error.code === ApiErrorCode.NOT_FOUND ? 'unknown here' : `refused ${error.code}`;
+      throw new PermanentError(`message ${messageId} is about date ${fact.dateId}, ${refusal}`);
     });
 }

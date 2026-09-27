@@ -6,7 +6,6 @@ import {
   PriceTier,
   TechnicalCheckPassedSchema,
 } from '@arthome-platform/events';
-import { OutboxEvent, ProcessedMessage } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
@@ -37,8 +36,6 @@ import { DeclareOutcomeHandler } from './declare-outcome.handler.js';
 import { DraftDate } from './draft-date.command.js';
 import { DraftDateHandler } from './draft-date.handler.js';
 import { PerformanceDateRow } from './performance-date.entity.js';
-import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
-import { PublicationRow } from './publication.entity.js';
 import { RecordChecklistFactHandler } from './record-checklist-fact.handler.js';
 import { TransitionPublication } from './transition-publication.command.js';
 import { TransitionPublicationHandler } from './transition-publication.handler.js';
@@ -48,20 +45,9 @@ import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import type { IdempotentRequest } from '../idempotency/idempotency.js';
 import { untilBlockedOrSettled } from '../itest/lock-waits.js';
-import { Initial1758800000000 } from '../migrations/1758800000000-initial.js';
-import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
-import { ShowCopyAndVenue1790420100000 } from '../migrations/1790420100000-show-copy-and-venue.js';
-import { DateAndPublication1790420200000 } from '../migrations/1790420200000-date-and-publication.js';
-import { ChecklistProjection1790420300000 } from '../migrations/1790420300000-checklist-projection.js';
-import { DateSlugs1790420400000 } from '../migrations/1790420400000-date-slugs.js';
-import { IdempotencyResponseAsJson1790420500000 } from '../migrations/1790420500000-idempotency-response-as-json.js';
-import { DateDetailPublic1790420600000 } from '../migrations/1790420600000-date-detail-public.js';
-import { DateOutcome1790420700000 } from '../migrations/1790420700000-date-outcome.js';
-import { Artist1790420800000 } from '../migrations/1790420800000-artist.js';
-import { PublicSlugs1790420900000 } from '../migrations/1790420900000-public-slugs.js';
+import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { projectArtist, projectShowCopy } from '../public/date-detail-projection.js';
 import { DateDetailPublic } from '../public/date-detail-public.entity.js';
-import { SlugAlias } from '../public/slug-alias.entity.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { Venue } from '../venues/venue.entity.js';
 
@@ -204,33 +190,7 @@ async function slugsOf(dateIds: readonly string[]): Promise<(string | null)[]> {
 beforeAll(async () => {
   stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
   const database = await createDatabase(stack.postgres, 'catalog_concurrency_itest');
-  dataSource = await applyMigrations(database, {
-    entities: [
-      Show,
-      Venue,
-      PerformanceDateRow,
-      PublicationRow,
-      PublicationChecklistFact,
-      DateDetailPublic,
-      Artist,
-      SlugAlias,
-      ProcessedMessage,
-      OutboxEvent,
-    ],
-    migrations: [
-      Initial1758800000000,
-      Idempotency1790420000000,
-      ShowCopyAndVenue1790420100000,
-      DateAndPublication1790420200000,
-      ChecklistProjection1790420300000,
-      DateSlugs1790420400000,
-      IdempotencyResponseAsJson1790420500000,
-      DateDetailPublic1790420600000,
-      DateOutcome1790420700000,
-      Artist1790420800000,
-      PublicSlugs1790420900000,
-    ],
-  });
+  dataSource = await applyMigrations(database, CATALOG_SCHEMA);
   await dataSource.getRepository(Show).insert({
     id: SHOW_ID,
     slug: 'nuit-rouge',

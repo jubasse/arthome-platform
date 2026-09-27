@@ -14,9 +14,8 @@ indexer. The shapes served are `@arthome/contracts`': `ShowGroup`, `Facet`, the 
 - **One group per show** through OpenSearch `collapse`: the representative date is the first under
   the sort, and `matchingDatesCount` counts the dates the filters kept (`inner_hits`, size 0).
 - **`displayState` is `publicDisplayStateOf`'s** (arthome-core D-072): a date under technical
-  check shows on the time axis. Run state and outcome are passed as unknown: `streaming` does not
-  publish and no command declares an outcome yet, so a cancelled date would still show its time
-  state the day one can be declared.
+  check shows on the time axis. Run state is passed as unknown, since `streaming` does not publish;
+  the outcome is the index document's (§0c).
 - **A date fully over is not served**: `over_at` (`replayEndsAt`, or `endsAt` without a replay)
   must be after now, or the card would be `ended` with no `displayStateValidUntil`, which a
   `DateCard` requires. `lives` and `replays` split at `ends_at`.
@@ -144,8 +143,9 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
 `context-map.md` §12 makes the publication, the date and its outcome full CQRS; event sourcing is
 refused. The reference is `POST /v1/dates/:dateId/outcome` (`DeclareOutcome`) and the studio's
 sheet `GET /dates/:dateId` (`GetDateSheet`). Every catalog route and the checklist consumer run
-this way: no service is left. The migration moved no behaviour: the integration suites assert what
-they did before it, and `*.http.itest.ts` prove each module's wiring over HTTP.
+this way: no service is left. The integration suites assert what they did before the migration,
+and `*.http.itest.ts` prove each module's wiring over HTTP; the behaviours changed on purpose are
+under "Decided here".
 
 **Files**, flat in the feature directory, role suffix (code-conventions §6.5):
 
@@ -203,12 +203,13 @@ A handler never opens a transaction itself and never calls `commit()`.
 
 **One aggregate, two rows (arthome-core D-085).** `PerformanceDate` owns its `Publication`: they are
 one to one, share one version (the publication's, which the studio names, §0c), and every command
-writes both. One repository loads both rows and remembers the version it read; `save` writes both,
-the publication's row first with the version-conditional UPDATE (`WHERE date_id AND version =
-<loaded>`, `affected === 1`, `nestjs-typeorm` rule 7), then the date's, never one without the
-other. A change committed since the load is refused `state.conflict` with the current state and
-version, re-read, and the publication's row lock orders two concurrent commands before either writes
-the date. `save` inserts a date it did not load, which only `PerformanceDate.draft` creates, the
+writes both. One repository loads both rows, the publication's `FOR UPDATE` to the commit, and
+remembers the version it read; `save` writes both, the publication's row first with the
+version-conditional UPDATE (`WHERE date_id AND version = <loaded>`, `affected === 1`,
+`nestjs-typeorm` rule 7), then the date's, never one without the other. A second command on the
+date waits at its load for the first's commit, then is refused `state.conflict` by the version
+check, with the state and version it left; the conditional UPDATE stays the save's own guard, and
+refuses the same way with the row re-read. `save` inserts a date it did not load, which only `PerformanceDate.draft` creates, the
 date's row first since the publication's references it. The handler calls one method
 (`transitionPublication`, `declareOutcome`) and one `save`; publishing makes the date public inside
 `transitionPublication`, which refuses a date that already has a slug.
@@ -224,7 +225,8 @@ onto one day at once lost one to `date_show_slug`, answered 500.
 `RefusalException` with the same `code`, `params` and `nature`. Unwrapped, `ErrorEnvelopeFilter`
 answers a `DomainError` 400. The stale version is one too, checked before any rule, as before:
 core's `assertCommandedTransition` for a transition, `Publication.advancedFrom` for an outcome. A
-404 or a 400 stays the `RefusalException` it was.
+404 or a 400 stays the `RefusalException` it was; a handler builds one from `src/refusals.ts`
+(`notFound()`, `stateConflict(params)`) or `schemaInvalidException`, never by hand.
 `publication.checklist_incomplete` names a list, which core's `MessageParams` cannot carry:
 `PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and `asConflict`
 answers `{ missing }`.
@@ -238,9 +240,9 @@ it does not concern:
 - `writeDateIntegrationEvents` (`date-integration-events.ts`): one outbox row per event through
   `writeCatalogEvent`, in the order the aggregate applied them: publishing applies the state
   change, `DateScheduled`, then `PublicationEngaged`, so no consumer reads the lock first; the
-  Protobuf payload is built there. `writeDateScheduled`, with which the public-slugs migration restates a published date,
-  moved here from `announce-publication.ts`, so one builder writes `DateScheduled`. A domain event is never the
-  wire format (`nestjs-ddd` rule 11); what the wire needs beyond it — canonical URL, venue clock,
+  Protobuf payload is built there. `writeDateScheduled` writes `catalog.date.scheduled.v1` from a
+  date's `PublicDateFacts` alone, which is how the public-slugs migration restates a published
+  date without making an event. A domain event is never the wire format (`nestjs-ddd` rule 11); what the wire needs beyond it — canonical URL, venue clock,
   `traceparent` — comes in a context.
 - `projectDateEvents` (`public/date-detail-projection.ts`): `date_detail_public`, the events folded
   into one UPDATE, since the row's `version` counts commands, or into the whole row when
@@ -264,26 +266,32 @@ already started, so an event delivered inside the transaction would read the old
 and a failure after the save deliver nothing (measured: 3 events with `commit()` in a `finally`).
 
 **Controllers dispatch.** They parse the `traceparent`, build the `IdempotentRequest`
-(`idempotencyKeyOf`, `fingerprintOf`), and return `this.commands.execute(new DeclareOutcome(…))` or
+(`idempotentRequestOf`), and return `this.commands.execute(new DeclareOutcome(…))` or
 `this.queries.execute(new GetDateSheet(…))`, typed by `Command<R>` / `Query<R>`. `CqrsModule.forRoot()`
 is imported once, in `AppModule`; handlers go in the feature module's `providers`, and
 `CatalogTransactions` comes from importing `CatalogTransactionsModule`: two listings make two
-instances.
+instances. Shows and venues carry no `IdempotentRequest`, since the contract gives their routes no
+key, and the shows controller maps its body to core's types (§2(g)).
 
-**The checklist consumer dispatches too.** `consumer.ts` boots `ConsumerModule` (TypeORM,
-`CqrsModule.forRoot()`, `ChecklistConsumerModule`) as an application context, without HTTP, and
+**The checklist consumer dispatches too.** `consumer.ts` boots `ConsumerModule`
+(`consumer.module.ts`: TypeORM, `CqrsModule.forRoot()`, `ChecklistConsumerModule`, and the
+`ChecklistConsumer` provider over an injected `Kafka`) as an application context, without HTTP, and
 `applyChecklistMessage` turns each message it reads as a fact into `RecordChecklistFact`, whose
 handler claims `processed_message` in the command's transaction. Its `ChecklistConsumer` provider
 starts Kafka in `onApplicationBootstrap` and stops it in `onApplicationShutdown`, which runs for the
 root module before the global TypeORM module closes the pool; `enableShutdownHooks` on SIGTERM and
 SIGINT with `useProcessExit` exits 0 once closed, as before. The routing of a failure stays
 AGENTS.md's ("When a message cannot be applied"): the handler refuses a date catalog does not hold
-with core's `DomainError`, which the consumer rethrows as `PermanentError`, dead-lettered at once;
-anything else is retried as transient.
+with core's `DomainError`, which the consumer rethrows as `PermanentError`, dead-lettered at once
+("unknown here" for `api.not_found`, the code for any other refusal); anything else is retried as
+transient. Its `TypeOrmModule.forRoot` keeps `@nestjs/typeorm`'s startup retries (9, 3 s apart),
+so a wrong `DATABASE_URL` exits after about 24 s rather than at once: the API process starts the
+same way, and a database still starting is the common case.
 
-**Queries read rows, never aggregates.** `GetDateSheetHandler` reads through `dataSource.manager`
-(`dateRecordsOf`, `date-records.ts`) and shapes with the pure `dateSheet()`: no transaction and no
-port, since a read has no invariant to protect.
+**Queries read rows, never aggregates.** `GetDateSheetHandler` reads its rows (`dateRecordsOf`,
+`date-records.ts`) in one `REPEATABLE READ` transaction, since the date has no version of its own
+and two snapshots could serve a version the sheet does not show, and shapes them with the pure
+`dateSheet()`. No port: a read has no invariant to protect.
 
 **The storefront's reads are queries.** `GetDateDetail`, `GetArtistDetail` and `ResolvePublicLink`
 (`src/public/`) read rows the same way and answer a `PerishableResponse`. `SearchCatalog`
@@ -298,9 +306,16 @@ before and after the move to the bus, the seeded artist's `joinedAt` aside.
 `getUncommittedEvents()`, core never mocked (`performance-date.aggregate.spec.ts`). A handler: through
 the real bus against the container database, a testing module with `CqrsModule.forRoot()`, the
 handlers, `CatalogTransactions` and `{ provide: DataSource, useValue: dataSource }`, then `init()`,
-which registers the handlers (`dates.itest.ts`). The wiring: `dates.http.itest.ts` boots the real
-`DatesModule` under `CqrsModule.forRoot()` and calls the routes over HTTP; a migrated route adds its
-request there. Measured: with `DeclareOutcomeHandler` left out of `DatesModule`'s `providers`, the
+which registers the handlers (`dates.itest.ts`; races in `dates/concurrency.itest.ts`).
+`catalog/publish-show.handler.spec.ts`, kept from the service era, is the exception: it asserts
+over a recording fake `DataSource` that the show and its outbox row share one manager, and the
+HTTP suite runs the same command against Postgres. Every suite migrates the service's own schema
+(`itest/schema.ts`, from `dataSource.options`). The wiring: `itest/http-app.ts` boots feature
+modules over HTTP with the service's global providers (`EDGE_PROVIDERS`, which `AppModule` binds
+too), and `dates.http.itest.ts` calls the date routes through it; a migrated route adds its request
+there. `boot.itest.ts` boots the two roots themselves, `AppModule` with OpenSearch stubbed and
+`ConsumerModule` with Kafka stubbed. Measured: without `CqrsModule.forRoot()` in either, it fails
+to resolve `EventPublisher`. Measured: with `DeclareOutcomeHandler` left out of `DatesModule`'s `providers`, the
 route answers 500 and this suite fails; `dates.itest.ts` lists its handlers itself and cannot see it.
 The same suite records the checklist facts through `ChecklistConsumerModule`. Measured: without
 `RecordChecklistFactHandler` in its `providers`, it fails on "No handler found for the command".
@@ -308,8 +323,9 @@ The same suite records the checklist facts through `ChecklistConsumerModule`. Me
 **No aggregate where no invariant earns one.** The show, the venue and the artist are on the
 `CommandBus` (`PublishShow`, `UpdateShow`, `CreateVenue`, `UpdateChannelIdentity`) with plain
 handlers: each runs in `CatalogTransactions.run` and writes through its `manager`, with no port and
-no domain event, so nothing reaches the bus. §12 names none of them, and none holds a rule across
-entities (`nestjs-ddd` rule 1). A venue is plain data. A show has no version and no state: its slug
+no domain event, so nothing reaches the bus. D-084 puts them on the bus and through the same runner,
+so catalog has one way to run a write (§12 carries the row), and none holds a rule across entities
+(`nestjs-ddd` rule 1). A venue is plain data. A show has no version and no state: its slug
 is chosen once from lookups a method could not await, and an update replaces copy. The artist is
 one row, its version checked under the row lock it always took and its slug rules all lookups, so
 an aggregate would only compare what the handler had already read. Their wiring is proven over
@@ -337,7 +353,23 @@ Decided here, and each could have gone the other way:
   always did; the outcome path used to answer the one it had read. Only two concurrent commands see
   the difference.
 - **A postponement's free slug is looked up before core's rule runs**, so a refused one costs those
-  reads: the aggregate takes it as an argument, and its methods do not await.
+  reads: the aggregate takes it as an argument, and its methods do not await. A transition looks
+  one up whenever the date has none, publishing or not.
+- **A command on a date locks its publication's row and its show's row to the commit**
+  (`findById`, `loadDate`), and a checklist fact takes the publication's `FOR SHARE`: a second
+  command on the date, a fact the publication decides on, a show update and another date of the
+  show picking a slug wait for it. Two shows of one title published at once answer the loser 409
+  `state.conflict`, where it answered 500.
+
+Known and left as they are:
+
+- `satisfiedChecklistItems`, the input of publishing's checklist rule, is computed in
+  `date-sheet.ts`, the sheet's shaping module; moving it beside the aggregate would make the read
+  model depend on the write side rather than the reverse.
+- `PublicationChecklistIncomplete` carries `missing` beside core's scalar `params`: only
+  `asConflict` serves it, and a path that let it escape unwrapped would answer 400 without the list.
+- `adr-ticketing.md` speaks of the catalog refactor's shared library; there is none yet (above), and
+  that sentence is arthome-core's to correct.
 
 ## 1. What was built
 

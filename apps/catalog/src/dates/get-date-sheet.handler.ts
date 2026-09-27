@@ -15,7 +15,14 @@ export class GetDateSheetHandler implements IQueryHandler<GetDateSheet> {
     @Inject(PUBLIC_WEB_ORIGIN) private readonly publicWebOrigin: string,
   ) {}
 
+  /**
+   * One snapshot for every row: the date has no version of its own, so a sheet reading the date
+   *   before an outcome commits and the publication after would serve a version it does not show.
+   */
   public async execute({ dateId }: GetDateSheet): Promise<DateSheet> {
-    return dateSheet(await dateRecordsOf(this.dataSource.manager, dateId), this.publicWebOrigin);
+    const records = await this.dataSource.transaction('REPEATABLE READ', (manager) =>
+      dateRecordsOf(manager, dateId),
+    );
+    return dateSheet(records, this.publicWebOrigin);
   }
 }

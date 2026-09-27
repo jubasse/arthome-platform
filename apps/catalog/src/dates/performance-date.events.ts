@@ -1,8 +1,12 @@
 import type { IEvent } from '@nestjs/cqrs';
 
-import type { DateOutcome, Instant, PublicationState } from '@arthome/core';
-
-import type { PerformanceDateSnapshot } from './performance-date.aggregate.js';
+import type {
+  DateOutcome,
+  Instant,
+  PublicationState,
+  ReplayPolicy,
+  TerritoryRights,
+} from '@arthome/core';
 
 /** The run desk's message: content, in the language it was written in. */
 export interface OutcomeMessage {
@@ -22,18 +26,31 @@ export class DateDrafted implements IEvent {
   ) {}
 }
 
+/** What a date states once public, and all its `DateScheduled` carries. */
+export interface PublicDateFacts {
+  readonly dateId: string;
+  readonly channelId: string;
+  readonly showId: string;
+  readonly venueId: string;
+  readonly startsAt: Instant;
+  readonly runtimeMin: number;
+  readonly replayPolicy: ReplayPolicy;
+  readonly replayWindowHours: number | null;
+  readonly rights: TerritoryRights;
+  readonly slug: string;
+}
+
 /** Its publication made the date public: its slug set, its running time frozen (§2.2, §2.7). */
 export class DateScheduled implements IEvent {
   public readonly kind = 'DateScheduled';
 
   public constructor(
-    /** Its public facts as they stand, which `DateScheduled` states on the wire. */
-    public readonly date: PerformanceDateSnapshot & { readonly slug: string },
+    public readonly facts: PublicDateFacts,
     public readonly occurredAt: Instant,
   ) {}
 
   public get dateId(): string {
-    return this.date.id;
+    return this.facts.dateId;
   }
 }
 

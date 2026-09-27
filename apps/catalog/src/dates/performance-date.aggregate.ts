@@ -22,6 +22,7 @@ import {
   DateScheduled,
   type OutcomeMessage,
   type PerformanceDateEvent,
+  type PublicDateFacts,
 } from './performance-date.events.js';
 import { Publication, type PublicationSnapshot } from './publication.js';
 
@@ -42,6 +43,28 @@ export interface PerformanceDateSnapshot {
   readonly rescheduledTo: Instant | null;
   readonly outcomeDeclaredAt: Instant | null;
   readonly outcomeMessage: OutcomeMessage | null;
+}
+
+/** A date its publication made public: it holds a slug from then on. */
+export type PublicDateSnapshot = PerformanceDateSnapshot & { readonly slug: string };
+
+export function publicFactsOf(date: PublicDateSnapshot): PublicDateFacts {
+  return {
+    dateId: date.id,
+    channelId: date.channelId,
+    showId: date.showId,
+    venueId: date.venueId,
+    startsAt: date.startsAt,
+    runtimeMin: date.runtimeMin,
+    replayPolicy: date.replayPolicy,
+    replayWindowHours: date.replayWindowHours,
+    rights: date.rights,
+    slug: date.slug,
+  };
+}
+
+function assertPublic(date: PerformanceDateSnapshot): asserts date is PublicDateSnapshot {
+  if (date.slug === null) throw new Error(`date ${date.id} is public without a slug`);
 }
 
 /** What a draft is created with; the rest waits for its publication or an outcome. */
@@ -142,7 +165,7 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
     this.currentPublication = publication;
     this.current = date;
     this.apply(changed);
-    this.apply(new DateScheduled(date, context.now));
+    this.apply(new DateScheduled(publicFactsOf(date), context.now));
     this.apply(engaged);
   }
 
@@ -176,9 +199,10 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
       now,
     );
 
+    // Core refused any date its publication has not made public, and publishing set its slug.
+    assertPublic(date);
     const movedTo = declaration.rescheduledTo;
-    // A public date always holds a slug, set by its publication: the id only satisfies the type.
-    const previousSlug = date.slug ?? date.id;
+    const previousSlug = date.slug;
     let slug = previousSlug;
     if (movedTo !== null) {
       if (slugAtNewStart === null) throw new Error('a postponement without its new slug');
@@ -207,10 +231,7 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
   }
 
   /** Publishing happens once: a date that already holds a slug is refused, naming it. */
-  private madePublic({
-    freeSlug,
-    showRuntimeMin,
-  }: PublicationContext): PerformanceDateSnapshot & { readonly slug: string } {
+  private madePublic({ freeSlug, showRuntimeMin }: PublicationContext): PublicDateSnapshot {
     const { slug } = this.current;
     if (slug !== null) {
       throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { slug } });

@@ -141,7 +141,21 @@ describe('PerformanceDate', () => {
         true,
         NOW,
       ),
-      new DateScheduled({ ...date.snapshot, slug: '2026-11-04' }, NOW),
+      new DateScheduled(
+        {
+          dateId: 'date-1',
+          channelId: 'channel-1',
+          showId: 'show-1',
+          venueId: 'venue-1',
+          startsAt: '2026-11-04T19:30:00.000Z',
+          runtimeMin: 110,
+          replayPolicy: ReplayPolicy.INCLUDED,
+          replayWindowHours: 72,
+          rights: worldwideRights(),
+          slug: '2026-11-04',
+        },
+        NOW,
+      ),
       new PublicationEngaged('date-1', 'channel-1', NOW),
     ]);
   });
