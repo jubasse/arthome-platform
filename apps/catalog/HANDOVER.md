@@ -140,8 +140,9 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
 
 `context-map.md` §12 makes the publication, the date and its outcome full CQRS; event sourcing is
 refused. The reference is `POST /v1/dates/:dateId/outcome` (`DeclareOutcome`) and the studio's
-sheet `GET /dates/:dateId` (`GetDateSheet`). Every other route still runs through its service until
-it is migrated this way. Behaviour does not move: `dates.itest.ts` asserts what it did before.
+sheet `GET /dates/:dateId` (`GetDateSheet`). Every catalog route and the checklist consumer run
+this way: no service is left. The migration moved no behaviour: the integration suites assert what
+they did before it, and `*.http.itest.ts` prove each module's wiring over HTTP.
 
 **Files**, flat in the feature directory, role suffix (code-conventions §6.5):
 
