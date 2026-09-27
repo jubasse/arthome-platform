@@ -28,7 +28,8 @@ indexer. The shapes served are `@arthome/contracts`': `ShowGroup`, `Facet`, the 
   `onPromotion`, `accessibility`) answer 400 `api.schema_invalid` with `fields`.
 - **`x-arthome-deadline` is required** (transport.md §5.3): absent, 400; past, 504
   `api.deadline_exceeded` before the query; the time left bounds the OpenSearch request, and the
-  query is aborted when the caller hangs up (`whenCallerLeaves`, from the response's `close`).
+  query is aborted when the caller hangs up (`whenCallerLeaves`, from the response's `close`),
+  both carried by the `SearchCatalog` query (§0f).
 - **The title is in its own language**, the slug and canonical URL in none (arthome-core D-075):
   the contract gives this read no viewer language, and an anonymous body must be the same for
   every caller.
@@ -234,6 +235,15 @@ two listings make two instances.
 **Queries read rows, never aggregates.** `GetDateSheetHandler` reads through `dataSource.manager`
 (`dateRecordsOf`, `date-records.ts`) and shapes with the pure `dateSheet()`: no transaction and no
 port, since a read has no invariant to protect.
+
+**The storefront's reads are queries.** `GetDateDetail`, `GetArtistDetail` and `ResolvePublicLink`
+(`src/public/`) read rows the same way and answer a `PerishableResponse`. `SearchCatalog`
+(`src/search/`) carries what `x-arthome-deadline` leaves and the caller's `AbortSignal`, both built
+by the controller, and its handler bounds and aborts the OpenSearch request with them:
+`search-catalog.handler.spec.ts` proves it through the bus, and from an HTTP caller hanging up
+through `SearchModule`. `public.http.itest.ts` is `PublicModule`'s wiring suite. Measured on
+2026-09-27: every HTTP answer of that suite and of `search.itest.ts` came out byte for byte the same
+before and after the move to the bus, the seeded artist's `joinedAt` aside.
 
 **Tests.** An aggregate: plain Vitest, `restore()` a snapshot, call the method, assert `snapshot` and
 `getUncommittedEvents()`, core never mocked (`performance-date.aggregate.spec.ts`). A handler: through
