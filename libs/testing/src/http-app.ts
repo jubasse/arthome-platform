@@ -1,30 +1,27 @@
-import type { ModuleMetadata } from '@nestjs/common';
+import type { ModuleMetadata, Provider } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 
-import type { Clock } from '@arthome/core';
-
-import { CLOCK } from '../clock.js';
-import { EDGE_PROVIDERS } from '../edge-providers.js';
-
 export interface HttpAppOptions {
   readonly imports: NonNullable<ModuleMetadata['imports']>;
-  readonly clock: Clock;
+  /** The service's global providers, the very list its root module binds. */
+  readonly providers: Provider[];
   /** The suite's migrated one, shared with the app, which destroys it on `close()`. */
   readonly dataSource?: DataSource;
+  /** A value per token: the suite's clock, a client it stubs. */
   readonly overrides?: readonly (readonly [token: unknown, value: unknown])[];
 }
 
 /**
- * Feature modules over HTTP on Fastify, with the service's own global providers and the root
- *   `CqrsModule.forRoot()`: what `AppModule` binds, minus the modules a suite leaves out.
+ * Feature modules over HTTP on Fastify, with the service's global providers and the root
+ *   `CqrsModule.forRoot()`: what its root module binds, minus the modules a suite leaves out.
  */
 export async function httpApp({
   imports,
-  clock,
+  providers,
   dataSource,
   overrides = [],
 }: HttpAppOptions): Promise<NestFastifyApplication> {
@@ -41,10 +38,8 @@ export async function httpApp({
       CqrsModule.forRoot(),
       ...imports,
     ],
-    providers: EDGE_PROVIDERS,
-  })
-    .overrideProvider(CLOCK)
-    .useValue(clock);
+    providers,
+  });
   for (const [token, value] of overrides) builder = builder.overrideProvider(token).useValue(value);
 
   const app = (await builder.compile()).createNestApplication<NestFastifyApplication>(

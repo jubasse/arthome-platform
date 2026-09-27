@@ -331,9 +331,9 @@ suite runs the same command against Postgres), `dates/transition-publication.han
 against 400; it recognises the idempotency INSERT by its text, so rewording that statement breaks
 it) and `dates/performance-date.typeorm-repository.spec.ts` (the order of the row writes). Every
 suite migrates the service's own schema (`itest/schema.ts`, from `dataSource.options`). The wiring:
-`itest/http-app.ts` boots feature modules over HTTP with the service's global providers
-(`EDGE_PROVIDERS`: `@arthome-platform/http-edge`'s `edgeProviders` given catalog's `CLOCK` and
-unique-violation codes, which `AppModule` binds too), and `dates.http.itest.ts` calls the date routes
+`httpApp` (`@arthome-platform/testing`) boots feature modules over HTTP with the service's global
+providers (`EDGE_PROVIDERS`: `@arthome-platform/http-edge`'s `edgeProviders` given catalog's `CLOCK`
+and unique-violation codes, which `AppModule` binds too) and the suite's overrides, its clock first, and `dates.http.itest.ts` calls the date routes
 through it; a migrated route adds its request there. `boot.itest.ts` boots the two roots themselves,
 `AppModule` with OpenSearch stubbed and `ConsumerModule` with Kafka stubbed. Measured: without
 `CqrsModule.forRoot()` in either, it fails to resolve `EventPublisher`. Measured: with

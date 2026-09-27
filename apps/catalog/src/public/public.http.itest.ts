@@ -1,6 +1,7 @@
 import {
   applyMigrations,
   createDatabase,
+  httpApp,
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
@@ -24,7 +25,8 @@ import { LinkKind } from './resolve-query.schema.js';
 import { SlugAlias } from './slug-alias.entity.js';
 import { Artist } from '../artists/artist.entity.js';
 import { Show } from '../catalog/show.entity.js';
-import { httpApp } from '../itest/http-app.js';
+import { CLOCK } from '../clock.js';
+import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 
@@ -142,9 +144,12 @@ beforeAll(async () => {
 
   app = await httpApp({
     imports: [PublicModule],
-    clock: new FixedClock(NOW),
+    providers: EDGE_PROVIDERS,
     dataSource,
-    overrides: [[PUBLIC_WEB_ORIGIN, ORIGIN]],
+    overrides: [
+      [CLOCK, new FixedClock(NOW)],
+      [PUBLIC_WEB_ORIGIN, ORIGIN],
+    ],
   });
 }, STARTUP_MS);
 

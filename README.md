@@ -31,7 +31,7 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | `libs/http-edge` | the success and error envelopes and the global providers that bind them (`edgeProviders`), validation refusals, the refusals a handler raises (`asConflict`, `notFound`, `stateConflict`), the deadline, idempotent commands and their table — every HTTP service's edge |
 | `libs/search-index` | the index mappings and document shapes, shared by the indexer and catalog's search |
 | `libs/transactions` | the transaction a CQRS command runs in, its domain events published after the commit, and `frozen`, which holds an aggregate's snapshot |
-| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers |
+| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers and boots a service's feature modules over HTTP (`httpApp`) |
 
 **What is NOT built, said plainly.** `streaming`, `chat` and `payouts` do not exist, and `ticketing`
 sells nothing yet: holds, orders and payment come next.

@@ -2,6 +2,7 @@ import { DateOutcome as WireDateOutcome } from '@arthome-platform/events';
 import {
   applyMigrations,
   createDatabase,
+  httpApp,
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
@@ -24,8 +25,9 @@ import { applyCatalogDateMessage } from './catalog-date-messages.js';
 import { CatalogFactsModule } from './catalog-facts.module.js';
 import { DateSalesModule } from './date-sales.module.js';
 import { AvailabilityModule } from '../availability/availability.module.js';
+import { CLOCK } from '../clock.js';
+import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { delivered, drafted, engaged, outcomeDeclared } from '../itest/catalog-messages.js';
-import { httpApp } from '../itest/http-app.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 
 /**
@@ -101,8 +103,9 @@ beforeAll(async () => {
   dataSource = await applyMigrations(database, TICKETING_SCHEMA);
   app = await httpApp({
     imports: [DateSalesModule, AvailabilityModule, CatalogFactsModule],
-    clock: new FixedClock(NOW),
+    providers: EDGE_PROVIDERS,
     dataSource,
+    overrides: [[CLOCK, new FixedClock(NOW)]],
   });
 }, STARTUP_MS);
 
