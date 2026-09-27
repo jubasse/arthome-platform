@@ -1,13 +1,15 @@
 import { parseTraceparent, type MemorisedResponse } from '@arthome-platform/http-edge';
 import { Body, Controller, Get, Header, HttpCode, Headers, Param, Post } from '@nestjs/common';
+import { CommandBus, QueryBus } from '@nestjs/cqrs';
 
 import { DateIdSchema } from '@arthome/core/schema';
 
 import type { DateSheet, PublicationView } from './date-sheet.js';
 import { DatesService } from './dates.service.js';
-import type { DeclaredOutcome } from './declare-outcome.js';
+import { DeclareOutcome, type DeclaredOutcome } from './declare-outcome.command.js';
 import { DeclareOutcomeSchema, type DeclareOutcomeBody } from './declare-outcome.schema.js';
 import { DraftDateSchema, type DraftDateBody } from './draft-date.schema.js';
+import { GetDateSheet } from './get-date-sheet.query.js';
 import {
   TransitionPublicationSchema,
   type TransitionPublicationBody,
@@ -17,7 +19,11 @@ import { fingerprintOf, idempotencyKeyOf } from '../idempotency/idempotency.js';
 
 @Controller()
 export class DatesController {
-  public constructor(private readonly dates: DatesService) {}
+  public constructor(
+    private readonly dates: DatesService,
+    private readonly commands: CommandBus,
+    private readonly queries: QueryBus,
+  ) {}
 
   @Post('channels/:channelId/dates')
   @HttpCode(201)
@@ -77,20 +83,19 @@ export class DatesController {
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<DeclaredOutcome>> {
     const trace = parseTraceparent(traceparent);
-    return this.dates.declareOutcome(
-      { dateId, ...body, traceparent: trace === null ? null : trace.traceparent },
-      {
+    return this.commands.execute(
+      new DeclareOutcome(dateId, body, trace === null ? null : trace.traceparent, {
         key: idempotencyKeyOf(idempotencyKey),
         accountId: null,
         fingerprint: fingerprintOf('POST', `/v1/dates/${dateId}/outcome`, body),
         statusCode: 200,
-      },
+      }),
     );
   }
 
   @Get('dates/:dateId')
   @Header('cache-control', 'no-store')
   public sheet(@Param('dateId', { schema: DateIdSchema }) dateId: string): Promise<DateSheet> {
-    return this.dates.sheet(dateId);
+    return this.queries.execute(new GetDateSheet(dateId));
   }
 }

@@ -2,7 +2,7 @@ import { Not, type EntityManager } from 'typeorm';
 
 import type { Instant } from '@arthome/core';
 
-import { PerformanceDate } from './performance-date.entity.js';
+import { PerformanceDateRow } from './performance-date.entity.js';
 import { dateSlugCandidates } from './slug.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
 import { reservedForAnother } from '../public/slug-aliases.js';
@@ -20,7 +20,7 @@ export async function freeDateSlug(
 ): Promise<string> {
   const candidates = dateSlugCandidates(startsAt, timeZone, date.id);
   for (const candidate of candidates) {
-    const held = await manager.existsBy(PerformanceDate, {
+    const held = await manager.existsBy(PerformanceDateRow, {
       show_id: date.show_id,
       slug: candidate,
       id: Not(date.id),

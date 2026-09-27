@@ -8,9 +8,9 @@ import {
 } from '@arthome/core';
 
 import { publicationView } from './date-sheet.js';
-import type { Publication } from './publication.entity.js';
+import type { PublicationRow } from './publication.entity.js';
 
-function publicationIn(state: PublicationState): Publication {
+function publicationIn(state: PublicationState): PublicationRow {
   return {
     date_id: 'date-1',
     channel_id: 'channel-1',

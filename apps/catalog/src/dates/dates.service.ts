@@ -11,7 +11,6 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, type EntityManager } from 'typeorm';
 
 import {
-  ApiErrorCode,
   DomainErrorCode,
   FailureNature,
   PublicationPromise,
@@ -25,22 +24,16 @@ import {
 
 import { announcePublication } from './announce-publication.js';
 import { asConflict, stateConflict } from './conflict.js';
+import { dateRecordsOf } from './date-records.js';
 import {
   dateSheet,
   publicationView,
   satisfiedChecklistItems,
-  type DateRecords,
   type DateSheet,
   type PublicationView,
 } from './date-sheet.js';
-import {
-  declareOutcomeIn,
-  type DeclareOutcomeCommand,
-  type DeclaredOutcome,
-} from './declare-outcome.js';
-import { PerformanceDate } from './performance-date.entity.js';
-import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
-import { Publication } from './publication.entity.js';
+import { PerformanceDateRow } from './performance-date.entity.js';
+import { PublicationRow } from './publication.entity.js';
 import { Show } from '../catalog/show.entity.js';
 import { writeCatalogEvent } from '../catalog-events.js';
 import { CLOCK } from '../clock.js';
@@ -96,32 +89,6 @@ export class DatesService {
   }
 
   /**
-   * Conditioned on the publication's version, the one the studio's sheet serves, and bumping it:
-   *   a screen that did not see the outcome is stale like any other.
-   */
-  public declareOutcome(
-    command: DeclareOutcomeCommand,
-    idempotency: IdempotentRequest,
-  ): Promise<MemorisedResponse<DeclaredOutcome>> {
-    return this.dataSource.transaction((manager) =>
-      runIdempotently(manager, idempotency, this.clock, async () => {
-        const records = await dateRecordsOf(manager, command.dateId);
-        const [, updated] = await manager.query<[unknown, number]>(
-          `UPDATE publication SET version = version + 1, updated_at = now()
-            WHERE date_id = $1 AND version = $2`,
-          [command.dateId, command.expectedVersion],
-        );
-        if (updated !== 1) throw stateConflict(records.publication);
-        return declareOutcomeIn(manager, records, command, this.publicWebOrigin, this.clock.now());
-      }),
-    );
-  }
-
-  public async sheet(dateId: string): Promise<DateSheet> {
-    return dateSheet(await dateRecordsOf(this.dataSource.manager, dateId), this.publicWebOrigin);
-  }
-
-  /**
    * The date and its publication in one transaction, by decision rather than by accident: the
    * contract creates a draft "with its publication and its checklist" (openapi/studio.yaml).
    */
@@ -135,12 +102,12 @@ export class DatesService {
     if (venue === null) throw schemaInvalidException([{ path: ['venueId'] }]);
     // A retry carries its Idempotency-Key and was replayed before this; the same id under a new
     // key is a client that reused an identifier.
-    if (await manager.existsBy(PerformanceDate, { id: command.dateId })) {
+    if (await manager.existsBy(PerformanceDateRow, { id: command.dateId })) {
       throw schemaInvalidException([{ path: ['dateId'] }]);
     }
 
     const occurredAt = new Date(this.clock.now());
-    const date = manager.create(PerformanceDate, {
+    const date = manager.create(PerformanceDateRow, {
       id: command.dateId,
       show_id: show.id,
       venue_id: venue.id,
@@ -153,9 +120,9 @@ export class DatesService {
       slug: null,
       postponements: 0,
     });
-    await manager.insert(PerformanceDate, date);
+    await manager.insert(PerformanceDateRow, date);
 
-    const publication = manager.create(Publication, {
+    const publication = manager.create(PublicationRow, {
       date_id: command.dateId,
       channel_id: command.channelId,
       state: PublicationState.DRAFT,
@@ -164,7 +131,7 @@ export class DatesService {
       prices_locked_at: null,
       replay_online_at: null,
     });
-    await manager.insert(Publication, publication);
+    await manager.insert(PublicationRow, publication);
 
     await writeCatalogEvent(
       manager,
@@ -224,7 +191,7 @@ export class DatesService {
     }
 
     const occurredAt = new Date(this.clock.now());
-    const next = manager.create(Publication, {
+    const next = manager.create(PublicationRow, {
       ...publication,
       state: command.to,
       version: publication.version + 1,
@@ -256,7 +223,7 @@ export class DatesService {
       ],
     );
     if (updated !== 1) {
-      const current = await manager.findOneByOrFail(Publication, { date_id: command.dateId });
+      const current = await manager.findOneByOrFail(PublicationRow, { date_id: command.dateId });
       throw stateConflict(current);
     }
 
@@ -296,22 +263,4 @@ export class DatesService {
 
     return publicationView(next, satisfied);
   }
-}
-
-export async function dateRecordsOf(manager: EntityManager, dateId: string): Promise<DateRecords> {
-  const date = await manager.findOneBy(PerformanceDate, { id: dateId });
-  if (date === null) {
-    throw new RefusalException(HttpStatus.NOT_FOUND, {
-      code: ApiErrorCode.NOT_FOUND,
-      params: {},
-      nature: FailureNature.REFUSED,
-    });
-  }
-  return {
-    date,
-    publication: await manager.findOneByOrFail(Publication, { date_id: dateId }),
-    show: await manager.findOneByOrFail(Show, { id: date.show_id }),
-    venue: await manager.findOneByOrFail(Venue, { id: date.venue_id }),
-    projectedFacts: await manager.findBy(PublicationChecklistFact, { date_id: dateId }),
-  };
 }

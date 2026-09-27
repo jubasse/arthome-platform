@@ -135,6 +135,125 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
 - **Known gap**: expired aliases are never purged. Each read filters on `expires_at`, so they
   only take room.
 
+## 0f. Commands, queries and aggregates — the conventions (2026-09-27)
+
+`context-map.md` §12 makes the publication, the date and its outcome full CQRS; event sourcing is
+refused. The reference is `POST /v1/dates/:dateId/outcome` (`DeclareOutcome`) and the studio's
+sheet `GET /dates/:dateId` (`GetDateSheet`). Every other route still runs through its service until
+it is migrated this way. Behaviour does not move: `dates.itest.ts` asserts what it did before.
+
+**Files**, flat in the feature directory, role suffix (code-conventions §6.5):
+
+| File | Holds |
+| --- | --- |
+| `declare-outcome.command.ts` | `DeclareOutcome extends Command<R>`: route params, validated body, `traceparent`, `idempotency` |
+| `declare-outcome.handler.ts` | `@CommandHandler(DeclareOutcome) DeclareOutcomeHandler` |
+| `get-date-sheet.query.ts`, `get-date-sheet.handler.ts` | `GetDateSheet extends Query<R>`, its `@QueryHandler` |
+| `performance-date.aggregate.ts` | `PerformanceDate extends AggregateRoot<PerformanceDateEvent>` |
+| `performance-date.events.ts` | its domain events: classes, past tense, ids and facts, each with `occurredAt` |
+| `performance-date.repository.ts` | the port: an abstract class, domain types only |
+| `performance-date.typeorm-repository.ts` | the adapter and its row ↔ snapshot mapping |
+| `performance-date.entity.ts` | `PerformanceDateRow`, the persistence model |
+
+Messages carry no suffix (`DeclareOutcome`, `GetDateSheet`); handlers do.
+
+**An aggregate is not its entity.** Every read path (the sheet, the public pages, the consumer, the
+migrations) reads rows, whose public fields anyone can assign. The aggregate keeps an immutable
+`snapshot` that only its methods replace, speaks core's types (instants as strings), and is built by
+`restore()` from the row, so TypeORM never calls its constructor (`nestjs-ddd` rule 13). Its methods
+call core's pure rules (`assertOutcomeDeclarable`) and never restate them; what a rule needs beyond
+the aggregate is an argument (the publication's state, `now`). A method never awaits: an I/O lookup
+(the free slug of a postponement) is made by the handler first.
+
+**One transaction per command: `CatalogTransactions.run(work)`** (`src/catalog-transactions.ts`).
+It opens `dataSource.transaction`, hands `work` a `CatalogTransaction` whose repositories are bound
+to that transaction's manager (`nestjs-typeorm` rule 3), and once it has committed merges every
+aggregate saved in it with `EventPublisher` and calls `commit()`. A rejection publishes nothing
+(`catalog-transactions.spec.ts`). A new aggregate adds its repository to `CatalogTransaction`. Its
+`manager` carries the command's other writes, which are all functions of an `EntityManager` already.
+
+```ts
+execute(command: DeclareOutcome) {
+  return this.transactions.run((transaction) =>
+    runIdempotently(transaction.manager, command.idempotency, this.clock, () =>
+      this.declareIn(transaction, command),
+    ),
+  );
+}
+```
+
+`runIdempotentlyVersioned` goes in the same place when the answer carries the version. The
+idempotency record is claimed first, in the transaction; a replay loads no aggregate, so publishes
+nothing. Inside, in this order: load (a missing date is `dateNotFound()`, 404), check the version,
+decide through the aggregates, save the publication then the date, write the consequences, answer.
+A handler never opens a transaction itself and never calls `commit()`.
+
+**Loading and saving.** A repository restores what it loads and remembers it; `save` refuses an
+aggregate it did not load, until the draft command brings the INSERT. `PublicationRepository.save`
+is the version-conditional UPDATE (`WHERE date_id AND version = <loaded>`, `affected === 1`,
+`nestjs-typeorm` rule 7); a change committed since the load answers 409 `state.conflict` with the
+current state and version, re-read. **The date has no version of its own**: its commands are
+conditioned on the publication's (§0c). That is why the publication is saved first: its row lock
+orders two concurrent commands before either writes the date.
+
+**Refusals keep their code and params.** An aggregate throws core's `DomainError`; the handler wraps
+each decision in `asConflict(() => aggregate.method(…))`, which rethrows it as a 409
+`RefusalException` with the same `code`, `params` and `nature`. Unwrapped, `ErrorEnvelopeFilter`
+answers a `DomainError` 400. The stale version is one too (`Publication.advanceVersionFrom`),
+checked before any rule, as before. A 404 or a 400 stays the `RefusalException` it was.
+
+**What happened becomes rows from the uncommitted events, inside the transaction.** A method changes
+the snapshot, then `apply()`s one event per fact (no `on<Event>` handlers: nothing is replayed).
+After the saves the handler passes `getUncommittedEvents()` to:
+
+- `writeDateIntegrationEvents` (`date-integration-events.ts`): one outbox row per event through
+  `writeCatalogEvent`, in apply order, the Protobuf payload built there. A domain event is never the
+  wire format (`nestjs-ddd` rule 11); what the wire needs beyond it — canonical URL, venue clock,
+  `traceparent` — comes in a context.
+- `projectDateEvents` (`public/date-detail-projection.ts`): `date_detail_public`, the events folded
+  into one UPDATE, since the row's `version` counts commands. The read model is current when the
+  command answers, which only the command's own transaction guarantees (`nestjs-cqrs`, Decide).
+- `retireSlugsMovedFrom` (`public/slug-aliases.ts`): a replaced slug keeps resolving for 30 days.
+
+A new event adds its case to each of these it concerns.
+
+**`commit()` after the transaction, and no event handler.** None exists and none is to be added for
+what the command must guarantee: the `EventBus` is in memory and fire-and-forget (`nestjs-cqrs`
+rules 4 and 5), so an outbox row or a read model written there could be lost, or land after the
+answer. `commit()` is still called because §12 prescribes it and it keeps a future in-process
+reaction safe (rule 8); `dates.itest.ts` proves the events reach the bus after the commit and never
+for a replay or a refusal.
+
+**Controllers dispatch.** They parse the `traceparent`, build the `IdempotentRequest`
+(`idempotencyKeyOf`, `fingerprintOf`), and return `this.commands.execute(new DeclareOutcome(…))` or
+`this.queries.execute(new GetDateSheet(…))`, typed by `Command<R>` / `Query<R>`. `CqrsModule.forRoot()`
+is imported once, in `AppModule`; handlers and `CatalogTransactions` go in the feature module's
+`providers`. When a second module needs `CatalogTransactions`, move it to one module that exports it:
+two listings make two instances.
+
+**Queries read rows, never aggregates.** `GetDateSheetHandler` reads through `dataSource.manager`
+(`dateRecordsOf`, `date-records.ts`) and shapes with the pure `dateSheet()`: no transaction and no
+port, since a read has no invariant to protect.
+
+**Tests.** An aggregate: plain Vitest, `restore()` a snapshot, call the method, assert `snapshot` and
+`getUncommittedEvents()`, core never mocked (`performance-date.aggregate.spec.ts`). A handler: through
+the real bus against the container database, a testing module with `CqrsModule.forRoot()`, the
+handlers, `CatalogTransactions` and `{ provide: DataSource, useValue: dataSource }`, then `init()`,
+which registers the handlers (`dates.itest.ts`).
+
+Decided here, and each could have gone the other way:
+
+- **The entities were renamed `PerformanceDateRow` and `PublicationRow`**, so the aggregates carry
+  the domain names; the tables did not move.
+- **Handlers throw `RefusalException`**, not domain errors mapped at an edge: every one is reached
+  from HTTP alone. The day a consumer dispatches one, `asConflict` moves to the HTTP edge
+  (`nestjs-request-pipeline` rule 1).
+- **A lost race on the version answers the version committed since**, re-read, as a transition
+  always did; the outcome path used to answer the one it had read. Only two concurrent commands see
+  the difference.
+- **A postponement's free slug is looked up before core's rule runs**, so a refused one costs those
+  reads: the aggregate takes it as an argument, and its methods do not await.
+
 ## 1. What was built
 
 | File | What it is |

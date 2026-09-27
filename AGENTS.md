@@ -26,7 +26,8 @@ debugging NestJS code, load `nestjs-how-to` and the skills it routes to.** Alway
 - `nestjs-typeorm` (typeorm, @nestjs/typeorm) · `nestjs-kafka` (kafkajs) · `nestjs-event-driven`
   (the outbox and the idempotent consumers) · `nestjs-performance` (@nestjs/platform-fastify) ·
   `nestjs-monorepo` (pnpm workspace) · `nestjs-search` (@opensearch-project/opensearch) ·
-  `nestjs-bff-gateway` (`apps/bff-storefront`)
+  `nestjs-bff-gateway` (`apps/bff-storefront`) · `nestjs-cqrs` (@nestjs/cqrs, `apps/catalog`) ·
+  `nestjs-ddd` (catalog's aggregates and repository ports, which `nestjs-cqrs` routes to)
 
 Project decisions — the ADRs and `DECISIONS.md` in arthome-core — take precedence over these
 community defaults, and a recorded decision is never reopened.

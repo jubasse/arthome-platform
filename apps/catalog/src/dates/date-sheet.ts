@@ -12,9 +12,9 @@ import {
 } from '@arthome/core';
 
 import { ownChecklistFacts } from './own-checklist.js';
-import type { PerformanceDate } from './performance-date.entity.js';
+import type { PerformanceDateRow } from './performance-date.entity.js';
 import type { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
-import type { Publication } from './publication.entity.js';
+import type { PublicationRow } from './publication.entity.js';
 import type { Show } from '../catalog/show.entity.js';
 import { dateUrl } from '../public/links.js';
 import { venueClockAt } from '../venues/venue-clock.js';
@@ -64,8 +64,8 @@ export interface DateSheet {
 }
 
 export interface DateRecords {
-  readonly date: PerformanceDate;
-  readonly publication: Publication;
+  readonly date: PerformanceDateRow;
+  readonly publication: PublicationRow;
   readonly show: Show;
   readonly venue: Venue;
   readonly projectedFacts: readonly PublicationChecklistFact[];
@@ -87,7 +87,7 @@ export function satisfiedChecklistItems(
  * production by `DenyInProductionGuard`, so no real operator reaches this without rights.
  */
 export function publicationView(
-  publication: Publication,
+  publication: PublicationRow,
   satisfied: readonly PublicationChecklistItem[],
 ): PublicationView {
   const readiness = publicationReadiness(satisfied);

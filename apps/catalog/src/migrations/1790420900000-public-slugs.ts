@@ -4,7 +4,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
 import { DateOutcome, type Bilingual } from '@arthome/core';
 
 import { writeDateScheduled } from '../dates/announce-publication.js';
-import { dateRecordsOf } from '../dates/dates.service.js';
+import { dateRecordsOf } from '../dates/date-records.js';
 import { dateSlugCandidates, showSlugCandidates } from '../dates/slug.js';
 
 /**

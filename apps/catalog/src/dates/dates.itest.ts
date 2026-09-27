@@ -31,8 +31,10 @@ import {
   type MessageInitShape,
 } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
+import { CommandBus, CqrsModule, EventBus, QueryBus, type IEvent } from '@nestjs/cqrs';
+import { Test, type TestingModule } from '@nestjs/testing';
 import type { EachMessagePayload } from 'kafkajs';
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -53,13 +55,20 @@ import {
 
 import { applyChecklistMessage } from './checklist-consumer.js';
 import { DatesService, type TransitionPublicationCommand } from './dates.service.js';
-import { PerformanceDate } from './performance-date.entity.js';
+import { DeclareOutcome } from './declare-outcome.command.js';
+import { DeclareOutcomeHandler } from './declare-outcome.handler.js';
+import { GetDateSheetHandler } from './get-date-sheet.handler.js';
+import { GetDateSheet } from './get-date-sheet.query.js';
+import { PerformanceDateRow } from './performance-date.entity.js';
+import { DateOutcomeDeclared, DateRescheduled } from './performance-date.events.js';
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
-import { Publication } from './publication.entity.js';
+import { PublicationRow } from './publication.entity.js';
 import { Artist } from '../artists/artist.entity.js';
 import { ArtistsService } from '../artists/artists.service.js';
 import { Show } from '../catalog/show.entity.js';
 import { UpdateShowService } from '../catalog/update-show.service.js';
+import { CatalogTransactions } from '../catalog-transactions.js';
+import { CLOCK } from '../clock.js';
 import type { IdempotentRequest } from '../idempotency/idempotency.js';
 import { Initial1758800000000 } from '../migrations/1758800000000-initial.js';
 import { Idempotency1790420000000 } from '../migrations/1790420000000-idempotency.js';
@@ -78,6 +87,7 @@ import { PublicDatesService } from '../public/public-dates.service.js';
 import { PublicLinksService } from '../public/public-links.service.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
 import { SlugAlias } from '../public/slug-alias.entity.js';
+import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { Venue } from '../venues/venue.entity.js';
 
 /**
@@ -95,6 +105,9 @@ const VENUE_ID = '01a0e100-0000-7000-8000-000000000002';
 let stack: StartedStack;
 let dataSource: DataSource;
 let dates: DatesService;
+let cqrs: TestingModule;
+let commands: CommandBus;
+let queries: QueryBus;
 let keys = 0;
 
 function idempotency(fingerprint: string): IdempotentRequest {
@@ -147,6 +160,10 @@ async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
     throw error;
   }
   throw new Error('expected a refusal');
+}
+
+function sheet(dateId: string) {
+  return queries.execute(new GetDateSheet(dateId));
 }
 
 function outboxRowsFor(dateId: string): Promise<OutboxEvent[]> {
@@ -211,8 +228,8 @@ beforeAll(async () => {
     entities: [
       Show,
       Venue,
-      PerformanceDate,
-      Publication,
+      PerformanceDateRow,
+      PublicationRow,
       PublicationChecklistFact,
       DateDetailPublic,
       Artist,
@@ -266,9 +283,25 @@ beforeAll(async () => {
     new FixedClock('2026-09-26T10:00:00.000Z'),
     'https://arthome.test',
   );
+  cqrs = await Test.createTestingModule({
+    imports: [CqrsModule.forRoot()],
+    providers: [
+      CatalogTransactions,
+      DeclareOutcomeHandler,
+      GetDateSheetHandler,
+      { provide: DataSource, useValue: dataSource },
+      { provide: CLOCK, useValue: new FixedClock('2026-09-26T10:00:00.000Z') },
+      { provide: PUBLIC_WEB_ORIGIN, useValue: 'https://arthome.test' },
+    ],
+  }).compile();
+  // Handlers register with the buses when the module initialises.
+  await cqrs.init();
+  commands = cqrs.get(CommandBus);
+  queries = cqrs.get(QueryBus);
 }, STARTUP_MS);
 
 afterAll(async () => {
+  await cqrs?.close();
   await dataSource?.destroy();
   await stack?.stop();
 });
@@ -471,7 +504,7 @@ describe('a publication transition', () => {
         PublicationEngagement.REPLAY,
         PublicationEngagement.CHAT_MODE,
       ]);
-      expect((await dates.sheet(dateId)).canonicalUrl).toBe(scheduled.canonicalUrl);
+      expect((await sheet(dateId)).canonicalUrl).toBe(scheduled.canonicalUrl);
 
       const back = await refusalOf(move(dateId, PublicationState.DRAFT, 2));
       expect(back.refusal).toMatchObject({
@@ -523,10 +556,7 @@ describe('a date already published', () => {
       await move(first, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
       await move(second, PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED);
 
-      const urls = [
-        (await dates.sheet(first)).canonicalUrl,
-        (await dates.sheet(second)).canonicalUrl,
-      ];
+      const urls = [(await sheet(first)).canonicalUrl, (await sheet(second)).canonicalUrl];
       // Earlier cases published this show on the same day, so which candidate each takes depends
       // on order; that they never share one does not.
       expect(new Set(urls).size).toBe(2);
@@ -764,7 +794,7 @@ describe('the public date page', () => {
     'resolves a canonical URL or a slug to the date or its show, and nothing else',
     async () => {
       const dateId = '01a0e100-0000-7000-8000-0000000004a1';
-      const url = (await dates.sheet(dateId)).canonicalUrl ?? '';
+      const url = (await sheet(dateId)).canonicalUrl ?? '';
       const slug = `nuit-blanche/${url.split('/').at(-1) ?? ''}`;
 
       const byUrl = await publicLinks().resolve({ url });
@@ -864,9 +894,13 @@ describe('a date outcome', () => {
     expectedVersion: number,
     rescheduledTo: string | null = null,
   ) {
-    return dates.declareOutcome(
-      { dateId, outcome, message: MESSAGE, rescheduledTo, expectedVersion, traceparent: null },
-      idempotency(`${dateId}:${outcome}:${expectedVersion}`),
+    return commands.execute(
+      new DeclareOutcome(
+        dateId,
+        { outcome, message: MESSAGE, rescheduledTo, expectedVersion },
+        null,
+        idempotency(`${dateId}:${outcome}:${expectedVersion}`),
+      ),
     );
   }
 
@@ -875,7 +909,7 @@ describe('a date outcome', () => {
     async () => {
       const dateId = '01a0e100-0000-7000-8000-0000000005a1';
       await published(dateId);
-      const before = (await dates.sheet(dateId)).canonicalUrl;
+      const before = (await sheet(dateId)).canonicalUrl;
 
       const response = await declare(dateId, DateOutcome.POSTPONED, 2, '2026-11-12T19:30:00.000Z');
       expect(response.envelope.data).toEqual({
@@ -883,7 +917,9 @@ describe('a date outcome', () => {
         declaredAt: '2026-09-26T10:00:00.000Z',
       });
 
-      const date = await dataSource.getRepository(PerformanceDate).findOneByOrFail({ id: dateId });
+      const date = await dataSource
+        .getRepository(PerformanceDateRow)
+        .findOneByOrFail({ id: dateId });
       expect(date).toMatchObject({
         outcome: DateOutcome.POSTPONED,
         outcome_message: MESSAGE,
@@ -892,7 +928,7 @@ describe('a date outcome', () => {
       });
       expect(date.starts_at.toISOString()).toBe('2026-11-12T19:30:00.000Z');
       const publication = await dataSource
-        .getRepository(Publication)
+        .getRepository(PublicationRow)
         .findOneByOrFail({ date_id: dateId });
       expect(publication.version).toBe(3);
 
@@ -956,7 +992,9 @@ describe('a date outcome', () => {
       });
 
       await declare(dateId, DateOutcome.CANCELLED, 5);
-      const date = await dataSource.getRepository(PerformanceDate).findOneByOrFail({ id: dateId });
+      const date = await dataSource
+        .getRepository(PerformanceDateRow)
+        .findOneByOrFail({ id: dateId });
       expect(date).toMatchObject({
         outcome: DateOutcome.CANCELLED,
         rescheduled_to: null,
@@ -1022,6 +1060,41 @@ describe('a date outcome', () => {
         displayStateValidUntil: null,
         outcome: DateOutcome.CANCELLED,
       });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'publishes the date’s domain events once committed, and none for a replay or a refusal',
+    async () => {
+      const dateId = '01a0e100-0000-7000-8000-0000000005a3';
+      await published(dateId);
+      const delivered: IEvent[] = [];
+      const subscription = cqrs.get(EventBus).subscribe((event) => delivered.push(event));
+      try {
+        const postponement = new DeclareOutcome(
+          dateId,
+          {
+            outcome: DateOutcome.POSTPONED,
+            message: MESSAGE,
+            rescheduledTo: '2026-11-20T19:30:00.000Z',
+            expectedVersion: 2,
+          },
+          null,
+          idempotency(`${dateId}:postponed`),
+        );
+        await commands.execute(postponement);
+        expect(delivered.map((event) => event.constructor)).toEqual([
+          DateOutcomeDeclared,
+          DateRescheduled,
+        ]);
+
+        expect((await commands.execute(postponement)).replayed).toBe(true);
+        await refusalOf(declare(dateId, DateOutcome.CANCELLED, 2));
+        expect(delivered).toHaveLength(2);
+      } finally {
+        subscription.unsubscribe();
+      }
     },
     CASE_MS,
   );

@@ -1,11 +1,15 @@
 import type { EntityManager } from 'typeorm';
 
-import type { DateOutcome, PublicationState } from '@arthome/core';
+import type { PublicationState } from '@arthome/core';
 
 import { DateDetailPublic } from './date-detail-public.entity.js';
 import { Artist } from '../artists/artist.entity.js';
 import type { Show } from '../catalog/show.entity.js';
-import type { PerformanceDate } from '../dates/performance-date.entity.js';
+import type { PerformanceDateRow } from '../dates/performance-date.entity.js';
+import {
+  DateOutcomeDeclared,
+  type PerformanceDateEvent,
+} from '../dates/performance-date.events.js';
 import type { Venue } from '../venues/venue.entity.js';
 
 const APPLIED = { version: () => 'version + 1', applied_at: () => 'now()' };
@@ -13,7 +17,7 @@ const APPLIED = { version: () => 'version + 1', applied_at: () => 'now()' };
 /** Publishing makes a date public: its row is written whole, once, since publishing is one-way. */
 export async function projectPublishedDate(
   manager: EntityManager,
-  date: PerformanceDate & { readonly slug: string },
+  date: PerformanceDateRow & { readonly slug: string },
   show: Show,
   venue: Venue,
   state: PublicationState,
@@ -88,24 +92,33 @@ export async function projectShowCopy(
   );
 }
 
-/** An outcome on a public date; a postponement moves it, its start and its slug with it. */
-export async function projectOutcome(
+type DateChanges = Partial<
+  Pick<DateDetailPublic, 'outcome' | 'rescheduled_to' | 'starts_at' | 'slug'>
+>;
+
+/** One command's date events as one write: the row's version counts commands, not events. */
+export async function projectDateEvents(
   manager: EntityManager,
-  dateId: string,
-  outcome: DateOutcome,
-  moved: { readonly startsAt: Date; readonly slug: string } | null,
+  events: readonly PerformanceDateEvent[],
 ): Promise<void> {
-  await manager.update(
-    DateDetailPublic,
-    { date_id: dateId },
-    {
-      outcome,
-      // "rescheduled_to exists only if outcome = 'postponed'" (§2.2): a cancellation clears it.
-      rescheduled_to: moved?.startsAt ?? null,
-      ...(moved !== null && { starts_at: moved.startsAt, slug: moved.slug }),
-      ...APPLIED,
-    },
+  const [first] = events;
+  if (first === undefined) return;
+  const changes = events.reduce<DateChanges>(
+    (merged, event) => ({ ...merged, ...changesOf(event) }),
+    {},
   );
+  await manager.update(DateDetailPublic, { date_id: first.dateId }, { ...changes, ...APPLIED });
+}
+
+function changesOf(event: PerformanceDateEvent): DateChanges {
+  if (event instanceof DateOutcomeDeclared) {
+    return {
+      outcome: event.outcome,
+      // "rescheduled_to exists only if outcome = 'postponed'" (§2.2): a cancellation clears it.
+      rescheduled_to: event.rescheduledTo === null ? null : new Date(event.rescheduledTo),
+    };
+  }
+  return { starts_at: new Date(event.newStartsAt), slug: event.newSlug };
 }
 
 /** The channel's public face, on every public date of the channel. */

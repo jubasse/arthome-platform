@@ -18,7 +18,7 @@ import type { DataSource } from 'typeorm';
 
 import { PublicationChecklistItem } from '@arthome/core';
 
-import { PerformanceDate } from './performance-date.entity.js';
+import { PerformanceDateRow } from './performance-date.entity.js';
 
 interface ChecklistFact {
   readonly dateId: string;
@@ -106,7 +106,7 @@ export function applyChecklistMessage(
 
     // Catalog emits DateDrafted before any other context knows the date, so an unknown one is
     // a fault to look at, not a race to wait out.
-    if (!(await manager.existsBy(PerformanceDate, { id: fact.dateId }))) {
+    if (!(await manager.existsBy(PerformanceDateRow, { id: fact.dateId }))) {
       throw new PermanentError(`message ${messageId} is about date ${fact.dateId}, unknown here`);
     }
 

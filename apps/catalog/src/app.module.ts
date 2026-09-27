@@ -24,6 +24,7 @@ import {
   HttpAdapterHost,
   Reflector,
 } from '@nestjs/core';
+import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
@@ -42,6 +43,7 @@ import { VenuesModule } from './venues/venues.module.js';
   controllers: [HealthController],
   imports: [
     TypeOrmModule.forRoot(dataSource.options),
+    CqrsModule.forRoot(),
     CatalogModule,
     VenuesModule,
     DatesModule,

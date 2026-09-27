@@ -11,7 +11,7 @@ import type { PublicationState } from '@arthome/core';
 
 import type { DateRecords } from './date-sheet.js';
 import { freeDateSlug } from './free-date-slug.js';
-import { PerformanceDate } from './performance-date.entity.js';
+import { PerformanceDateRow } from './performance-date.entity.js';
 import { writeCatalogEvent } from '../catalog-events.js';
 import { projectPublishedDate } from '../public/date-detail-projection.js';
 import { dateUrl } from '../public/links.js';
@@ -37,7 +37,11 @@ export async function announcePublication(
   const slug =
     date.slug ??
     (await freeDateSlug(manager, date, startsAt, venue.time_zone, occurredAt.toISOString()));
-  await manager.update(PerformanceDate, { id: date.id }, { slug, runtime_min: show.runtime_min });
+  await manager.update(
+    PerformanceDateRow,
+    { id: date.id },
+    { slug, runtime_min: show.runtime_min },
+  );
   await projectPublishedDate(
     manager,
     { ...date, slug, runtime_min: show.runtime_min },
@@ -84,7 +88,7 @@ export async function announcePublication(
  */
 export async function writeDateScheduled(
   manager: EntityManager,
-  records: DateRecords & { readonly date: PerformanceDate & { readonly slug: string } },
+  records: DateRecords & { readonly date: PerformanceDateRow & { readonly slug: string } },
   origin: string,
   occurredAt: Date,
   traceparent: string | null,
