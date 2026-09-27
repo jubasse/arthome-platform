@@ -2,6 +2,7 @@ import type { EntityManager } from 'typeorm';
 
 import { DateDetailPublic } from './date-detail-public.entity.js';
 import { Artist } from '../artists/artist.entity.js';
+import { holdChannelFace } from '../artists/channel-face-lock.js';
 import { assertNever } from '../assert-never.js';
 import type { Show } from '../catalog/show.entity.js';
 import {
@@ -98,11 +99,8 @@ async function insertPublicDate(
   { show, venue }: DateCopies,
   changes: DateChanges,
 ): Promise<void> {
-  // Shared lock to the commit: a rename committing meanwhile could not reach this row.
-  const artist = await manager.findOne(Artist, {
-    where: { channel_id: date.channelId },
-    lock: { mode: 'pessimistic_read' },
-  });
+  await holdChannelFace(manager, date.channelId);
+  const artist = await manager.findOneBy(Artist, { channel_id: date.channelId });
   await manager.insert(DateDetailPublic, {
     artist_name: artist?.public_name ?? null,
     date_id: date.dateId,

@@ -27,7 +27,9 @@ export async function loadDate(
     date,
     show: await manager.findOneOrFail(Show, {
       where: { id: showId },
-      lock: { mode: 'pessimistic_write' },
+      // Not FOR UPDATE: that would also hold back a new draft of the show, whose foreign key takes
+      //   FOR KEY SHARE; NO KEY UPDATE orders date commands and show updates all the same.
+      lock: { mode: 'for_no_key_update' },
     }),
     venue: await manager.findOneByOrFail(Venue, { id: venueId }),
   };

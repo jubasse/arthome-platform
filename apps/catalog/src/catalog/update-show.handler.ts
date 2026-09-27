@@ -33,7 +33,12 @@ export class UpdateShowHandler implements ICommandHandler<UpdateShow> {
     manager: EntityManager,
     { showId, changes, traceparent }: UpdateShow,
   ): Promise<void> {
-    const show = await manager.findOneBy(Show, { id: showId });
+    // Locked in the order date commands take it: two updates read and write the whole copy, so the
+    //   second would otherwise overwrite the first with what it read before it.
+    const show = await manager.findOne(Show, {
+      where: { id: showId },
+      lock: { mode: 'for_no_key_update' },
+    });
     if (show === null) {
       throw notFound();
     }

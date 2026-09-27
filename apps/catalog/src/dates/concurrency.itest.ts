@@ -40,7 +40,10 @@ import { RecordChecklistFactHandler } from './record-checklist-fact.handler.js';
 import { TransitionPublication } from './transition-publication.command.js';
 import { TransitionPublicationHandler } from './transition-publication.handler.js';
 import { Artist } from '../artists/artist.entity.js';
+import { holdChannelFace } from '../artists/channel-face-lock.js';
 import { Show } from '../catalog/show.entity.js';
+import { UpdateShow } from '../catalog/update-show.command.js';
+import { UpdateShowHandler } from '../catalog/update-show.handler.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import type { IdempotentRequest } from '../idempotency/idempotency.js';
@@ -63,6 +66,9 @@ const CHANNEL = 'channel-race';
 const SHOW_ID = '01a0e900-0000-7000-8000-000000000001';
 const VENUE_ID = '01a0e900-0000-7000-8000-000000000002';
 const ARTIST_ID = '01a0e900-0000-7000-8000-000000000003';
+/** A channel whose face does not exist yet, with a show of its own. */
+const FACELESS_CHANNEL = 'channel-faceless';
+const FACELESS_SHOW_ID = '01a0e900-0000-7000-8000-000000000004';
 
 let stack: StartedStack;
 let dataSource: DataSource;
@@ -108,13 +114,17 @@ function reported<Desc extends DescMessage>(
 const AT = timestampFromDate(new Date('2026-09-26T09:00:00.000Z'));
 
 /** Drafted, with the four projected checklist items reported. */
-async function publishable(dateId: string, startsAt: string): Promise<void> {
+async function publishable(
+  dateId: string,
+  startsAt: string,
+  { channelId, showId } = { channelId: CHANNEL, showId: SHOW_ID },
+): Promise<void> {
   await commands.execute(
     new DraftDate(
-      CHANNEL,
+      channelId,
       {
         dateId,
-        showId: SHOW_ID,
+        showId,
         venueId: VENUE_ID,
         startsAt,
         replayPolicy: ReplayPolicy.INCLUDED,
@@ -211,6 +221,26 @@ beforeAll(async () => {
     title: { fr: 'Nuit rouge', en: '' },
     synopsis: { fr: 'Une nuit.', en: '' },
   });
+  await dataSource.getRepository(Show).insert({
+    id: FACELESS_SHOW_ID,
+    slug: 'nuit-blanche',
+    channel_id: FACELESS_CHANNEL,
+    artist_id: 'artist-race',
+    category_id: 'theatre',
+    genre_ids: [],
+    tag_ids: [],
+    runtime_min: 95,
+    language_dependency: LanguageDependency.NONE,
+    spoken_languages: ['fr-FR'],
+    subtitle_languages: [],
+    surtitle_languages: [],
+    media: {
+      wide: [],
+      poster: [{ url: 'https://cdn.example.test/p.jpg', widthPx: 480, heightPx: 720 }],
+    },
+    title: { fr: 'Nuit rouge', en: '' },
+    synopsis: { fr: 'Une nuit.', en: '' },
+  });
   await dataSource.getRepository(Venue).insert({
     id: VENUE_ID,
     name: 'Salle',
@@ -235,6 +265,7 @@ beforeAll(async () => {
       DraftDateHandler,
       RecordChecklistFactHandler,
       TransitionPublicationHandler,
+      UpdateShowHandler,
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: new FixedClock('2026-09-26T10:00:00.000Z') },
       { provide: PUBLIC_WEB_ORIGIN, useValue: 'https://arthome.test' },
@@ -299,8 +330,10 @@ describe('a date published while its show or its channel’s face changes', () =
       const dateId = dateIdOf(2);
       await publishable(dateId, '2027-02-02T19:00:00.000Z');
 
-      // UpdateChannelIdentityHandler's writes: the face under its row lock, then the channel's rows.
+      // UpdateChannelIdentityHandler's writes: the channel's face lock, the face under its row
+      //   lock, then the channel's rows.
       await publishDuring(dateId, async (manager) => {
+        await holdChannelFace(manager, CHANNEL);
         await manager.findOne(Artist, {
           where: { channel_id: CHANNEL },
           lock: { mode: 'pessimistic_write' },
@@ -317,6 +350,44 @@ describe('a date published while its show or its channel’s face changes', () =
         .getRepository(DateDetailPublic)
         .findOneByOrFail({ date_id: dateId });
       expect(row.artist_name).toBe('Compagnie Noire');
+    },
+    CASE_MS,
+  );
+
+  it(
+    'names the channel face created while a date of the channel was published',
+    async () => {
+      const dateId = dateIdOf(3);
+      await publishable(dateId, '2027-02-03T19:00:00.000Z', {
+        channelId: FACELESS_CHANNEL,
+        showId: FACELESS_SHOW_ID,
+      });
+
+      // UpdateChannelIdentityHandler creating the face: no row to lock yet, so the channel's lock.
+      await publishDuring(dateId, async (manager) => {
+        await holdChannelFace(manager, FACELESS_CHANNEL);
+        const face = {
+          id: '01a0e900-0000-7000-8000-000000000005',
+          channel_id: FACELESS_CHANNEL,
+          public_name: 'Compagnie Neuve',
+        };
+        await manager.insert(Artist, {
+          ...face,
+          slug: 'compagnie-neuve',
+          biography: [],
+          category_id: 'theatre',
+          version: 1,
+        });
+        await projectArtist(manager, face);
+      });
+
+      const row = await dataSource
+        .getRepository(DateDetailPublic)
+        .findOneByOrFail({ date_id: dateId });
+      expect(row).toMatchObject({
+        artist_id: '01a0e900-0000-7000-8000-000000000005',
+        artist_name: 'Compagnie Neuve',
+      });
     },
     CASE_MS,
   );
@@ -361,5 +432,27 @@ describe('two dates of one show moved onto one day at once', () => {
       }
     },
     CASE_MS * 2,
+  );
+});
+
+describe('two updates of one show at once', () => {
+  it(
+    'keeps both edits: each reads the copy the other committed',
+    async () => {
+      const lost: string[] = [];
+      for (let round = 0; round < 8; round += 1) {
+        await Promise.all([
+          commands.execute(
+            new UpdateShow(SHOW_ID, { title: { fr: `Titre ${round}`, en: '' } }, null),
+          ),
+          commands.execute(new UpdateShow(SHOW_ID, { tagIds: [`etiquette-${round}`] }, null)),
+        ]);
+        const show = await dataSource.getRepository(Show).findOneByOrFail({ id: SHOW_ID });
+        if (show.title.fr !== `Titre ${round}`) lost.push(`${round}: the title`);
+        if (show.tag_ids[0] !== `etiquette-${round}`) lost.push(`${round}: the tags`);
+      }
+      expect(lost).toEqual([]);
+    },
+    CASE_MS,
   );
 });

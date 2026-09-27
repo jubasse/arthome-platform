@@ -160,6 +160,26 @@ describe('PerformanceDate', () => {
     ]);
   });
 
+  it('refuses to publish on an incomplete checklist, and applies nothing', () => {
+    const date = PerformanceDate.restore({ ...PUBLISHED, slug: null }, DRAFT_AT_1);
+    const before = date.snapshot;
+    const refusal = refusalOf(() =>
+      date.transitionPublication(PUBLISH, {
+        satisfied: [],
+        freeSlug: '2026-11-04',
+        showRuntimeMin: 110,
+        now: NOW,
+      }),
+    );
+
+    expect(isDomainError(refusal) && refusal.code).toBe(
+      DomainErrorCode.PUBLICATION_CHECKLIST_INCOMPLETE,
+    );
+    expect(date.snapshot).toBe(before);
+    expect(date.publication).toBe(DRAFT_AT_1);
+    expect(date.getUncommittedEvents()).toEqual([]);
+  });
+
   it('stays private through a transition that does not publish', () => {
     const date = PerformanceDate.restore({ ...PUBLISHED, slug: null }, DRAFT_AT_1);
     date.transitionPublication(

@@ -14,6 +14,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { CatalogErrorCode, FailureNature, type Clock, type Instant } from '@arthome/core';
 
 import { Artist } from './artist.entity.js';
+import { holdChannelFace } from './channel-face-lock.js';
 import { UpdateChannelIdentity, type ChannelIdentity } from './update-channel-identity.command.js';
 import { writeCatalogEvent } from '../catalog-events.js';
 import { CatalogTransactions } from '../catalog-transactions.js';
@@ -52,6 +53,7 @@ export class UpdateChannelIdentityHandler implements ICommandHandler<UpdateChann
     manager: EntityManager,
     { channelId, body, traceparent }: UpdateChannelIdentity,
   ): Promise<{ readonly data: ChannelIdentity; readonly version: number }> {
+    await holdChannelFace(manager, channelId);
     const current = await manager.findOne(Artist, {
       where: { channel_id: channelId },
       lock: { mode: 'pessimistic_write' },
