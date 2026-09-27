@@ -235,11 +235,12 @@ The technical provision is recorded by `setTechnicalProvision` (D-088, arthome-c
 Known and left, each judged:
 
 - `market_id` and the service-fee schedule have no source yet; neither is stored.
-- **Catalog's service glue is copied** (architecture review M4): `assert-never.ts` and the consumer
-  host. They move to `libs/` in a feature of their own after T2; `frozen` is
+- **Catalog's service glue is shared since M4** (architecture review): `frozen` is
   `@arthome-platform/transactions`', `notFound`, `asConflict` and `edgeProviders` are
   `@arthome-platform/http-edge`'s, `httpApp` is `@arthome-platform/testing`'s, and
-  `writeTicketingEvent` is `@arthome-platform/messaging`'s `outboxWriter` over ticketing's topics.
+  `writeTicketingEvent` (`outboxWriter` over ticketing's topics) and the consumer host
+  (`ConsumerHostModule`) are `@arthome-platform/messaging`'s. `assert-never.ts` is still one copy
+  per service: its home is core, which this repository does not edit.
 - **`CLOCK` is provided in each feature module and in `EDGE_PROVIDERS`** (N2): catalog's pattern,
   harmless while `SystemClock` is stateless. `edgeProviders` takes the service's token rather than
   owning one; one provider per process root needs `CLOCK` exported from a module every feature

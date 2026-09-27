@@ -29,6 +29,8 @@ export type { Disposition, MessageHandler } from './dispatch.js';
 
 export { runConsumers } from './consume.js';
 export type { ConsumerSetup } from './consume.js';
+export { ConsumerHost, ConsumerHostModule } from './consumer-host.module.js';
+export type { ConsumerHostOptions } from './consumer-host.module.js';
 
 export {
   boundedCheck,
