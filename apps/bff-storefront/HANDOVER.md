@@ -44,8 +44,10 @@ stack (`AGENTS.md`, "Search, the date page and link resolution, from the storefr
   `FastifyAdapter.reply` sets the route's status back to 200 after the handler returns. The
   `ETag` is weak and hashes `data` and `validUntil`, never `servedAt`, which always moves. The
   hook is registered in `main.ts`, and a test app must register it too.
-- **Budgets**: 200 ms for the search, 400 ms for the date page and the resolution (transport.md
-  §5.9's composed public read).
+- **Budgets**: 200 ms for the search, 400 ms for the date page, the artist page and the
+  resolution (transport.md §5.9's composed public read). The e2e suites pin the controllers'
+  clock an hour ahead, so no deadline falls due under verify's load, and each reads its budget
+  exactly from the deadline the stand-in catalog received.
 - **Readiness checks nothing downstream**: a catalog outage fails searches, it must not take the
   BFF out of rotation.
 
