@@ -13,7 +13,7 @@ from reading.
 | `src/redis.ts` | `provideRedisForRun` (a Vitest `globalSetup`: one Redis per run), `workerRedisUrl` (a database index per worker, 1 to 15), `flushRedisDatabase`. |
 | `src/kafka.ts` | `createTopics`, `waitForMessage`, `headersOf`. The waiting an event test cannot do without. |
 | `src/database.ts` | `createDatabase`, `applyMigrations`, `truncateAll`. |
-| `src/http-app.ts` | `httpApp`: a service's feature modules over HTTP on Fastify, with the global providers its root module binds, `CqrsModule.forRoot()`, the suite's migrated `DataSource` if it passes one, and a value per overridden token (its clock, a stubbed client). Lifted from catalog and ticketing (T2's architecture review, M4). |
+| `src/http-app.ts` | `httpApp`: a service's feature modules over HTTP on Fastify, with the global providers its root module binds, `CqrsModule.forRoot()`, the suite's migrated `DataSource` if it passes one, and a value per overridden token (its clock, a stubbed client), and `rawBody` for a suite whose route verifies a signature over the exact bytes, as the service's `main.ts` bootstraps it (ticketing's payment webhooks). Lifted from catalog and ticketing (T2's architecture review, M4). |
 | `src/index.ts` | The public surface. The placeholder is gone. |
 | `src/*.spec.ts` | **Fast, no Docker.** They run inside `pnpm run verify`. |
 | `src/*.itest.ts` | **Slow, Docker.** |

@@ -45,6 +45,7 @@ import {
   FakePaymentScenario,
   intentRefOf,
 } from '../payments/fake-payment-provider.js';
+import { OwedRefunds } from '../payments/owed-refunds.js';
 import { NextActionKind, PaymentPort } from '../payments/payment.port.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
@@ -148,6 +149,7 @@ beforeAll(async () => {
       GetOrderHandler,
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: clock },
+      OwedRefunds,
       { provide: PaymentPort, useValue: fake },
       { provide: PUBLIC_WEB_ORIGIN, useValue: ORIGIN },
     ],

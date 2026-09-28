@@ -10,7 +10,7 @@ the BFF routes T7. Everything below was run, against real Postgres and Kafka thr
 
 | Process | Entry | Serves |
 | --- | --- | --- |
-| API | `node dist/main.js`, `PORT` (3004 in `.env.example`) | the studio's `setDatePrices`, `openCapacityTier`, `setTechnicalProvision`, `getDateTicketsPane`; the storefront's `refreshDateAvailability`, `quoteSeat`, `purchaseSeat`, `getOrder` (§0h); `/health/liveness`, `/health/readiness` |
+| API | `node dist/main.js`, `PORT` (3004 in `.env.example`) | the studio's `setDatePrices`, `openCapacityTier`, `setTechnicalProvision`, `getDateTicketsPane`; the storefront's `refreshDateAvailability`, `quoteSeat`, `purchaseSeat`, `getOrder` (§0h); the provider's webhooks and the payment worker (§0j, §0k); `/health/liveness`, `/health/readiness` |
 | consumer | `node dist/consumer.js` | `arthome.catalog.date`, retrying on `arthome.ticketing.retry`, dead-lettering to `arthome.ticketing.dlq` |
 | sweeper | `node dist/sweeper.js` | the availability publisher (§0e) and the hold expiry (§0i), Postgres alone |
 
@@ -276,6 +276,61 @@ the pass in flight awaited at shutdown, the next one at once after a full batch.
   arrives as a late payment, §0k.
 - Measured nothing yet: the expiry's cost under load is T6's load test.
 
+## 0j. Webhooks, recorded then applied (T3)
+
+`POST /v1/payments/webhook` (`payments/payment-webhooks.controller.ts`), adr-ticketing.md §8 and
+adr-payments.md §7.
+
+- **Verified on the raw bytes**: `main.ts` bootstraps with `rawBody: true`, and the controller hands
+  `request.rawBody` and the provider's signature header to `RecordPaymentEvent`, which asks the
+  webhook port before anything parses them. A signature that does not cover the bytes is 401
+  `api.unauthenticated`, nothing recorded; signed bytes that are no event, 400.
+- **Recorded, answered at once**: `stripe_event_inbox` (`1790440700000-payment-event-inbox.ts`, the
+  ADR's name), unique on the provider's event id, `ON CONFLICT DO NOTHING`: a duplicate answers 200
+  like the first, since the provider retries until it gets a 2xx. The row keeps the signed bytes and
+  the request's `traceparent`.
+- **Applied by the payment worker** (`PaymentWorker`, a `SweeperLoop` in the API process, every
+  second, 100 of each kind of work per pass): `ApplyPaymentEvents` claims each row `FOR UPDATE SKIP
+  LOCKED` in a transaction of its own, then its order before its hold, applies the fact forward only
+  (a confirmation settles the payment as tx B does; an action or processing records the intent; a
+  failure or a cancellation fails the order and gives its seats back; anything else is kept and
+  ignored), writes the order's events, and marks the row applied in that transaction. A duplicate or
+  a fact behind the order's state changes nothing. A failure is retried after the consumers' delays
+  (`RETRY_DELAYS_MS`, with their jitter), then given up on: `dead_at`, the row and its bytes kept as
+  their own dead letter, an error logged (adr-payments.md §7.4); an event no order is known for is
+  given up on at once. Re-reading the intent from the provider when in doubt (§7.3) is not built:
+  forward-only ranks carry every case the fake plays.
+- **Why the API process**: the worker calls the provider (a refund, §0k; a cancellation, below),
+  which the API needs already, and the sweeper keeps Postgres as its one dependency. T4 moves the
+  provider calls onto its queue (§2).
+- **Cancelling an expired order's intent** (`CancelOwedIntents`, same worker): the orders the
+  sweeper marked `intent_cancel_owed_at`, cancelled at the provider under `cancel:{orderId}`, the
+  mark cleared; a provider that does not answer is asked again 30 s later. Best effort (§6): it
+  narrows a late payment's window and cannot close it, and a payment clears the mark.
+- **The webhook route is refused in production**, as every write here is, by
+  `DenyInProductionGuard`; its signature is its authentication, and a real provider's adapter will
+  want it exempted with the Stripe adapter, not before.
+
+## 0k. A payment confirmed after its hold expired (T3, D-082)
+
+`orders/settle-payment.ts`, shared by tx B and the webhook worker. A confirmation for an order that
+can still take a payment consumes its hold while that hold is active, even past its instant if the
+sweeper has not reached it. When the hold is gone (expired, released), the seats are taken again
+by `takeAndSellSeats`: `seats_available - q` and `seats_sold + q` in one statement, conditioned on
+`on_sale AND seats_available >= q`. The order is then paid as any other, its failure cleared and
+its owed cancellation dropped.
+
+With none left, the order owes the money back, `hold_expired_capacity_lost`, recorded in the same
+transaction, no seat created, nothing sold. Then, outside any transaction, `OwedRefunds.refund`
+asks the provider under `refund:{orderId}` and marks the order `refunded` in a transaction after
+it, with `order.refunded` (`refund_reason` `HOLD_EXPIRED_CAPACITY_LOST`, no seat cancelled). The
+purchase path and the webhook worker both refund at once; a refund the provider did not make stays
+owed on the order, and `RefundOwedPayments` asks again each pass, the key making a second ask the
+same refund. Never an oversold date, never money kept without a seat.
+
+A purchase replayed under its key once its hold expired, never having reached the provider,
+answers `order.sold_out` from the failed order and asks the provider nothing.
+
 ## 1. What proves it
 
 | Suite | What |
@@ -294,6 +349,7 @@ the pass in flight awaited at shutdown, the next one at once after a full batch.
 | `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry |
 | `boot.itest.ts` (T3's case) | the sweeper root expiring a due hold on its first pass |
 | `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes |
+| `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, refunded at once under `refund:{orderId}` with `order.refunded`); a refund owed through a provider outage, made once on a later pass; a purchase resumed past its hold answering sold out; an expired order's intent cancelled, and asked again after an outage |
 | `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, a signature over the exact bytes and its tolerance |
 
 **`catalog-exchange.itest.ts` imports fourteen of catalog's internal modules by relative path**, no
@@ -330,6 +386,8 @@ either service imports the other.
 - Topics `arthome.ticketing.order` (6, `order_id`) and `.account` (3) are provisioned.
 - For T4: refunds run on BullMQ (ADR §8), which needs Redis; the sweeper stays on Postgres alone,
   so those workers need a process of their own or the consumer's. T4 decides and records it here.
+  **T3 put its provider calls in the API process's payment worker (§0j), each owed on an order
+  before it is asked, so a queue can take them over from those marks.**
 
 ## 3. Gaps
 

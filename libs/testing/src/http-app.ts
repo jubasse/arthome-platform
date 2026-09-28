@@ -13,6 +13,8 @@ export interface HttpAppOptions {
   readonly dataSource?: DataSource;
   /** A value per token: the suite's clock, a client it stubs. */
   readonly overrides?: readonly (readonly [token: unknown, value: unknown])[];
+  /** As the service's `main.ts` bootstraps it, for a route that verifies a signature. */
+  readonly rawBody?: boolean;
 }
 
 /**
@@ -24,6 +26,7 @@ export async function httpApp({
   providers,
   dataSource,
   overrides = [],
+  rawBody = false,
 }: HttpAppOptions): Promise<NestFastifyApplication> {
   let builder = Test.createTestingModule({
     imports: [
@@ -44,7 +47,7 @@ export async function httpApp({
 
   const app = (await builder.compile()).createNestApplication<NestFastifyApplication>(
     new FastifyAdapter(),
-    { logger: false },
+    { logger: false, rawBody },
   );
   await app.init();
   await app.getHttpAdapter().getInstance().ready();

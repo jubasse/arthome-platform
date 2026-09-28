@@ -430,10 +430,15 @@ GET  /v1/orders/:orderId                                                x-arthom
 `purchaseSeat` answers 201 with the tickets and the order once paid, 202 with the payment handoff
 while the buyer has to act, 409 `order.sold_out`, `order.price_stale` or `order.payment_declined`,
 and 503 when the provider does not answer; a replay under its key answers the first answer again.
+The provider's webhooks arrive on `POST /v1/payments/webhook`, verified on their raw bytes, recorded
+in `stripe_event_inbox` and answered at once; the API process's payment worker applies them every
+second, refunds at once a payment confirmed after its hold expired with no seat left (D-082), and
+cancels the intents of expired orders (`apps/ticketing/HANDOVER.md` §0j, §0k).
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
-instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` and
-`1790440600000` with the three processes stopped, as for every ticketing migration.
+instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000`,
+`1790440600000` and `1790440700000` with the three processes stopped, as for every ticketing
+migration.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

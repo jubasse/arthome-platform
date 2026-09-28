@@ -22,10 +22,12 @@ import { dataSource } from './data-source.js';
 import { DateSalesModule } from './date-sales/date-sales.module.js';
 import { EDGE_PROVIDERS } from './edge-providers.js';
 import { OrdersModule } from './orders/orders.module.js';
+import { PaymentWebhooksModule } from './payments/payment-webhooks.module.js';
+import { PaymentWorkerModule } from './payments/payment-worker.module.js';
 
 /**
- * The API process: the studio's commands and pane, the storefront's availability read, and its
- *   seat quote, purchase and order.
+ * The API process: the studio's commands and pane, the storefront's availability read, its seat
+ *   quote, purchase and order, the payment provider's webhooks and the worker that applies them.
  */
 @Module({
   controllers: [HealthController],
@@ -35,6 +37,8 @@ import { OrdersModule } from './orders/orders.module.js';
     DateSalesModule,
     AvailabilityModule,
     OrdersModule,
+    PaymentWebhooksModule,
+    PaymentWorkerModule,
   ],
   providers: [
     ...EDGE_PROVIDERS,
