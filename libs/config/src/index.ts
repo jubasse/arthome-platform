@@ -3,6 +3,7 @@ export {
   readBffEnv,
   readKafkaBrokers,
   readOpenSearchUrl,
+  readPaymentWebhookSecret,
   readPublicWebOrigin,
   readRedisUrl,
   readConsumerEnv,

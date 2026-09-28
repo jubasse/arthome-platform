@@ -6,6 +6,7 @@ import {
   readBffEnv,
   readOpenSearchUrl,
   readPublicWebOrigin,
+  readPaymentWebhookSecret,
   readRedisUrl,
   readConsumerEnv,
   readHttpServiceEnv,
@@ -195,5 +196,20 @@ describe('readBffEnv', () => {
 
   it('refuses a production deployment with no CATALOG_URL', () => {
     expect(() => readBffEnv({ NODE_ENV: 'production', PORT: '3003' })).toThrow(/CATALOG_URL/);
+  });
+});
+
+describe('readPaymentWebhookSecret', () => {
+  it('defaults outside production, so the fake adapter verifies on a fresh clone', () => {
+    expect(readPaymentWebhookSecret({ NODE_ENV: 'development' })).toHaveLength(34);
+  });
+
+  it('refuses a production deployment with no secret, and a secret too short to resist a guess', () => {
+    expect(() => readPaymentWebhookSecret({ NODE_ENV: 'production' })).toThrow(
+      /PAYMENT_WEBHOOK_SECRET/,
+    );
+    expect(() =>
+      readPaymentWebhookSecret({ NODE_ENV: 'production', PAYMENT_WEBHOOK_SECRET: 'short' }),
+    ).toThrow(/PAYMENT_WEBHOOK_SECRET/);
   });
 });

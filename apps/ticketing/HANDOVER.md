@@ -1,9 +1,10 @@
-# `ticketing` — T2 handover: the service, and a date's commercial face
+# `ticketing` — handover: a date's commercial face (T2), its holds, orders and payment (T3)
 
-arthome-core `adr-ticketing.md` (accepted, D-077 to D-083) cuts the first slice into phases; this is
-T2: the service itself and `DateSales` (`data-model.md` §3.1). Holds, orders and payment are T3,
-outcomes and refunds T4, the waiting list T5, the waiting room T6, the BFF routes T7. Everything
-below was run, against real Postgres and Kafka through `libs/testing`, not reasoned about.
+arthome-core `adr-ticketing.md` (accepted, D-077 to D-083) cuts the first slice into phases. T2 built
+the service itself and `DateSales` (`data-model.md` §3.1), §0 to §0f; T3 the holds, the orders and
+their payment, §0g onwards. Outcomes and refunds are T4, the waiting list T5, the waiting room T6,
+the BFF routes T7. Everything below was run, against real Postgres and Kafka through
+`libs/testing`, not reasoned about.
 
 ## 0. Three processes, one database
 
@@ -176,6 +177,25 @@ saves with `saveVersioned`, commands answer through `runIdempotentlyVersioned`, 
 Refusals: the aggregate throws core's `DomainError`; the studio handlers wrap it in `asConflict`
 (409), the consumer maps it (retry for an unknown date, dead-letter otherwise).
 
+## 0g. The payment ports (T3)
+
+`src/payments/payment.port.ts` holds `adr-payments.md` §4's ports until core carries them (§3):
+`PaymentPort` (`createIntent`, keyed by the order id, `cancelIntent`, `refund`, keyed
+`refund:{orderId}`) and `PaymentWebhookPort` (`verifySignature` on the exact bytes, `parse`). The
+names are `adr-ticketing.md` §2's (`createIntent`), where §4 of the payments ADR sketches
+`authorize`. A provider's references are opaque strings; `PaymentProviderUnavailable` says the
+provider could not say what it did, so the caller retries under the same key.
+
+`FakePaymentProvider` is the adapter bound by default (`payments.module.ts`), both ports on one
+instance, since a webhook speaks of the intents it created. Deterministic: an intent's reference is
+derived from its order id, event ids are counted, and each intent plays `scenarioOf(request)`:
+`confirm` (the default, confirmed synchronously), `require_action` (then `completeAction` or
+`failAction` hands back the signed webhook saying how it ended), `decline`, `unavailable`. `down`
+makes every call fail, the provider-down drill. Its signature is Stripe's scheme on its own header,
+`x-fake-payment-signature: t=<seconds>,v1=<HMAC-SHA256 of "t.body">`, refused past adr-payments.md
+§7.1's five minutes. The secret is `PAYMENT_WEBHOOK_SECRET` (`@arthome-platform/config`'s
+`readPaymentWebhookSecret`), defaulted outside production only, 32 characters at least.
+
 ## 1. What proves it
 
 | Suite | What |
@@ -188,6 +208,7 @@ Refusals: the aggregate throws core's `DomainError`; the studio handlers wrap it
 | `date-sales.http.itest.ts` | the routes over HTTP through the modules the API boots |
 | `catalog-exchange.itest.ts` | catalog and ticketing read each other's real outbox rows, shaped as the connector routes them: a draft opens the sale, ticketing's capacity and price complete catalog's checklist, catalog publishes, the prices lock |
 | `boot.itest.ts` | the three root modules |
+| `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, a signature over the exact bytes and its tolerance |
 
 **`catalog-exchange.itest.ts` imports fourteen of catalog's internal modules by relative path**, no
 manifest recording it (architecture review M5), and that is accepted, in a test only. Its point is
@@ -223,6 +244,11 @@ either service imports the other.
   so those workers need a process of their own or the consumer's. T4 decides and records it here.
 
 ## 3. Gaps
+
+**Interims T3 holds until core carries them** (each named in the report to "main", with the exact
+addition):
+
+- `PaymentPort` and `PaymentWebhookPort` (`payments/payment.port.ts`), `adr-payments.md` §4's ports.
 
 The three interims of the first handover are core's rules now (arthome-core PR #2, fbab36e):
 `AVAILABILITY_VALID_SECONDS` and `availabilityValidUntil`, `provisionRevisableUntil` and
