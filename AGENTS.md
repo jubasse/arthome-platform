@@ -354,8 +354,8 @@ a bare producer script prints it too.
 
 `ticketing` runs three processes from `apps/ticketing`, all on its own database `ticketing`: the API
 (`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`)
-and the sweeper (`node dist/sweeper.js`), which publishes `availability_changed` and needs Postgres
-alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
+and the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
+nobody paid, and needs Postgres alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
 
 A date catalog drafts is opened in ticketing by the consumer; the studio then gives it capacity and
 prices, each with an `Idempotency-Key` and the version the pane served:
@@ -431,8 +431,9 @@ GET  /v1/orders/:orderId                                                x-arthom
 while the buyer has to act, 409 `order.sold_out`, `order.price_stale` or `order.payment_declined`,
 and 503 when the provider does not answer; a replay under its key answers the first answer again.
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
-`apps/ticketing/HANDOVER.md` §0h. Run `migration:run` for `1790440500000-holds-and-orders` with the
-three processes stopped, as for every ticketing migration.
+`apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
+instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` and
+`1790440600000` with the three processes stopped, as for every ticketing migration.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

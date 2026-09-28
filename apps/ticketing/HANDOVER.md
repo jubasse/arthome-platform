@@ -12,7 +12,7 @@ the BFF routes T7. Everything below was run, against real Postgres and Kafka thr
 | --- | --- | --- |
 | API | `node dist/main.js`, `PORT` (3004 in `.env.example`) | the studio's `setDatePrices`, `openCapacityTier`, `setTechnicalProvision`, `getDateTicketsPane`; the storefront's `refreshDateAvailability`, `quoteSeat`, `purchaseSeat`, `getOrder` (§0h); `/health/liveness`, `/health/readiness` |
 | consumer | `node dist/consumer.js` | `arthome.catalog.date`, retrying on `arthome.ticketing.retry`, dead-lettering to `arthome.ticketing.dlq` |
-| sweeper | `node dist/sweeper.js` | the availability publisher (§0e); T3's hold expiry joins it |
+| sweeper | `node dist/sweeper.js` | the availability publisher (§0e) and the hold expiry (§0i), Postgres alone |
 
 **Stop all three before `migration:run`.** A migration may drop a column the running build still
 reads (`1790440100000` moved three `date_sales` columns to the publisher's table): a rolling restart
@@ -252,6 +252,30 @@ does; the three answer `no-store`.
   looked up and drawn again when taken (`seat-codes.ts`): at a hundred thousand seats a handful
   would collide, and the unique constraint alone would abort the payment.
 
+## 0i. Holds expire in the sweeper (T3)
+
+`orders/expire-due-holds.handler.ts`, adr-ticketing.md §6, run every second by `HoldExpirySweeper`
+beside `AvailabilityPublisher` in the sweeper process, which stays on Postgres alone. Both loops are
+`SweeperLoop` (`src/sweeper-loop.ts`), the publisher's loop lifted as it was: no overlapping passes,
+the pass in flight awaited at shutdown, the next one at once after a full batch.
+
+- **A pass is one transaction, set-based**: up to 500 expired active holds, joined with their
+  orders, `FOR UPDATE OF hold, placed SKIP LOCKED`. A hold whose order a payment holds is skipped,
+  left to that payment, which consumes it or takes the seats again (D-082), and the pass never waits
+  on a lock a payment could be waiting behind: the purchase and the webhook lock an order before its
+  hold, the pass takes both or neither. Each hold is `expired`, its order `failed` if it still waited
+  for its payment, and the seats go back by `returnHeldSeats`, one statement per date in `date_id`
+  order, the dates' rows last, each counting a move for the publisher.
+- **A pass also fails an order still pending past its expiry with no intent and no active hold**:
+  the provider did not answer, the hold went back (§0h), and nobody retried the purchase. Its own
+  partial index, `1790440600000-pending-order-expiry.ts`.
+- **Cancelling the intent at the provider is recorded, not called** (decided in T3): an order that
+  fails holding an intent gets `intent_cancel_owed_at`, and the sweeper calls no provider, so a
+  provider outage cannot slow the pass that returns capacity, and the process keeps its one
+  dependency. The cancellation is best effort either way (§6): a confirmation already in flight
+  arrives as a late payment, §0k.
+- Measured nothing yet: the expiry's cost under load is T6's load test.
+
 ## 1. What proves it
 
 | Suite | What |
@@ -267,6 +291,8 @@ does; the three answer `no-store`.
 | `orders/seat-order.aggregate.spec.ts`, `orders/seat-hold.aggregate.spec.ts` | the order's forward-only states, its seats created at payment, a payment after a failure (D-082), a refund owed; the hold's expiry its intent's, consumed or released once |
 | `date-sales.aggregate.spec.ts` (T3's block) | on sale, the quote through core, a hold that moves the counter and not the version |
 | `orders/purchase.itest.ts` | 14 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, the quote |
+| `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry |
+| `boot.itest.ts` (T3's case) | the sweeper root expiring a due hold on its first pass |
 | `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes |
 | `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, a signature over the exact bytes and its tolerance |
 
@@ -300,7 +326,7 @@ either service imports the other.
 - The purchase claims its idempotency key in tx A and answers in tx B, which `runIdempotently`
   (one transaction) does not cover: settle it in T3's first change, or key the purchase on
   `seat_order` alone (libs review L1). **Keyed on `seat_order` alone, §0h.**
-- The sweeper process for hold expiry: a second loop beside `AvailabilityPublisher`.
+- The sweeper process for hold expiry: a second loop beside `AvailabilityPublisher`. **Built: §0i.**
 - Topics `arthome.ticketing.order` (6, `order_id`) and `.account` (3) are provisioned.
 - For T4: refunds run on BullMQ (ADR §8), which needs Redis; the sweeper stays on Postgres alone,
   so those workers need a process of their own or the consumer's. T4 decides and records it here.

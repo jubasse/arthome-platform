@@ -21,7 +21,9 @@ import {
 import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, Service } from '@arthome/core';
+import { ApiErrorCode, PriceTier, Service } from '@arthome/core';
+
+import { OrderState, SeatHoldOrigin, SeatHoldState } from './orders/commerce-vocabulary.js';
 
 /**
  * The three processes' root modules, booted as `main.ts`, `consumer.ts` and `sweeper.ts` boot them,
@@ -34,6 +36,9 @@ const STARTUP_MS = 240_000;
 const CASE_MS = 30_000;
 
 const DATE_ID = '01a0f100-0000-7000-8000-000000000001';
+const HELD_DATE_ID = '01a0f100-0000-7000-8000-000000000002';
+const HOLD_ID = '01a0f100-0000-7000-8000-0000000000b1';
+const ORDER_ID = '01a0f100-0000-7000-8000-0000000000a1';
 
 let stack: StartedStack;
 let databaseUrl: string;
@@ -206,6 +211,75 @@ describe('the sweeper process', () => {
           [DATE_ID],
         );
         expect(row?.published_moves).toBe('1');
+      } finally {
+        await seed.destroy();
+      }
+    },
+    CASE_MS,
+  );
+  it(
+    'expires a hold past its expiry on its first pass, its seats back and its order failed',
+    async () => {
+      const seed = new DataSource({ type: 'postgres', url: databaseUrl });
+      await seed.initialize();
+      try {
+        await seed.query(
+          `INSERT INTO date_sales (date_id, channel_id, capacity_total, capacity_tiers,
+                                   seats_available, seats_sold, waitlist_count, price_tiers,
+                                   prices_locked_at, version)
+           VALUES ($1, 'channel-boot', 10, '[]', 8, 0, 0, '[]', now(), 2)`,
+          [HELD_DATE_ID],
+        );
+        await seed.query(
+          `INSERT INTO seat_hold (id, date_id, tier, quantity, origin, origin_ref, expires_at,
+                                  state, version)
+           VALUES ($1, $2, $4, 2, $5, $3, now() - interval '1 second', $6, 1)`,
+          [
+            HOLD_ID,
+            HELD_DATE_ID,
+            ORDER_ID,
+            PriceTier.FULL,
+            SeatHoldOrigin.CHECKOUT,
+            SeatHoldState.ACTIVE,
+          ],
+        );
+        await seed.query(
+          `INSERT INTO seat_order (id, reference, idempotency_key, fingerprint, date_id, channel_id,
+                                   tier, quantity, currency_code, unit_price_minor,
+                                   tier_total_minor, service_fee_minor, discount_minor,
+                                   total_minor, hold_id, expires_at, state, placed_at, version)
+           VALUES ($1, 'ATH-2026-99999', $1, 'boot', $2, 'channel-boot', $4, 2, 'EUR', 2400,
+                   4800, 0, 0, 4800, $3, now() - interval '1 second', $5, now(), 1)`,
+          [ORDER_ID, HELD_DATE_ID, HOLD_ID, PriceTier.FULL, OrderState.PENDING],
+        );
+
+        const { SweeperModule } = await import('./sweeper.module.js');
+        const context = await Test.createTestingModule({ imports: [SweeperModule] }).compile();
+        await context.init();
+        const holdState = async (): Promise<string | undefined> => {
+          const [hold] = await seed.query<{ state: string }[]>(
+            'SELECT state FROM seat_hold WHERE id = $1',
+            [HOLD_ID],
+          );
+          return hold?.state;
+        };
+        try {
+          const deadline = Date.now() + 10_000;
+          while ((await holdState()) === SeatHoldState.ACTIVE && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        } finally {
+          await context.close();
+        }
+
+        expect(await holdState()).toBe(SeatHoldState.EXPIRED);
+        const [row] = await seed.query<{ seats_available: number; state: string }[]>(
+          `SELECT sales.seats_available, placed.state
+             FROM date_sales AS sales JOIN seat_order AS placed USING (date_id)
+            WHERE placed.id = $1`,
+          [ORDER_ID],
+        );
+        expect(row).toEqual({ seats_available: 10, state: OrderState.FAILED });
       } finally {
         await seed.destroy();
       }
