@@ -13,6 +13,7 @@ import {
   assertTierWidens,
   isBefore,
   type Instant,
+  type PriceTier,
   type TierPrice,
 } from '@arthome/core';
 
@@ -23,10 +24,12 @@ import {
   DatePricesSet,
   DateSalesOpened,
   DateScheduleRecorded,
+  SeatsHeld,
   TechnicalProvisionSet,
   type CapacityTier,
   type DateSalesEvent,
 } from './date-sales.events.js';
+import { seatQuoteOf, type SeatQuote } from './seat-quote.js';
 import { technicalProvisionOf } from './technical-provision.js';
 
 export interface DateSalesSnapshot {
@@ -110,6 +113,29 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
 
   public get snapshot(): DateSalesSnapshot {
     return this.current;
+  }
+
+  /** From the lock of its prices until an outcome closes it: `on_sale`, as the row generates it. */
+  public get isOnSale(): boolean {
+    const { pricesLockedAt, salesClosedAt } = this.current;
+    return pricesLockedAt !== null && salesClosedAt === null;
+  }
+
+  /** The price of `quantity` seats of `tier`; null while that tier is not sold. */
+  public quote(tier: PriceTier, quantity: number): SeatQuote | null {
+    return seatQuoteOf(this.current.priceTiers, tier, quantity);
+  }
+
+  /**
+   * Decides a hold of `quantity` seats, which the repository's conditional decrement then takes, or
+   *   refuses when fewer are left (adr-ticketing.md §11). Loaded without the row's lock, so this
+   *   counter is only what a later save measures its delta from: the statement's WHERE is the rule.
+   *   The version stays as loaded.
+   */
+  public holdSeats(quantity: number, now: Instant): void {
+    const { dateId, seatsAvailable } = this.current;
+    this.current = frozen({ ...this.current, seatsAvailable: seatsAvailable - quantity });
+    this.apply(new SeatsHeld(dateId, quantity, now));
   }
 
   /**

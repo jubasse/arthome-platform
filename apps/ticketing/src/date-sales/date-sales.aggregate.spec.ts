@@ -412,3 +412,44 @@ describe('the snapshot', () => {
     expect(Object.isFrozen(tiers[0]?.amount)).toBe(false);
   });
 });
+
+describe('a hold, decided by the aggregate and taken by its repository (T3)', () => {
+  const onSale = (): DateSales =>
+    restored({
+      capacityTotal: 10,
+      seatsAvailable: 10,
+      priceTiers: [FULL, { ...REDUCED, active: false }],
+      pricesLockedAt: NOW,
+    });
+
+  it('is on sale from the lock of its prices until an outcome closes it', () => {
+    expect(restored().isOnSale).toBe(false);
+    expect(onSale().isOnSale).toBe(true);
+    expect(restored({ pricesLockedAt: NOW, salesClosedAt: NOW }).isOnSale).toBe(false);
+  });
+
+  it('quotes a tier it sells through core, and nothing for one it does not', () => {
+    expect(onSale().quote(PriceTier.FULL, 2)).toEqual({
+      unitPrice: money(2400, 'EUR'),
+      tierTotal: money(4800, 'EUR'),
+      serviceFee: money(0, 'EUR'),
+      discount: money(0, 'EUR'),
+      total: money(4800, 'EUR'),
+    });
+    expect(onSale().quote(PriceTier.REDUCED, 2)).toBeNull();
+    expect(refusalOf(() => onSale().quote(PriceTier.FULL, 0)).code).toBe(
+      DomainErrorCode.ORDER_QUANTITY_INVALID,
+    );
+  });
+
+  it('moves its counter by the hold and leaves the version as loaded', () => {
+    const sales = onSale();
+
+    sales.holdSeats(3, NOW);
+
+    expect(sales.snapshot).toMatchObject({ seatsAvailable: 7, version: 3 });
+    expect(sales.getUncommittedEvents()).toMatchObject([
+      { kind: 'SeatsHeld', dateId: DATE_ID, quantity: 3, occurredAt: NOW },
+    ]);
+  });
+});

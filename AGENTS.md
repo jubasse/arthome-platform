@@ -143,7 +143,7 @@ done
 
 **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
 anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`, `PUBLIC_WEB_ORIGIN`,
-`OPENSEARCH_URL`, `REDIS_URL` — is filled from a local default **only outside production**, and `NODE_ENV` is
+`OPENSEARCH_URL`, `REDIS_URL`, `PAYMENT_WEBHOOK_SECRET` — is filled from a local default **only outside production**, and `NODE_ENV` is
 what selects that. Defaulting it to `development` would make an unset variable open the
 production-guarded write routes and point a migration at localhost; both fail loudly instead, naming
 the variable. `PORT` is the single exception and defaults to 3000: the migration CLI never listens,
@@ -414,6 +414,25 @@ the container suite makes: no validated write stores such a price.
 | a date whose price core refuses (`amountMinor` 1.5), moved | `money.amount_not_integer` logged, `failed_at` set; tried again every 10.1 s; a tier opened meanwhile on another date published in the same pass |
 | that price put back | published at the next retry, `failed_at` cleared |
 | a date on sale cancelled in catalog | the sale closed in ticketing 0.3 s after catalog's answer; its closing, no longer on sale, reached through `closing_due` and published once 1.6 s later: 0 seats, `sold_out` false; the availability read 404 |
+
+### The ticketing purchase path
+
+The storefront's seat operations run on ticketing's API, the BFF routes being T7's; the payment
+provider is the fake adapter, bound by default (`adr-payments.md` §4), which confirms every intent
+at once on the running stack:
+
+```
+POST /v1/dates/:dateId/seat-quote   { tier, quantity }                 x-arthome-deadline required
+POST /v1/orders/seats               { dateId, tier, quantity, expectedTotal }   Idempotency-Key required
+GET  /v1/orders/:orderId                                                x-arthome-deadline required
+```
+
+`purchaseSeat` answers 201 with the tickets and the order once paid, 202 with the payment handoff
+while the buyer has to act, 409 `order.sold_out`, `order.price_stale` or `order.payment_declined`,
+and 503 when the provider does not answer; a replay under its key answers the first answer again.
+Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
+`apps/ticketing/HANDOVER.md` §0h. Run `migration:run` for `1790440500000-holds-and-orders` with the
+three processes stopped, as for every ticketing migration.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

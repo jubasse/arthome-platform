@@ -21,8 +21,12 @@ import { AvailabilityModule } from './availability/availability.module.js';
 import { dataSource } from './data-source.js';
 import { DateSalesModule } from './date-sales/date-sales.module.js';
 import { EDGE_PROVIDERS } from './edge-providers.js';
+import { OrdersModule } from './orders/orders.module.js';
 
-/** The API process: the studio's commands and pane, and the storefront's availability read. */
+/**
+ * The API process: the studio's commands and pane, the storefront's availability read, and its
+ *   seat quote, purchase and order.
+ */
 @Module({
   controllers: [HealthController],
   imports: [
@@ -30,6 +34,7 @@ import { EDGE_PROVIDERS } from './edge-providers.js';
     CqrsModule.forRoot(),
     DateSalesModule,
     AvailabilityModule,
+    OrdersModule,
   ],
   providers: [
     ...EDGE_PROVIDERS,

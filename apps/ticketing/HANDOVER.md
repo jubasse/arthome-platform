@@ -10,7 +10,7 @@ the BFF routes T7. Everything below was run, against real Postgres and Kafka thr
 
 | Process | Entry | Serves |
 | --- | --- | --- |
-| API | `node dist/main.js`, `PORT` (3004 in `.env.example`) | the studio's `setDatePrices`, `openCapacityTier`, `setTechnicalProvision`, `getDateTicketsPane`; the storefront's `refreshDateAvailability`; `/health/liveness`, `/health/readiness` |
+| API | `node dist/main.js`, `PORT` (3004 in `.env.example`) | the studio's `setDatePrices`, `openCapacityTier`, `setTechnicalProvision`, `getDateTicketsPane`; the storefront's `refreshDateAvailability`, `quoteSeat`, `purchaseSeat`, `getOrder` (§0h); `/health/liveness`, `/health/readiness` |
 | consumer | `node dist/consumer.js` | `arthome.catalog.date`, retrying on `arthome.ticketing.retry`, dead-lettering to `arthome.ticketing.dlq` |
 | sweeper | `node dist/sweeper.js` | the availability publisher (§0e); T3's hold expiry joins it |
 
@@ -196,6 +196,62 @@ makes every call fail, the provider-down drill. Its signature is Stripe's scheme
 §7.1's five minutes. The secret is `PAYMENT_WEBHOOK_SECRET` (`@arthome-platform/config`'s
 `readPaymentWebhookSecret`), defaulted outside production only, 32 characters at least.
 
+## 0h. Holds, orders and the purchase (T3)
+
+`src/orders/`: `SeatHold` and `SeatOrder` (`data-model.md` §3.2, §3.3), their tables in
+`1790440500000-holds-and-orders.ts`, and the storefront's `quoteSeat`
+(`POST /v1/dates/:dateId/seat-quote`), `purchaseSeat` (`POST /v1/orders/seats`) and `getOrder`
+(`GET /v1/orders/:orderId`), in storefront.yaml's shapes but for `TicketCard.date` and the 201's
+`date`: catalog's `DateCard`, which ticketing cannot build without calling catalog (critical rule 1),
+so the BFF adds them (T7). The two reads require `x-arthome-deadline`, as `refreshDateAvailability`
+does; the three answer `no-store`.
+
+- **The purchase is adr-ticketing.md §2** (`purchase-seat.handler.ts`). Tx A binds the key to a new
+  order, verifies the price, takes the seats with the one conditional decrement, inserts the hold
+  (checkout, expiring with its intent: core's `checkoutIntentExpiry`) and the order, pending, its
+  quote frozen. Outside any transaction, `PaymentPort.createIntent`, keyed by the order id. Tx B
+  applies what the provider said, forward only; confirmed, `settleConfirmedPayment` consumes the
+  hold, moves `seats_sold`, draws the seat codes and pays the order, which writes `order.paid` on the
+  order's key, then one `seat.activated` per seat on the date's (D-077, D-078). It answers 201 with
+  the tickets and the order, 202 with the `PaymentHandoff` (its `expiresAt` the hold's), 409
+  `order.payment_declined` with the provider's `declineCode` (hold released, seats back), or 503
+  `api.service_unavailable`. A route cannot declare two statuses: the controller sets the command's
+  through `@Res({ passthrough: true })`, which keeps the envelope and the replay header.
+- **The hot row is never locked on this path.** `DateSales` is loaded by `findUnlocked`, decides the
+  hold (`holdSeats`, which moves its counter and not its version), and the repository's `takeSeats`
+  runs §2's statement below, registered with `writtenUnversioned`, the stored snapshot moved by the
+  same amount so a save later in the transaction measures no delta. `seats_sold` moves at payment by
+  `sellHeldSeats`, a hold given back by `returnHeldSeats`; each counts its move on
+  `availability_moves` in its own statement.
+- **Idempotency is the order's** (libs review L1): this route writes no `idempotency_record`. Tx A
+  claims the key with `INSERT … ON CONFLICT DO NOTHING` on `seat_order_idempotency` before the
+  decrement, so a second attempt waits on the key, never on the date's row, bounded at five seconds
+  (then `api.idempotency_in_flight`). A replay reads the order: an answer kept (201 or 202, in a
+  `json` column, so byte for byte) is served again with `Idempotency-Replayed`; an order left pending
+  with no intent, a crash between A and B, resumes: `createIntent` again, the provider handing back
+  the intent it created under the order id, then tx B; an order that ended unpaid answers from its
+  state, the decline, else sold out. A refusal of tx A rolls the order back with the rest, so the key
+  stays free. Another body under the key: 409 `api.idempotency_key_reused`. Two attempts at once
+  get one order and one answer, the second kept answer served to both.
+- **The provider down** (adr-ticketing.md §12's drill) releases the hold, gives the seats back and
+  answers 503, and the order stays pending, bound to its key: a retry under the same key resumes it,
+  holds the seats again (a new hold, the first `released`) or fails it sold out, and asks the
+  provider under the same order id, so a charge the provider made before timing out cannot be made
+  twice.
+- **Lock order:** an order before its hold, everywhere; the date's row last, in one statement.
+- **The price** is core's `quoteSeats` over the date's own tier price (`date-sales/seat-quote.ts`),
+  the rule `quoteSeat` serves and `purchaseSeat` verifies `expectedTotal` against: 409
+  `order.price_stale` with `expectedAmountMinor`, `currentAmountMinor` (absent for a tier not sold)
+  and `currencyCode`. With no promotion stored, no subscription known and no fee schedule set, a
+  quote has its tier line alone. `quoteSeat` answers 404 for a date not on sale or a tier it does not
+  sell; `purchaseSeat`, whose contract has no 404, answers `order.sold_out` for a date not on sale,
+  as its statement does past the seats left.
+- `contributionMinor` and `applyCreditId` are accepted as null alone, 400 naming the field
+  otherwise: neither has a rule yet, and no money is taken on a field ignored.
+- **A seat's code** is core's `seatCode` over six characters drawn with `crypto.randomInt`, each
+  looked up and drawn again when taken (`seat-codes.ts`): at a hundred thousand seats a handful
+  would collide, and the unique constraint alone would abort the payment.
+
 ## 1. What proves it
 
 | Suite | What |
@@ -208,6 +264,10 @@ makes every call fail, the provider-down drill. Its signature is Stripe's scheme
 | `date-sales.http.itest.ts` | the routes over HTTP through the modules the API boots |
 | `catalog-exchange.itest.ts` | catalog and ticketing read each other's real outbox rows, shaped as the connector routes them: a draft opens the sale, ticketing's capacity and price complete catalog's checklist, catalog publishes, the prices lock |
 | `boot.itest.ts` | the three root modules |
+| `orders/seat-order.aggregate.spec.ts`, `orders/seat-hold.aggregate.spec.ts` | the order's forward-only states, its seats created at payment, a payment after a failure (D-082), a refund owed; the hold's expiry its intent's, consumed or released once |
+| `date-sales.aggregate.spec.ts` (T3's block) | on sale, the quote through core, a hold that moves the counter and not the version |
+| `orders/purchase.itest.ts` | 14 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, the quote |
+| `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes |
 | `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, a signature over the exact bytes and its tolerance |
 
 **`catalog-exchange.itest.ts` imports fourteen of catalog's internal modules by relative path**, no
@@ -224,10 +284,12 @@ either service imports the other.
   availability_moves = availability_moves + 1 WHERE date_id = $1 AND on_sale AND seats_available >=
   $q`, executed by the repository and registered with `AggregateTracker.writtenUnversioned`; it must
   update the tracker's stored snapshot too, or a later save in the transaction applies the delta
-  again. The publisher takes no lock it could wait on.
-- `seats_sold` moves at payment by the same kind of statement; the fill rate reads it.
+  again. The publisher takes no lock it could wait on. **Built: `takeSeats`, §0h.**
+- `seats_sold` moves at payment by the same kind of statement; the fill rate reads it. **Built:
+  `sellHeldSeats`.**
 - **`findById` always loads `FOR UPDATE`**: the hold path must not reuse it (ADR §11: no lock across
-  application code), but load unlocked, or not at all, before its conditional decrement.
+  application code), but load unlocked, or not at all, before its conditional decrement. **Built:
+  `findUnlocked`.**
 - **`on_sale` has no end in time**: prices locked and not closed. A decrement on `on_sale` alone
   would sell after the show and its replay are over, unless T3 bounds its WHERE by the date's window
   or a sweeper closes the sale. The publisher's pass reads every sale on sale, so it stays bounded
@@ -237,7 +299,7 @@ either service imports the other.
   the delta a second time.
 - The purchase claims its idempotency key in tx A and answers in tx B, which `runIdempotently`
   (one transaction) does not cover: settle it in T3's first change, or key the purchase on
-  `seat_order` alone (libs review L1).
+  `seat_order` alone (libs review L1). **Keyed on `seat_order` alone, §0h.**
 - The sweeper process for hold expiry: a second loop beside `AvailabilityPublisher`.
 - Topics `arthome.ticketing.order` (6, `order_id`) and `.account` (3) are provisioned.
 - For T4: refunds run on BullMQ (ADR §8), which needs Redis; the sweeper stays on Postgres alone,
@@ -249,6 +311,28 @@ either service imports the other.
 addition):
 
 - `PaymentPort` and `PaymentWebhookPort` (`payments/payment.port.ts`), `adr-payments.md` §4's ports.
+- `ORDER_STATES`, `SEAT_STATES`, `SEAT_HOLD_STATES`, `SEAT_HOLD_ORIGINS` and the order's forward
+  ranks (`orders/commerce-vocabulary.ts`): the contract declares the first two as its own, and the
+  domain decides with them.
+- The seat's cancel deadline, one hour before the start (`orders/seat-cancel-deadline.ts`):
+  needs/storefront-web.md's rule, served by the contract as `cancelDeadlineMinutesBefore: 60`, in
+  no core constant. A date with no start gives its seats none.
+- The order's reference, `ATH-{year}-{five digits}` off one sequence (`orders/order-reference.ts`),
+  the contract's example.
+- The payment return URL, `{PUBLIC_WEB_ORIGIN}/orders/{orderId}` (`orders/payment-return-url.ts`):
+  no document names the storefront's page for it.
+- No service fee (`date-sales/seat-quote.ts`): no fee schedule is set anywhere, as T2's pane says.
+
+**Known and left in T3, each judged:**
+
+- **No account.** Tokens are not verified (`adr-auth.md` defers it): holds, orders and seats carry a
+  null `account_id`, every purchase shares the one null idempotency scope, `order.paid` and
+  `seat.activated` carry an empty `account_id`, and `getOrder` checks nobody's ownership. The routes
+  are refused in production by `DenyInProductionGuard`, as every write here is.
+- **No tax computed.** `order.paid` carries an empty `vat` and the buyer's declared location alone,
+  as unresolved evidence: the tax model awaits counsel (`adr-payments.md` §5.5).
+- **A free seat** (a total of zero) would ask the provider for an intent of zero: no rule gives a
+  contribution or a free tier yet, so none is refused or special-cased.
 
 The three interims of the first handover are core's rules now (arthome-core PR #2, fbab36e):
 `AVAILABILITY_VALID_SECONDS` and `availabilityValidUntil`, `provisionRevisableUntil` and

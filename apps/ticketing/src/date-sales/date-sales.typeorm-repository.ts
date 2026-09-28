@@ -28,14 +28,69 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
   }
 
   public async findById(dateId: string): Promise<DateSales | null> {
-    const row = await this.manager.findOne(DateSalesRow, {
-      where: { date_id: dateId },
-      lock: { mode: 'pessimistic_write' },
+    return this.restored(
+      await this.manager.findOne(DateSalesRow, {
+        where: { date_id: dateId },
+        lock: { mode: 'pessimistic_write' },
+      }),
+    );
+  }
+
+  public async findUnlocked(dateId: string): Promise<DateSales | null> {
+    return this.restored(await this.manager.findOneBy(DateSalesRow, { date_id: dateId }));
+  }
+
+  /**
+   * The decrement moves the counter the aggregate's `holdSeats` moved, and the stored snapshot by the
+   *   same amount: a save later in the transaction measures no delta, where it would take the seats
+   *   a second time. Registered without a version, which the statement leaves as it was.
+   */
+  public async takeSeats(sales: DateSales, quantity: number): Promise<boolean> {
+    const { dateId } = sales.snapshot;
+    const taken = await this.affected(
+      `UPDATE date_sales
+          SET seats_available = seats_available - $2,
+              availability_moves = availability_moves + 1
+        WHERE date_id = $1 AND on_sale AND seats_available >= $2`,
+      [dateId, quantity],
+    );
+    if (!taken) return false;
+    const stored = this.storedSnapshots.get(sales) ?? sales.snapshot;
+    this.storedSnapshots.set(sales, {
+      ...stored,
+      seatsAvailable: stored.seatsAvailable - quantity,
     });
-    if (row === null) return null;
-    const sales = DateSales.restore(dateSalesSnapshotOf(row));
-    this.storedSnapshots.set(sales, sales.snapshot);
-    return this.tracker.loaded(sales, row.version);
+    this.tracker.writtenUnversioned(sales);
+    return true;
+  }
+
+  public async sellHeldSeats(dateId: string, quantity: number): Promise<void> {
+    await this.affected(
+      `UPDATE date_sales
+          SET seats_sold = seats_sold + $2, availability_moves = availability_moves + 1
+        WHERE date_id = $1`,
+      [dateId, quantity],
+    );
+  }
+
+  public async returnHeldSeats(dateId: string, quantity: number): Promise<void> {
+    await this.affected(
+      `UPDATE date_sales
+          SET seats_available = seats_available + $2, availability_moves = availability_moves + 1
+        WHERE date_id = $1`,
+      [dateId, quantity],
+    );
+  }
+
+  public takeAndSellSeats(dateId: string, quantity: number): Promise<boolean> {
+    return this.affected(
+      `UPDATE date_sales
+          SET seats_available = seats_available - $2,
+              seats_sold = seats_sold + $2,
+              availability_moves = availability_moves + 1
+        WHERE date_id = $1 AND on_sale AND seats_available >= $2`,
+      [dateId, quantity],
+    );
   }
 
   /**
@@ -76,6 +131,22 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
     this.storedSnapshots.set(sales, current);
     this.tracker.written(sales, current.version);
   }
+
+  private restored(row: DateSalesRow | null): DateSales | null {
+    if (row === null) return null;
+    const sales = DateSales.restore(dateSalesSnapshotOf(row));
+    this.storedSnapshots.set(sales, sales.snapshot);
+    return this.tracker.loaded(sales, row.version);
+  }
+
+  private async affected(sql: string, parameters: unknown[]): Promise<boolean> {
+    return affectedOne(await this.manager.query(sql, parameters));
+  }
+}
+
+function affectedOne(result: unknown): boolean {
+  const [, affected] = result as [unknown, number];
+  return affected === 1;
 }
 
 function movedBy(counter: Counter, delta: number): () => string {
