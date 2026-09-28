@@ -14,6 +14,7 @@ Written 2026-09-26, the date routes 2026-09-27.
 | `src/search/search-query.schema.ts` | the contract's query parameters, query-string values coerced |
 | `src/search/search-response.schema.ts` | the 200 body, composed from `@arthome/contracts` |
 | `src/catalog/catalog.client.ts` | the one adapter to catalog: deadline, trace, error mapping |
+| `src/catalog/catalog-budgets.ts` | the budgets each route gives catalog, one provider the e2e suites override |
 | `src/dates/dates.controller.ts` | `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`, relayed from catalog |
 | `src/conditional-get.ts` | the `ETag` and the `onSend` hook that answers a matching `If-None-Match` with 304 |
 | `src/storefront-surface.ts` | the `X-Arthome-Surface` check and the contract's `Vary`, for every route |
@@ -45,7 +46,9 @@ stack (`AGENTS.md`, "Search, the date page and link resolution, from the storefr
   `ETag` is weak and hashes `data` and `validUntil`, never `servedAt`, which always moves. The
   hook is registered in `main.ts`, and a test app must register it too.
 - **Budgets**: 200 ms for the search, 400 ms for the date page and the resolution (transport.md
-  §5.9's composed public read).
+  §5.9's composed public read), bound once as `CATALOG_BUDGETS`. The e2e suites put them out of
+  reach, since under verify's parallel load calls overran them and read a 504, cold or warm;
+  search.e2e's deadline case keeps the real 200 ms, bracketed by the instants around its call.
 - **Readiness checks nothing downstream**: a catalog outage fails searches, it must not take the
   BFF out of rotation.
 

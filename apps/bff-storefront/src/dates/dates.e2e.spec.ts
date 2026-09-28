@@ -15,6 +15,7 @@ import {
 } from '@arthome/core';
 
 import { AppModule } from '../app.module.js';
+import { CATALOG_BUDGETS } from '../catalog/catalog-budgets.js';
 import { CATALOG_URL } from '../catalog/catalog.client.js';
 import { answerNotModified } from '../conditional-get.js';
 
@@ -54,6 +55,10 @@ beforeAll(async () => {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(CATALOG_URL)
     .useValue(`http://localhost:${(catalog.address() as AddressInfo).port}`)
+    // Out of reach: the budget's own case is search.e2e's. Measured: under the full verify's
+    // parallel load, calls overran the budget and read a 504, cold or warm.
+    .overrideProvider(CATALOG_BUDGETS)
+    .useValue({ searchMs: 3_600_000, publicReadMs: 3_600_000 })
     .compile();
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
@@ -61,13 +66,6 @@ beforeAll(async () => {
   answerNotModified(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
-  // Measured: under the full verify's parallel load, the first call through a cold app took
-  // longer than the 200 ms search budget, and the case read a 504 instead of the page.
-  await app.inject({
-    method: 'GET',
-    url: '/v1/search',
-    headers: { 'x-arthome-surface': Surface.STOREFRONT_WEB },
-  });
 });
 
 beforeEach(() => {
