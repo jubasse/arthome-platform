@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
-import { ApiErrorCode, FailureNature } from '@arthome/core';
+import { ApiErrorCode, DomainErrorCode, FailureNature, type MessageParams } from '@arthome/core';
 
 /**
  * The one error shape this project has (transport.md §5.5, critical-rules #8): a code, its
@@ -131,4 +131,22 @@ export function schemaInvalidRefusal(issues: readonly SchemaIssue[]): Refusal {
 
 export function schemaInvalidException(issues: readonly SchemaIssue[]): RefusalException {
   return new RefusalException(HttpStatus.BAD_REQUEST, schemaInvalidRefusal(issues));
+}
+
+/** `api.not_found` is a route that does not resolve, which a route naming nothing held here is too. */
+export function notFound(): RefusalException {
+  return new RefusalException(HttpStatus.NOT_FOUND, {
+    code: ApiErrorCode.NOT_FOUND,
+    params: {},
+    nature: FailureNature.REFUSED,
+  });
+}
+
+/** A command sent against a version that has moved, naming what the caller must read again. */
+export function stateConflict(params: MessageParams): RefusalException {
+  return new RefusalException(HttpStatus.CONFLICT, {
+    code: DomainErrorCode.STATE_CONFLICT,
+    params,
+    nature: FailureNature.REFUSED,
+  });
 }

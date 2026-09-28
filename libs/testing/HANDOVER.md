@@ -13,6 +13,7 @@ from reading.
 | `src/redis.ts` | `provideRedisForRun` (a Vitest `globalSetup`: one Redis per run), `workerRedisUrl` (a database index per worker, 1 to 15), `flushRedisDatabase`. |
 | `src/kafka.ts` | `createTopics`, `waitForMessage`, `headersOf`. The waiting an event test cannot do without. |
 | `src/database.ts` | `createDatabase`, `applyMigrations`, `truncateAll`. |
+| `src/http-app.ts` | `httpApp`: a service's feature modules over HTTP on Fastify, with the global providers its root module binds, `CqrsModule.forRoot()`, the suite's migrated `DataSource` if it passes one, and a value per overridden token (its clock, a stubbed client). Lifted from catalog and ticketing (T2's architecture review, M4). |
 | `src/index.ts` | The public surface. The placeholder is gone. |
 | `src/*.spec.ts` | **Fast, no Docker.** They run inside `pnpm run verify`. |
 | `src/*.itest.ts` | **Slow, Docker.** |
@@ -206,7 +207,13 @@ pick it up. It is `.mjs` and not `.ts` on purpose: a `.ts` file at a package roo
 `tsconfig`, and typescript-eslint's `projectService` would fail the repository-wide
 `pnpm run lint` on it.
 
-### 2.8 Two smaller decisions worth a line each
+### 2.8 Smaller decisions worth a line each
+
+- **`@nestjs/*` are peers, pinned in `devDependencies`** (AGENTS.md's one-copy rule, no `injected`),
+  for `httpApp` alone. The index exports it, so every suite importing this package loads them, a
+  suite of a service that runs no Nest included; they resolve from this package's own install.
+  `httpApp` knows no service token: the clock is one of `overrides`, and the providers are the
+  service's list, so this package imports nothing from `http-edge`, which already depends on it.
 
 - **`headersOf` delegates to `header()` from `@arthome-platform/messaging`.** The
   `"null"`-means-absent rule has exactly one implementation, in `dispatch.ts`. A second copy here

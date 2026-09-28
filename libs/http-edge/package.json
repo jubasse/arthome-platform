@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The HTTP edge every service shares: the exception filter, the production guard, the traceparent parser, idempotent commands.",
+  "description": "The HTTP edge every service shares: the exception filter, the production guard, the traceparent parser, the refusals a handler raises, idempotent commands.",
   "license": "UNLICENSED",
   "exports": {
     ".": {
@@ -19,6 +19,7 @@
     "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
+    "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome/core": "file:../../vendor/arthome-core-9fb19108c720.tgz",
     "rxjs": "7.8.2",

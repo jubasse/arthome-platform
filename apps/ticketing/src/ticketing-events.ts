@@ -1,5 +1,4 @@
-import { writeOutboxEvent } from '@arthome-platform/messaging';
-import type { EntityManager } from 'typeorm';
+import { outboxWriter, type OutboxWriter, type ServiceEvent } from '@arthome-platform/messaging';
 
 /**
  * The topic of every event ticketing publishes, named by its aggregate type (events.md §3). A
@@ -13,30 +12,8 @@ export const TICKETING_EVENT_TOPICS = {
 
 export type TicketingEventType = keyof typeof TICKETING_EVENT_TOPICS;
 
-export interface TicketingEvent {
-  readonly type: TicketingEventType;
-  /** The partition key: `date_id` on `arthome.ticketing.date_sales`. */
-  readonly key: string;
-  readonly payload: Uint8Array;
-  readonly traceparent: string | null;
-}
+/** Keyed by `date_id` on `arthome.ticketing.date_sales`. */
+export type TicketingEvent = ServiceEvent<TicketingEventType>;
 
-export function writeTicketingEvent(
-  manager: EntityManager,
-  event: TicketingEvent,
-  occurredAt: Date,
-): Promise<string> {
-  return writeOutboxEvent(
-    manager,
-    {
-      aggregateType: TICKETING_EVENT_TOPICS[event.type],
-      aggregateId: event.key,
-      type: event.type,
-      payload: event.payload,
-      traceparent: event.traceparent,
-      // No verified actor while tokens are not verified (critical-rules #4).
-      actorId: null,
-    },
-    occurredAt,
-  );
-}
+export const writeTicketingEvent: OutboxWriter<TicketingEventType> =
+  outboxWriter(TICKETING_EVENT_TOPICS);

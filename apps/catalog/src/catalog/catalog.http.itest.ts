@@ -3,6 +3,7 @@ import { OutboxEvent } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
+  httpApp,
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
@@ -23,7 +24,8 @@ import {
 import { CatalogModule } from './catalog.module.js';
 import { Show } from './show.entity.js';
 import { ArtistsModule } from '../artists/artists.module.js';
-import { httpApp } from '../itest/http-app.js';
+import { CLOCK } from '../clock.js';
+import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { untilBlockedOrSettled } from '../itest/lock-waits.js';
 import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { Venue } from '../venues/venue.entity.js';
@@ -64,8 +66,9 @@ beforeAll(async () => {
 
   app = await httpApp({
     imports: [CatalogModule, VenuesModule, ArtistsModule],
-    clock: new FixedClock(NOW),
+    providers: EDGE_PROVIDERS,
     dataSource,
+    overrides: [[CLOCK, new FixedClock(NOW)]],
   });
 }, STARTUP_MS);
 

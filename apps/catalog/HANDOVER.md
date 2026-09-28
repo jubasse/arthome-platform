@@ -166,7 +166,9 @@ Messages carry no suffix (`DeclareOutcome`, `GetDateSheet`); handlers do.
 **An aggregate is not its rows.** Every read path (the sheet, the public pages, the consumer, the
 migrations) reads rows, whose public fields anyone can assign. The aggregate keeps an immutable
 `snapshot` that only its methods replace, speaks core's types (instants as strings), and is built by
-`restore()` from the row, so TypeORM never calls its constructor (`nestjs-ddd` rule 13). Its methods
+`restore()` from the row, so TypeORM never calls its constructor (`nestjs-ddd` rule 13). The snapshot
+is frozen deeply, so a method copies what it keeps of its arguments (the outcome's message) rather
+than freezing the caller's object. Its methods
 call core's pure rules (`assertOutcomeDeclarable`, `assertCommandedTransition`) and never restate
 them; what a rule needs beyond the aggregate is an argument (the checklist facts, a free slug,
 `now`). A method never awaits: an I/O lookup (the free slug of a postponement) is made by the
@@ -239,12 +241,12 @@ other `DomainError` in the handler (a `media.*` or `content.*` value) is a fault
 carried, so it stays unwrapped and `ErrorEnvelopeFilter` answers it 400, as on main
 (`transition-publication.handler.spec.ts`). The stale version is a refusal too, checked before any
 rule, as before: core's `assertCommandedTransition` for a transition, `Publication.advancedFrom` for
-an outcome. A 404 or a 400 stays the `RefusalException` it was, built from `src/refusals.ts`
-(`notFound()`, `stateConflict(params)`) or `schemaInvalidException`. Two refusals are still built
+an outcome. A 404 or a 400 stays the `RefusalException` it was, built by `@arthome-platform/http-edge`
+(`notFound()`, `stateConflict(params)`, `schemaInvalidException`). Two refusals are still built
 where they are raised, each with one caller: the artist's `slugTaken` and the search's 503.
 `publication.checklist_incomplete` names a list, which core's `MessageParams` cannot carry:
-`PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and `asConflict`
-answers `{ missing }`.
+`PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and the transition
+handler hands `asConflict` a mapper that answers `{ missing }`.
 
 **What happened becomes rows from the uncommitted events, inside the transaction.** A method changes
 the snapshot, then `apply()`s one event per fact (no `on<Event>` handlers: nothing is replayed).
@@ -289,12 +291,13 @@ listings make two instances. Shows and venues carry no `IdempotentRequest`, sinc
 their routes no key, and the shows controller maps its body to core's types (§2(g)).
 
 **The checklist consumer dispatches too.** `consumer.ts` boots `ConsumerModule`
-(`consumer.module.ts`: TypeORM, `CqrsModule.forRoot()`, `ChecklistConsumerModule`, and the
-`ChecklistConsumer` provider over an injected `Kafka`) as an application context, without HTTP, and
-`applyChecklistMessage` turns each message it reads as a fact into `RecordChecklistFact`, whose
-handler claims `processed_message` in the command's transaction. Its `ChecklistConsumer` provider
-starts Kafka in `onApplicationBootstrap` and stops it in `onApplicationShutdown`, which runs for the
-root module before the global TypeORM module closes the pool; `enableShutdownHooks` on SIGTERM and
+(`consumer.module.ts`: TypeORM, `CqrsModule.forRoot()`, `ChecklistConsumerModule`, and
+`@arthome-platform/messaging/nest`'s `ConsumerHostModule.forRoot({ service, topics, apply })`, whose
+`ConsumerHost` runs the consumers over an injected `Kafka`) as an application context, without HTTP,
+and `applyChecklistMessage` turns each message it reads as a fact into `RecordChecklistFact`, whose
+handler claims `processed_message` in the command's transaction. The host starts Kafka in
+`onApplicationBootstrap` and stops it in `onApplicationShutdown`, which Nest runs for the modules the
+root imports before the global TypeORM module closes the pool; `enableShutdownHooks` on SIGTERM and
 SIGINT with `useProcessExit` exits 0 once closed, as before. The routing of a failure stays
 AGENTS.md's ("When a message cannot be applied"): the handler refuses a date catalog does not hold
 with core's `DomainError`, which the consumer rethrows as `PermanentError`, dead-lettered at once
@@ -329,8 +332,9 @@ suite runs the same command against Postgres), `dates/transition-publication.han
 against 400; it recognises the idempotency INSERT by its text, so rewording that statement breaks
 it) and `dates/performance-date.typeorm-repository.spec.ts` (the order of the row writes). Every
 suite migrates the service's own schema (`itest/schema.ts`, from `dataSource.options`). The wiring:
-`itest/http-app.ts` boots feature modules over HTTP with the service's global providers
-(`EDGE_PROVIDERS`, which `AppModule` binds too), and `dates.http.itest.ts` calls the date routes
+`httpApp` (`@arthome-platform/testing`) boots feature modules over HTTP with the service's global
+providers (`EDGE_PROVIDERS`: `@arthome-platform/http-edge`'s `edgeProviders` given catalog's `CLOCK`
+and unique-violation codes, which `AppModule` binds too) and the suite's overrides, its clock first, and `dates.http.itest.ts` calls the date routes
 through it; a migrated route adds its request there. `boot.itest.ts` boots the two roots themselves,
 `AppModule` with OpenSearch stubbed and `ConsumerModule` with Kafka stubbed. Measured: without
 `CqrsModule.forRoot()` in either, it fails to resolve `EventPublisher`. Measured: with
@@ -351,25 +355,34 @@ would only compare what the handler had already read. Their wiring is proven ove
 `catalog/catalog.http.itest.ts`: without `CreateVenueHandler` in `VenuesModule`, 500.
 
 **What every CQRS service here shares is in `libs/`**, lifted as ticketing's first change
-(arthome-core `adr-ticketing.md` §11), never a catalog concept and never in arthome-core:
+(arthome-core `adr-ticketing.md` §11), then the service glue ticketing had copied (T2's architecture
+review, M4); never a catalog concept and never in arthome-core:
 
 - `@arthome-platform/transactions` (`libs/transactions`): `TransactionRunner`, `AggregateTracker`
   and `saveVersioned`. The factory hands back the transaction's manager itself and its result
   reaches `work` untouched, so a class instance keeps its methods (the spread it replaced dropped
   them, while the type still promised them); a factory handing back another manager is refused.
   `writtenUnversioned` registers a write that leaves the version as loaded, which ticketing's
-  conditional decrement is;
-- `@arthome-platform/http-edge`: `runIdempotently`, `runIdempotentlyVersioned`,
-  `idempotentRequestOf` and `idempotencyRecordTableDdl()`, which a new service's migration runs
-  the way it runs `outboxTableDdl()`. Catalog's own two migrations stay as they are, and
+  conditional decrement is. `frozen` deep-freezes each snapshot an aggregate replaces;
+- `@arthome-platform/http-edge`: `edgeProviders({ clock, uniqueViolations })`, the global pipe,
+  filter, interceptor and guard and the system clock under the service's token; `asConflict` (a
+  `DomainError` as the 409 `RefusalException`, its `params` through an optional mapper),
+  `notFound()` and `stateConflict(params)`; and
+  `runIdempotently`, `runIdempotentlyVersioned`, `idempotentRequestOf` and
+  `idempotencyRecordTableDdl()`, which a new service's migration runs the way it runs
+  `outboxTableDdl()`. Catalog's own two migrations stay as they are, and
   `migrations/idempotency-record.itest.ts` fails the day they and the DDL stop making one table;
   the library's scenarios run on the DDL's;
 - `@arthome-platform/messaging`: `claimMessage(manager, messageId, topic)`, the processed-message
-  claim the three consumers each held a copy of, and `messageIdOf(payload)`, which refuses an
-  absent or malformed `message-id` as permanent at the consume edge.
+  claim the three consumers each held a copy of, `messageIdOf(payload)`, which refuses an absent or
+  malformed `message-id` as permanent at the consume edge, `outboxWriter(topics)`, a service's
+  `writeOutboxEvent` over its table of each event type's topic (`writeCatalogEvent` is one), and
+  `ConsumerHostModule.forRoot({ service, topics, apply })`, a consumer process's Kafka client and
+  consumers, each message turned into a command on the `CommandBus`. The host is the package's
+  `/nest` entry, its `@nestjs/*` peers optional, so a consumer without Nest loads none of it.
 
 Nothing else is generic: aggregates extend `@nestjs/cqrs`'s `AggregateRoot` as it is, and the
-events-to-outbox mapping builds catalog's own payloads over `writeOutboxEvent`, already shared.
+events-to-outbox mapping builds catalog's own payloads over `writeCatalogEvent`.
 Ticketing is the second consumer, which shapes the interface rather than a guess
 (`nestjs-monorepo` rule 6).
 
@@ -379,8 +392,8 @@ Decided here, and each could have gone the other way:
   entity carry the domain names; the tables did not move.
 - **Handlers reached from HTTP alone throw `RefusalException`**, not domain errors mapped at an
   edge. `RecordChecklistFact`, reached from Kafka alone, throws `DomainError`, mapped by the
-  consumer. The day a consumer dispatches an HTTP one, `asConflict` moves to the HTTP edge
-  (`nestjs-request-pipeline` rule 1).
+  consumer. The day a consumer dispatches an HTTP one, its `asConflict` calls move from the handler
+  to the controller (`nestjs-request-pipeline` rule 1).
 - **A lost race on the version answers the version committed since**, re-read, as a transition
   always did; the outcome path used to answer the one it had read. Only two concurrent commands see
   the difference.
@@ -398,8 +411,9 @@ Known and left as they are:
 - `satisfiedChecklistItems`, the input of publishing's checklist rule, is computed in
   `date-sheet.ts`, the sheet's shaping module; moving it beside the aggregate would make the read
   model depend on the write side rather than the reverse.
-- `PublicationChecklistIncomplete` carries `missing` beside core's scalar `params`: only
-  `asConflict` serves it, and a path that let it escape unwrapped would answer 400 without the list.
+- `PublicationChecklistIncomplete` carries `missing` beside core's scalar `params`: only the
+  transition handler's `asConflict` serves it, and a path that let it escape unwrapped would answer
+  400 without the list.
 
 ## 1. What was built
 

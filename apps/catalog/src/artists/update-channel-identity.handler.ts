@@ -3,6 +3,7 @@ import {
   RefusalException,
   runIdempotentlyVersioned,
   schemaInvalidException,
+  stateConflict,
   type MemorisedResponse,
 } from '@arthome-platform/http-edge';
 import { create, toBinary } from '@bufbuild/protobuf';
@@ -24,7 +25,6 @@ import { slugify } from '../dates/slug.js';
 import { projectArtist } from '../public/date-detail-projection.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
 import { UNSCOPED, reservedForAnother, retireSlug, type SlugKey } from '../public/slug-aliases.js';
-import { stateConflict } from '../refusals.js';
 
 function slugTaken(): RefusalException {
   return new RefusalException(HttpStatus.CONFLICT, {

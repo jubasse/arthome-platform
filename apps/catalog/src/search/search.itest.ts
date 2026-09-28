@@ -4,7 +4,7 @@ import {
   DATE_INDEX_MAPPING,
   INDEX_SETTINGS,
 } from '@arthome-platform/search-index';
-import { startStack, type StartedStack } from '@arthome-platform/testing';
+import { httpApp, startStack, type StartedStack } from '@arthome-platform/testing';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Client } from '@opensearch-project/opensearch';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -16,7 +16,8 @@ import { dateDocument } from './search-fixtures.js';
 import { SearchSort, SearchTab } from './search-query.schema.js';
 import { SearchModule } from './search.module.js';
 import type { ServableDateDocument } from './servable-document.js';
-import { httpApp } from '../itest/http-app.js';
+import { CLOCK } from '../clock.js';
+import { EDGE_PROVIDERS } from '../edge-providers.js';
 
 /**
  * The search against a real OpenSearch, through the HTTP edge. What only a cluster proves:
@@ -145,8 +146,11 @@ beforeAll(async () => {
 
   app = await httpApp({
     imports: [SearchModule],
-    clock: new FixedClock(NOW),
-    overrides: [[OPENSEARCH, client]],
+    providers: EDGE_PROVIDERS,
+    overrides: [
+      [CLOCK, new FixedClock(NOW)],
+      [OPENSEARCH, client],
+    ],
   });
 }, STARTUP_MS);
 

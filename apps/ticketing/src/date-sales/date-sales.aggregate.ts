@@ -1,3 +1,4 @@
+import { frozen } from '@arthome-platform/transactions';
 import { AggregateRoot } from '@nestjs/cqrs';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -58,15 +59,6 @@ const OUTCOMES_CLOSING_SALES: readonly DateOutcome[] = [
   DateOutcome.CANCELLED,
   DateOutcome.INTERRUPTED,
 ];
-
-/** Deeply, so that a nested array written in place throws as well. */
-function frozen<T>(value: T): T {
-  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const inner of Object.values(value)) frozen(inner);
-  }
-  return value;
-}
 
 /** An older fact never overwrites a newer one; one stated at the same instant applies again. */
 function isStale(statedAt: Instant, lastStatedAt: Instant | null): boolean {
@@ -134,7 +126,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
       });
     }
     assertPricesShareCurrency(tiers);
-    this.current = frozen({ ...this.current, priceTiers: tiers, version });
+    this.current = frozen({ ...this.current, priceTiers: structuredClone(tiers), version });
     this.apply(new DatePricesSet(dateId, channelId, tiers, now));
   }
 

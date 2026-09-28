@@ -26,12 +26,12 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 | `apps/notifications` | the idempotent consumer, with retries and dead-lettering |
 | `apps/bff-storefront` | the storefront's BFF: search, the date and artist pages, link resolution, from catalog, with the deadline and the error mapping |
 | `apps/search-indexer` | the catalog projection into OpenSearch, composed from a read model of its own |
-| `libs/messaging` | the outbox, the processed-message claim (`claimMessage`, `messageIdOf`: a message-id that is not a UUID is dead-lettered at once), failure classification, retry, dead-lettering — shared by every service |
+| `libs/messaging` | the outbox and each service's writer over it (`outboxWriter`), the host a Nest consumer process runs its consumers in (`ConsumerHostModule`, from `@arthome-platform/messaging/nest`, the one entry that loads Nest), the processed-message claim (`claimMessage`, `messageIdOf`: a message-id that is not a UUID is dead-lettered at once), failure classification, retry, dead-lettering — shared by every service |
 | `libs/events` | the Protobuf wire types, generated from arthome-core's `proto/` |
-| `libs/http-edge` | the success and error envelopes, validation refusals, the deadline, idempotent commands and their table — every HTTP service's edge |
+| `libs/http-edge` | the success and error envelopes and the global providers that bind them (`edgeProviders`), validation refusals, the refusals a handler raises (`asConflict`, `notFound`, `stateConflict`), the deadline, idempotent commands and their table — every HTTP service's edge |
 | `libs/search-index` | the index mappings and document shapes, shared by the indexer and catalog's search |
-| `libs/transactions` | the transaction a CQRS command runs in, and its domain events published after the commit |
-| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers |
+| `libs/transactions` | the transaction a CQRS command runs in, its domain events published after the commit, and `frozen`, which holds an aggregate's snapshot |
+| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers and boots a service's feature modules over HTTP (`httpApp`) |
 
 **What is NOT built, said plainly.** `streaming`, `chat` and `payouts` do not exist, and `ticketing`
 sells nothing yet: holds, orders and payment come next.

@@ -43,3 +43,6 @@ export type { ObservedMessage, TopicSpec, WaitForMessageOptions } from './kafka.
 
 export { applyMigrations, createDatabase, truncateAll } from './database.js';
 export type { MigrationPlan } from './database.js';
+
+export { httpApp } from './http-app.js';
+export type { HttpAppOptions } from './http-app.js';

@@ -9,6 +9,7 @@ import {
 import {
   applyMigrations,
   createDatabase,
+  httpApp,
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
@@ -36,7 +37,8 @@ import { applyChecklistMessage } from './checklist-consumer.js';
 import { ChecklistConsumerModule } from './checklist-consumer.module.js';
 import { DatesModule } from './dates.module.js';
 import { Show } from '../catalog/show.entity.js';
-import { httpApp } from '../itest/http-app.js';
+import { CLOCK } from '../clock.js';
+import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { Venue } from '../venues/venue.entity.js';
@@ -133,9 +135,12 @@ beforeAll(async () => {
 
   app = await httpApp({
     imports: [DatesModule, ChecklistConsumerModule],
-    clock: new FixedClock(NOW),
+    providers: EDGE_PROVIDERS,
     dataSource,
-    overrides: [[PUBLIC_WEB_ORIGIN, ORIGIN]],
+    overrides: [
+      [CLOCK, new FixedClock(NOW)],
+      [PUBLIC_WEB_ORIGIN, ORIGIN],
+    ],
   });
 }, STARTUP_MS);
 

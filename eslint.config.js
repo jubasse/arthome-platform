@@ -38,9 +38,13 @@ export default defineConfig([
   },
 
   {
-    // Scoped to the entry points and the consumer's root module they boot: stdout IS the log
-    // in a container. Anywhere else a console call is a debug statement somebody forgot.
-    files: ['apps/*/src/main.ts', 'apps/*/src/consumer.ts', 'apps/*/src/consumer.module.ts'],
+    // Scoped to the entry points and the consumer host they boot: stdout IS the log in a
+    // container. Anywhere else a console call is a debug statement somebody forgot.
+    files: [
+      'apps/*/src/main.ts',
+      'apps/*/src/consumer.ts',
+      'libs/messaging/src/consumer-host.module.ts',
+    ],
     rules: {
       'no-console': 'off',
     },

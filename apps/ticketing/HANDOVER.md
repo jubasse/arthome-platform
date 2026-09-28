@@ -19,8 +19,8 @@ would fail their reads, and the consumer could dead-letter facts it can no longe
 
 All three read `DATABASE_URL` through `libs/config` (`NODE_ENV` required, never defaulted), close
 their pool on SIGTERM, and are booted as their entry points boot them by `src/boot.itest.ts`. The API
-binds `DenyInProductionGuard`, the envelopes and the validation pipe (`src/edge-providers.ts`), as
-catalog does. Its readiness fails only on the database; the slot, the publication and the outbox
+binds `DenyInProductionGuard`, the envelopes and the validation pipe through
+`@arthome-platform/http-edge`'s `edgeProviders` (`src/edge-providers.ts`), as catalog does. Its readiness fails only on the database; the slot, the publication and the outbox
 retention answer `degraded`.
 
 **Deployment order: ticketing's consumer runs before the first date is drafted in production**
@@ -235,11 +235,16 @@ The technical provision is recorded by `setTechnicalProvision` (D-088, arthome-c
 Known and left, each judged:
 
 - `market_id` and the service-fee schedule have no source yet; neither is stored.
-- **Catalog's service glue is copied** (architecture review M4): `itest/http-app.ts`,
-  `assert-never.ts`, `edge-providers.ts`, `writeTicketingEvent`, `notFound`, `asConflict`, the
-  consumer host and `frozen`. They move to `libs/` in a feature of their own after T2.
+- **Catalog's service glue is shared since M4** (architecture review): `frozen` is
+  `@arthome-platform/transactions`', `notFound`, `asConflict` and `edgeProviders` are
+  `@arthome-platform/http-edge`'s, `httpApp` is `@arthome-platform/testing`'s, and
+  `writeTicketingEvent` (`outboxWriter` over ticketing's topics) and the consumer host
+  (`ConsumerHostModule`, its `/nest` entry) are `@arthome-platform/messaging`'s. `assert-never.ts` is still one copy
+  per service: its home is core, which this repository does not edit.
 - **`CLOCK` is provided in each feature module and in `EDGE_PROVIDERS`** (N2): catalog's pattern,
-  harmless while `SystemClock` is stateless; one provider per process root comes with the glue.
+  harmless while `SystemClock` is stateless. `edgeProviders` takes the service's token rather than
+  owning one; one provider per process root needs `CLOCK` exported from a module every feature
+  imports, a change to the DI graph the lift left out.
 - **`pricesLockedAt` is catalog's engagement instant**, not ticketing's consumption (correctness
   nit 2): the studio shows one lock instant, and the contract's examples give catalog's publication
   `pricesLockedAt` and ticketing's `lockedAt` the same value. A price change applied between the two

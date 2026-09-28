@@ -1,3 +1,4 @@
+import { frozen } from '@arthome-platform/transactions';
 import { AggregateRoot } from '@nestjs/cqrs';
 
 import {
@@ -94,15 +95,6 @@ export interface OutcomeContext {
   /** The first slug free at a postponement's new start (`freeDateSlug`); null otherwise. */
   readonly slugAtNewStart: string | null;
   readonly now: Instant;
-}
-
-/** Deeply, so that a nested array written in place throws as well. */
-function frozen<T>(value: T): T {
-  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const inner of Object.values(value)) frozen(inner);
-  }
-  return value;
 }
 
 /**
@@ -231,7 +223,7 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
       outcome: declaration.outcome,
       rescheduledTo: movedTo,
       outcomeDeclaredAt: now,
-      outcomeMessage: message,
+      outcomeMessage: structuredClone(message),
       startsAt: movedTo ?? date.startsAt,
       slug,
       postponements: date.postponements + (movedTo === null ? 0 : 1),
