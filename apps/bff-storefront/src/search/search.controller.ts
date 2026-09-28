@@ -7,11 +7,13 @@ import type { Clock } from '@arthome/core';
 
 import { SearchQuerySchema, type SearchQuery } from './search-query.schema.js';
 import { SearchResponseSchema, type SearchResponse } from './search-response.schema.js';
-import { CATALOG_BUDGETS, type CatalogBudgets } from '../catalog/catalog-budgets.js';
 import { CatalogClient } from '../catalog/catalog.client.js';
 import { CLOCK } from '../clock.js';
 import { searchParamsOf } from '../query-string.js';
 import { SURFACE_HEADER, VARY_AUTH, assertStorefrontSurface } from '../storefront-surface.js';
+
+/** transport.md §5.9 and the operation's own description: a television types one key at a time. */
+const SEARCH_BUDGET_MS = 200;
 
 type Fields = Pick<SearchResponse, 'groups' | 'facets' | 'page'>;
 
@@ -20,7 +22,6 @@ export class SearchController {
   public constructor(
     private readonly catalog: CatalogClient,
     @Inject(CLOCK) private readonly clock: Clock,
-    @Inject(CATALOG_BUDGETS) private readonly budgets: CatalogBudgets,
   ) {}
 
   /**
@@ -42,7 +43,7 @@ export class SearchController {
       '/v1/search',
       searchParamsOf(query),
       {
-        deadline: new Date(this.clock.nowMs() + this.budgets.searchMs),
+        deadline: new Date(this.clock.nowMs() + SEARCH_BUDGET_MS),
         traceparent,
         callerLeft: whenCallerLeaves(reply.raw),
       },

@@ -13,12 +13,14 @@ import {
   ResolveResponseSchema,
 } from './date-responses.schema.js';
 import { ResolveQuerySchema, type ResolveQuery } from './resolve-query.schema.js';
-import { CATALOG_BUDGETS, type CatalogBudgets } from '../catalog/catalog-budgets.js';
 import { CatalogClient, type CatalogCall } from '../catalog/catalog.client.js';
 import { CLOCK } from '../clock.js';
 import { entityTagOf } from '../conditional-get.js';
 import { searchParamsOf } from '../query-string.js';
 import { SURFACE_HEADER, VARY_AUTH, assertStorefrontSurface } from '../storefront-surface.js';
+
+/** transport.md §5.9's composed public read. */
+const PUBLIC_READ_BUDGET_MS = 400;
 
 type DateDetail = z.output<typeof DateDetailResponseSchema>['data'];
 type ResolvedLink = z.output<typeof ResolveResponseSchema>['data'];
@@ -35,7 +37,6 @@ export class DatesController {
   public constructor(
     private readonly catalog: CatalogClient,
     @Inject(CLOCK) private readonly clock: Clock,
-    @Inject(CATALOG_BUDGETS) private readonly budgets: CatalogBudgets,
   ) {}
 
   /** The TV prefetches the focused date: the `ETag` spares it a second payment (the contract). */
@@ -99,7 +100,7 @@ export class DatesController {
 
   private callFor(traceparent: string, reply: Reply): CatalogCall {
     return {
-      deadline: new Date(this.clock.nowMs() + this.budgets.publicReadMs),
+      deadline: new Date(this.clock.nowMs() + PUBLIC_READ_BUDGET_MS),
       traceparent,
       callerLeft: whenCallerLeaves(reply.raw),
     };

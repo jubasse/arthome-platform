@@ -5,11 +5,11 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, FailureNature, Surface } from '@arthome/core';
+import { ApiErrorCode, FailureNature, FixedClock, Surface } from '@arthome/core';
 
 import { AppModule } from '../app.module.js';
-import { CATALOG_BUDGETS, type CatalogBudgets } from '../catalog/catalog-budgets.js';
 import { CATALOG_URL } from '../catalog/catalog.client.js';
+import { CLOCK } from '../clock.js';
 
 /** The BFF as a surface meets it, with a stand-in catalog behind it. */
 
@@ -29,19 +29,20 @@ function pageAnswer(): { status: number; body: object } {
   };
 }
 
-// Out of reach for every case but the budget's own. Measured: under the full verify's parallel
-// load, calls overran the 200 ms budget and read a 504 instead of the page, through a cold app and,
-// once a warm-up was added, through a warm one too.
-const OUT_OF_REACH: CatalogBudgets = { searchMs: 3_600_000, publicReadMs: 3_600_000 };
+// An hour ahead, so no deadline falls due while a case runs. Measured: under the full verify's
+// parallel load, calls overran the 200 ms budget and read a 504, through a cold app and, once
+// warmed, a warm one; a warm-up refused by the response schema warmed less.
+const clock = new FixedClock(Date.now() + 3_600_000);
 
 let catalogAnswer = pageAnswer();
 let catalogSaw: { url: string; headers: IncomingHttpHeaders } | null = null;
 let catalog: Server;
 let app: NestFastifyApplication;
 
-const TV = { 'x-arthome-surface': Surface.STOREFRONT_TV };
-
-async function search(query: Record<string, string>, headers: Record<string, string> = TV) {
+async function search(
+  query: Record<string, string>,
+  headers: Record<string, string> = { 'x-arthome-surface': Surface.STOREFRONT_TV },
+) {
   return app.inject({ method: 'GET', url: '/v1/search', query, headers });
 }
 
@@ -53,23 +54,18 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => catalog.listen(0, resolve));
 
-  app = await startBff(OUT_OF_REACH);
-});
-
-async function startBff(budgets: CatalogBudgets | null): Promise<NestFastifyApplication> {
-  const builder = Test.createTestingModule({ imports: [AppModule] })
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(CATALOG_URL)
-    .useValue(`http://localhost:${(catalog.address() as AddressInfo).port}`);
-  const moduleRef = await (
-    budgets === null ? builder : builder.overrideProvider(CATALOG_BUDGETS).useValue(budgets)
-  ).compile();
-  const bff = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
+    .useValue(`http://localhost:${(catalog.address() as AddressInfo).port}`)
+    .overrideProvider(CLOCK)
+    .useValue(clock)
+    .compile();
+  app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
   });
-  await bff.init();
-  await bff.getHttpAdapter().getInstance().ready();
-  return bff;
-}
+  await app.init();
+  await app.getHttpAdapter().getInstance().ready();
+});
 
 beforeEach(() => {
   catalogSaw = null;
@@ -94,23 +90,12 @@ describe('GET /v1/search on the storefront BFF', () => {
   });
 
   it('gives catalog a deadline 200 ms out, and a trace when the surface sent none', async () => {
-    // The real budget on a warmed app, bracketed by the instants around the call: no load moves
-    // either bound.
-    const bff = await startBff(null);
-    try {
-      const call = { method: 'GET', url: '/v1/search', query: { q: 'nuit' }, headers: TV } as const;
-      await bff.inject(call);
-      const before = Date.now();
-      await bff.inject(call);
-      const after = Date.now();
+    await search({ q: 'nuit' });
 
-      const deadline = Date.parse(String(catalogSaw?.headers['x-arthome-deadline']));
-      expect(deadline).toBeGreaterThanOrEqual(before + 200);
-      expect(deadline).toBeLessThanOrEqual(after + 200);
-      expect(catalogSaw?.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
-    } finally {
-      await bff.close();
-    }
+    expect(catalogSaw?.headers['x-arthome-deadline']).toBe(
+      new Date(clock.nowMs() + 200).toISOString(),
+    );
+    expect(catalogSaw?.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
   });
 
   it('refuses a caller that is not a storefront surface, before calling catalog', async () => {
