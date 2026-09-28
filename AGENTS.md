@@ -434,6 +434,11 @@ The provider's webhooks arrive on `POST /v1/payments/webhook`, verified on their
 in `stripe_event_inbox` and answered at once; the API process's payment worker applies them every
 second, refunds at once a payment confirmed after its hold expired with no seat left (D-082), and
 cancels the intents of expired orders (`apps/ticketing/HANDOVER.md` §0j, §0k).
+
+The capacity invariant is proven by `orders/capacity.itest.ts` on a real Postgres (adr-ticketing.md
+§3): 300 purchases at once on 100 seats hold exactly 100, never below zero, and all 100 come back at
+expiry; measured over three runs, the 300 took 574, 634 and 946 ms with the fake provider and a pool
+of ten. The load test at 10,000 buyers a minute is T6's.
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
 instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000`,
