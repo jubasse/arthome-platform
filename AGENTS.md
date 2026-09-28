@@ -402,7 +402,7 @@ core's rules and D-088, the three new migrations run on the database that alread
 | prices in EUR and CHF on a fresh draft | 409 `date.prices_currency_mismatch`, naming the tier and both currencies |
 | the date cancelled in catalog | the sale closed in ticketing: the availability read 404, a new tier 409 `state.conflict` naming the outcome, and a last `availability_changed` of 0 seats, `sold_out` false, 0.7 s after the cancellation |
 
-Proven a third time at 70307cb, after the re-review's fixes, their migration `1790440400000` run
+Proven a third time on 2026-09-27 at 70307cb, after the re-review's fixes, their migration `1790440400000` run
 on the database that already held those dates. The unpublishable date is a hand edit, the same one
 the container suite makes: no validated write stores such a price.
 
