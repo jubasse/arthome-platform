@@ -19,6 +19,7 @@ export async function settleConfirmedPayment(
   order: SeatOrder,
   intentRef: string,
   now: Instant,
+  traceparent: string | null,
 ): Promise<void> {
   if (!order.acceptsPayment) return;
   const { holdId, dateId, quantity } = order.snapshot;
@@ -29,6 +30,11 @@ export async function settleConfirmedPayment(
     await dateSales.sellHeldSeats(dateId, quantity);
   } else if (!(await dateSales.takeAndSellSeats(dateId, quantity, now))) {
     order.oweRefund(RefundReason.HOLD_EXPIRED_CAPACITY_LOST, intentRef, now);
+    // Its `order.refunded` is written later, maybe by another process: the trace goes with the debt.
+    await manager.query('UPDATE seat_order SET refund_traceparent = $2 WHERE id = $1', [
+      order.snapshot.id,
+      traceparent,
+    ]);
     return;
   }
   const sales = await dateSales.findUnlocked(dateId);

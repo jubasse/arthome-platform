@@ -1,9 +1,9 @@
 import type { BeforeApplicationShutdown, Logger, OnApplicationBootstrap } from '@nestjs/common';
 
 /**
- * The sweeper's loops. A loop rather than `@Interval`: a pass never overlaps the previous one, and
- *   the shutdown awaits the pass in flight. Every replica may run it, since `SKIP LOCKED` hands each
- *   pass its own rows, and a missed tick loses nothing: what is due is in the database.
+ * The recurring passes. A loop rather than `@Interval`: a pass never overlaps the previous one, and
+ *   the shutdown awaits the pass in flight. A missed tick loses nothing: what is due is in the
+ *   database. Whether replicas can share a loop is each pass's own claim to make.
  */
 export abstract class SweeperLoop implements OnApplicationBootstrap, BeforeApplicationShutdown {
   protected abstract readonly logger: Logger;
@@ -27,7 +27,7 @@ export abstract class SweeperLoop implements OnApplicationBootstrap, BeforeAppli
     await this.running;
   }
 
-  /** How many rows the pass handled: a full batch means more are due, and the next runs at once. */
+  /** How many rows the pass settled: a full batch means more are due, and the next runs at once. */
   protected abstract pass(): Promise<number>;
 
   private async loop(): Promise<void> {

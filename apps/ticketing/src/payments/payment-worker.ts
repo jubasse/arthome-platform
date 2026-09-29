@@ -13,7 +13,8 @@ export const PAYMENT_WORKER_BATCH = 100;
 /**
  * The work that follows a payment, in the API process: it needs Postgres and the provider, which
  *   the API already needs, and the sweeper stays on Postgres alone. The webhooks recorded, then the
- *   refunds owed, then the intents to cancel, each pass. T4 moves the provider calls onto its queue.
+ *   refunds owed, then the intents to cancel, each pass. Each counts only what it settled, so a
+ *   batch of failures waits for the next tick. T4 moves the provider calls onto its queue.
  */
 @Injectable()
 export class PaymentWorker extends SweeperLoop {

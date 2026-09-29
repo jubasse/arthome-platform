@@ -1,4 +1,3 @@
-import { JITTER_RATIO, RETRY_DELAYS_MS } from '@arthome-platform/messaging';
 import { Inject, Logger } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -7,6 +6,7 @@ import { DataSource } from 'typeorm';
 import { OrderErrorCode, type Clock, type Instant } from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
+import { nextAttemptAt } from './owed-calls.js';
 import { OwedRefunds } from './owed-refunds.js';
 import { PaymentEventKind } from './payment.port.js';
 import { CLOCK } from '../clock.js';
@@ -26,16 +26,19 @@ interface InboxRow {
   readonly traceparent: string | null;
 }
 
-/** An event that no retry can apply: no order is known for it. */
+/** An event that no retry can apply: it names an order this service does not hold. */
 class Unappliable extends Error {}
 
+/** What an applied event leaves to do after its transaction. */
+interface Applied {
+  readonly orderId: string;
+  readonly owesRefund: boolean;
+}
+
 /**
- * adr-ticketing.md §8's worker: each recorded webhook applied in a transaction of its own, the
- *   inbox row claimed `FOR UPDATE SKIP LOCKED`, then its order before its hold, and marked applied
- *   with the effect. A webhook records a fact and never decides (adr-payments.md §7.3): the order
- *   moves forward only, so a duplicate or a fact behind its state changes nothing. A failure is
- *   retried after the consumers' delays, then the row is given up on, kept with its bytes as its
- *   own dead letter and logged as an error (§7.4); one no order is known for, at once.
+ * adr-ticketing.md §8's worker, each recorded webhook in a transaction of its own (HANDOVER §0j): the
+ *   row claimed `SKIP LOCKED`, the order moved forward only, the row marked applied with the effect.
+ *   A failure is retried after the consumers' delays, then given up on as its own dead letter.
  */
 @CommandHandler(ApplyPaymentEvents)
 export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEvents> {
@@ -48,6 +51,7 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
+  /** Answers how many events it applied or gave up on; one retried later does not count. */
   public async execute({ batch }: ApplyPaymentEvents): Promise<number> {
     const due = await this.dataSource.query<{ event_id: string }[]>(
       `SELECT event_id FROM stripe_event_inbox
@@ -56,23 +60,29 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
         LIMIT $2`,
       [new Date(this.clock.now()), batch],
     );
+    let settled = 0;
     for (const { event_id } of due) {
-      let orderId: string | null = null;
+      let applied: Applied | null | undefined;
       try {
-        orderId = await this.transactions.run((transaction) => this.applyIn(transaction, event_id));
+        applied = await this.transactions.run((transaction) => this.applyIn(transaction, event_id));
       } catch (error) {
-        await this.failed(event_id, error);
+        if (await this.failed(event_id, error)) settled += 1;
+        continue;
       }
-      if (orderId !== null) await this.refundIfOwed(orderId);
+      if (applied !== undefined) settled += 1;
+      if (applied?.owesRefund === true) await this.refundAtOnce(applied.orderId);
     }
-    return due.length;
+    return settled;
   }
 
-  /** The order the event moved, or null when another pass holds the row or already applied it. */
+  /**
+   * What the event did to its order, null for an event about no order of this service's (kept,
+   *   applied as nothing), undefined when another pass holds the row or already applied it.
+   */
   private async applyIn(
     transaction: TicketingTransaction,
     eventId: string,
-  ): Promise<string | null> {
+  ): Promise<Applied | null | undefined> {
     const { manager, orders } = transaction;
     const [row] = await manager.query<InboxRow[]>(
       `SELECT event_id, kind, intent_ref, order_id, decline_code, traceparent
@@ -81,34 +91,41 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
           FOR UPDATE SKIP LOCKED`,
       [eventId],
     );
-    if (row === undefined) return null;
-    const order = row.order_id === null ? null : await orders.findById(row.order_id);
+    if (row === undefined) return undefined;
+    const now = this.clock.now();
+    const markApplied = () =>
+      manager.query('UPDATE stripe_event_inbox SET applied_at = $2 WHERE event_id = $1', [
+        eventId,
+        new Date(now),
+      ]);
+    if (row.kind === PaymentEventKind.UNHANDLED || row.order_id === null) {
+      await markApplied();
+      return null;
+    }
+    const order = await orders.findById(row.order_id);
     if (order === null) throw new Unappliable(`no order for payment event ${eventId}`);
 
-    const now = this.clock.now();
     await this.applyTo(transaction, order, row, now);
     await orders.save(order);
     await writeSeatOrderIntegrationEvents(manager, order.getUncommittedEvents(), {
       traceparent: row.traceparent,
     });
-    await manager.query('UPDATE stripe_event_inbox SET applied_at = $2 WHERE event_id = $1', [
-      eventId,
-      new Date(now),
-    ]);
-    return order.snapshot.id;
+    await markApplied();
+    return { orderId: order.snapshot.id, owesRefund: order.owesRefund };
   }
 
   private async applyTo(
     transaction: TicketingTransaction,
     order: SeatOrder,
-    { kind, intent_ref: intentRef, decline_code: declineCode }: InboxRow,
+    row: InboxRow,
     now: Instant,
   ): Promise<void> {
+    const { kind, intent_ref: intentRef, decline_code: declineCode } = row;
     const intent = { ref: intentRef ?? '', clientSecret: null, nextAction: null };
     switch (kind) {
       case PaymentEventKind.INTENT_SUCCEEDED:
         if (intentRef === null) throw new Unappliable('a confirmation names no intent');
-        await settleConfirmedPayment(transaction, order, intentRef, now);
+        await settleConfirmedPayment(transaction, order, intentRef, now, row.traceparent);
         return;
       case PaymentEventKind.INTENT_REQUIRES_ACTION:
         order.recordIntent(intent, OrderState.AWAITING_ACTION, now);
@@ -132,8 +149,8 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
     }
   }
 
-  /** At once, outside the transaction that found the debt (D-082); the worker asks again if not. */
-  private async refundIfOwed(orderId: string): Promise<void> {
+  /** Outside the transaction that found the debt (D-082); the worker's claimed attempts follow. */
+  private async refundAtOnce(orderId: string): Promise<void> {
     try {
       await this.refunds.refund(orderId);
     } catch (error) {
@@ -144,32 +161,36 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
     }
   }
 
-  private async failed(eventId: string, error: unknown): Promise<void> {
+  /** True when given up on: the event is settled, as a dead letter (adr-payments.md §7.4). */
+  private async failed(eventId: string, error: unknown): Promise<boolean> {
     const reason = error instanceof Error ? error.message : String(error);
-    const [row] = await this.dataSource.query<{ attempts: number }[]>(
+    // An UPDATE answers `[rows, rowCount]` through TypeORM, never the rows alone.
+    const [[row]] = await this.dataSource.query<[{ attempts: number }[], number]>(
       `UPDATE stripe_event_inbox SET attempts = attempts + 1, last_error = $2
         WHERE event_id = $1
         RETURNING attempts`,
       [eventId, reason.slice(0, 1_000)],
     );
     const attempts = row?.attempts ?? 1;
-    const delay = RETRY_DELAYS_MS[attempts - 1];
-    const now = this.clock.nowMs();
-    if (error instanceof Unappliable || delay === undefined) {
+    const nowMs = this.clock.nowMs();
+    const retryAt = error instanceof Unappliable ? null : nextAttemptAt(attempts, nowMs);
+    if (retryAt === null) {
       await this.dataSource.query(
-        'UPDATE stripe_event_inbox SET dead_at = $2 WHERE event_id = $1',
-        [eventId, new Date(now)],
+        'UPDATE stripe_event_inbox SET dead_at = $2, retry_at = NULL WHERE event_id = $1',
+        [eventId, new Date(nowMs)],
       );
       this.logger.error(
-        `payment event ${eventId} given up on after ${String(attempts)}: ${reason}`,
+        `payment event ${eventId} given up on after ${String(attempts)} attempts: ${reason}`,
       );
-      return;
+      return true;
     }
-    const retryAt = now + delay + Math.floor(delay * JITTER_RATIO * Math.random());
     await this.dataSource.query('UPDATE stripe_event_inbox SET retry_at = $2 WHERE event_id = $1', [
       eventId,
-      new Date(retryAt),
+      retryAt,
     ]);
-    this.logger.warn(`payment event ${eventId} not applied, retried later: ${reason}`);
+    this.logger.warn(
+      `payment event ${eventId} not applied, attempt ${String(attempts)}: ${reason}`,
+    );
+    return false;
   }
 }

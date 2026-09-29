@@ -469,11 +469,16 @@ describe('the intent of an order whose hold expired (adr-ticketing.md §6)', () 
 
       await commands().execute(new CancelOwedIntents(100));
 
-      const [stillOwed] = await dataSource.query<{ intent_cancel_owed_at: Date | null }[]>(
-        'SELECT intent_cancel_owed_at FROM seat_order WHERE id = $1',
+      const [stillOwed] = await dataSource.query<
+        { intent_cancel_owed_at: Date | null; intent_cancel_next_attempt_at: Date }[]
+      >(
+        'SELECT intent_cancel_owed_at, intent_cancel_next_attempt_at FROM seat_order WHERE id = $1',
         [orderId],
       );
-      expect(stillOwed?.intent_cancel_owed_at).toEqual(new Date(clock.nowMs() + 30_000));
+      expect(stillOwed?.intent_cancel_owed_at).toEqual(new Date(clock.nowMs()));
+      const nextAttempt = stillOwed?.intent_cancel_next_attempt_at.getTime() ?? 0;
+      expect(nextAttempt).toBeGreaterThanOrEqual(clock.nowMs() + 5_000);
+      expect(nextAttempt).toBeLessThanOrEqual(clock.nowMs() + 6_000);
 
       fake.down = false;
       clock.advance(30_000);

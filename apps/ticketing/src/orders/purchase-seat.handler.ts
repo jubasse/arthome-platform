@@ -300,7 +300,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     };
     switch (intent.status) {
       case IntentStatus.SUCCEEDED:
-        await settleConfirmedPayment(transaction, order, intent.ref, now);
+        await settleConfirmedPayment(transaction, order, intent.ref, now, traceparent);
         break;
       case IntentStatus.REQUIRES_ACTION:
         order.recordIntent(record, OrderState.AWAITING_ACTION, now);

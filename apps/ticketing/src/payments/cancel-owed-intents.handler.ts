@@ -3,20 +3,23 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { plusSeconds, type Clock } from '@arthome/core';
+import type { Clock } from '@arthome/core';
 
 import { CancelOwedIntents } from './cancel-owed-intents.command.js';
+import {
+  OWED_INTENT_CANCELLATION,
+  PROVIDER_ATTEMPTS_MAX,
+  claimOwedCalls,
+  giveUpOwedCall,
+} from './owed-calls.js';
 import { PaymentPort } from './payment.port.js';
 import { CLOCK } from '../clock.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 
-/** How long a cancellation the provider did not take waits before it is asked again. */
-const CANCEL_RETRY_SECONDS = 30;
-
 /**
  * adr-ticketing.md §6's cancellation of the intent of an order that failed, recorded by the
- *   sweeper and asked here, outside any transaction, under `cancel:{orderId}`. Best effort: it
- *   narrows the window of a late payment and cannot close it (§7).
+ *   sweeper, each attempt claimed and asked outside any transaction under `cancel:{orderId}`. Best
+ *   effort: it narrows a late payment's window and cannot close it (§7).
  */
 @CommandHandler(CancelOwedIntents)
 export class CancelOwedIntentsHandler implements ICommandHandler<CancelOwedIntents> {
@@ -30,26 +33,24 @@ export class CancelOwedIntentsHandler implements ICommandHandler<CancelOwedInten
   ) {}
 
   public async execute({ batch }: CancelOwedIntents): Promise<number> {
-    const now = this.clock.now();
-    const due = await this.dataSource.query<{ id: string; payment_intent_ref: string }[]>(
-      `SELECT id, payment_intent_ref FROM seat_order
-        WHERE intent_cancel_owed_at <= $1 AND payment_intent_ref IS NOT NULL
-        ORDER BY intent_cancel_owed_at
-        LIMIT $2`,
-      [new Date(now), batch],
+    const claimed = await claimOwedCalls(
+      this.dataSource,
+      OWED_INTENT_CANCELLATION,
+      { condition: 'payment_intent_ref IS NOT NULL', parameters: [] },
+      batch,
+      this.clock.nowMs(),
     );
-    for (const { id, payment_intent_ref: intentRef } of due) {
+    let cancelled = 0;
+    for (const { id, attempts } of claimed) {
+      const [owed] = await this.dataSource.query<{ payment_intent_ref: string }[]>(
+        'SELECT payment_intent_ref FROM seat_order WHERE id = $1',
+        [id],
+      );
+      if (owed === undefined) continue;
       try {
-        await this.payments.cancelIntent(intentRef, `cancel:${id}`);
+        await this.payments.cancelIntent(owed.payment_intent_ref, `cancel:${id}`);
       } catch (error) {
-        this.logger.warn(
-          `intent of order ${id} not cancelled, asked again in ${String(CANCEL_RETRY_SECONDS)} s`,
-          error instanceof Error ? error.stack : String(error),
-        );
-        await this.dataSource.query(
-          'UPDATE seat_order SET intent_cancel_owed_at = $2 WHERE id = $1',
-          [id, new Date(plusSeconds(now, CANCEL_RETRY_SECONDS))],
-        );
+        await this.failed(id, attempts, error);
         continue;
       }
       await this.transactions.run(async ({ orders }) => {
@@ -58,7 +59,24 @@ export class CancelOwedIntentsHandler implements ICommandHandler<CancelOwedInten
         order.intentCancelled();
         await orders.save(order);
       });
+      cancelled += 1;
     }
-    return due.length;
+    return cancelled;
+  }
+
+  private async failed(orderId: string, attempts: number, error: unknown): Promise<void> {
+    const stack = error instanceof Error ? error.stack : String(error);
+    if (attempts < PROVIDER_ATTEMPTS_MAX) {
+      this.logger.warn(
+        `intent of order ${orderId} not cancelled, attempt ${String(attempts)} of ${String(PROVIDER_ATTEMPTS_MAX)}`,
+        stack,
+      );
+      return;
+    }
+    await giveUpOwedCall(this.dataSource, OWED_INTENT_CANCELLATION, orderId, this.clock.nowMs());
+    this.logger.error(
+      `intent of order ${orderId} given up after ${String(attempts)} attempts`,
+      stack,
+    );
   }
 }
