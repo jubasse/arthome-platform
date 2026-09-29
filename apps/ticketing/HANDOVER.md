@@ -276,10 +276,13 @@ does; the three answer `no-store`.
   statement is the last of its transaction** (review M2), so the hot row is locked for the commit
   alone, as adr-ticketing.md §2 budgets: tx A inserts the hold and writes its events before its
   decrement; tx B and the webhook worker are handed the payment's or the failure's counter move
-  (`PendingCounterMove`) and run it after the seats, the outbox rows and the kept answer. Two
-  statements still run early, each because its result decides what follows: D-082's
-  `takeAndSellSeats` (pay or owe a refund) and a renewed hold's `takeSeats` (hold again or fail sold
-  out), both off the normal path.
+  (`PendingCounterMove`) and run it after the seats, the outbox rows and the kept answer. A purchase
+  resumed after a provider outage, the burst of every buyer retrying at once, renews its hold as
+  tx A does: the new hold and the order's renewal first, `takeSeats` last (correctness re-review
+  N1); with no seat left the whole transaction rolls back and the order is failed sold out in one
+  after it, unless another attempt under its key renewed it meanwhile (then
+  `api.idempotency_in_flight`). One statement still runs early, because its result decides what
+  follows: D-082's `takeAndSellSeats` (pay or owe a refund), off the normal path.
 - **The price** is core's `quoteSeats` over the date's own tier price (`date-sales/seat-quote.ts`),
   the rule `quoteSeat` serves and `purchaseSeat` verifies `expectedTotal` against: 409
   `order.price_stale` with `expectedAmountMinor`, `currentAmountMinor` (absent for a tier not sold)
@@ -485,7 +488,7 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
 | `boot.itest.ts` | the three root modules |
 | `orders/seat-order.aggregate.spec.ts`, `orders/seat-hold.aggregate.spec.ts` | the order's forward-only states, its seats created at payment, a payment after a failure (D-082), a refund owed, an intent reaching a failed order owing its cancellation from the instant first owed; the hold's expiry its intent's, consumed or released once |
 | `date-sales.aggregate.spec.ts` (T3's block) | on sale, the quote through core, a hold that moves the counter and not the version |
-| `orders/purchase.itest.ts` | 21 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, the quote; D-089: a purchase before the start without the header, one after it refused unacknowledged with the facts and nothing held then sold acknowledged, one past the cutoff refused `order.sales_closed` holding nothing, the hold's statement refusing past the cutoff on its own, the quote's `lateEntry` only after the start, a purchase resumed after the start asked then sold, and one resumed past the cutoff closed at once and for good |
+| `orders/purchase.itest.ts` | 23 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, its renewed hold's decrement last (another buyer's does not wait on it), and a renewal finding no seat rolled back and failed sold out for good, the quote; D-089: a purchase before the start without the header, one after it refused unacknowledged with the facts and nothing held then sold acknowledged, one past the cutoff refused `order.sales_closed` holding nothing, the hold's statement refusing past the cutoff on its own, the quote's `lateEntry` only after the start, a purchase resumed after the start asked then sold, and one resumed past the cutoff closed at once and for good |
 | `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry |
 | `boot.itest.ts` (T3's case) | the sweeper root expiring a due hold on its first pass |
 | `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes; a late entry quoted, refused, then sold, `lateEntry` parsed by the contract's schema extended as the report gives it |

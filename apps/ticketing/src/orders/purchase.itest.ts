@@ -511,6 +511,96 @@ describe('a provider that does not answer (adr-ticketing.md §12)', () => {
     },
     CASE_MS,
   );
+
+  it(
+    'renews its hold with the date row locked for the commit alone, as tx A does',
+    async () => {
+      const dateId = await dateOnSale();
+      const key = nextKey();
+      fake.scenarioOf = () => FakePaymentScenario.UNAVAILABLE;
+      expect((await refusalOf(purchase(dateId, 2, key))).getStatus()).toBe(503);
+      fake.scenarioOf = () => FakePaymentScenario.CONFIRM;
+      await dataSource.query(`
+        CREATE FUNCTION slow_hold_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN PERFORM pg_sleep(1); RETURN NULL; END $$`);
+      await dataSource.query(`
+        CREATE TRIGGER slow_hold_insert BEFORE INSERT ON seat_hold
+        FOR EACH STATEMENT EXECUTE FUNCTION slow_hold_insert()`);
+      try {
+        const resuming = purchase(dateId, 2, key);
+        const deadline = Date.now() + 5_000;
+        let sleeping = 0;
+        while (sleeping === 0 && Date.now() < deadline) {
+          const [row] = await dataSource.query<{ sleeping: number }[]>(
+            `SELECT count(*)::int AS sleeping FROM pg_stat_activity
+              WHERE wait_event = 'PgSleep' AND datname = current_database()`,
+          );
+          sleeping = row?.sleeping ?? 0;
+        }
+        expect(sleeping).toBe(1);
+
+        // Another buyer's decrement while the renewed hold is being inserted.
+        const runner = dataSource.createQueryRunner();
+        await runner.connect();
+        let waited: unknown = null;
+        try {
+          await runner.startTransaction();
+          await runner.query("SET LOCAL lock_timeout = '200ms'");
+          await runner.query(
+            `UPDATE date_sales
+                SET seats_available = seats_available - 1,
+                    availability_moves = availability_moves + 1
+              WHERE date_id = $1 AND on_sale AND seats_available >= 1`,
+            [dateId],
+          );
+        } catch (error) {
+          waited = error;
+        } finally {
+          await runner.rollbackTransaction();
+          await runner.release();
+        }
+
+        expect(waited).toBeNull();
+        expect((await resuming).status).toBe(PurchaseStatus.PAID);
+      } finally {
+        await dataSource.query('DROP TRIGGER slow_hold_insert ON seat_hold');
+        await dataSource.query('DROP FUNCTION slow_hold_insert()');
+      }
+    },
+    CASE_MS,
+  );
+
+  it(
+    'finding no seat to hold again, rolls its renewal back and fails sold out for good',
+    async () => {
+      const dateId = await dateOnSale(2);
+      const key = nextKey();
+      fake.scenarioOf = () => FakePaymentScenario.UNAVAILABLE;
+      expect((await refusalOf(purchase(dateId, 2, key))).getStatus()).toBe(503);
+      fake.scenarioOf = () => FakePaymentScenario.CONFIRM;
+      expect((await purchase(dateId, 2, nextKey())).status).toBe(PurchaseStatus.PAID);
+      const calls = fake.calls.length;
+
+      const resumed = await refusalOf(purchase(dateId, 2, key));
+      const again = await refusalOf(purchase(dateId, 2, key));
+
+      expect([resumed.refusal.code, again.refusal.code]).toEqual([
+        OrderErrorCode.SOLD_OUT,
+        OrderErrorCode.SOLD_OUT,
+      ]);
+      expect(fake.calls).toHaveLength(calls);
+      expect((await holdsOf(dateId)).map(({ state }) => state)).toEqual([
+        SeatHoldState.RELEASED,
+        SeatHoldState.CONSUMED,
+      ]);
+      expect((await ordersOf(dateId)).map(({ state }) => state).sort()).toEqual([
+        OrderState.FAILED,
+        OrderState.PAID,
+      ]);
+      expect(await countersOf(dateId)).toMatchObject({ seats_available: 0, seats_sold: 2 });
+    },
+    CASE_MS,
+  );
 });
 
 describe('quoteSeat and getOrder', () => {

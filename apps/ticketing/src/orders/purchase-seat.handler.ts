@@ -28,6 +28,7 @@ import { writeSeatOrderIntegrationEvents } from './seat-order-integration-events
 import { SeatOrder } from './seat-order.aggregate.js';
 import { settleConfirmedPayment, type PendingCounterMove } from './settle-payment.js';
 import { CLOCK } from '../clock.js';
+import type { DateSales } from '../date-sales/date-sales.aggregate.js';
 import { INTERIM_SALES_CLOSED, salesEndedBy } from '../date-sales/seat-sales-window.js';
 import { OwedRefunds } from '../payments/owed-refunds.js';
 import {
@@ -44,6 +45,16 @@ const LOCK_NOT_AVAILABLE = '55P03';
 
 /** Another purchase committed an order under the key while this one waited to insert its own. */
 class KeyBoundMeanwhile extends Error {}
+
+/** A renewed hold's statement found no seat left: its transaction rolls back, the order fails after. */
+class RenewalSoldOut extends Error {
+  public constructor(
+    public readonly orderId: string,
+    public readonly staleHoldId: string,
+  ) {
+    super(`order ${orderId} found no seat to hold again`);
+  }
+}
 
 /** A new order, its intent to create at once; or the one the key already created, to resume. */
 type Placement =
@@ -79,9 +90,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     const resumption: Resumption =
       placement.kind === 'placed'
         ? { kind: 'create_intent', request: placement.request }
-        : await this.transactions.run((transaction) =>
-            this.resumeIn(transaction, orderId, command),
-          );
+        : await this.resume(orderId, command);
     if (resumption.kind === 'answered') return resumption.answer;
     if (resumption.kind === 'refusal') throw resumption.refusal;
 
@@ -214,6 +223,19 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     return placed;
   }
 
+  private async resume(orderId: string, command: PurchaseSeat): Promise<Resumption> {
+    try {
+      return await this.transactions.run((transaction) =>
+        this.resumeIn(transaction, orderId, command),
+      );
+    } catch (error) {
+      if (!(error instanceof RenewalSoldOut)) throw error;
+      return this.transactions.run((transaction) =>
+        this.failSoldOutIn(transaction, error, command.traceparent),
+      );
+    }
+  }
+
   private async resumeIn(
     transaction: TicketingTransaction,
     orderId: string,
@@ -244,11 +266,32 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
       return { kind: 'refusal', refusal: lateEntryUnacknowledged(lateEntry) };
     }
     if (holdGone) {
-      const renewed = await this.renewHoldIn(transaction, order, now);
+      const staleHoldId = order.snapshot.holdId;
+      const takeSeats = await this.renewHoldIn(transaction, order, sales, now);
       await this.saveResumed(transaction, order, traceparent);
-      if (!renewed) return { kind: 'refusal', refusal: soldOut() };
+      if (takeSeats === null) return { kind: 'refusal', refusal: soldOut() };
+      // Last, as tx A's: every buyer retries at once after an outage. None left, the new hold and
+      //   the order's renewal roll back with it.
+      if (!(await takeSeats())) throw new RenewalSoldOut(orderId, staleHoldId);
     }
     return { kind: 'create_intent', request: this.intentRequestOf(order) };
+  }
+
+  /**
+   * After a renewal rolled back for want of seats: the order fails sold out, unless another attempt
+   *   under its key renewed it meanwhile and answers for it.
+   */
+  private async failSoldOutIn(
+    transaction: TicketingTransaction,
+    { orderId, staleHoldId }: RenewalSoldOut,
+    traceparent: string | null,
+  ): Promise<Resumption> {
+    const order = await this.loadOrder(transaction, orderId);
+    if (order.snapshot.holdId !== staleHoldId) return { kind: 'refusal', refusal: keyInFlight() };
+    if (!order.awaitsIntent) return this.answerOf(transaction, order);
+    order.fail({ code: OrderErrorCode.SOLD_OUT, declineCode: null }, this.clock.now());
+    await this.saveResumed(transaction, order, traceparent);
+    return { kind: 'refusal', refusal: soldOut() };
   }
 
   private async saveResumed(
@@ -271,22 +314,23 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
   }
 
   /**
-   * An order whose hold was given back while the provider did not answer takes its seats again
-   *   before its intent is created; with none left, it fails sold out.
+   * An order whose hold was given back while the provider did not answer holds its seats again
+   *   before its intent is created: a new hold, the order moved to it, and the statement that takes
+   *   the seats handed back for the caller to run last. Null, the order failed sold out, when the
+   *   sale no longer sells.
    */
   private async renewHoldIn(
     { holds, dateSales }: TicketingTransaction,
     order: SeatOrder,
+    sales: DateSales | null,
     now: Instant,
-  ): Promise<boolean> {
+  ): Promise<(() => Promise<boolean>) | null> {
     const { id, dateId, accountId, profileId, tier, quantity } = order.snapshot;
-    const sales = await dateSales.findUnlocked(dateId);
-    const sells = sales?.sellsSeatsAt(now) === true;
-    if (sells) sales.holdSeats(quantity, now);
-    if (!sells || !(await dateSales.takeSeats(sales, quantity, now))) {
+    if (sales?.sellsSeatsAt(now) !== true) {
       order.fail({ code: OrderErrorCode.SOLD_OUT, declineCode: null }, now);
-      return false;
+      return null;
     }
+    sales.holdSeats(quantity, now);
     const expiresAt = checkoutIntentExpiry(now);
     const hold = SeatHold.place(
       {
@@ -304,7 +348,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     );
     await holds.save(hold);
     order.renewHold(hold.snapshot.id, expiresAt, now);
-    return true;
+    return () => dateSales.takeSeats(sales, quantity, now);
   }
 
   /**
