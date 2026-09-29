@@ -10,6 +10,11 @@ export function seatSalesEndAt(startsAt: Instant): Instant {
   return plusMinutes(startsAt, SEAT_SALES_CUTOFF_MINUTES_AFTER_START);
 }
 
+/** Past the sale's end by time; a date with no start has no end. */
+export function salesEndedBy(salesEndAt: Instant | null, now: Instant): boolean {
+  return salesEndAt !== null && !isBefore(now, salesEndAt);
+}
+
 /** What a buyer arriving after the start is told, and must acknowledge, before buying. */
 export interface LateEntry {
   readonly startedAt: Instant;

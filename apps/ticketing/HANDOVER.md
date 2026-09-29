@@ -396,9 +396,11 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
   the late payment's `takeAndSellSeats`. Chosen over accepting the sweeper's second: a second at an
   opening's rate is seats sold past the cutoff, and one predicate on a row already found by its key
   costs nothing. The purchase reads the same end off the unlocked aggregate first
-  (`sellsSeatsAt`) and refuses before claiming its key. Past the end, `purchaseSeat` answers
-  `order.sold_out`, the closed-sale answer it already gives, since the contract has no dedicated
-  code; `quoteSeat` answers 404.
+  (`sellsSeatsAt`) and refuses before claiming its key. **Past the end both `purchaseSeat` and
+  `quoteSeat` answer 409 `order.sales_closed`** (an interim code, §3; architecture review M2), with
+  `salesEndAt`: sold out is the waiting list's cue, and a sale that ended offers no waiting list.
+  Whether it ended is one rule, `salesEndedBy`, which the aggregate, the quote and the statement's
+  predicate share.
 - **The sweeper closes it** (`CloseEndedSales`, a third `SweeperLoop`, every second): each sale on
   sale past its end, in a transaction of its own under the date's row (taken once, when nothing
   sells any more), `DateSales.endSales` closes it at its end as a closing outcome does: `on_sale`
@@ -506,10 +508,12 @@ addition):
   no document names the storefront's page for it.
 - No service fee (`date-sales/seat-quote.ts`): no fee schedule is set anywhere, as T2's pane says.
 - D-089's rules (`date-sales/seat-sales-window.ts`): `SEAT_SALES_CUTOFF_MINUTES_AFTER_START` (30),
-  `seatSalesEndAt`, `lateEntryOf` and `LateEntry`, under the names core will give them; the
-  refusal's code `order.late_entry_unacknowledged` (`INTERIM_LATE_ENTRY_UNACKNOWLEDGED`,
-  `orders/purchase-refusals.ts`), in no `ORDER_ERROR_CODES` yet; and the contract's fields ahead of
-  storefront.yaml: `SeatQuote.lateEntry` and the purchase body's `acknowledgeLateEntry`.
+  `seatSalesEndAt`, `salesEndedBy`, `lateEntryOf` and `LateEntry`, under the names core will give
+  them; the refusals' codes `order.late_entry_unacknowledged` and `order.sales_closed`
+  (`INTERIM_LATE_ENTRY_UNACKNOWLEDGED`, `INTERIM_SALES_CLOSED`, `orders/purchase-refusals.ts`), in no
+  `ORDER_ERROR_CODES` yet; and the contract's fields ahead of storefront.yaml: `SeatQuote.lateEntry`
+  and the purchase body's `acknowledgeLateEntry`. Core's `decideWatch` still offers `buy_seat`
+  through the live past the cutoff: the report to "main" gives the change it needs.
 
 **Known and left in T3, each judged:**
 

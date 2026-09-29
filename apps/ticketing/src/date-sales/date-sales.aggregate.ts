@@ -32,7 +32,7 @@ import {
   type DateSalesEvent,
 } from './date-sales.events.js';
 import { seatQuoteOf, type SeatQuote } from './seat-quote.js';
-import { lateEntryOf, seatSalesEndAt, type LateEntry } from './seat-sales-window.js';
+import { lateEntryOf, salesEndedBy, seatSalesEndAt, type LateEntry } from './seat-sales-window.js';
 import { technicalProvisionOf } from './technical-provision.js';
 
 export interface DateSalesSnapshot {
@@ -132,8 +132,12 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
    *   statement checks the end again.
    */
   public sellsSeatsAt(now: Instant): boolean {
-    const { salesEndAt } = this.current;
-    return this.isOnSale && (salesEndAt === null || isBefore(now, salesEndAt));
+    return this.isOnSale && !this.hasEndedBy(now);
+  }
+
+  /** Past its end by time (D-089), whether or not the sweeper has closed it yet. */
+  public hasEndedBy(now: Instant): boolean {
+    return salesEndedBy(this.current.salesEndAt, now);
   }
 
   /** What a buyer arriving now must be told and acknowledge; null before the start. */

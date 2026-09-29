@@ -29,7 +29,7 @@ import { OrderState, SeatHoldState } from './commerce-vocabulary.js';
 import { GetOrderHandler } from './get-order.handler.js';
 import { GetOrder } from './get-order.query.js';
 import type { PaymentHandoffView, PurchasedSeats } from './order-views.js';
-import { INTERIM_LATE_ENTRY_UNACKNOWLEDGED } from './purchase-refusals.js';
+import { INTERIM_LATE_ENTRY_UNACKNOWLEDGED, INTERIM_SALES_CLOSED } from './purchase-refusals.js';
 import { PurchaseStatus, type PurchaseAnswer } from './purchase-seat.command.js';
 import { PurchaseSeatHandler } from './purchase-seat.handler.js';
 import { QuoteSeatHandler } from './quote-seat.handler.js';
@@ -597,7 +597,7 @@ describe('a buyer arriving after the start (D-089)', () => {
 
       const late = await refusalOf(purchase(dateId, 1, nextKey(), { acknowledgeLateEntry: true }));
 
-      expect(late.refusal.code).toBe(OrderErrorCode.SOLD_OUT);
+      expect(late.refusal.code).toBe(INTERIM_SALES_CLOSED);
       expect(await countersOf(dateId)).toEqual(before);
       expect(await holdsOf(dateId)).toEqual([]);
     },
@@ -649,7 +649,7 @@ describe('a buyer arriving after the start (D-089)', () => {
       const over = await dateOnSale(10, plusMinutes(NOW, -30));
       await expect(
         queries.execute(new QuoteSeat(over, { tier: PriceTier.FULL, quantity: 1 })),
-      ).rejects.toMatchObject({ refusal: { code: ApiErrorCode.NOT_FOUND } });
+      ).rejects.toMatchObject({ refusal: { code: INTERIM_SALES_CLOSED } });
     },
     CASE_MS,
   );

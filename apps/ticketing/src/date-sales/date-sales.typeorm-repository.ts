@@ -52,7 +52,7 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
           SET seats_available = seats_available - $2,
               availability_moves = availability_moves + 1
         WHERE date_id = $1 AND on_sale AND seats_available >= $2
-          AND ${BEFORE_SALES_END}`,
+          AND ${beforeSalesEnd('$3')}`,
       [dateId, quantity, new Date(now)],
     );
     if (!taken) return false;
@@ -90,7 +90,7 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
               seats_sold = seats_sold + $2,
               availability_moves = availability_moves + 1
         WHERE date_id = $1 AND on_sale AND seats_available >= $2
-          AND ${BEFORE_SALES_END}`,
+          AND ${beforeSalesEnd('$3')}`,
       [dateId, quantity, new Date(now)],
     );
   }
@@ -147,11 +147,13 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
 }
 
 /**
- * D-089's cutoff in the hold's own WHERE, at the command's instant: the sweeper closes a sale up to
- *   a second after its end, and a second at an opening's rate is seats sold past it. One predicate
- *   on a row already found by its key costs nothing.
+ * D-089's cutoff in the hold's own WHERE, at the command's instant, the statement's parameter
+ *   `now`: the sweeper closes a sale up to a second after its end, and a second at an opening's rate
+ *   is seats sold past it. One predicate on a row already found by its key costs nothing.
  */
-const BEFORE_SALES_END = '(sales_end_at IS NULL OR sales_end_at > $3)';
+function beforeSalesEnd(now: `$${number}`): string {
+  return `(sales_end_at IS NULL OR sales_end_at > ${now})`;
+}
 
 function affectedOne(result: unknown): boolean {
   const [, affected] = result as [unknown, number];

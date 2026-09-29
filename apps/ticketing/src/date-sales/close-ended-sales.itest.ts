@@ -13,7 +13,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { FixedClock, OrderErrorCode, plusMinutes, plusSeconds } from '@arthome/core';
+import { FixedClock, plusMinutes, plusSeconds } from '@arthome/core';
 
 import { ApplyCatalogDateFactHandler } from './apply-catalog-date-fact.handler.js';
 import { applyCatalogDateMessage } from './catalog-date-messages.js';
@@ -27,6 +27,7 @@ import { CLOCK } from '../clock.js';
 import { delivered, rescheduled } from '../itest/catalog-messages.js';
 import { purchaseOf, putOnSale } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
+import { INTERIM_SALES_CLOSED } from '../orders/purchase-refusals.js';
 import { PurchaseSeatHandler } from '../orders/purchase-seat.handler.js';
 import { FakePaymentProvider } from '../payments/fake-payment-provider.js';
 import { OwedRefunds } from '../payments/owed-refunds.js';
@@ -143,7 +144,7 @@ describe('a pass of the sales closing', () => {
         refusal = error;
       }
       expect(refusal).toBeInstanceOf(RefusalException);
-      expect((refusal as RefusalException).refusal.code).toBe(OrderErrorCode.SOLD_OUT);
+      expect((refusal as RefusalException).refusal.code).toBe(INTERIM_SALES_CLOSED);
     },
     CASE_MS,
   );

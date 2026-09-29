@@ -18,6 +18,7 @@ import {
   paymentUnavailable,
   priceStale,
   refusalOfUnpaid,
+  salesClosed,
   soldOut,
 } from './purchase-refusals.js';
 import { PurchaseSeat, PurchaseStatus, type PurchaseAnswer } from './purchase-seat.command.js';
@@ -127,7 +128,9 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
 
     const now = this.clock.now();
     const sales = await dateSales.findUnlocked(body.dateId);
-    if (sales?.sellsSeatsAt(now) !== true) throw soldOut();
+    const { salesEndAt } = sales?.snapshot ?? { salesEndAt: null };
+    if (salesEndAt !== null && sales?.hasEndedBy(now) === true) throw salesClosed(salesEndAt);
+    if (sales?.isOnSale !== true) throw soldOut();
     const lateEntry = sales.lateEntryAt(now);
     if (lateEntry !== null && body.acknowledgeLateEntry !== true) {
       throw lateEntryUnacknowledged(lateEntry);

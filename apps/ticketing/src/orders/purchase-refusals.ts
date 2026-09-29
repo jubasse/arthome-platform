@@ -5,6 +5,7 @@ import {
   ApiErrorCode,
   FailureNature,
   OrderErrorCode,
+  type Instant,
   type Money,
   type MessageParams,
 } from '@arthome/core';
@@ -12,8 +13,9 @@ import {
 import type { SeatOrderSnapshot } from './seat-order.aggregate.js';
 import type { LateEntry } from '../date-sales/seat-sales-window.js';
 
-/** D-089's refusal, until core's `ORDER_ERROR_CODES` carries it (HANDOVER §3). */
+/** D-089's refusals, until core's `ORDER_ERROR_CODES` carries them (HANDOVER §3). */
 export const INTERIM_LATE_ENTRY_UNACKNOWLEDGED = 'order.late_entry_unacknowledged';
+export const INTERIM_SALES_CLOSED = 'order.sales_closed';
 
 /** How long a purchase waits on another one holding its key before being told it is in flight. */
 export const KEY_HOLDER_WAIT_MS = 5_000;
@@ -25,6 +27,14 @@ function refused(code: string, params: MessageParams = {}): RefusalException {
 
 export function soldOut(): RefusalException {
   return refused(OrderErrorCode.SOLD_OUT);
+}
+
+/**
+ * Past the sale's end by time, thirty minutes after the start (D-089): ended, not sold out, which
+ *   is the waiting list's cue.
+ */
+export function salesClosed(salesEndAt: Instant): RefusalException {
+  return refused(INTERIM_SALES_CLOSED, { salesEndAt });
 }
 
 /** The storefront contract's params: what the surface showed, and the price now, when there is one. */

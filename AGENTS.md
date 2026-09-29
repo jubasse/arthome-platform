@@ -434,7 +434,8 @@ while the buyer has to act, 409 `order.sold_out`, `order.price_stale` or `order.
 and 503 when the provider does not answer; a replay under its key answers the first answer again.
 Seats sell until thirty minutes after the live's start (D-089): from the start the quote carries
 `lateEntry`, and a purchase without `acknowledgeLateEntry: true` is refused 409
-`order.late_entry_unacknowledged` before any seat is taken.
+`order.late_entry_unacknowledged` before any seat is taken; past the cutoff, the quote and the
+purchase answer 409 `order.sales_closed`.
 The provider's webhooks arrive on `POST /v1/payments/webhook`, verified on their raw bytes, recorded
 in `stripe_event_inbox` and answered at once; the API process's payment worker applies them every
 second, refunds at once a payment confirmed after its hold expired with no seat left (D-082), and
