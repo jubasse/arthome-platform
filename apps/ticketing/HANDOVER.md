@@ -210,7 +210,8 @@ makes every call fail, the provider-down drill. Its signature is Stripe's scheme
 (`POST /v1/dates/:dateId/seat-quote`), `purchaseSeat` (`POST /v1/orders/seats`) and `getOrder`
 (`GET /v1/orders/:orderId`), in storefront.yaml's shapes but for `TicketCard.date` and the 201's
 `date`: catalog's `DateCard`, which ticketing cannot build without calling catalog (critical rule 1),
-so the BFF adds them (T7). The two reads require `x-arthome-deadline`, as `refreshDateAvailability`
+so the BFF adds them (T7, agreed with the lead). The HTTP suite parses the tickets with the
+contract's `TicketCardSchema` minus `date`. The two reads require `x-arthome-deadline`, as `refreshDateAvailability`
 does; the three answer `no-store`.
 
 - **The purchase is adr-ticketing.md §2** (`purchase-seat.handler.ts`). Tx A binds the key to a new
@@ -344,8 +345,9 @@ answers `order.sold_out` from the failed order and asks the provider nothing.
 show, and in the publisher's pass for good (§0e). T3 closes it through the sweeper, and **no rule
 says when yet**: core's `decideWatch` offers `buy_seat` through the live and, for some replay
 policies, through the replay, and no document states when ticketing stops selling. So the rule is
-one function, `date-sales/sales-end.ts`'s `salesEndOf(startsAt)`, returning null (asked of "main",
-§3), and everything around it is built:
+one function, `date-sales/sales-end.ts`'s `salesEndOf(startsAt)`, returning null, and everything
+around it is built. The rule is a product decision the lead has put to the product owner; it arrives
+here, in that function, and nowhere else:
 
 - `date_sales.sales_end_at` (`1790440800000-sales-end.ts`), written by `recordSchedule` from
   `salesEndOf` whenever catalog states or moves the start, with a partial index on the sales on sale
@@ -428,6 +430,9 @@ first.
 addition):
 
 - `PaymentPort` and `PaymentWebhookPort` (`payments/payment.port.ts`), `adr-payments.md` §4's ports.
+  Their methods take adr-ticketing.md §2's names (`createIntent`, `cancelIntent`, `refund`), as the
+  lead decided on 2026-09-29, where adr-payments.md §4 names `authorize`, `capture`, `refund` and
+  `quote`: core must settle one set when it carries the ports.
 - `ORDER_STATES`, `SEAT_STATES`, `SEAT_HOLD_STATES`, `SEAT_HOLD_ORIGINS` and the order's forward
   ranks (`orders/commerce-vocabulary.ts`): the contract declares the first two as its own, and the
   domain decides with them.
@@ -448,7 +453,10 @@ addition):
 - **No account.** Tokens are not verified (`adr-auth.md` defers it): holds, orders and seats carry a
   null `account_id`, every purchase shares the one null idempotency scope, `order.paid` and
   `seat.activated` carry an empty `account_id`, and `getOrder` checks nobody's ownership. The routes
-  are refused in production by `DenyInProductionGuard`, as every write here is.
+  are refused in production by `DenyInProductionGuard`, as every write here is. Accepted by the lead
+  as an interim on 2026-09-29. **Until auth lands, `seat.activated` gives streaming's
+  `entitlement_projection` no account to key the right to watch on**: a seat sold here opens nothing
+  there.
 - **No tax computed.** `order.paid` carries an empty `vat` and the buyer's declared location alone,
   as unresolved evidence: the tax model awaits counsel (`adr-payments.md` §5.5).
 - **A free seat** (a total of zero) would ask the provider for an intent of zero: no rule gives a
