@@ -11,6 +11,16 @@ import { AvailabilityPublication1790440100000 } from './migrations/1790440100000
 import { AvailabilityPublicationFailure1790440200000 } from './migrations/1790440200000-availability-publication-failure.js';
 import { TechnicalProvision1790440300000 } from './migrations/1790440300000-technical-provision.js';
 import { AvailabilityScan1790440400000 } from './migrations/1790440400000-availability-scan.js';
+import { HoldsAndOrders1790440500000 } from './migrations/1790440500000-holds-and-orders.js';
+import { PendingOrderExpiry1790440600000 } from './migrations/1790440600000-pending-order-expiry.js';
+import { PaymentEventInbox1790440700000 } from './migrations/1790440700000-payment-event-inbox.js';
+import { SalesEnd1790440800000 } from './migrations/1790440800000-sales-end.js';
+import { SeatSalesCutoff1790440900000 } from './migrations/1790440900000-seat-sales-cutoff.js';
+import { ProviderCallRetries1790441000000 } from './migrations/1790441000000-provider-call-retries.js';
+import { SeatOrderHold1790441100000 } from './migrations/1790441100000-seat-order-hold.js';
+import { SeatHoldRow } from './orders/seat-hold.entity.js';
+import { SeatOrderRow } from './orders/seat-order.entity.js';
+import { SeatRow } from './orders/seat.entity.js';
 
 /**
  * Used by the three processes AND by the migration CLI. `synchronize` stays false: it would drop
@@ -20,13 +30,28 @@ import { AvailabilityScan1790440400000 } from './migrations/1790440400000-availa
 export const dataSource: DataSource = new DataSource({
   type: 'postgres',
   url: env.DATABASE_URL,
-  entities: [DateSalesRow, DateAvailabilityPublicationRow, ProcessedMessage, OutboxEvent],
+  entities: [
+    DateSalesRow,
+    DateAvailabilityPublicationRow,
+    SeatHoldRow,
+    SeatOrderRow,
+    SeatRow,
+    ProcessedMessage,
+    OutboxEvent,
+  ],
   migrations: [
     Initial1790440000000,
     AvailabilityPublication1790440100000,
     AvailabilityPublicationFailure1790440200000,
     TechnicalProvision1790440300000,
     AvailabilityScan1790440400000,
+    HoldsAndOrders1790440500000,
+    PendingOrderExpiry1790440600000,
+    PaymentEventInbox1790440700000,
+    SalesEnd1790440800000,
+    SeatSalesCutoff1790440900000,
+    ProviderCallRetries1790441000000,
+    SeatOrderHold1790441100000,
   ],
   applicationName: Service.TICKETING,
 

@@ -5,6 +5,7 @@ import {
   DateOutcome,
   DomainError,
   DomainErrorCode,
+  OrderErrorCode,
   PriceTier,
   TECHNICAL_PROVISION_THRESHOLD,
   money,
@@ -13,6 +14,7 @@ import {
 } from '@arthome/core';
 
 import { DateSales, type DateSalesSnapshot } from './date-sales.aggregate.js';
+import { INTERIM_SALES_CLOSED } from './seat-sales-window.js';
 
 const DATE_ID = '01a0f000-0000-7000-8000-000000000001';
 const CHANNEL_ID = 'channel-sales';
@@ -37,6 +39,7 @@ function restored(overrides: Partial<DateSalesSnapshot> = {}): DateSales {
     priceTiers: [],
     pricesLockedAt: null,
     salesClosedAt: null,
+    salesEndAt: null,
     startsAt: null,
     scheduleStatedAt: null,
     outcome: null,
@@ -410,5 +413,140 @@ describe('the snapshot', () => {
     expect(Object.isFrozen(sales.snapshot.priceTiers[0]?.amount)).toBe(true);
     expect(Object.isFrozen(tiers)).toBe(false);
     expect(Object.isFrozen(tiers[0]?.amount)).toBe(false);
+  });
+});
+
+describe('a hold, decided by the aggregate and taken by its repository (T3)', () => {
+  const onSale = (): DateSales =>
+    restored({
+      capacityTotal: 10,
+      seatsAvailable: 10,
+      priceTiers: [FULL, { ...REDUCED, active: false }],
+      pricesLockedAt: NOW,
+    });
+
+  it('is on sale from the lock of its prices until an outcome closes it', () => {
+    expect(restored().isOnSale).toBe(false);
+    expect(onSale().isOnSale).toBe(true);
+    expect(restored({ pricesLockedAt: NOW, salesClosedAt: NOW }).isOnSale).toBe(false);
+  });
+
+  it('quotes a tier it sells through core, and nothing for one it does not', () => {
+    expect(onSale().quote(PriceTier.FULL, 2)).toEqual({
+      unitPrice: money(2400, 'EUR'),
+      tierTotal: money(4800, 'EUR'),
+      serviceFee: money(0, 'EUR'),
+      discount: money(0, 'EUR'),
+      total: money(4800, 'EUR'),
+    });
+    expect(onSale().quote(PriceTier.REDUCED, 2)).toBeNull();
+    expect(refusalOf(() => onSale().quote(PriceTier.FULL, 0)).code).toBe(
+      DomainErrorCode.ORDER_QUANTITY_INVALID,
+    );
+  });
+
+  it('moves its counter by the hold and leaves the version as loaded', () => {
+    const sales = onSale();
+
+    sales.holdSeats(3, NOW);
+
+    expect(sales.snapshot).toMatchObject({ seatsAvailable: 7, version: 3 });
+    expect(sales.getUncommittedEvents()).toMatchObject([
+      { kind: 'SeatsHeld', dateId: DATE_ID, quantity: 3, occurredAt: NOW },
+    ]);
+  });
+});
+
+describe('a sale that ends by time (T3, D-089)', () => {
+  it('ends thirty minutes after its start, and a postponement moves the end with the start', () => {
+    const sales = restored({ pricesLockedAt: NOW });
+
+    sales.recordSchedule(STARTS_AT, STATED_AT, NOW);
+    expect(sales.snapshot.salesEndAt).toBe('2026-12-12T19:30:00.000Z');
+
+    sales.recordSchedule('2026-12-19T19:00:00.000Z', NOW, NOW);
+    expect(sales.snapshot.salesEndAt).toBe('2026-12-19T19:30:00.000Z');
+  });
+
+  it('sells until its end, and tells a buyer arriving after the start what they missed', () => {
+    const sales = restored({ pricesLockedAt: NOW });
+    sales.recordSchedule(STARTS_AT, STATED_AT, NOW);
+
+    expect(sales.lateEntryAt('2026-12-12T18:59:00.000Z')).toBeNull();
+    expect(sales.lateEntryAt('2026-12-12T19:10:30.000Z')).toEqual({
+      startedAt: STARTS_AT,
+      minutesElapsed: 10,
+      salesEndAt: '2026-12-12T19:30:00.000Z',
+    });
+    expect(sales.sellsSeatsAt('2026-12-12T19:29:59.000Z')).toBe(true);
+    expect(sales.sellsSeatsAt('2026-12-12T19:30:00.000Z')).toBe(false);
+    expect(restored().sellsSeatsAt(NOW)).toBe(false);
+  });
+
+  it('closes at its end, once, and only a sale on sale', () => {
+    const endsAt = '2026-12-12T23:00:00.000Z';
+    const sales = restored({ pricesLockedAt: NOW, salesEndAt: endsAt });
+
+    expect(sales.endSales('2026-12-12T22:59:59.000Z')).toBe(false);
+    expect(sales.endSales('2026-12-12T23:00:05.000Z')).toBe(true);
+    expect(sales.endSales('2026-12-12T23:00:06.000Z')).toBe(false);
+
+    expect(sales.snapshot).toMatchObject({ salesClosedAt: endsAt, version: 4 });
+    expect(sales.isOnSale).toBe(false);
+    expect(sales.getUncommittedEvents()).toMatchObject([
+      { kind: 'DateSalesEnded', endedAt: endsAt, occurredAt: '2026-12-12T23:00:05.000Z' },
+    ]);
+    expect(restored({ salesEndAt: endsAt }).endSales('2027-01-01T00:00:00.000Z')).toBe(false);
+  });
+});
+
+describe('a sale closed by time, and a postponement applied late (review m1)', () => {
+  const closedAtItsEnd = (overrides: Partial<DateSalesSnapshot> = {}): DateSales =>
+    restored({
+      pricesLockedAt: NOW,
+      startsAt: STARTS_AT,
+      salesEndAt: '2026-12-12T19:30:00.000Z',
+      salesClosedAt: '2026-12-12T19:30:00.000Z',
+      ...overrides,
+    });
+
+  it('reopens when the new end is still ahead, counting a move for the publisher', () => {
+    const sales = closedAtItsEnd();
+
+    sales.recordSchedule('2026-12-19T19:00:00.000Z', STATED_AT, '2026-12-12T20:00:00.000Z');
+
+    expect(sales.isOnSale).toBe(true);
+    expect(sales.snapshot.salesEndAt).toBe('2026-12-19T19:30:00.000Z');
+    expect(sales.getUncommittedEvents().map(({ kind }) => kind)).toEqual([
+      'DateScheduleRecorded',
+      'DateSalesReopened',
+    ]);
+  });
+
+  it('stays closed by an outcome, or when the new end is past too', () => {
+    const cancelled = closedAtItsEnd({ outcome: DateOutcome.CANCELLED });
+    cancelled.recordSchedule('2026-12-19T19:00:00.000Z', STATED_AT, '2026-12-12T20:00:00.000Z');
+    expect(cancelled.isOnSale).toBe(false);
+
+    const stillPast = closedAtItsEnd();
+    stillPast.recordSchedule('2026-12-12T19:10:00.000Z', STATED_AT, '2026-12-12T20:00:00.000Z');
+    expect(stillPast.isOnSale).toBe(false);
+  });
+});
+
+describe('a hold the aggregate decides (review m3)', () => {
+  it('refuses past the end by time, off sale, and a quantity core refuses', () => {
+    const ended = restored({
+      pricesLockedAt: NOW,
+      salesEndAt: '2026-09-27T09:30:00.000Z',
+    });
+    expect(refusalOf(() => ended.holdSeats(1, NOW))).toMatchObject({
+      code: INTERIM_SALES_CLOSED,
+      params: { salesEndAt: '2026-09-27T09:30:00.000Z' },
+    });
+    expect(refusalOf(() => restored().holdSeats(1, NOW)).code).toBe(OrderErrorCode.SOLD_OUT);
+    expect(refusalOf(() => restored({ pricesLockedAt: NOW }).holdSeats(0, NOW)).code).toBe(
+      DomainErrorCode.HOLD_QUANTITY_INVALID,
+    );
   });
 });

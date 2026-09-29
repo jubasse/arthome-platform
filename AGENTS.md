@@ -143,7 +143,7 @@ done
 
 **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
 anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`, `PUBLIC_WEB_ORIGIN`,
-`OPENSEARCH_URL`, `REDIS_URL` — is filled from a local default **only outside production**, and `NODE_ENV` is
+`OPENSEARCH_URL`, `REDIS_URL`, `PAYMENT_WEBHOOK_SECRET` — is filled from a local default **only outside production**, and `NODE_ENV` is
 what selects that. Defaulting it to `development` would make an unset variable open the
 production-guarded write routes and point a migration at localhost; both fail loudly instead, naming
 the variable. `PORT` is the single exception and defaults to 3000: the migration CLI never listens,
@@ -354,8 +354,9 @@ a bare producer script prints it too.
 
 `ticketing` runs three processes from `apps/ticketing`, all on its own database `ticketing`: the API
 (`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`)
-and the sweeper (`node dist/sweeper.js`), which publishes `availability_changed` and needs Postgres
-alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
+and the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
+nobody paid, closes each sale thirty minutes after its start (D-089, HANDOVER §0l), and needs
+Postgres alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
 
 A date catalog drafts is opened in ticketing by the consumer; the studio then gives it capacity and
 prices, each with an `Idempotency-Key` and the version the pane served:
@@ -414,6 +415,68 @@ the container suite makes: no validated write stores such a price.
 | a date whose price core refuses (`amountMinor` 1.5), moved | `money.amount_not_integer` logged, `failed_at` set; tried again every 10.1 s; a tier opened meanwhile on another date published in the same pass |
 | that price put back | published at the next retry, `failed_at` cleared |
 | a date on sale cancelled in catalog | the sale closed in ticketing 0.3 s after catalog's answer; its closing, no longer on sale, reached through `closing_due` and published once 1.6 s later: 0 seats, `sold_out` false; the availability read 404 |
+
+### The ticketing purchase path
+
+The storefront's seat operations run on ticketing's API, the BFF routes being T7's; the payment
+provider is the fake adapter, bound by default (`adr-payments.md` §4), which confirms every intent
+at once on the running stack:
+
+```
+POST /v1/dates/:dateId/seat-quote   { tier, quantity }                 x-arthome-deadline required
+POST /v1/orders/seats               { dateId, tier, quantity, expectedTotal }   Idempotency-Key required,
+                                                    X-Arthome-Late-Entry-Acknowledged after the start
+GET  /v1/orders/:orderId                                                x-arthome-deadline required
+```
+
+`purchaseSeat` answers 201 with the tickets and the order once paid, 202 with the payment handoff
+while the buyer has to act, 409 `order.sold_out`, `order.price_stale` or `order.payment_declined`,
+and 503 when the provider does not answer; a replay under its key answers the first answer again.
+Seats sell until thirty minutes after the live's start (D-089): from the start the quote carries
+`lateEntry`, and a purchase without `X-Arthome-Late-Entry-Acknowledged: true` is refused 409
+`order.late_entry_unacknowledged` before any seat is taken, a retry under its key included; past the
+cutoff, the quote and the purchase answer 409 `order.sales_closed`.
+The provider's webhooks arrive on `POST /v1/payments/webhook`, verified on their raw bytes, recorded
+in `stripe_event_inbox` and answered at once; the API process's payment worker applies them every
+second, refunds at once a payment confirmed after its hold expired with no seat left (D-082), and
+cancels the intents of expired orders (`apps/ticketing/HANDOVER.md` §0j, §0k).
+
+The capacity invariant is proven by `orders/capacity.itest.ts` on a real Postgres (adr-ticketing.md
+§3): 300 purchases at once on 100 seats hold exactly 100, never below zero, and all 100 come back at
+expiry; measured over three runs, the 300 took 574, 634 and 946 ms with the fake provider and a pool
+of ten. The load test at 10,000 buyers a minute is T6's.
+
+Proven on the running stack on 2026-09-29 at 040190f, the four new migrations run on the database
+that already held T2's dates, ticketing's three processes started from that build, a date drafted,
+scheduled and engaged by catalog's facts sent on `arthome.catalog.date`, 5 seats at 24 EUR:
+
+| Check | Result |
+| --- | --- |
+| `quoteSeat` for 3 | 200, one `tier` line of 7200 EUR, `validUntil` 60 s out |
+| `purchaseSeat` for 3 | 201 in 40 ms: three seats `ATH-XXXXXX`, their cancel deadline an hour before the start, order `ATH-2026-00001` paid |
+| the same key again | 201 in 5 ms, `Idempotency-Replayed: true`, the body byte for byte |
+| 3 more under a new key | 409 `order.sold_out`, 2 seats left |
+| `arthome.ticketing.order` | `order.paid`, key the order id, the request's `traceparent` |
+| `arthome.ticketing.date_sales` | three `seat.activated` on the date's key, then the sweeper's `availability_changed` 0.25 s after the purchase |
+| a webhook forged, then a genuine `payment_failed` twice | 401; 200 recorded; 200 `duplicate: true`; applied by the worker within 2.5 s, the paid order left paid |
+| SIGTERM to the three | stopped, no ticketing connection left in `pg_stat_activity` |
+
+Proven again on 2026-09-29 at d621b51, after both reviews' fixes, the three migrations
+`1790440900000` to `1790441100000` run on that database, the three processes rebuilt, one date
+started ten minutes before and one thirty-one minutes before, each opened by catalog's facts:
+
+| Check | Result |
+| --- | --- |
+| a purchase on a date not started | 201, the order paid |
+| the quote on the started date | 200 with `lateEntry`: `minutesElapsed` 10 and `salesEndAt` 30 min after the start |
+| a purchase there, without then with `X-Arthome-Late-Entry-Acknowledged: true` | 409 `order.late_entry_unacknowledged` with the three facts, no hold nor order left; then 201 |
+| the date past its cutoff | closed by the sweeper at its end, its last availability published; purchase and quote 409 `order.sales_closed` with `salesEndAt` |
+
+Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
+`apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
+instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` to
+`1790440900000` with the three processes stopped, as for every ticketing migration; the last one
+writes each scheduled sale's end, and the sweeper closes those already past it on its first pass.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

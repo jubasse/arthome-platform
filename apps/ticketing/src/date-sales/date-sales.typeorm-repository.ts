@@ -1,7 +1,7 @@
 import { AggregateTracker, saveVersioned, type Track } from '@arthome-platform/transactions';
 import type { EntityManager } from 'typeorm';
 
-import { money, type TierPrice } from '@arthome/core';
+import { money, type Instant, type TierPrice } from '@arthome/core';
 
 import { DateSales, type DateSalesSnapshot } from './date-sales.aggregate.js';
 import { DateSalesRow, type PriceTierColumn } from './date-sales.entity.js';
@@ -28,14 +28,71 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
   }
 
   public async findById(dateId: string): Promise<DateSales | null> {
-    const row = await this.manager.findOne(DateSalesRow, {
-      where: { date_id: dateId },
-      lock: { mode: 'pessimistic_write' },
+    return this.restored(
+      await this.manager.findOne(DateSalesRow, {
+        where: { date_id: dateId },
+        lock: { mode: 'pessimistic_write' },
+      }),
+    );
+  }
+
+  public async findUnlocked(dateId: string): Promise<DateSales | null> {
+    return this.restored(await this.manager.findOneBy(DateSalesRow, { date_id: dateId }));
+  }
+
+  /**
+   * The decrement moves the counter the aggregate's `holdSeats` moved, and the stored snapshot by the
+   *   same amount: a save later in the transaction measures no delta, where it would take the seats
+   *   a second time. Registered without a version, which the statement leaves as it was.
+   */
+  public async takeSeats(sales: DateSales, quantity: number, now: Instant): Promise<boolean> {
+    const { dateId } = sales.snapshot;
+    const taken = await this.affected(
+      `UPDATE date_sales
+          SET seats_available = seats_available - $2,
+              availability_moves = availability_moves + 1
+        WHERE date_id = $1 AND on_sale AND seats_available >= $2
+          AND ${beforeSalesEnd('$3')}`,
+      [dateId, quantity, new Date(now)],
+    );
+    if (!taken) return false;
+    const stored = this.storedSnapshots.get(sales) ?? sales.snapshot;
+    this.storedSnapshots.set(sales, {
+      ...stored,
+      seatsAvailable: stored.seatsAvailable - quantity,
     });
-    if (row === null) return null;
-    const sales = DateSales.restore(dateSalesSnapshotOf(row));
-    this.storedSnapshots.set(sales, sales.snapshot);
-    return this.tracker.loaded(sales, row.version);
+    this.tracker.writtenUnversioned(sales);
+    return true;
+  }
+
+  public async sellHeldSeats(dateId: string, quantity: number): Promise<void> {
+    await this.affected(
+      `UPDATE date_sales
+          SET seats_sold = seats_sold + $2, availability_moves = availability_moves + 1
+        WHERE date_id = $1`,
+      [dateId, quantity],
+    );
+  }
+
+  public async returnHeldSeats(dateId: string, quantity: number): Promise<void> {
+    await this.affected(
+      `UPDATE date_sales
+          SET seats_available = seats_available + $2, availability_moves = availability_moves + 1
+        WHERE date_id = $1`,
+      [dateId, quantity],
+    );
+  }
+
+  public takeAndSellSeats(dateId: string, quantity: number, now: Instant): Promise<boolean> {
+    return this.affected(
+      `UPDATE date_sales
+          SET seats_available = seats_available - $2,
+              seats_sold = seats_sold + $2,
+              availability_moves = availability_moves + 1
+        WHERE date_id = $1 AND on_sale AND seats_available >= $2
+          AND ${beforeSalesEnd('$3')}`,
+      [dateId, quantity, new Date(now)],
+    );
   }
 
   /**
@@ -76,6 +133,31 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
     this.storedSnapshots.set(sales, current);
     this.tracker.written(sales, current.version);
   }
+
+  private restored(row: DateSalesRow | null): DateSales | null {
+    if (row === null) return null;
+    const sales = DateSales.restore(dateSalesSnapshotOf(row));
+    this.storedSnapshots.set(sales, sales.snapshot);
+    return this.tracker.loaded(sales, row.version);
+  }
+
+  private async affected(sql: string, parameters: unknown[]): Promise<boolean> {
+    return affectedOne(await this.manager.query(sql, parameters));
+  }
+}
+
+/**
+ * D-089's cutoff in the hold's own WHERE, at the command's instant, the statement's parameter
+ *   `now`: the sweeper closes a sale up to a second after its end, and a second at an opening's rate
+ *   is seats sold past it. One predicate on a row already found by its key costs nothing.
+ */
+function beforeSalesEnd(now: `$${number}`): string {
+  return `(sales_end_at IS NULL OR sales_end_at > ${now})`;
+}
+
+function affectedOne(result: unknown): boolean {
+  const [, affected] = result as [unknown, number];
+  return affected === 1;
 }
 
 function movedBy(counter: Counter, delta: number): () => string {
@@ -113,6 +195,7 @@ export function dateSalesSnapshotOf(row: DateSalesRow): DateSalesSnapshot {
     priceTiers: row.price_tiers.map(tierPriceOf),
     pricesLockedAt: instantOf(row.prices_locked_at),
     salesClosedAt: instantOf(row.sales_closed_at),
+    salesEndAt: instantOf(row.sales_end_at),
     startsAt: instantOf(row.starts_at),
     scheduleStatedAt: instantOf(row.schedule_stated_at),
     outcome: row.outcome,
@@ -139,6 +222,7 @@ function stateColumnsOf(sales: DateSalesSnapshot): StateColumns {
     })),
     prices_locked_at: dateOf(sales.pricesLockedAt),
     sales_closed_at: dateOf(sales.salesClosedAt),
+    sales_end_at: dateOf(sales.salesEndAt),
     starts_at: dateOf(sales.startsAt),
     schedule_stated_at: dateOf(sales.scheduleStatedAt),
     outcome: sales.outcome,

@@ -35,6 +35,11 @@
       "file": "libs/messaging/src/dispatch.ts",
       "value": "duplicate",
       "reason": "A message's disposition: this message-id was already applied. REFUND_REASONS' `duplicate` is why money went back to a viewer charged twice. The two share the English word and nothing else; every consumer returns `Outcome.DUPLICATE`, so this definition is the only place the literal stands."
+    },
+    {
+      "file": "apps/ticketing/src/orders/seat.entity.ts",
+      "value": "seat",
+      "reason": "The table of the Seat entity (data-model.md §3.3), named for it as `seat_hold` and `seat_order` are. ORDER_KINDS' `seat` is a kind of order, not a table: importing OrderKind.SEAT to name one would be the NavigationEntry.JOURNAL mistake again."
     }
   ]
 }

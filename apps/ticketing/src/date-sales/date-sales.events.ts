@@ -97,6 +97,43 @@ export class DateOutcomeRecorded implements IEvent {
   ) {}
 }
 
+/** Its end by time passed: the sale closed, with no outcome declared. */
+export class DateSalesEnded implements IEvent {
+  public readonly kind = 'DateSalesEnded';
+
+  public constructor(
+    public readonly dateId: string,
+    public readonly channelId: string,
+    public readonly endedAt: Instant,
+    public readonly occurredAt: Instant,
+  ) {}
+}
+
+/** A sale closed by time, reopened by a postponement applied after its old end. */
+export class DateSalesReopened implements IEvent {
+  public readonly kind = 'DateSalesReopened';
+
+  public constructor(
+    public readonly dateId: string,
+    public readonly channelId: string,
+    public readonly occurredAt: Instant,
+  ) {}
+}
+
+/**
+ * Seats left `seats_available` for a hold, in the conditional statement that decided they could
+ *   (adr-ticketing.md §3). The statement counts the move; nothing reaches the wire from here.
+ */
+export class SeatsHeld implements IEvent {
+  public readonly kind = 'SeatsHeld';
+
+  public constructor(
+    public readonly dateId: string,
+    public readonly quantity: number,
+    public readonly occurredAt: Instant,
+  ) {}
+}
+
 /**
  * Every event of the aggregate. A mapping switches on `kind` and ends in `assertNever`, so an
  *   event without its case fails to compile rather than reach the wire as another.
@@ -108,4 +145,7 @@ export type DateSalesEvent =
   | CapacityTierOpened
   | TechnicalProvisionSet
   | DateScheduleRecorded
-  | DateOutcomeRecorded;
+  | DateOutcomeRecorded
+  | DateSalesEnded
+  | DateSalesReopened
+  | SeatsHeld;

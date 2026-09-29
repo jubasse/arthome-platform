@@ -3,9 +3,10 @@
 import {
   DateOutcome as WireDateOutcome,
   PriceTier as WirePriceTier,
+  RefundReason as WireRefundReason,
 } from '@arthome-platform/events';
 
-import { DATE_OUTCOMES, DateOutcome, PriceTier } from '@arthome/core';
+import { DATE_OUTCOMES, DateOutcome, PriceTier, RefundReason } from '@arthome/core';
 
 /**
  * The domain's members → the wire's numbers. `satisfies` points at the domain: a new member in
@@ -16,6 +17,16 @@ export const WIRE_PRICE_TIER = {
   [PriceTier.REDUCED]: WirePriceTier.REDUCED,
   [PriceTier.SUPPORT]: WirePriceTier.SUPPORT,
 } satisfies Record<PriceTier, WirePriceTier>;
+
+export const WIRE_REFUND_REASON = {
+  [RefundReason.VIEWER_REQUEST]: WireRefundReason.VIEWER_REQUEST,
+  [RefundReason.DATE_CANCELLED]: WireRefundReason.DATE_CANCELLED,
+  [RefundReason.ACCOUNT_DELETION]: WireRefundReason.ACCOUNT_DELETION,
+  [RefundReason.GOODWILL]: WireRefundReason.GOODWILL,
+  [RefundReason.DUPLICATE]: WireRefundReason.DUPLICATE,
+  [RefundReason.DISPUTE]: WireRefundReason.DISPUTE,
+  [RefundReason.HOLD_EXPIRED_CAPACITY_LOST]: WireRefundReason.HOLD_EXPIRED_CAPACITY_LOST,
+} satisfies Record<RefundReason, WireRefundReason>;
 
 const WIRE_DATE_OUTCOME = {
   [DateOutcome.POSTPONED]: WireDateOutcome.POSTPONED,

@@ -213,3 +213,21 @@ export function readPublicWebOrigin(
   return new URL(z.object({ PUBLIC_WEB_ORIGIN: httpUrl }).parse(withDefault).PUBLIC_WEB_ORIGIN)
     .origin;
 }
+
+/**
+ * Development's, so the fake payment adapter signs and verifies on a fresh clone. Production has
+ *   none: a known secret there would let anyone forge a paid order.
+ */
+const DEVELOPMENT_PAYMENT_WEBHOOK_SECRET = 'development-payment-webhook-secret';
+
+/** The secret a payment provider signs its webhooks with (adr-payments.md §7.1). */
+export function readPaymentWebhookSecret(
+  source: Record<string, string | undefined> = process.env,
+): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { PAYMENT_WEBHOOK_SECRET: DEVELOPMENT_PAYMENT_WEBHOOK_SECRET, ...stripEmpty(source) };
+  return z.object({ PAYMENT_WEBHOOK_SECRET: z.string().min(32) }).parse(withDefault)
+    .PAYMENT_WEBHOOK_SECRET;
+}

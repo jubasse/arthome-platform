@@ -7,12 +7,14 @@ import {
   DateOutcome,
   DomainError,
   DomainErrorCode,
+  OrderErrorCode,
   assertPricesShareCurrency,
   assertTechnicalProvisionCovers,
   assertTechnicalProvisionRecordable,
   assertTierWidens,
   isBefore,
   type Instant,
+  type PriceTier,
   type TierPrice,
 } from '@arthome/core';
 
@@ -21,12 +23,23 @@ import {
   DateOutcomeRecorded,
   DatePricesLocked,
   DatePricesSet,
+  DateSalesEnded,
   DateSalesOpened,
+  DateSalesReopened,
   DateScheduleRecorded,
+  SeatsHeld,
   TechnicalProvisionSet,
   type CapacityTier,
   type DateSalesEvent,
 } from './date-sales.events.js';
+import { seatQuoteOf, type SeatQuote } from './seat-quote.js';
+import {
+  INTERIM_SALES_CLOSED,
+  lateEntryOf,
+  salesEndedBy,
+  seatSalesEndAt,
+  type LateEntry,
+} from './seat-sales-window.js';
 import { technicalProvisionOf } from './technical-provision.js';
 
 export interface DateSalesSnapshot {
@@ -47,6 +60,8 @@ export interface DateSalesSnapshot {
   /** When `catalog.publication.engaged` opened the sale: the prices hold from then on. */
   readonly pricesLockedAt: Instant | null;
   readonly salesClosedAt: Instant | null;
+  /** When the sale ends by time, from the start (`seatSalesEndAt`, D-089); null with no start. */
+  readonly salesEndAt: Instant | null;
   readonly startsAt: Instant | null;
   /** The `occurred_at` of the schedule fact applied last, which an older one may not overwrite. */
   readonly scheduleStatedAt: Instant | null;
@@ -98,6 +113,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
       priceTiers: [],
       pricesLockedAt: null,
       salesClosedAt: null,
+      salesEndAt: null,
       startsAt: null,
       scheduleStatedAt: null,
       outcome: null,
@@ -110,6 +126,57 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
 
   public get snapshot(): DateSalesSnapshot {
     return this.current;
+  }
+
+  /** From the lock of its prices until an outcome closes it: `on_sale`, as the row generates it. */
+  public get isOnSale(): boolean {
+    const { pricesLockedAt, salesClosedAt } = this.current;
+    return pricesLockedAt !== null && salesClosedAt === null;
+  }
+
+  /**
+   * On sale and short of its end by time. Read without the row's lock on a purchase, so the hold's
+   *   statement checks the end again.
+   */
+  public sellsSeatsAt(now: Instant): boolean {
+    return this.isOnSale && !this.hasEndedBy(now);
+  }
+
+  /** Past its end by time (D-089), whether or not the sweeper has closed it yet. */
+  public hasEndedBy(now: Instant): boolean {
+    return salesEndedBy(this.current.salesEndAt, now);
+  }
+
+  /** What a buyer arriving now must be told and acknowledge; null before the start. */
+  public lateEntryAt(now: Instant): LateEntry | null {
+    return lateEntryOf(this.current.startsAt, now);
+  }
+
+  /** The price of `quantity` seats of `tier`; null while that tier is not sold. */
+  public quote(tier: PriceTier, quantity: number): SeatQuote | null {
+    return seatQuoteOf(this.current.priceTiers, tier, quantity);
+  }
+
+  /**
+   * Decides a hold of `quantity` seats (adr-ticketing.md §11): refused for a quantity core refuses,
+   *   past the end by time, or off sale; the repository's conditional decrement then takes them, or
+   *   finds fewer left, which only it can tell. Loaded without the row's lock, so the counter moved
+   *   here is only what a later save measures its delta from; the version stays as loaded.
+   */
+  public holdSeats(quantity: number, now: Instant): void {
+    const { dateId, seatsAvailable, salesEndAt } = this.current;
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+      throw new DomainError({
+        code: DomainErrorCode.HOLD_QUANTITY_INVALID,
+        params: { quantity: String(quantity) },
+      });
+    }
+    if (salesEndAt !== null && this.hasEndedBy(now)) {
+      throw new DomainError({ code: INTERIM_SALES_CLOSED, params: { salesEndAt } });
+    }
+    if (!this.isOnSale) throw new DomainError({ code: OrderErrorCode.SOLD_OUT });
+    this.current = frozen({ ...this.current, seatsAvailable: seatsAvailable - quantity });
+    this.apply(new SeatsHeld(dateId, quantity, now));
   }
 
   /**
@@ -203,14 +270,23 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
     return true;
   }
 
-  /** A start as scheduled or moved by a postponement; false when a newer one was recorded. */
+  /**
+   * A start as scheduled or moved by a postponement, its end of sales with it; false when a newer
+   *   one was recorded. A sale closed by time whose new end is still ahead reopens: core refuses a
+   *   postponement once the live started, so only a fact applied late, after the consumer lagged,
+   *   finds its sale already closed.
+   */
   public recordSchedule(startsAt: Instant, statedAt: Instant, now: Instant): boolean {
     const { dateId, channelId, capacityTotal, provisionedCapacity, scheduleStatedAt, version } =
       this.current;
     if (isStale(statedAt, scheduleStatedAt)) return false;
+    const salesEndAt = seatSalesEndAt(startsAt);
+    const reopens = this.closedByTime && isBefore(now, salesEndAt);
     this.current = frozen({
       ...this.current,
       startsAt,
+      salesEndAt,
+      salesClosedAt: reopens ? null : this.current.salesClosedAt,
       scheduleStatedAt: statedAt,
       version: version + 1,
     });
@@ -224,6 +300,27 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
         now,
       ),
     );
+    if (reopens) this.apply(new DateSalesReopened(dateId, channelId, now));
+    return true;
+  }
+
+  /** Closed at its end by time, and by no outcome: a cancellation or an interruption is final. */
+  private get closedByTime(): boolean {
+    const { salesClosedAt, outcome } = this.current;
+    return (
+      salesClosedAt !== null && (outcome === null || !OUTCOMES_CLOSING_SALES.includes(outcome))
+    );
+  }
+
+  /**
+   * Ends a sale on sale once its end by time has passed (`salesEndAt`); false otherwise. It closes
+   *   as an outcome closes it, at the instant it ended, publishing a last availability.
+   */
+  public endSales(now: Instant): boolean {
+    const { dateId, channelId, salesEndAt, version } = this.current;
+    if (!this.isOnSale || salesEndAt === null || isBefore(now, salesEndAt)) return false;
+    this.current = frozen({ ...this.current, salesClosedAt: salesEndAt, version: version + 1 });
+    this.apply(new DateSalesEnded(dateId, channelId, salesEndAt, now));
     return true;
   }
 
