@@ -1,3 +1,5 @@
+import type { Instant } from '@arthome/core';
+
 import type { DateSales } from './date-sales.aggregate.js';
 
 /**
@@ -17,13 +19,20 @@ export abstract class DateSalesRepository {
    */
   public abstract save(sales: DateSales): Promise<void>;
 
-  /** The hold's one statement, once `sales` decided it: false, nothing taken, when short. */
-  public abstract takeSeats(sales: DateSales, quantity: number): Promise<boolean>;
+  /**
+   * The hold's one statement, once `sales` decided it: false, nothing taken, when short or past its
+   *   end by time at `now`.
+   */
+  public abstract takeSeats(sales: DateSales, quantity: number, now: Instant): Promise<boolean>;
 
   public abstract sellHeldSeats(dateId: string, quantity: number): Promise<void>;
 
   public abstract returnHeldSeats(dateId: string, quantity: number): Promise<void>;
 
   /** A payment whose hold is gone takes and sells its seats in one statement (D-082). */
-  public abstract takeAndSellSeats(dateId: string, quantity: number): Promise<boolean>;
+  public abstract takeAndSellSeats(
+    dateId: string,
+    quantity: number,
+    now: Instant,
+  ): Promise<boolean>;
 }

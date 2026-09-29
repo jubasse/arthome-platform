@@ -29,6 +29,7 @@ import { OrderState, SeatHoldState } from './commerce-vocabulary.js';
 import { GetOrderHandler } from './get-order.handler.js';
 import { GetOrder } from './get-order.query.js';
 import type { PaymentHandoffView, PurchasedSeats } from './order-views.js';
+import { INTERIM_LATE_ENTRY_UNACKNOWLEDGED } from './purchase-refusals.js';
 import { PurchaseStatus, type PurchaseAnswer } from './purchase-seat.command.js';
 import { PurchaseSeatHandler } from './purchase-seat.handler.js';
 import { QuoteSeatHandler } from './quote-seat.handler.js';
@@ -74,10 +75,10 @@ let fake: FakePaymentProvider;
 let published: IEvent[] = [];
 let dates = 0;
 
-async function dateOnSale(capacity = 10): Promise<string> {
+async function dateOnSale(capacity = 10, startsAt = STARTS_AT): Promise<string> {
   dates += 1;
   const dateId = `01a0fb00-0000-7000-8000-${String(dates).padStart(12, '0')}`;
-  await putOnSale(commands, { dateId, channelId: CHANNEL, capacity, startsAt: STARTS_AT }, NOW);
+  await putOnSale(commands, { dateId, channelId: CHANNEL, capacity, startsAt }, NOW);
   return dateId;
 }
 
@@ -543,6 +544,111 @@ describe('quoteSeat and getOrder', () => {
       expect(await queries.execute(new GetOrder(order.id))).toEqual({ order, tickets });
       await expect(
         queries.execute(new GetOrder('01a0fbee-0000-7000-8000-0000000000aa')),
+      ).rejects.toMatchObject({ refusal: { code: ApiErrorCode.NOT_FOUND } });
+    },
+    CASE_MS,
+  );
+});
+
+describe('a buyer arriving after the start (D-089)', () => {
+  it(
+    'buys before the start without acknowledging anything, the flag ignored',
+    async () => {
+      const dateId = await dateOnSale(10, plusMinutes(NOW, 5));
+
+      expect((await purchase(dateId, 1)).status).toBe(PurchaseStatus.PAID);
+      expect((await purchase(dateId, 1, nextKey(), { acknowledgeLateEntry: false })).status).toBe(
+        PurchaseStatus.PAID,
+      );
+    },
+    CASE_MS,
+  );
+
+  it(
+    'is refused after the start without the acknowledgement, told what was missed, and holds nothing',
+    async () => {
+      const startsAt = plusMinutes(NOW, -10);
+      const dateId = await dateOnSale(10, startsAt);
+      const before = await countersOf(dateId);
+
+      const unacknowledged = await refusalOf(purchase(dateId, 2));
+
+      expect(unacknowledged.getStatus()).toBe(409);
+      expect(unacknowledged.refusal).toEqual({
+        code: INTERIM_LATE_ENTRY_UNACKNOWLEDGED,
+        params: { startedAt: startsAt, minutesElapsed: 10, salesEndAt: plusMinutes(startsAt, 30) },
+        nature: FailureNature.REFUSED,
+      });
+      expect(await countersOf(dateId)).toEqual(before);
+      expect(await holdsOf(dateId)).toEqual([]);
+      expect(await ordersOf(dateId)).toEqual([]);
+
+      const acknowledged = await purchase(dateId, 2, nextKey(), { acknowledgeLateEntry: true });
+      expect(acknowledged.status).toBe(PurchaseStatus.PAID);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'is refused past thirty minutes after the start, acknowledged or not, holding nothing',
+    async () => {
+      const dateId = await dateOnSale(10, plusMinutes(NOW, -31));
+      const before = await countersOf(dateId);
+
+      const late = await refusalOf(purchase(dateId, 1, nextKey(), { acknowledgeLateEntry: true }));
+
+      expect(late.refusal.code).toBe(OrderErrorCode.SOLD_OUT);
+      expect(await countersOf(dateId)).toEqual(before);
+      expect(await holdsOf(dateId)).toEqual([]);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'is refused past the cutoff by the hold statement itself, before the sweeper closes the sale',
+    async () => {
+      const dateId = await dateOnSale(10, plusMinutes(NOW, -31));
+
+      const taken = await cqrs.get(TicketingTransactions).run(async ({ dateSales }) => {
+        const sales = await dateSales.findUnlocked(dateId);
+        if (sales === null) throw new Error('no sale');
+        expect(sales.isOnSale).toBe(true);
+        sales.holdSeats(1, NOW);
+        return dateSales.takeSeats(sales, 1, NOW);
+      });
+
+      expect(taken).toBe(false);
+      expect((await countersOf(dateId)).seats_available).toBe(10);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'is quoted with what was missed only once the live started, and nothing past the cutoff',
+    async () => {
+      const soon = plusSeconds(NOW, 30);
+      const upcoming = await dateOnSale(10, soon);
+      const before = await queries.execute(
+        new QuoteSeat(upcoming, { tier: PriceTier.FULL, quantity: 1 }),
+      );
+      expect(before.data).not.toHaveProperty('lateEntry');
+      expect(before.validUntil).toBe(soon);
+
+      const startsAt = plusMinutes(NOW, -10);
+      const started = await dateOnSale(10, startsAt);
+      const late = await queries.execute(
+        new QuoteSeat(started, { tier: PriceTier.FULL, quantity: 1 }),
+      );
+      expect(late.data.lateEntry).toEqual({
+        startedAt: startsAt,
+        minutesElapsed: 10,
+        salesEndAt: plusMinutes(startsAt, 30),
+      });
+      expect(late.validUntil).toBe(plusSeconds(NOW, 60));
+
+      const over = await dateOnSale(10, plusMinutes(NOW, -30));
+      await expect(
+        queries.execute(new QuoteSeat(over, { tier: PriceTier.FULL, quantity: 1 })),
       ).rejects.toMatchObject({ refusal: { code: ApiErrorCode.NOT_FOUND } });
     },
     CASE_MS,

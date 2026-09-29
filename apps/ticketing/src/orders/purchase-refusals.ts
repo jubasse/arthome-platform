@@ -10,6 +10,10 @@ import {
 } from '@arthome/core';
 
 import type { SeatOrderSnapshot } from './seat-order.aggregate.js';
+import type { LateEntry } from '../date-sales/seat-sales-window.js';
+
+/** D-089's refusal, until core's `ORDER_ERROR_CODES` carries it (HANDOVER §3). */
+export const INTERIM_LATE_ENTRY_UNACKNOWLEDGED = 'order.late_entry_unacknowledged';
 
 /** How long a purchase waits on another one holding its key before being told it is in flight. */
 export const KEY_HOLDER_WAIT_MS = 5_000;
@@ -30,6 +34,18 @@ export function priceStale(expected: Money, current: Money | null): RefusalExcep
     ...(current !== null && { currentAmountMinor: current.amountMinor }),
     currencyCode: current?.currencyCode ?? expected.currencyCode,
   });
+}
+
+/**
+ * After the start, a purchase that did not acknowledge the part of the live already missed, with
+ *   the facts the surface warns with (D-089).
+ */
+export function lateEntryUnacknowledged({
+  startedAt,
+  minutesElapsed,
+  salesEndAt,
+}: LateEntry): RefusalException {
+  return refused(INTERIM_LATE_ENTRY_UNACKNOWLEDGED, { startedAt, minutesElapsed, salesEndAt });
 }
 
 export function keyReused(): RefusalException {

@@ -339,27 +339,42 @@ same refund. Never an oversold date, never money kept without a seat.
 A purchase replayed under its key once its hold expired, never having reached the provider,
 answers `order.sold_out` from the failed order and asks the provider nothing.
 
-## 0l. A sale ends by time, once a rule says when (T3)
+## 0l. Seat sales end thirty minutes after the start, and a late buyer is told (T3, D-089)
 
-`on_sale` had no end in time: a date that ends without an outcome stays on sale, sold after the
-show, and in the publisher's pass for good (§0e). T3 closes it through the sweeper, and **no rule
-says when yet**: core's `decideWatch` offers `buy_seat` through the live and, for some replay
-policies, through the replay, and no document states when ticketing stops selling. So the rule is
-one function, `date-sales/sales-end.ts`'s `salesEndOf(startsAt)`, returning null, and everything
-around it is built. The rule is a product decision the lead has put to the product owner; it arrives
-here, in that function, and nowhere else:
+`on_sale` had no end in time: a date ending without an outcome stayed on sale, sold after the show,
+and in the publisher's pass for good (§0e). The product owner ruled (D-089, recorded in core by the
+lead): **a seat covers the live alone** (a replay's access is a separate matter, out of T3), **its
+sales end `SEAT_SALES_CUTOFF_MINUTES_AFTER_START` (30) minutes after the live's start**, the same
+for every channel, and **a buyer arriving after the start is told what was missed and must
+acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEndAt(startsAt)` and
+`lateEntryOf(startsAt, now)`, under the names core will give them (§3).
 
-- `date_sales.sales_end_at` (`1790440800000-sales-end.ts`), written by `recordSchedule` from
-  `salesEndOf` whenever catalog states or moves the start, with a partial index on the sales on sale
-  that have one.
-- `CloseEndedSales`, a third `SweeperLoop` in the sweeper every second: each sale on sale past its
-  end, in a transaction of its own under the date's row (taken once, when nothing sells any more),
-  `DateSales.endSales` closes it at its end, as a closing outcome does: `on_sale` false, one move
-  and `closing_due` for the publisher's last publication (0 seats, not sold out), and the hold's
-  statement refusing from then on. `DateSalesEnded` reaches no wire of its own.
-- The day `salesEndOf` answers, a migration backfills `sales_end_at` for the dates already
-  scheduled. If the rule needs more than the start (the runtime, the replay policy and window, which
-  `catalog.date.scheduled` carries), the consumer records them first.
+- **The end** is `date_sales.sales_end_at` (`1790440800000-sales-end.ts`), written by
+  `recordSchedule` from `seatSalesEndAt` whenever catalog states or moves the start, so a
+  postponement moves it; `1790440900000-seat-sales-cutoff.ts` backfilled it for the dates already
+  scheduled.
+- **The hold's statement refuses past the end by itself**: its WHERE gained
+  `(sales_end_at IS NULL OR sales_end_at > $now)`, the command's instant, in `takeSeats` and in
+  the late payment's `takeAndSellSeats`. Chosen over accepting the sweeper's second: a second at an
+  opening's rate is seats sold past the cutoff, and one predicate on a row already found by its key
+  costs nothing. The purchase reads the same end off the unlocked aggregate first
+  (`sellsSeatsAt`) and refuses before claiming its key. Past the end, `purchaseSeat` answers
+  `order.sold_out`, the closed-sale answer it already gives, since the contract has no dedicated
+  code; `quoteSeat` answers 404.
+- **The sweeper closes it** (`CloseEndedSales`, a third `SweeperLoop`, every second): each sale on
+  sale past its end, in a transaction of its own under the date's row (taken once, when nothing
+  sells any more), `DateSales.endSales` closes it at its end as a closing outcome does: `on_sale`
+  false, one move and `closing_due` for the publisher's last publication (0 seats, not sold out).
+  `DateSalesEnded` reaches no wire of its own.
+- **The late entry.** From the start, `quoteSeat` carries `lateEntry` (`startedAt`,
+  `minutesElapsed` in whole minutes, `salesEndAt`), and its `validUntil` is no later than the start
+  before it and the end after it, where what it says changes. `purchaseSeat` takes
+  `acknowledgeLateEntry`: from the start and without `true`, it is refused 409
+  `order.late_entry_unacknowledged` (an interim code, §3) with the same three facts in `params`,
+  before its key is claimed or any seat taken; before the start the flag is ignored. Both fields are
+  ahead of the contract: the report to "main" gives storefront.yaml's and the contracts' text.
+- A replay under a key answers what it answered, whatever the clock says since: the fingerprint
+  covers the flag.
 
 ## 1. What proves it
 
@@ -375,11 +390,13 @@ here, in that function, and nowhere else:
 | `boot.itest.ts` | the three root modules |
 | `orders/seat-order.aggregate.spec.ts`, `orders/seat-hold.aggregate.spec.ts` | the order's forward-only states, its seats created at payment, a payment after a failure (D-082), a refund owed; the hold's expiry its intent's, consumed or released once |
 | `date-sales.aggregate.spec.ts` (T3's block) | on sale, the quote through core, a hold that moves the counter and not the version |
-| `orders/purchase.itest.ts` | 14 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, the quote |
+| `orders/purchase.itest.ts` | 19 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, the quote; D-089: a purchase before the start without the flag, one after it refused unacknowledged with the facts and nothing held then sold acknowledged, one past the cutoff refused holding nothing, the hold's statement refusing past the cutoff on its own, the quote's `lateEntry` only after the start |
 | `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry |
 | `boot.itest.ts` (T3's case) | the sweeper root expiring a due hold on its first pass |
-| `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes |
-| `date-sales/close-ended-sales.itest.ts`, `date-sales.aggregate.spec.ts` (T3's second block) | a sale past its end closed once, published a last time at 0 seats and not sold out, refusing a purchase; one running and one with no end left on sale; no end from a start while no rule gives one |
+| `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes; a late entry quoted, refused, then sold, `lateEntry` parsed by the contract's schema extended as the report gives it |
+| `date-sales/seat-sales-window.spec.ts`, `date-sales.aggregate.spec.ts` (T3's second block) | D-089's end thirty minutes after the start, moved by a postponement; no late entry before the start, whole minutes after it; on sale until the end, not at it |
+| `date-sales/close-ended-sales.itest.ts` | a sale past its end closed once, published a last time at 0 seats and not sold out, refusing a purchase; one running and one with no end left on sale; a sale closed thirty minutes after its start, and a postponed one whose end moved with its start left on sale |
+| `migrations/seat-sales-cutoff.itest.ts` | the backfill on a database already holding dates: an end thirty minutes after each start, none without one |
 | `orders/capacity.itest.ts` | adr-ticketing.md §3's concurrency test: 300 purchases at once on one date of 100 seats, ten at a time on its row through the pool: exactly 100 held (100 answered 202, 200 sold out), `seats_available` 0 and never below, and all 100 back at expiry; with quantities of one to three, paid or held, every seat accounted for (available + sold + held = capacity, one `seat` row per seat sold). Measured, three runs: the 300 purchases took 574, 634 and 946 ms, fake provider included |
 | `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, refunded at once under `refund:{orderId}` with `order.refunded`); a refund owed through a provider outage, made once on a later pass; a purchase resumed past its hold answering sold out; an expired order's intent cancelled, and asked again after an outage |
 | `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, a signature over the exact bytes and its tolerance |
@@ -397,7 +414,7 @@ either service imports the other.
 What T3 inherited from T2 is built: the hot decrement (`takeSeats`) and `seats_sold`'s statement
 (§0h), the unlocked load (`findUnlocked`), the stored snapshot moved with the decrement, the key on
 `seat_order` alone (libs review L1), the hold expiry beside the publisher (§0i), and the closing
-of sales by time, whose rule is still missing (§0l). Topics `arthome.ticketing.order` (6,
+of sales by time, thirty minutes after the start (D-089, §0l). Topics `arthome.ticketing.order` (6,
 `order_id`) and `.account` (3) are provisioned, and `order.paid` and `order.refunded` now reach the
 first.
 
@@ -444,9 +461,11 @@ addition):
 - The payment return URL, `{PUBLIC_WEB_ORIGIN}/orders/{orderId}` (`orders/payment-return-url.ts`):
   no document names the storefront's page for it.
 - No service fee (`date-sales/seat-quote.ts`): no fee schedule is set anywhere, as T2's pane says.
-- **When a sale ends by time** (`date-sales/sales-end.ts`, `salesEndOf`): no rule states it, so it
-  answers null and no sale ends but by an outcome (§0l). Not an interim value: an absent rule, the
-  closing built around it.
+- D-089's rules (`date-sales/seat-sales-window.ts`): `SEAT_SALES_CUTOFF_MINUTES_AFTER_START` (30),
+  `seatSalesEndAt`, `lateEntryOf` and `LateEntry`, under the names core will give them; the
+  refusal's code `order.late_entry_unacknowledged` (`INTERIM_LATE_ENTRY_UNACKNOWLEDGED`,
+  `orders/purchase-refusals.ts`), in no `ORDER_ERROR_CODES` yet; and the contract's fields ahead of
+  storefront.yaml: `SeatQuote.lateEntry` and the purchase body's `acknowledgeLateEntry`.
 
 **Known and left in T3, each judged:**
 
@@ -461,6 +480,13 @@ addition):
   as unresolved evidence: the tax model awaits counsel (`adr-payments.md` §5.5).
 - **A free seat** (a total of zero) would ask the provider for an intent of zero: no rule gives a
   contribution or a free tier yet, so none is refused or special-cased.
+- **A purchase resumed after the start is not asked to acknowledge it**: an order placed before the
+  start whose provider did not answer, retried under its key after the start, holds its seats again
+  without the flag its first body never needed. Asking then would strand it, since another body
+  under the key is refused as reused.
+- **A date postponed after its cutoff passed stays closed**: the sweeper closed it at its end, and a
+  later start does not reopen it. D-076 allows a postponement until the date ends, so a
+  postponement declared more than thirty minutes into the live meets this; none reopens a sale.
 
 The three interims of the first handover are core's rules now (arthome-core PR #2, fbab36e):
 `AVAILABILITY_VALID_SECONDS` and `availabilityValidUntil`, `provisionRevisableUntil` and

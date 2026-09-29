@@ -13,9 +13,10 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { FixedClock, OrderErrorCode, plusSeconds } from '@arthome/core';
+import { FixedClock, OrderErrorCode, plusMinutes, plusSeconds } from '@arthome/core';
 
 import { ApplyCatalogDateFactHandler } from './apply-catalog-date-fact.handler.js';
+import { applyCatalogDateMessage } from './catalog-date-messages.js';
 import { CloseEndedSales } from './close-ended-sales.command.js';
 import { CloseEndedSalesHandler } from './close-ended-sales.handler.js';
 import { OpenCapacityTierHandler } from './open-capacity-tier.handler.js';
@@ -23,6 +24,7 @@ import { SetDatePricesHandler } from './set-date-prices.handler.js';
 import { PublishDueAvailability } from '../availability/publish-due-availability.command.js';
 import { PublishDueAvailabilityHandler } from '../availability/publish-due-availability.handler.js';
 import { CLOCK } from '../clock.js';
+import { delivered, rescheduled } from '../itest/catalog-messages.js';
 import { purchaseOf, putOnSale } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { PurchaseSeatHandler } from '../orders/purchase-seat.handler.js';
@@ -33,9 +35,8 @@ import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 
 /**
- * The sweeper's closing of a sale whose end by time passed, the end written by hand since no rule
- *   gives one yet (`salesEndOf`): closed as an outcome closes it, published a last time, and no seat
- *   sold after it.
+ * The sweeper's closing of a sale whose end by time passed (D-089): closed as an outcome closes it,
+ *   published a last time, and no seat sold after it; the end moved by a postponement.
  */
 
 const STARTUP_MS = 240_000;
@@ -143,6 +144,48 @@ describe('a pass of the sales closing', () => {
       }
       expect(refusal).toBeInstanceOf(RefusalException);
       expect((refusal as RefusalException).refusal.code).toBe(OrderErrorCode.SOLD_OUT);
+    },
+    CASE_MS,
+  );
+});
+
+describe('the cutoff, thirty minutes after the start (D-089)', () => {
+  it(
+    'closes a sale thirty minutes after its start, and a postponement moves the cutoff',
+    async () => {
+      dates += 1;
+      const passed = `01a0f800-0000-7000-8000-${String(dates).padStart(12, '0')}`;
+      const startedAt = plusMinutes(NOW, -31);
+      await putOnSale(
+        commands,
+        { dateId: passed, channelId: CHANNEL, capacity: 10, startsAt: startedAt },
+        NOW,
+      );
+      dates += 1;
+      const postponed = `01a0f800-0000-7000-8000-${String(dates).padStart(12, '0')}`;
+      await putOnSale(
+        commands,
+        { dateId: postponed, channelId: CHANNEL, capacity: 10, startsAt: startedAt },
+        NOW,
+      );
+      const newStart = plusMinutes(NOW, 60);
+      await applyCatalogDateMessage(
+        commands,
+        delivered(rescheduled(postponed, newStart, plusSeconds(NOW, 1))),
+      );
+
+      expect(await commands.execute(new CloseEndedSales())).toBe(1);
+
+      expect(await rowOf(passed)).toEqual({
+        on_sale: false,
+        sales_closed_at: new Date(plusMinutes(startedAt, 30)),
+        closing_due: true,
+      });
+      const [moved] = await dataSource.query<{ on_sale: boolean; sales_end_at: Date }[]>(
+        'SELECT on_sale, sales_end_at FROM date_sales WHERE date_id = $1',
+        [postponed],
+      );
+      expect(moved).toEqual({ on_sale: true, sales_end_at: new Date(plusMinutes(newStart, 30)) });
     },
     CASE_MS,
   );

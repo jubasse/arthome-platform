@@ -1,7 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * When a sale ends by time (`salesEndOf`), and the sweeper's scan for the sales past it: the
+ * When a sale ends by time (`seatSalesEndAt`), and the sweeper's scan for the sales past it: the
  *   publisher's pass reads every sale on sale, and stays bounded only while sales end.
  */
 export class SalesEnd1790440800000 implements MigrationInterface {

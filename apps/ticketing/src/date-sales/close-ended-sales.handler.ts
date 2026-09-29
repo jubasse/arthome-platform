@@ -11,7 +11,7 @@ import { CLOCK } from '../clock.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 
 /**
- * Closes the sales on sale whose end by time has passed (`salesEndOf`), each in a transaction of
+ * Closes the sales on sale whose end by time has passed (`seatSalesEndAt`, D-089), each in a transaction of
  *   its own under the date's row, as a closing outcome closes one: `on_sale` false, the publisher's
  *   last publication due, a hold's statement refused from then on. The row is locked once, when
  *   nothing is sold any more.

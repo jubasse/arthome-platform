@@ -27,7 +27,7 @@ export async function settleConfirmedPayment(
     hold.consume(now);
     await holds.save(hold);
     await dateSales.sellHeldSeats(dateId, quantity);
-  } else if (!(await dateSales.takeAndSellSeats(dateId, quantity))) {
+  } else if (!(await dateSales.takeAndSellSeats(dateId, quantity, now))) {
     order.oweRefund(RefundReason.HOLD_EXPIRED_CAPACITY_LOST, intentRef, now);
     return;
   }

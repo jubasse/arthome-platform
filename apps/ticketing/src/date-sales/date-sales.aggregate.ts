@@ -30,8 +30,8 @@ import {
   type CapacityTier,
   type DateSalesEvent,
 } from './date-sales.events.js';
-import { salesEndOf } from './sales-end.js';
 import { seatQuoteOf, type SeatQuote } from './seat-quote.js';
+import { lateEntryOf, seatSalesEndAt, type LateEntry } from './seat-sales-window.js';
 import { technicalProvisionOf } from './technical-provision.js';
 
 export interface DateSalesSnapshot {
@@ -52,7 +52,7 @@ export interface DateSalesSnapshot {
   /** When `catalog.publication.engaged` opened the sale: the prices hold from then on. */
   readonly pricesLockedAt: Instant | null;
   readonly salesClosedAt: Instant | null;
-  /** When the sale ends by time, from the start (`salesEndOf`); null while no rule gives one. */
+  /** When the sale ends by time, from the start (`seatSalesEndAt`, D-089); null with no start. */
   readonly salesEndAt: Instant | null;
   readonly startsAt: Instant | null;
   /** The `occurred_at` of the schedule fact applied last, which an older one may not overwrite. */
@@ -124,6 +124,20 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
   public get isOnSale(): boolean {
     const { pricesLockedAt, salesClosedAt } = this.current;
     return pricesLockedAt !== null && salesClosedAt === null;
+  }
+
+  /**
+   * On sale and short of its end by time. Read without the row's lock on a purchase, so the hold's
+   *   statement checks the end again.
+   */
+  public sellsSeatsAt(now: Instant): boolean {
+    const { salesEndAt } = this.current;
+    return this.isOnSale && (salesEndAt === null || isBefore(now, salesEndAt));
+  }
+
+  /** What a buyer arriving now must be told and acknowledge; null before the start. */
+  public lateEntryAt(now: Instant): LateEntry | null {
+    return lateEntryOf(this.current.startsAt, now);
   }
 
   /** The price of `quantity` seats of `tier`; null while that tier is not sold. */
@@ -242,7 +256,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
     this.current = frozen({
       ...this.current,
       startsAt,
-      salesEndAt: salesEndOf(startsAt),
+      salesEndAt: seatSalesEndAt(startsAt),
       scheduleStatedAt: statedAt,
       version: version + 1,
     });

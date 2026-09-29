@@ -14,6 +14,7 @@ import {
   KEY_HOLDER_WAIT_MS,
   keyInFlight,
   keyReused,
+  lateEntryUnacknowledged,
   paymentUnavailable,
   priceStale,
   refusalOfUnpaid,
@@ -126,7 +127,11 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
 
     const now = this.clock.now();
     const sales = await dateSales.findUnlocked(body.dateId);
-    if (sales?.isOnSale !== true) throw soldOut();
+    if (sales?.sellsSeatsAt(now) !== true) throw soldOut();
+    const lateEntry = sales.lateEntryAt(now);
+    if (lateEntry !== null && body.acknowledgeLateEntry !== true) {
+      throw lateEntryUnacknowledged(lateEntry);
+    }
     const quote = sales.quote(body.tier, body.quantity);
     const { expectedTotal } = body;
     if (
@@ -181,7 +186,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
       throw new KeyBoundMeanwhile();
     }
     sales.holdSeats(body.quantity, now);
-    if (!(await dateSales.takeSeats(sales, body.quantity))) throw soldOut();
+    if (!(await dateSales.takeSeats(sales, body.quantity, now))) throw soldOut();
     await holds.save(hold);
     await writeSeatOrderIntegrationEvents(manager, order.getUncommittedEvents(), { traceparent });
     return { kind: 'placed', orderId, request: this.intentRequestOf(order) };
@@ -254,7 +259,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     const { id, dateId, accountId, profileId, tier, quantity } = order.snapshot;
     const sales = await dateSales.findUnlocked(dateId);
     if (sales !== null) sales.holdSeats(quantity, now);
-    if (sales === null || !(await dateSales.takeSeats(sales, quantity))) {
+    if (sales === null || !(await dateSales.takeSeats(sales, quantity, now))) {
       order.fail({ code: OrderErrorCode.SOLD_OUT, declineCode: null }, now);
       return false;
     }

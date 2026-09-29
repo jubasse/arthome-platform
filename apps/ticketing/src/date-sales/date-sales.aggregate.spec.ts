@@ -455,14 +455,30 @@ describe('a hold, decided by the aggregate and taken by its repository (T3)', ()
   });
 });
 
-describe('a sale that ends by time (T3)', () => {
-  it('has no end while no rule gives one: a start alone ends nothing', () => {
+describe('a sale that ends by time (T3, D-089)', () => {
+  it('ends thirty minutes after its start, and a postponement moves the end with the start', () => {
     const sales = restored({ pricesLockedAt: NOW });
 
     sales.recordSchedule(STARTS_AT, STATED_AT, NOW);
+    expect(sales.snapshot.salesEndAt).toBe('2026-12-12T19:30:00.000Z');
 
-    expect(sales.snapshot.salesEndAt).toBeNull();
-    expect(sales.endSales('2027-12-12T19:00:00.000Z')).toBe(false);
+    sales.recordSchedule('2026-12-19T19:00:00.000Z', NOW, NOW);
+    expect(sales.snapshot.salesEndAt).toBe('2026-12-19T19:30:00.000Z');
+  });
+
+  it('sells until its end, and tells a buyer arriving after the start what they missed', () => {
+    const sales = restored({ pricesLockedAt: NOW });
+    sales.recordSchedule(STARTS_AT, STATED_AT, NOW);
+
+    expect(sales.lateEntryAt('2026-12-12T18:59:00.000Z')).toBeNull();
+    expect(sales.lateEntryAt('2026-12-12T19:10:30.000Z')).toEqual({
+      startedAt: STARTS_AT,
+      minutesElapsed: 10,
+      salesEndAt: '2026-12-12T19:30:00.000Z',
+    });
+    expect(sales.sellsSeatsAt('2026-12-12T19:29:59.000Z')).toBe(true);
+    expect(sales.sellsSeatsAt('2026-12-12T19:30:00.000Z')).toBe(false);
+    expect(restored().sellsSeatsAt(NOW)).toBe(false);
   });
 
   it('closes at its end, once, and only a sale on sale', () => {

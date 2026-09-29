@@ -1,7 +1,7 @@
 import { AggregateTracker, saveVersioned, type Track } from '@arthome-platform/transactions';
 import type { EntityManager } from 'typeorm';
 
-import { money, type TierPrice } from '@arthome/core';
+import { money, type Instant, type TierPrice } from '@arthome/core';
 
 import { DateSales, type DateSalesSnapshot } from './date-sales.aggregate.js';
 import { DateSalesRow, type PriceTierColumn } from './date-sales.entity.js';
@@ -45,14 +45,15 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
    *   same amount: a save later in the transaction measures no delta, where it would take the seats
    *   a second time. Registered without a version, which the statement leaves as it was.
    */
-  public async takeSeats(sales: DateSales, quantity: number): Promise<boolean> {
+  public async takeSeats(sales: DateSales, quantity: number, now: Instant): Promise<boolean> {
     const { dateId } = sales.snapshot;
     const taken = await this.affected(
       `UPDATE date_sales
           SET seats_available = seats_available - $2,
               availability_moves = availability_moves + 1
-        WHERE date_id = $1 AND on_sale AND seats_available >= $2`,
-      [dateId, quantity],
+        WHERE date_id = $1 AND on_sale AND seats_available >= $2
+          AND ${BEFORE_SALES_END}`,
+      [dateId, quantity, new Date(now)],
     );
     if (!taken) return false;
     const stored = this.storedSnapshots.get(sales) ?? sales.snapshot;
@@ -82,14 +83,15 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
     );
   }
 
-  public takeAndSellSeats(dateId: string, quantity: number): Promise<boolean> {
+  public takeAndSellSeats(dateId: string, quantity: number, now: Instant): Promise<boolean> {
     return this.affected(
       `UPDATE date_sales
           SET seats_available = seats_available - $2,
               seats_sold = seats_sold + $2,
               availability_moves = availability_moves + 1
-        WHERE date_id = $1 AND on_sale AND seats_available >= $2`,
-      [dateId, quantity],
+        WHERE date_id = $1 AND on_sale AND seats_available >= $2
+          AND ${BEFORE_SALES_END}`,
+      [dateId, quantity, new Date(now)],
     );
   }
 
@@ -143,6 +145,13 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
     return affectedOne(await this.manager.query(sql, parameters));
   }
 }
+
+/**
+ * D-089's cutoff in the hold's own WHERE, at the command's instant: the sweeper closes a sale up to
+ *   a second after its end, and a second at an opening's rate is seats sold past it. One predicate
+ *   on a row already found by its key costs nothing.
+ */
+const BEFORE_SALES_END = '(sales_end_at IS NULL OR sales_end_at > $3)';
 
 function affectedOne(result: unknown): boolean {
   const [, affected] = result as [unknown, number];

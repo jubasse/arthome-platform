@@ -355,8 +355,8 @@ a bare producer script prints it too.
 `ticketing` runs three processes from `apps/ticketing`, all on its own database `ticketing`: the API
 (`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`)
 and the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
-nobody paid, closes the sales whose time is over (none yet: no rule says when, HANDOVER §0l), and
-needs Postgres alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
+nobody paid, closes each sale thirty minutes after its start (D-089, HANDOVER §0l), and needs
+Postgres alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
 
 A date catalog drafts is opened in ticketing by the consumer; the studio then gives it capacity and
 prices, each with an `Idempotency-Key` and the version the pane served:
@@ -424,13 +424,17 @@ at once on the running stack:
 
 ```
 POST /v1/dates/:dateId/seat-quote   { tier, quantity }                 x-arthome-deadline required
-POST /v1/orders/seats               { dateId, tier, quantity, expectedTotal }   Idempotency-Key required
+POST /v1/orders/seats               { dateId, tier, quantity, expectedTotal, acknowledgeLateEntry }
+                                                                        Idempotency-Key required
 GET  /v1/orders/:orderId                                                x-arthome-deadline required
 ```
 
 `purchaseSeat` answers 201 with the tickets and the order once paid, 202 with the payment handoff
 while the buyer has to act, 409 `order.sold_out`, `order.price_stale` or `order.payment_declined`,
 and 503 when the provider does not answer; a replay under its key answers the first answer again.
+Seats sell until thirty minutes after the live's start (D-089): from the start the quote carries
+`lateEntry`, and a purchase without `acknowledgeLateEntry: true` is refused 409
+`order.late_entry_unacknowledged` before any seat is taken.
 The provider's webhooks arrive on `POST /v1/payments/webhook`, verified on their raw bytes, recorded
 in `stripe_event_inbox` and answered at once; the API process's payment worker applies them every
 second, refunds at once a payment confirmed after its hold expired with no seat left (D-082), and
@@ -458,7 +462,8 @@ scheduled and engaged by catalog's facts sent on `arthome.catalog.date`, 5 seats
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
 instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` to
-`1790440800000` with the three processes stopped, as for every ticketing migration.
+`1790440900000` with the three processes stopped, as for every ticketing migration; the last one
+writes each scheduled sale's end, and the sweeper closes those already past it on its first pass.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

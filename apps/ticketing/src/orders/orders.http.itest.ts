@@ -9,6 +9,7 @@ import { CommandBus } from '@nestjs/cqrs';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import {
   OrderSchema,
@@ -23,10 +24,13 @@ import {
   OrderErrorCode,
   OrderKind,
   PriceTier,
+  plusMinutes,
 } from '@arthome/core';
+import { InstantOut, int64 } from '@arthome/core/schema';
 
 import { OrderState } from './commerce-vocabulary.js';
 import { OrdersModule } from './orders.module.js';
+import { INTERIM_LATE_ENTRY_UNACKNOWLEDGED } from './purchase-refusals.js';
 import { CLOCK } from '../clock.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
 import { DateSalesModule } from '../date-sales/date-sales.module.js';
@@ -51,16 +55,27 @@ const CHANNEL = '01a0fc0c-0000-7000-8000-000000000001';
 
 const TicketWithoutDateSchema = TicketCardSchema.omit({ date: true });
 
+/** D-089's quote field ahead of the contract, as the report gives it for storefront.yaml. */
+const SeatQuoteWithLateEntrySchema = SeatQuoteSchema.extend({
+  lateEntry: z
+    .looseObject({ startedAt: InstantOut, minutesElapsed: int64(), salesEndAt: InstantOut })
+    .optional(),
+});
+
 let stack: StartedStack;
 let dataSource: DataSource;
 let app: NestFastifyApplication;
 let fake: FakePaymentProvider;
 let dates = 0;
 
-async function dateOnSale(): Promise<string> {
+async function dateOnSale(startsAt?: string): Promise<string> {
   dates += 1;
   const dateId = `01a0fc00-0000-7000-8000-${String(dates).padStart(12, '0')}`;
-  await putOnSale(app.get(CommandBus), { dateId, channelId: CHANNEL, capacity: 10 }, NOW);
+  await putOnSale(
+    app.get(CommandBus),
+    { dateId, channelId: CHANNEL, capacity: 10, ...(startsAt !== undefined && { startsAt }) },
+    NOW,
+  );
   return dateId;
 }
 
@@ -232,6 +247,42 @@ describe('POST /v1/orders/seats', () => {
       expect(unavailable.json()).toMatchObject({
         error: { code: ApiErrorCode.SERVICE_UNAVAILABLE, nature: FailureNature.UNAVAILABLE },
       });
+    },
+    CASE_MS,
+  );
+});
+
+describe('a late entry over HTTP (D-089)', () => {
+  it(
+    'quotes what was missed, refuses the purchase without the acknowledgement, sells it with',
+    async () => {
+      const startsAt = plusMinutes(NOW, -10);
+      const dateId = await dateOnSale(startsAt);
+
+      const quote = await app.inject({
+        method: 'POST',
+        url: `/v1/dates/${dateId}/seat-quote`,
+        headers: { 'content-type': 'application/json', 'x-arthome-deadline': DEADLINE },
+        payload: { tier: PriceTier.FULL, quantity: 2 },
+      });
+      expect(
+        SeatQuoteWithLateEntrySchema.parse(quote.json<{ data: unknown }>().data).lateEntry,
+      ).toEqual({ startedAt: startsAt, minutesElapsed: 10, salesEndAt: plusMinutes(startsAt, 30) });
+
+      const refused = await postPurchase(purchaseBody(dateId));
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json()).toMatchObject({
+        error: {
+          code: INTERIM_LATE_ENTRY_UNACKNOWLEDGED,
+          params: { startedAt: startsAt, minutesElapsed: 10 },
+        },
+      });
+
+      const notABoolean = await postPurchase(purchaseBody(dateId, { acknowledgeLateEntry: 'yes' }));
+      expect(notABoolean.statusCode).toBe(400);
+
+      const sold = await postPurchase(purchaseBody(dateId, { acknowledgeLateEntry: true }));
+      expect(sold.statusCode).toBe(201);
     },
     CASE_MS,
   );

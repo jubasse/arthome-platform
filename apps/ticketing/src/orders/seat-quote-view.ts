@@ -1,6 +1,7 @@
 import { isZero, type Instant, type Money } from '@arthome/core';
 
 import type { SeatQuote } from '../date-sales/seat-quote.js';
+import type { LateEntry } from '../date-sales/seat-sales-window.js';
 
 /**
  * The storefront contract's `SeatQuote` line kinds that ticketing composes, a vocabulary of that
@@ -18,15 +19,23 @@ export interface SeatQuoteLine {
   readonly amount: Money;
 }
 
-/** storefront.yaml's `SeatQuote`; no `vatIncluded` while the tax model awaits counsel. */
+/**
+ * storefront.yaml's `SeatQuote`, and D-089's `lateEntry` ahead of the contract (HANDOVER §3), present
+ *   once the live has started; no `vatIncluded` while the tax model awaits counsel.
+ */
 export interface SeatQuoteView {
   readonly lines: readonly SeatQuoteLine[];
   readonly total: Money;
   readonly validUntil: Instant;
+  readonly lateEntry?: LateEntry;
 }
 
 /** The addends of the total, a zero one left out: the tier always, a fee or a discount when any. */
-export function seatQuoteViewOf(quote: SeatQuote, validUntil: Instant): SeatQuoteView {
+export function seatQuoteViewOf(
+  quote: SeatQuote,
+  validUntil: Instant,
+  lateEntry: LateEntry | null,
+): SeatQuoteView {
   const lines: SeatQuoteLine[] = [{ kind: QuoteLineKind.TIER, amount: quote.tierTotal }];
   if (!isZero(quote.serviceFee)) {
     lines.push({ kind: QuoteLineKind.SERVICE_FEE, amount: quote.serviceFee });
@@ -37,5 +46,5 @@ export function seatQuoteViewOf(quote: SeatQuote, validUntil: Instant): SeatQuot
       amount: { ...quote.discount, amountMinor: -quote.discount.amountMinor },
     });
   }
-  return { lines, total: quote.total, validUntil };
+  return { lines, total: quote.total, validUntil, ...(lateEntry !== null && { lateEntry }) };
 }
