@@ -37,6 +37,7 @@ function restored(overrides: Partial<DateSalesSnapshot> = {}): DateSales {
     priceTiers: [],
     pricesLockedAt: null,
     salesClosedAt: null,
+    salesEndAt: null,
     startsAt: null,
     scheduleStatedAt: null,
     outcome: null,
@@ -451,5 +452,32 @@ describe('a hold, decided by the aggregate and taken by its repository (T3)', ()
     expect(sales.getUncommittedEvents()).toMatchObject([
       { kind: 'SeatsHeld', dateId: DATE_ID, quantity: 3, occurredAt: NOW },
     ]);
+  });
+});
+
+describe('a sale that ends by time (T3)', () => {
+  it('has no end while no rule gives one: a start alone ends nothing', () => {
+    const sales = restored({ pricesLockedAt: NOW });
+
+    sales.recordSchedule(STARTS_AT, STATED_AT, NOW);
+
+    expect(sales.snapshot.salesEndAt).toBeNull();
+    expect(sales.endSales('2027-12-12T19:00:00.000Z')).toBe(false);
+  });
+
+  it('closes at its end, once, and only a sale on sale', () => {
+    const endsAt = '2026-12-12T23:00:00.000Z';
+    const sales = restored({ pricesLockedAt: NOW, salesEndAt: endsAt });
+
+    expect(sales.endSales('2026-12-12T22:59:59.000Z')).toBe(false);
+    expect(sales.endSales('2026-12-12T23:00:05.000Z')).toBe(true);
+    expect(sales.endSales('2026-12-12T23:00:06.000Z')).toBe(false);
+
+    expect(sales.snapshot).toMatchObject({ salesClosedAt: endsAt, version: 4 });
+    expect(sales.isOnSale).toBe(false);
+    expect(sales.getUncommittedEvents()).toMatchObject([
+      { kind: 'DateSalesEnded', endedAt: endsAt, occurredAt: '2026-12-12T23:00:05.000Z' },
+    ]);
+    expect(restored({ salesEndAt: endsAt }).endSales('2027-01-01T00:00:00.000Z')).toBe(false);
   });
 });

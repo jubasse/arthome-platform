@@ -97,6 +97,18 @@ export class DateOutcomeRecorded implements IEvent {
   ) {}
 }
 
+/** Its end by time passed: the sale closed, with no outcome declared. */
+export class DateSalesEnded implements IEvent {
+  public readonly kind = 'DateSalesEnded';
+
+  public constructor(
+    public readonly dateId: string,
+    public readonly channelId: string,
+    public readonly endedAt: Instant,
+    public readonly occurredAt: Instant,
+  ) {}
+}
+
 /**
  * Seats left `seats_available` for a hold, in the conditional statement that decided they could
  *   (adr-ticketing.md §3). The statement counts the move; nothing reaches the wire from here.
@@ -123,4 +135,5 @@ export type DateSalesEvent =
   | TechnicalProvisionSet
   | DateScheduleRecorded
   | DateOutcomeRecorded
+  | DateSalesEnded
   | SeatsHeld;

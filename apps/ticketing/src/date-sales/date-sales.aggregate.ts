@@ -22,6 +22,7 @@ import {
   DateOutcomeRecorded,
   DatePricesLocked,
   DatePricesSet,
+  DateSalesEnded,
   DateSalesOpened,
   DateScheduleRecorded,
   SeatsHeld,
@@ -29,6 +30,7 @@ import {
   type CapacityTier,
   type DateSalesEvent,
 } from './date-sales.events.js';
+import { salesEndOf } from './sales-end.js';
 import { seatQuoteOf, type SeatQuote } from './seat-quote.js';
 import { technicalProvisionOf } from './technical-provision.js';
 
@@ -50,6 +52,8 @@ export interface DateSalesSnapshot {
   /** When `catalog.publication.engaged` opened the sale: the prices hold from then on. */
   readonly pricesLockedAt: Instant | null;
   readonly salesClosedAt: Instant | null;
+  /** When the sale ends by time, from the start (`salesEndOf`); null while no rule gives one. */
+  readonly salesEndAt: Instant | null;
   readonly startsAt: Instant | null;
   /** The `occurred_at` of the schedule fact applied last, which an older one may not overwrite. */
   readonly scheduleStatedAt: Instant | null;
@@ -101,6 +105,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
       priceTiers: [],
       pricesLockedAt: null,
       salesClosedAt: null,
+      salesEndAt: null,
       startsAt: null,
       scheduleStatedAt: null,
       outcome: null,
@@ -237,6 +242,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
     this.current = frozen({
       ...this.current,
       startsAt,
+      salesEndAt: salesEndOf(startsAt),
       scheduleStatedAt: statedAt,
       version: version + 1,
     });
@@ -250,6 +256,18 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
         now,
       ),
     );
+    return true;
+  }
+
+  /**
+   * Ends a sale on sale once its end by time has passed (`salesEndAt`); false otherwise. It closes
+   *   as an outcome closes it, at the instant it ended, publishing a last availability.
+   */
+  public endSales(now: Instant): boolean {
+    const { dateId, channelId, salesEndAt, version } = this.current;
+    if (!this.isOnSale || salesEndAt === null || isBefore(now, salesEndAt)) return false;
+    this.current = frozen({ ...this.current, salesClosedAt: salesEndAt, version: version + 1 });
+    this.apply(new DateSalesEnded(dateId, channelId, salesEndAt, now));
     return true;
   }
 

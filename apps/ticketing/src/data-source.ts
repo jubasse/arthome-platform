@@ -14,6 +14,7 @@ import { AvailabilityScan1790440400000 } from './migrations/1790440400000-availa
 import { HoldsAndOrders1790440500000 } from './migrations/1790440500000-holds-and-orders.js';
 import { PendingOrderExpiry1790440600000 } from './migrations/1790440600000-pending-order-expiry.js';
 import { PaymentEventInbox1790440700000 } from './migrations/1790440700000-payment-event-inbox.js';
+import { SalesEnd1790440800000 } from './migrations/1790440800000-sales-end.js';
 import { SeatHoldRow } from './orders/seat-hold.entity.js';
 import { SeatOrderRow } from './orders/seat-order.entity.js';
 import { SeatRow } from './orders/seat.entity.js';
@@ -44,6 +45,7 @@ export const dataSource: DataSource = new DataSource({
     HoldsAndOrders1790440500000,
     PendingOrderExpiry1790440600000,
     PaymentEventInbox1790440700000,
+    SalesEnd1790440800000,
   ],
   applicationName: Service.TICKETING,
 

@@ -12,7 +12,7 @@ the BFF routes T7. Everything below was run, against real Postgres and Kafka thr
 | --- | --- | --- |
 | API | `node dist/main.js`, `PORT` (3004 in `.env.example`) | the studio's `setDatePrices`, `openCapacityTier`, `setTechnicalProvision`, `getDateTicketsPane`; the storefront's `refreshDateAvailability`, `quoteSeat`, `purchaseSeat`, `getOrder` (§0h); the provider's webhooks and the payment worker (§0j, §0k); `/health/liveness`, `/health/readiness` |
 | consumer | `node dist/consumer.js` | `arthome.catalog.date`, retrying on `arthome.ticketing.retry`, dead-lettering to `arthome.ticketing.dlq` |
-| sweeper | `node dist/sweeper.js` | the availability publisher (§0e) and the hold expiry (§0i), Postgres alone |
+| sweeper | `node dist/sweeper.js` | the availability publisher (§0e), the hold expiry (§0i) and the closing of sales whose time is over (§0l), Postgres alone |
 
 **Stop all three before `migration:run`.** A migration may drop a column the running build still
 reads (`1790440100000` moved three `date_sales` columns to the publisher's table): a rolling restart
@@ -152,8 +152,8 @@ A draft older than the topic's retention is never read: see the deployment order
   own transaction and its last publication clearing it. Measured over 50,000 closed dates of
   history, five idle passes: 1.2 to 1.6 ms, against 32 to 42 ms here (24 to 25 ms in the review)
   when every pass joined every date. **The bound holds only while sales end**: a date that ends
-  without an outcome stays on sale until T3 ends its sale with the date's window (§2), and stays in
-  the pass until then.
+  without an outcome stays on sale until its end by time closes it (§0l), and stays in the pass
+  until then: while no rule gives that end, it stays for good.
 - **A date that cannot be published holds back no other** (correctness review): its failure is
   logged, its `failed_at` recorded, and it waits `AVAILABILITY_PUBLISH_RETRY_SECONDS` (10) before it
   is tried again, behind the others, still marked; a publication clears it. The delay stays below
@@ -331,6 +331,27 @@ same refund. Never an oversold date, never money kept without a seat.
 A purchase replayed under its key once its hold expired, never having reached the provider,
 answers `order.sold_out` from the failed order and asks the provider nothing.
 
+## 0l. A sale ends by time, once a rule says when (T3)
+
+`on_sale` had no end in time: a date that ends without an outcome stays on sale, sold after the
+show, and in the publisher's pass for good (§0e). T3 closes it through the sweeper, and **no rule
+says when yet**: core's `decideWatch` offers `buy_seat` through the live and, for some replay
+policies, through the replay, and no document states when ticketing stops selling. So the rule is
+one function, `date-sales/sales-end.ts`'s `salesEndOf(startsAt)`, returning null (asked of "main",
+§3), and everything around it is built:
+
+- `date_sales.sales_end_at` (`1790440800000-sales-end.ts`), written by `recordSchedule` from
+  `salesEndOf` whenever catalog states or moves the start, with a partial index on the sales on sale
+  that have one.
+- `CloseEndedSales`, a third `SweeperLoop` in the sweeper every second: each sale on sale past its
+  end, in a transaction of its own under the date's row (taken once, when nothing sells any more),
+  `DateSales.endSales` closes it at its end, as a closing outcome does: `on_sale` false, one move
+  and `closing_due` for the publisher's last publication (0 seats, not sold out), and the hold's
+  statement refusing from then on. `DateSalesEnded` reaches no wire of its own.
+- The day `salesEndOf` answers, a migration backfills `sales_end_at` for the dates already
+  scheduled. If the rule needs more than the start (the runtime, the replay policy and window, which
+  `catalog.date.scheduled` carries), the consumer records them first.
+
 ## 1. What proves it
 
 | Suite | What |
@@ -349,6 +370,7 @@ answers `order.sold_out` from the failed order and asks the provider nothing.
 | `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry |
 | `boot.itest.ts` (T3's case) | the sweeper root expiring a due hold on its first pass |
 | `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes |
+| `date-sales/close-ended-sales.itest.ts`, `date-sales.aggregate.spec.ts` (T3's second block) | a sale past its end closed once, published a last time at 0 seats and not sold out, refusing a purchase; one running and one with no end left on sale; no end from a start while no rule gives one |
 | `orders/capacity.itest.ts` | adr-ticketing.md §3's concurrency test: 300 purchases at once on one date of 100 seats, ten at a time on its row through the pool: exactly 100 held (100 answered 202, 200 sold out), `seats_available` 0 and never below, and all 100 back at expiry; with quantities of one to three, paid or held, every seat accounted for (available + sold + held = capacity, one `seat` row per seat sold). Measured, three runs: the 300 purchases took 574, 634 and 946 ms, fake provider included |
 | `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, refunded at once under `refund:{orderId}` with `order.refunded`); a refund owed through a provider outage, made once on a later pass; a purchase resumed past its hold answering sold out; an expired order's intent cancelled, and asked again after an outage |
 | `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, a signature over the exact bytes and its tolerance |
@@ -376,7 +398,8 @@ either service imports the other.
 - **`on_sale` has no end in time**: prices locked and not closed. A decrement on `on_sale` alone
   would sell after the show and its replay are over, unless T3 bounds its WHERE by the date's window
   or a sweeper closes the sale. The publisher's pass reads every sale on sale, so it stays bounded
-  only once sales end: a sweeper closing them is the one that serves both.
+  only once sales end: a sweeper closing them is the one that serves both. **Built: the sweeper's
+  closing, behind `salesEndOf`, which gives no end until a rule does (§0l).**
 - **The stored snapshot moves both ways**: if T3 also moves the aggregate's counters after its
   decrement, it moves the repository's stored snapshot by the same amount, or the next save applies
   the delta a second time.
@@ -407,6 +430,9 @@ addition):
 - The payment return URL, `{PUBLIC_WEB_ORIGIN}/orders/{orderId}` (`orders/payment-return-url.ts`):
   no document names the storefront's page for it.
 - No service fee (`date-sales/seat-quote.ts`): no fee schedule is set anywhere, as T2's pane says.
+- **When a sale ends by time** (`date-sales/sales-end.ts`, `salesEndOf`): no rule states it, so it
+  answers null and no sale ends but by an outcome (§0l). Not an interim value: an absent rule, the
+  closing built around it.
 
 **Known and left in T3, each judged:**
 

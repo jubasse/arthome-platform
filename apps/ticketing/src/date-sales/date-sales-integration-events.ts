@@ -41,6 +41,7 @@ function integrationEventOf(
   switch (event.kind) {
     case 'DateSalesOpened':
     case 'DateOutcomeRecorded':
+    case 'DateSalesEnded':
     case 'SeatsHeld':
       return null;
     case 'DatePricesSet':

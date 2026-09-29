@@ -355,7 +355,8 @@ a bare producer script prints it too.
 `ticketing` runs three processes from `apps/ticketing`, all on its own database `ticketing`: the API
 (`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`)
 and the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
-nobody paid, and needs Postgres alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
+nobody paid, closes the sales whose time is over (none yet: no rule says when, HANDOVER §0l), and
+needs Postgres alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
 
 A date catalog drafts is opened in ticketing by the consumer; the studio then gives it capacity and
 prices, each with an `Idempotency-Key` and the version the pane served:
@@ -441,9 +442,8 @@ expiry; measured over three runs, the 300 took 574, 634 and 946 ms with the fake
 of ten. The load test at 10,000 buyers a minute is T6's.
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
-instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000`,
-`1790440600000` and `1790440700000` with the three processes stopped, as for every ticketing
-migration.
+instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` to
+`1790440800000` with the three processes stopped, as for every ticketing migration.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

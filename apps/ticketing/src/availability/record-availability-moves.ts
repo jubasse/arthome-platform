@@ -16,6 +16,8 @@ function movesAvailability(event: DateSalesEvent): boolean {
       return true;
     case 'DateOutcomeRecorded':
       return event.salesClosed;
+    case 'DateSalesEnded':
+      return true;
     case 'DateSalesOpened':
     case 'DateScheduleRecorded':
     case 'TechnicalProvisionSet':
@@ -47,7 +49,11 @@ export async function recordAvailabilityMoves(
       [moved.dateId],
     );
   }
-  const closed = events.find((event) => event.kind === 'DateOutcomeRecorded' && event.salesClosed);
+  const closed = events.find(
+    (event) =>
+      (event.kind === 'DateOutcomeRecorded' && event.salesClosed) ||
+      event.kind === 'DateSalesEnded',
+  );
   if (closed !== undefined) {
     await manager.update(
       DateAvailabilityPublicationRow,
