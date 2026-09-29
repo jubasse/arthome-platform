@@ -1,5 +1,12 @@
 export { PermanentError, RETRY_DELAYS_MS, JITTER_RATIO } from './failure.js';
-export { deadLetterTopic, retryTopic, routeFailure } from './failure.js';
+export {
+  attemptsAllowedBy,
+  deadLetterTopic,
+  doublingDelays,
+  nextAttemptAt,
+  retryTopic,
+  routeFailure,
+} from './failure.js';
 export type { FailureRoute } from './failure.js';
 
 export { OutboxEvent } from './outbox-event.entity.js';

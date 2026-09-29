@@ -1,17 +1,12 @@
-import { JITTER_RATIO, RETRY_DELAYS_MS } from '@arthome-platform/messaging';
+import {
+  RETRY_DELAYS_MS,
+  attemptsAllowedBy,
+  doublingDelays,
+  nextAttemptAt,
+} from '@arthome-platform/messaging';
 import type { DataSource, EntityManager } from 'typeorm';
 
 import { DAY_MS, HOUR_MS } from '@arthome/core';
-
-/** From `firstMs`, doubled up to `capMs`, until they add up to `totalMs`. */
-function doublingDelays(firstMs: number, capMs: number, totalMs: number): number[] {
-  const delays: number[] = [];
-  for (let delay = firstMs, elapsed = 0; elapsed < totalMs; delay = Math.min(delay * 2, capMs)) {
-    delays.push(delay);
-    elapsed += delay;
-  }
-  return delays;
-}
 
 /**
  * A refund owed is money held without a seat, so its attempts outlast a provider's incident: the
@@ -27,17 +22,6 @@ export const REFUND_RETRY_DELAYS_MS: readonly number[] = doublingDelays(
   REFUND_RETRY_DELAY_CAP_MS,
   REFUND_GIVE_UP_AFTER_MS,
 );
-
-/** When the attempt after `attempts` failed ones is due; null once the last one has failed. */
-export function nextAttemptAt(
-  attempts: number,
-  nowMs: number,
-  delaysMs: readonly number[] = RETRY_DELAYS_MS,
-): Date | null {
-  const delay = delaysMs[attempts - 1];
-  if (delay === undefined) return null;
-  return new Date(nowMs + delay + Math.floor(delay * JITTER_RATIO * Math.random()));
-}
 
 /**
  * adr-ticketing.md §8: a kind of call the payment worker owes the provider, its attempts beside the
@@ -70,9 +54,8 @@ export const OWED_INTENT_CANCELLATION: OwedCall = {
   retryDelaysMs: RETRY_DELAYS_MS,
 };
 
-/** Its attempts before it is given up: one more than its delays. */
 export function attemptsMaxOf({ retryDelaysMs }: OwedCall): number {
-  return retryDelaysMs.length + 1;
+  return attemptsAllowedBy(retryDelaysMs);
 }
 
 export interface ClaimedCall {
