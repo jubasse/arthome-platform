@@ -89,13 +89,18 @@ function purchaseBody(dateId: string, overrides: object = {}): object {
   };
 }
 
-function postPurchase(payload: object, key: string | null = nextKey()) {
+function postPurchase(
+  payload: object,
+  key: string | null = nextKey(),
+  headers: Record<string, string> = {},
+) {
   return app.inject({
     method: 'POST',
     url: '/v1/orders/seats',
     headers: {
       'content-type': 'application/json',
       ...(key !== null && { 'idempotency-key': key }),
+      ...headers,
     },
     payload,
   });
@@ -278,10 +283,16 @@ describe('a late entry over HTTP (D-089)', () => {
         },
       });
 
-      const notABoolean = await postPurchase(purchaseBody(dateId, { acknowledgeLateEntry: 'yes' }));
+      const notABoolean = await postPurchase(purchaseBody(dateId), nextKey(), {
+        'x-arthome-late-entry-acknowledged': 'yes',
+      });
       expect(notABoolean.statusCode).toBe(400);
+      const inTheBody = await postPurchase(purchaseBody(dateId, { acknowledgeLateEntry: true }));
+      expect(inTheBody.statusCode).toBe(400);
 
-      const sold = await postPurchase(purchaseBody(dateId, { acknowledgeLateEntry: true }));
+      const sold = await postPurchase(purchaseBody(dateId), nextKey(), {
+        'x-arthome-late-entry-acknowledged': 'true',
+      });
       expect(sold.statusCode).toBe(201);
     },
     CASE_MS,

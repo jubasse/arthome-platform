@@ -18,6 +18,8 @@ export class PurchaseSeat extends Command<PurchaseAnswer> {
     public readonly body: PurchaseSeatBody,
     public readonly traceparent: string | null,
     public readonly idempotency: IdempotentRequest,
+    /** `X-Arthome-Late-Entry-Acknowledged: true`, which D-089 requires once the live started. */
+    public readonly lateEntryAcknowledged: boolean,
   ) {
     super();
   }

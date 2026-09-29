@@ -408,13 +408,19 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
   `DateSalesEnded` reaches no wire of its own.
 - **The late entry.** From the start, `quoteSeat` carries `lateEntry` (`startedAt`,
   `minutesElapsed` in whole minutes, `salesEndAt`), and its `validUntil` is no later than the start
-  before it and the end after it, where what it says changes. `purchaseSeat` takes
-  `acknowledgeLateEntry`: from the start and without `true`, it is refused 409
-  `order.late_entry_unacknowledged` (an interim code, §3) with the same three facts in `params`,
-  before its key is claimed or any seat taken; before the start the flag is ignored. Both fields are
-  ahead of the contract: the report to "main" gives storefront.yaml's and the contracts' text.
-- A replay under a key answers what it answered, whatever the clock says since: the fingerprint
-  covers the flag.
+  before it and the end after it, where what it says changes. `purchaseSeat` reads the header
+  `X-Arthome-Late-Entry-Acknowledged: true` (anything else but its absence is 400 naming it): from
+  the start and without it, the purchase is refused 409 `order.late_entry_unacknowledged` (an
+  interim code, §3) with the same three facts in `params`, before its key is claimed or any seat
+  taken; before the start it is ignored. The field and the header are ahead of the contract: the
+  report to "main" gives storefront.yaml's and the contracts' text.
+- **A header, not the body** (architecture review m2, the lead's decision), as the admission token
+  is: the idempotency fingerprint covers the body, so a flag there could never be added to a
+  purchase placed before the start and retried after it. **Decided here: such a retry is asked
+  too.** A purchase resumed under its key that goes on to the provider after the start (its first
+  attempt interrupted, or the provider down) is refused unacknowledged like a new one, its order
+  untouched, and resumes once the retry carries the header. A replay of an answer already kept
+  answers it again, whatever the clock says since.
 
 ## 1. What proves it
 
@@ -511,8 +517,8 @@ addition):
   `seatSalesEndAt`, `salesEndedBy`, `lateEntryOf` and `LateEntry`, under the names core will give
   them; the refusals' codes `order.late_entry_unacknowledged` and `order.sales_closed`
   (`INTERIM_LATE_ENTRY_UNACKNOWLEDGED`, `INTERIM_SALES_CLOSED`, `orders/purchase-refusals.ts`), in no
-  `ORDER_ERROR_CODES` yet; and the contract's fields ahead of storefront.yaml: `SeatQuote.lateEntry`
-  and the purchase body's `acknowledgeLateEntry`. Core's `decideWatch` still offers `buy_seat`
+  `ORDER_ERROR_CODES` yet; and the contract's field and header ahead of storefront.yaml:
+  `SeatQuote.lateEntry` and `X-Arthome-Late-Entry-Acknowledged` on `purchaseSeat`. Core's `decideWatch` still offers `buy_seat`
   through the live past the cutoff: the report to "main" gives the change it needs.
 
 **Known and left in T3, each judged:**
@@ -528,10 +534,6 @@ addition):
   as unresolved evidence: the tax model awaits counsel (`adr-payments.md` §5.5).
 - **A free seat** (a total of zero) would ask the provider for an intent of zero: no rule gives a
   contribution or a free tier yet, so none is refused or special-cased.
-- **A purchase resumed after the start is not asked to acknowledge it**: an order placed before the
-  start whose provider did not answer, retried under its key after the start, holds its seats again
-  without the flag its first body never needed. Asking then would strand it, since another body
-  under the key is refused as reused.
 
 
 The three interims of the first handover are core's rules now (arthome-core PR #2, fbab36e):

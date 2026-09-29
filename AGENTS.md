@@ -424,8 +424,8 @@ at once on the running stack:
 
 ```
 POST /v1/dates/:dateId/seat-quote   { tier, quantity }                 x-arthome-deadline required
-POST /v1/orders/seats               { dateId, tier, quantity, expectedTotal, acknowledgeLateEntry }
-                                                                        Idempotency-Key required
+POST /v1/orders/seats               { dateId, tier, quantity, expectedTotal }   Idempotency-Key required,
+                                                    X-Arthome-Late-Entry-Acknowledged after the start
 GET  /v1/orders/:orderId                                                x-arthome-deadline required
 ```
 
@@ -433,9 +433,9 @@ GET  /v1/orders/:orderId                                                x-arthom
 while the buyer has to act, 409 `order.sold_out`, `order.price_stale` or `order.payment_declined`,
 and 503 when the provider does not answer; a replay under its key answers the first answer again.
 Seats sell until thirty minutes after the live's start (D-089): from the start the quote carries
-`lateEntry`, and a purchase without `acknowledgeLateEntry: true` is refused 409
-`order.late_entry_unacknowledged` before any seat is taken; past the cutoff, the quote and the
-purchase answer 409 `order.sales_closed`.
+`lateEntry`, and a purchase without `X-Arthome-Late-Entry-Acknowledged: true` is refused 409
+`order.late_entry_unacknowledged` before any seat is taken, a retry under its key included; past the
+cutoff, the quote and the purchase answer 409 `order.sales_closed`.
 The provider's webhooks arrive on `POST /v1/payments/webhook`, verified on their raw bytes, recorded
 in `stripe_event_inbox` and answered at once; the API process's payment worker applies them every
 second, refunds at once a payment confirmed after its hold expired with no seat left (D-082), and

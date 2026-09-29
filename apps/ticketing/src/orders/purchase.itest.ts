@@ -72,6 +72,7 @@ let cqrs: TestingModule;
 let commands: CommandBus;
 let queries: QueryBus;
 let fake: FakePaymentProvider;
+let clock: FixedClock;
 let published: IEvent[] = [];
 let dates = 0;
 
@@ -136,7 +137,7 @@ beforeAll(async () => {
   stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
   const database = await createDatabase(stack.postgres, 'ticketing_purchase_itest');
   dataSource = await applyMigrations(database, TICKETING_SCHEMA);
-  const clock = new FixedClock(NOW);
+  clock = new FixedClock(NOW);
   fake = new FakePaymentProvider('a-webhook-secret-long-enough-to-pass', clock);
   cqrs = await Test.createTestingModule({
     imports: [CqrsModule.forRoot()],
@@ -557,7 +558,7 @@ describe('a buyer arriving after the start (D-089)', () => {
       const dateId = await dateOnSale(10, plusMinutes(NOW, 5));
 
       expect((await purchase(dateId, 1)).status).toBe(PurchaseStatus.PAID);
-      expect((await purchase(dateId, 1, nextKey(), { acknowledgeLateEntry: false })).status).toBe(
+      expect((await purchase(dateId, 1, nextKey(), {}, null, true)).status).toBe(
         PurchaseStatus.PAID,
       );
     },
@@ -583,7 +584,7 @@ describe('a buyer arriving after the start (D-089)', () => {
       expect(await holdsOf(dateId)).toEqual([]);
       expect(await ordersOf(dateId)).toEqual([]);
 
-      const acknowledged = await purchase(dateId, 2, nextKey(), { acknowledgeLateEntry: true });
+      const acknowledged = await purchase(dateId, 2, nextKey(), {}, null, true);
       expect(acknowledged.status).toBe(PurchaseStatus.PAID);
     },
     CASE_MS,
@@ -595,7 +596,7 @@ describe('a buyer arriving after the start (D-089)', () => {
       const dateId = await dateOnSale(10, plusMinutes(NOW, -31));
       const before = await countersOf(dateId);
 
-      const late = await refusalOf(purchase(dateId, 1, nextKey(), { acknowledgeLateEntry: true }));
+      const late = await refusalOf(purchase(dateId, 1, nextKey(), {}, null, true));
 
       expect(late.refusal.code).toBe(INTERIM_SALES_CLOSED);
       expect(await countersOf(dateId)).toEqual(before);
@@ -650,6 +651,34 @@ describe('a buyer arriving after the start (D-089)', () => {
       await expect(
         queries.execute(new QuoteSeat(over, { tier: PriceTier.FULL, quantity: 1 })),
       ).rejects.toMatchObject({ refusal: { code: INTERIM_SALES_CLOSED } });
+    },
+    CASE_MS,
+  );
+});
+
+describe('a purchase resumed after the start (D-089, the acknowledgement in a header)', () => {
+  it(
+    'is asked to acknowledge like a new one, and resumes once it does',
+    async () => {
+      const startsAt = plusMinutes(clock.now(), 5);
+      const dateId = await dateOnSale(10, startsAt);
+      const key = nextKey();
+      fake.scenarioOf = () => FakePaymentScenario.UNAVAILABLE;
+      expect((await refusalOf(purchase(dateId, 2, key))).getStatus()).toBe(503);
+      fake.scenarioOf = () => FakePaymentScenario.CONFIRM;
+      clock.advance(10 * 60_000);
+
+      const unacknowledged = await refusalOf(purchase(dateId, 2, key));
+
+      expect(unacknowledged.refusal).toMatchObject({
+        code: INTERIM_LATE_ENTRY_UNACKNOWLEDGED,
+        params: { startedAt: startsAt, minutesElapsed: 5 },
+      });
+      expect((await holdsOf(dateId)).map(({ state }) => state)).toEqual([SeatHoldState.RELEASED]);
+
+      const resumed = await purchase(dateId, 2, key, {}, null, true);
+      expect(resumed.status).toBe(PurchaseStatus.PAID);
+      expect((await ordersOf(dateId)).map(({ state }) => state)).toEqual([OrderState.PAID]);
     },
     CASE_MS,
   );

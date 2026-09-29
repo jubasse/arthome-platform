@@ -91,6 +91,7 @@ export function purchaseOf(
   key: string = nextKey(),
   overrides: Partial<PurchaseSeatBody> = {},
   traceparent: string | null = null,
+  lateEntryAcknowledged = false,
 ): PurchaseSeat {
   const body: PurchaseSeatBody = {
     dateId,
@@ -103,5 +104,6 @@ export function purchaseOf(
     body,
     traceparent,
     idempotentRequestOf('POST', '/v1/orders/seats', body, 201, key),
+    lateEntryAcknowledged,
   );
 }

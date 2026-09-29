@@ -118,7 +118,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
 
   private async placeIn(
     { manager, orders, holds, dateSales }: TicketingTransaction,
-    { body, idempotency, traceparent }: PurchaseSeat,
+    { body, idempotency, traceparent, lateEntryAcknowledged }: PurchaseSeat,
   ): Promise<Placement> {
     const bound = await orders.findBound(idempotency.accountId, idempotency.key);
     if (bound !== null) {
@@ -132,9 +132,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     if (salesEndAt !== null && sales?.hasEndedBy(now) === true) throw salesClosed(salesEndAt);
     if (sales?.isOnSale !== true) throw soldOut();
     const lateEntry = sales.lateEntryAt(now);
-    if (lateEntry !== null && body.acknowledgeLateEntry !== true) {
-      throw lateEntryUnacknowledged(lateEntry);
-    }
+    if (lateEntry !== null && !lateEntryAcknowledged) throw lateEntryUnacknowledged(lateEntry);
     const quote = sales.quote(body.tier, body.quantity);
     const { expectedTotal } = body;
     if (
@@ -220,19 +218,27 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
   private async resumeIn(
     transaction: TicketingTransaction,
     orderId: string,
-    { traceparent }: PurchaseSeat,
+    { traceparent, lateEntryAcknowledged }: PurchaseSeat,
   ): Promise<Resumption> {
-    const { manager, orders, holds } = transaction;
+    const { manager, orders, holds, dateSales } = transaction;
     const stored = await storedAnswerOf(manager, orderId);
     if (stored !== null) return this.answered(stored, true);
 
     const order = await this.loadOrder(transaction, orderId);
+    if (!order.awaitsClientSecret && !order.awaitsIntent) return this.answerOf(transaction, order);
+
+    // A purchase that goes on to the provider after the start is asked like a new one (D-089): the
+    //   acknowledgement is a header, outside the key's fingerprint, so a retry can carry it.
+    const now = this.clock.now();
+    const sales = await dateSales.findUnlocked(order.snapshot.dateId);
+    const lateEntry = sales?.lateEntryAt(now) ?? null;
+    if (lateEntry !== null && !lateEntryAcknowledged) {
+      return { kind: 'refusal', refusal: lateEntryUnacknowledged(lateEntry) };
+    }
     if (order.awaitsClientSecret) {
       return { kind: 'create_intent', request: this.intentRequestOf(order) };
     }
-    if (!order.awaitsIntent) return this.answerOf(transaction, order);
 
-    const now = this.clock.now();
     const hold = await holds.findById(order.snapshot.holdId);
     if (hold?.isActive !== true) {
       const renewed = await this.renewHoldIn(transaction, order, now);

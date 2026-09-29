@@ -3,6 +3,7 @@ import {
   idempotentRequestOf,
   parseTraceparent,
   remainingBeforeDeadline,
+  schemaInvalidException,
   type MemorisedResponse,
   type PerishableResponse,
 } from '@arthome-platform/http-edge';
@@ -33,6 +34,19 @@ import type { SeatQuoteView } from './seat-quote-view.js';
 import { CLOCK } from '../clock.js';
 
 const PURCHASE_PATH = '/v1/orders/seats';
+
+/**
+ * D-089's acknowledgement, ahead of the contract (HANDOVER §3): a header, as the admission token is,
+ *   so the idempotency fingerprint never covers it and a retry after the start can add it.
+ */
+const LATE_ENTRY_ACKNOWLEDGED_HEADER = 'x-arthome-late-entry-acknowledged';
+
+/** Absent is not acknowledged; `true` is; anything else is a malformed call naming the header. */
+function lateEntryAcknowledgedOf(header: string | undefined): boolean {
+  if (header === undefined) return false;
+  if (header === 'true') return true;
+  throw schemaInvalidException([{ path: [LATE_ENTRY_ACKNOWLEDGED_HEADER] }]);
+}
 
 interface StatusWriter {
   status(statusCode: number): unknown;
@@ -70,12 +84,14 @@ export class OrdersController {
     @Res({ passthrough: true }) reply: StatusWriter,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
+    @Headers(LATE_ENTRY_ACKNOWLEDGED_HEADER) lateEntryAcknowledged?: string,
   ): Promise<MemorisedResponse<PurchasedSeats | PaymentHandoffView>> {
     const { status, response } = await this.commands.execute(
       new PurchaseSeat(
         body,
         parseTraceparent(traceparent)?.traceparent ?? null,
         idempotentRequestOf('POST', PURCHASE_PATH, body, PurchaseStatus.PAID, idempotencyKey),
+        lateEntryAcknowledgedOf(lateEntryAcknowledged),
       ),
     );
     reply.status(status);
