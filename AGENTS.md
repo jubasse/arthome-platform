@@ -190,8 +190,10 @@ failure. Nothing is ever deleted or renamed, and a name that exists is refused.
 
 The collection is ESM TypeScript loaded without a build: the engine's `require()` reaches it
 through Node's `require(esm)` and type stripping, so its code stays erasable (no enum, no parameter
-property) and its imports across files go through `#schematics/*`. Its specs run in
-`pnpm run test`, through `SchematicTestRunner` on a tree of the committed files.
+property) and its imports across files go through `#schematics/*`. **It needs Node 22.18 or later
+on 22.x**, where type stripping is on by default; the `engines` floor, 22.22.3, already holds it.
+Run on 24.19 and, in a container, on 22.23.3. Its specs run in `pnpm run test`, through
+`SchematicTestRunner` on a tree of the committed files.
 
 ## Gates: three levels
 
