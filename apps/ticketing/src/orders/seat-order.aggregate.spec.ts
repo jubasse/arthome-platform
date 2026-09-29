@@ -105,6 +105,21 @@ describe('SeatOrder', () => {
     });
   });
 
+  it('keeps the instant it first owed that cancellation when the intent reaches it again', () => {
+    const order = placed();
+    order.fail({ code: null, declineCode: null }, NOW);
+
+    const first = order.recordIntent(INTENT, OrderState.AWAITING_ACTION, NOW);
+    const again = order.recordIntent(INTENT, OrderState.PROCESSING, LATER);
+
+    expect([first, again]).toEqual([true, true]);
+    expect(order.snapshot).toMatchObject({ state: OrderState.FAILED, intentCancelOwedAt: NOW });
+  });
+
+  it('owes no cancellation for an intent it still waits on', () => {
+    expect(placed().recordIntent(INTENT, OrderState.AWAITING_ACTION, NOW)).toBe(false);
+  });
+
   it('owes back a payment it has no seat for, and takes no payment after that', () => {
     const order = placed();
     order.fail({ code: null, declineCode: null }, NOW);

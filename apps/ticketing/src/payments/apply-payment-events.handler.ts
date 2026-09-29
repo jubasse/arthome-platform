@@ -12,6 +12,7 @@ import { PaymentEventKind } from './payment.port.js';
 import { CLOCK } from '../clock.js';
 import { OrderState } from '../orders/commerce-vocabulary.js';
 import { failUnpaidOrder } from '../orders/fail-unpaid-order.js';
+import { recordWaitingIntent } from '../orders/record-waiting-intent.js';
 import { writeSeatOrderIntegrationEvents } from '../orders/seat-order-integration-events.js';
 import type { SeatOrder } from '../orders/seat-order.aggregate.js';
 import { settleConfirmedPayment, type PendingCounterMove } from '../orders/settle-payment.js';
@@ -129,10 +130,10 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
         if (intentRef === null) throw new Unappliable('a confirmation names no intent');
         return settleConfirmedPayment(transaction, order, intentRef, now, row.traceparent);
       case PaymentEventKind.INTENT_REQUIRES_ACTION:
-        order.recordIntent(intent, OrderState.AWAITING_ACTION, now);
+        await recordWaitingIntent(transaction, order, intent, OrderState.AWAITING_ACTION, now);
         return null;
       case PaymentEventKind.INTENT_PROCESSING:
-        order.recordIntent(intent, OrderState.PROCESSING, now);
+        await recordWaitingIntent(transaction, order, intent, OrderState.PROCESSING, now);
         return null;
       case PaymentEventKind.INTENT_FAILED:
         return failUnpaidOrder(

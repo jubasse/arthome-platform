@@ -219,20 +219,24 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
   }
 
   /**
-   * An intent the provider created, still waiting for the buyer or the bank. An order that failed
-   *   meanwhile keeps its state and owes the intent's cancellation; one already paid ignores it.
+   * An intent the provider created, still waiting for the buyer or the bank. One already paid
+   *   ignores it. True when the order failed meanwhile: it keeps its state and owes the intent's
+   *   cancellation, from the instant it first owed it, and the caller starts its attempts over.
    */
   public recordIntent(
     intent: PaymentIntentRecord,
     state: typeof OrderState.AWAITING_ACTION | typeof OrderState.PROCESSING,
     now: Instant,
-  ): void {
+  ): boolean {
     const current = this.current;
     if (current.state === OrderState.FAILED) {
-      this.advance({ intent: current.intent ?? intent, intentCancelOwedAt: now });
-      return;
+      this.advance({
+        intent: current.intent ?? intent,
+        intentCancelOwedAt: current.intentCancelOwedAt ?? now,
+      });
+      return true;
     }
-    if (!this.awaitsPayment) return;
+    if (!this.awaitsPayment) return false;
     const intentKnown = completedIntent(current.intent, intent);
     if (movesForward(current.state, state)) {
       this.advance({ state, intent: intentKnown });
@@ -240,6 +244,7 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
     } else if (intentKnown !== current.intent) {
       this.advance({ intent: intentKnown });
     }
+    return false;
   }
 
   /** Paid, with one seat per seat bought; nothing when it cannot accept a payment any more. */

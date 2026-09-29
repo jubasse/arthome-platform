@@ -22,6 +22,7 @@ import {
   soldOut,
 } from './purchase-refusals.js';
 import { PurchaseSeat, PurchaseStatus, type PurchaseAnswer } from './purchase-seat.command.js';
+import { recordWaitingIntent } from './record-waiting-intent.js';
 import { SeatHold } from './seat-hold.aggregate.js';
 import { writeSeatOrderIntegrationEvents } from './seat-order-integration-events.js';
 import { SeatOrder } from './seat-order.aggregate.js';
@@ -330,10 +331,10 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
         pending = await settleConfirmedPayment(transaction, order, intent.ref, now, traceparent);
         break;
       case IntentStatus.REQUIRES_ACTION:
-        order.recordIntent(record, OrderState.AWAITING_ACTION, now);
+        await recordWaitingIntent(transaction, order, record, OrderState.AWAITING_ACTION, now);
         break;
       case IntentStatus.PROCESSING:
-        order.recordIntent(record, OrderState.PROCESSING, now);
+        await recordWaitingIntent(transaction, order, record, OrderState.PROCESSING, now);
         break;
       case IntentStatus.DECLINED:
         pending = await failUnpaidOrder(

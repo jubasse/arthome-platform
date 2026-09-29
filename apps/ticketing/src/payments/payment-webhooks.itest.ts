@@ -1,5 +1,5 @@
 import { OrderRefundedSchema, RefundReason as WireRefundReason } from '@arthome-platform/events';
-import { OutboxEvent } from '@arthome-platform/messaging';
+import { OutboxEvent, RETRY_DELAYS_MS } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
@@ -492,6 +492,74 @@ describe('the intent of an order whose hold expired (adr-ticketing.md §6)', () 
         [orderId],
       );
       expect(cancelled?.intent_cancel_owed_at).toBeNull();
+    },
+    CASE_MS,
+  );
+
+  it(
+    'is owed again from its first instant when the provider says the intent still waits, its attempts started over',
+    async () => {
+      const dateId = await dateOnSale();
+      const orderId = await awaitingOrder(dateId);
+      await expireDueHolds();
+      const owedAt = new Date(clock.nowMs());
+      const cancellationOf = async () => {
+        const [row] = await dataSource.query<
+          {
+            intent_cancel_owed_at: Date | null;
+            intent_cancel_attempts: number;
+            intent_cancel_next_attempt_at: Date | null;
+            intent_cancel_dead_at: Date | null;
+          }[]
+        >(
+          `SELECT intent_cancel_owed_at, intent_cancel_attempts, intent_cancel_next_attempt_at,
+                  intent_cancel_dead_at
+             FROM seat_order WHERE id = $1`,
+          [orderId],
+        );
+        if (row === undefined) throw new Error(`no order ${orderId}`);
+        return row;
+      };
+      const restarted = {
+        intent_cancel_attempts: 0,
+        intent_cancel_next_attempt_at: null,
+        intent_cancel_dead_at: null,
+      };
+      fake.down = true;
+      const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        for (let pass = 0; pass <= RETRY_DELAYS_MS.length; pass += 1) {
+          await commands().execute(new CancelOwedIntents(100));
+          const next = (await cancellationOf()).intent_cancel_next_attempt_at;
+          if (next !== null) clock.advance(next.getTime() - clock.nowMs());
+        }
+      } finally {
+        errors.mockRestore();
+        fake.down = false;
+      }
+      expect((await cancellationOf()).intent_cancel_dead_at).not.toBeNull();
+
+      clock.advance(MINUTE_MS);
+      await deliver(fake.webhookOf(intentRefOf(orderId), PaymentEventKind.INTENT_REQUIRES_ACTION));
+      await applyEvents();
+
+      expect(await cancellationOf()).toEqual({ intent_cancel_owed_at: owedAt, ...restarted });
+
+      await commands().execute(new CancelOwedIntents(100));
+      expect(fake.isCanceled(intentRefOf(orderId))).toBe(true);
+      expect(await cancellationOf()).toMatchObject({
+        intent_cancel_owed_at: null,
+        intent_cancel_attempts: 1,
+      });
+
+      clock.advance(MINUTE_MS);
+      await deliver(fake.webhookOf(intentRefOf(orderId), PaymentEventKind.INTENT_PROCESSING));
+      await applyEvents();
+
+      expect(await cancellationOf()).toEqual({
+        intent_cancel_owed_at: new Date(clock.nowMs()),
+        ...restarted,
+      });
     },
     CASE_MS,
   );

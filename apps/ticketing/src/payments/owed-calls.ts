@@ -1,5 +1,5 @@
 import { JITTER_RATIO, RETRY_DELAYS_MS } from '@arthome-platform/messaging';
-import type { DataSource } from 'typeorm';
+import type { DataSource, EntityManager } from 'typeorm';
 
 import { DAY_MS, HOUR_MS } from '@arthome/core';
 
@@ -137,5 +137,18 @@ export async function giveUpOwedCall(
   await dataSource.query(
     `UPDATE seat_order SET ${call.deadAt} = $2, ${call.nextAttemptAt} = NULL WHERE id = $1`,
     [id, new Date(nowMs)],
+  );
+}
+
+/** A call owed again once made or given up on: its fact kept by the order, its attempts anew. */
+export async function restartOwedCall(
+  manager: EntityManager,
+  call: OwedCall,
+  id: string,
+): Promise<void> {
+  await manager.query(
+    `UPDATE seat_order SET ${call.attempts} = 0, ${call.nextAttemptAt} = NULL, ${call.deadAt} = NULL
+      WHERE id = $1`,
+    [id],
   );
 }
