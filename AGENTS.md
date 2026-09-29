@@ -461,6 +461,17 @@ scheduled and engaged by catalog's facts sent on `arthome.catalog.date`, 5 seats
 | a webhook forged, then a genuine `payment_failed` twice | 401; 200 recorded; 200 `duplicate: true`; applied by the worker within 2.5 s, the paid order left paid |
 | SIGTERM to the three | stopped, no ticketing connection left in `pg_stat_activity` |
 
+Proven again on 2026-09-29 at d621b51, after both reviews' fixes, the three migrations
+`1790440900000` to `1790441100000` run on that database, the three processes rebuilt, one date
+started ten minutes before and one thirty-one minutes before, each opened by catalog's facts:
+
+| Check | Result |
+| --- | --- |
+| a purchase on a date not started | 201, the order paid |
+| the quote on the started date | 200 with `lateEntry`: `minutesElapsed` 10 and `salesEndAt` 30 min after the start |
+| a purchase there, without then with `X-Arthome-Late-Entry-Acknowledged: true` | 409 `order.late_entry_unacknowledged` with the three facts, no hold nor order left; then 201 |
+| the date past its cutoff | closed by the sweeper at its end, its last availability published; purchase and quote 409 `order.sales_closed` with `salesEndAt` |
+
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
 instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` to
