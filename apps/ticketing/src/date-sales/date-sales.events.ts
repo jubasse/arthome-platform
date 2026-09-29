@@ -109,6 +109,17 @@ export class DateSalesEnded implements IEvent {
   ) {}
 }
 
+/** A sale closed by time, reopened by a postponement applied after its old end. */
+export class DateSalesReopened implements IEvent {
+  public readonly kind = 'DateSalesReopened';
+
+  public constructor(
+    public readonly dateId: string,
+    public readonly channelId: string,
+    public readonly occurredAt: Instant,
+  ) {}
+}
+
 /**
  * Seats left `seats_available` for a hold, in the conditional statement that decided they could
  *   (adr-ticketing.md §3). The statement counts the move; nothing reaches the wire from here.
@@ -136,4 +147,5 @@ export type DateSalesEvent =
   | DateScheduleRecorded
   | DateOutcomeRecorded
   | DateSalesEnded
+  | DateSalesReopened
   | SeatsHeld;

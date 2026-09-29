@@ -497,3 +497,37 @@ describe('a sale that ends by time (T3, D-089)', () => {
     expect(restored({ salesEndAt: endsAt }).endSales('2027-01-01T00:00:00.000Z')).toBe(false);
   });
 });
+
+describe('a sale closed by time, and a postponement applied late (review m1)', () => {
+  const closedAtItsEnd = (overrides: Partial<DateSalesSnapshot> = {}): DateSales =>
+    restored({
+      pricesLockedAt: NOW,
+      startsAt: STARTS_AT,
+      salesEndAt: '2026-12-12T19:30:00.000Z',
+      salesClosedAt: '2026-12-12T19:30:00.000Z',
+      ...overrides,
+    });
+
+  it('reopens when the new end is still ahead, counting a move for the publisher', () => {
+    const sales = closedAtItsEnd();
+
+    sales.recordSchedule('2026-12-19T19:00:00.000Z', STATED_AT, '2026-12-12T20:00:00.000Z');
+
+    expect(sales.isOnSale).toBe(true);
+    expect(sales.snapshot.salesEndAt).toBe('2026-12-19T19:30:00.000Z');
+    expect(sales.getUncommittedEvents().map(({ kind }) => kind)).toEqual([
+      'DateScheduleRecorded',
+      'DateSalesReopened',
+    ]);
+  });
+
+  it('stays closed by an outcome, or when the new end is past too', () => {
+    const cancelled = closedAtItsEnd({ outcome: DateOutcome.CANCELLED });
+    cancelled.recordSchedule('2026-12-19T19:00:00.000Z', STATED_AT, '2026-12-12T20:00:00.000Z');
+    expect(cancelled.isOnSale).toBe(false);
+
+    const stillPast = closedAtItsEnd();
+    stillPast.recordSchedule('2026-12-12T19:10:00.000Z', STATED_AT, '2026-12-12T20:00:00.000Z');
+    expect(stillPast.isOnSale).toBe(false);
+  });
+});

@@ -42,6 +42,7 @@ function integrationEventOf(
     case 'DateSalesOpened':
     case 'DateOutcomeRecorded':
     case 'DateSalesEnded':
+    case 'DateSalesReopened':
     case 'SeatsHeld':
       return null;
     case 'DatePricesSet':

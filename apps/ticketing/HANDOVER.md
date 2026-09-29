@@ -383,6 +383,12 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
   `recordSchedule` from `seatSalesEndAt` whenever catalog states or moves the start, so a
   postponement moves it; `1790440900000-seat-sales-cutoff.ts` backfilled it for the dates already
   scheduled.
+- **A postponement applied late reopens a sale closed by time** (review m1). Core refuses a
+  postponement once the live has started (`assertOutcomeDeclarable`, catalog's `outcome.ts`), so one
+  declared in time always precedes the old cutoff; but the consumer may apply it after, when Kafka,
+  the connector or the retry topic lags, and the sweeper, Postgres alone, closes the sale meanwhile.
+  `recordSchedule` then reopens it (`DateSalesReopened`, one move for the publisher) when no closing
+  outcome was recorded and the new end is ahead: sales go on, as adr-ticketing.md §8 has them.
 - **The hold's statement refuses past the end by itself**: its WHERE gained
   `(sales_end_at IS NULL OR sales_end_at > $now)`, the command's instant, in `takeSeats` and in
   the late payment's `takeAndSellSeats`. Chosen over accepting the sweeper's second: a second at an
@@ -426,6 +432,7 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
 | `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes; a late entry quoted, refused, then sold, `lateEntry` parsed by the contract's schema extended as the report gives it |
 | `date-sales/seat-sales-window.spec.ts`, `date-sales.aggregate.spec.ts` (T3's second block) | D-089's end thirty minutes after the start, moved by a postponement; no late entry before the start, whole minutes after it; on sale until the end, not at it |
 | `date-sales/close-ended-sales.itest.ts` | a sale past its end closed once, published a last time at 0 seats and not sold out, refusing a purchase; one running and one with no end left on sale; a sale closed thirty minutes after its start, and a postponed one whose end moved with its start left on sale |
+| `date-sales/postponement-reopen.itest.ts` | the correctness review's case, as written: a sale closed by time, a postponement stated before the old start and applied after it reopening the sale until thirty minutes after the new start |
 | `migrations/seat-sales-cutoff.itest.ts` | the backfill on a database already holding dates: an end thirty minutes after each start, none without one |
 | `orders/capacity.itest.ts` | adr-ticketing.md §3's concurrency test: 300 purchases at once on one date of 100 seats, ten at a time on its row through the pool: exactly 100 held (100 answered 202, 200 sold out), `seats_available` 0 and never below, and all 100 back at expiry; with quantities of one to three, paid or held, every seat accounted for (available + sold + held = capacity, one `seat` row per seat sold). Measured, three runs: the 300 purchases took 574, 634 and 946 ms, fake provider included |
 | `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, refunded at once under `refund:{orderId}` with `order.refunded`); a refund owed through a provider outage, made once on a later pass; a purchase resumed past its hold answering sold out; an expired order's intent cancelled, and asked again after an outage |
@@ -518,9 +525,7 @@ addition):
   start whose provider did not answer, retried under its key after the start, holds its seats again
   without the flag its first body never needed. Asking then would strand it, since another body
   under the key is refused as reused.
-- **A date postponed after its cutoff passed stays closed**: the sweeper closed it at its end, and a
-  later start does not reopen it. D-076 allows a postponement until the date ends, so a
-  postponement declared more than thirty minutes into the live meets this; none reopens a sale.
+
 
 The three interims of the first handover are core's rules now (arthome-core PR #2, fbab36e):
 `AVAILABILITY_VALID_SECONDS` and `availabilityValidUntil`, `provisionRevisableUntil` and

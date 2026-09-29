@@ -17,6 +17,7 @@ function movesAvailability(event: DateSalesEvent): boolean {
     case 'DateOutcomeRecorded':
       return event.salesClosed;
     case 'DateSalesEnded':
+    case 'DateSalesReopened':
       return true;
     case 'DateSalesOpened':
     case 'DateScheduleRecorded':

@@ -24,6 +24,7 @@ import {
   DatePricesSet,
   DateSalesEnded,
   DateSalesOpened,
+  DateSalesReopened,
   DateScheduleRecorded,
   SeatsHeld,
   TechnicalProvisionSet,
@@ -248,15 +249,23 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
     return true;
   }
 
-  /** A start as scheduled or moved by a postponement; false when a newer one was recorded. */
+  /**
+   * A start as scheduled or moved by a postponement, its end of sales with it; false when a newer
+   *   one was recorded. A sale closed by time whose new end is still ahead reopens: core refuses a
+   *   postponement once the live started, so only a fact applied late, after the consumer lagged,
+   *   finds its sale already closed.
+   */
   public recordSchedule(startsAt: Instant, statedAt: Instant, now: Instant): boolean {
     const { dateId, channelId, capacityTotal, provisionedCapacity, scheduleStatedAt, version } =
       this.current;
     if (isStale(statedAt, scheduleStatedAt)) return false;
+    const salesEndAt = seatSalesEndAt(startsAt);
+    const reopens = this.closedByTime && isBefore(now, salesEndAt);
     this.current = frozen({
       ...this.current,
       startsAt,
-      salesEndAt: seatSalesEndAt(startsAt),
+      salesEndAt,
+      salesClosedAt: reopens ? null : this.current.salesClosedAt,
       scheduleStatedAt: statedAt,
       version: version + 1,
     });
@@ -270,7 +279,16 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
         now,
       ),
     );
+    if (reopens) this.apply(new DateSalesReopened(dateId, channelId, now));
     return true;
+  }
+
+  /** Closed at its end by time, and by no outcome: a cancellation or an interruption is final. */
+  private get closedByTime(): boolean {
+    const { salesClosedAt, outcome } = this.current;
+    return (
+      salesClosedAt !== null && (outcome === null || !OUTCOMES_CLOSING_SALES.includes(outcome))
+    );
   }
 
   /**
