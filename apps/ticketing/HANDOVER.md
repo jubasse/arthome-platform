@@ -241,6 +241,13 @@ does; the three answer `no-store`.
   state, the decline, else sold out. A refusal of tx A rolls the order back with the rest, so the key
   stays free. Another body under the key: 409 `api.idempotency_key_reused`. Two attempts at once
   get one order and one answer, the second kept answer served to both.
+- **3-D Secure whichever lands first** (review M4). A `requires_action` webhook carries no client
+  secret; applied before tx B, it records the intent without one. `recordIntent` completes a known
+  intent with the secret and next action the provider tells of the same one, whatever the order of
+  arrival, so tx B still answers the handoff. And a purchase resumed while its order waits for the
+  buyer on a secret-less intent (the webhook applied after a crash between tx A and tx B) asks the
+  provider again, who hands the same intent back with its secret: never `order.sold_out` while the
+  buyer's seats are held.
 - **The provider down** (adr-ticketing.md §12's drill) releases the hold, gives the seats back and
   answers 503, and the order stays pending, bound to its key: a retry under the same key resumes it,
   holds the seats again (a new hold, the first `released`) or fails it sold out, and asks the
@@ -423,6 +430,7 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
 | `orders/capacity.itest.ts` | adr-ticketing.md §3's concurrency test: 300 purchases at once on one date of 100 seats, ten at a time on its row through the pool: exactly 100 held (100 answered 202, 200 sold out), `seats_available` 0 and never below, and all 100 back at expiry; with quantities of one to three, paid or held, every seat accounted for (available + sold + held = capacity, one `seat` row per seat sold). Measured, three runs: the 300 purchases took 574, 634 and 946 ms, fake provider included |
 | `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, refunded at once under `refund:{orderId}` with `order.refunded`); a refund owed through a provider outage, made once on a later pass; a purchase resumed past its hold answering sold out; an expired order's intent cancelled, and asked again after an outage |
 | `orders/payment-races.itest.ts` | the correctness review's cases, as written: a payment inserting its seats (slowed 1 s) leaves the date's row free, a hold's decrement bounded at 200 ms passing; expiry passes racing late payments on one date, every seat accounted for |
+| `orders/three-d-secure.itest.ts` | the correctness review's cases, as written: a `requires_action` webhook applied before tx B, and one applied after a crash between tx A and tx B then the purchase replayed: 202 with the handoff and its client secret both times |
 | `payments/payment-worker.itest.ts` | the correctness review's cases, as written: a webhook retried after a transient failure then applied once, backed off by `RETRY_DELAYS_MS` and given up on after the last; an event about no order kept and ignored; owed refunds not queued behind one refused for good, and a worker that pauses while a full batch is refused |
 | `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, a signature over the exact bytes and its tolerance |
 

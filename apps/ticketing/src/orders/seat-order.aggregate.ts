@@ -121,6 +121,22 @@ const STATES_AWAITING_PAYMENT: readonly OrderState[] = [
 ];
 
 /**
+ * The intent as known, completed by what the provider tells of the same one: a webhook carries no
+ *   client secret and no next action, the purchase's own answer does, in whichever order they land.
+ */
+function completedIntent(
+  known: PaymentIntentRecord | null,
+  told: PaymentIntentRecord,
+): PaymentIntentRecord {
+  if (known === null) return told;
+  if (known.ref !== told.ref) return known;
+  const clientSecret = known.clientSecret ?? told.clientSecret;
+  const nextAction = known.nextAction ?? told.nextAction;
+  if (clientSecret === known.clientSecret && nextAction === known.nextAction) return known;
+  return { ref: known.ref, clientSecret, nextAction };
+}
+
+/**
  * data-model.md §3.3's `SeatOrder`, its states `adr-payments.md` §8's and forward only (§7.3): a
  *   fact that would move it back is ignored, never applied. It owns its seats, created in its `paid`
  *   transition (adr-ticketing.md §11). A payment it can give no seat to is owed back (D-082).
@@ -178,6 +194,19 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
     return state === OrderState.PENDING && intent === null;
   }
 
+  /**
+   * Waiting for its buyer on an intent learnt of by its webhook alone, which carries no client
+   *   secret: the purchase resumes by asking the provider, who hands the same intent back with it.
+   */
+  public get awaitsClientSecret(): boolean {
+    const { intent, refund } = this.current;
+    return this.awaitsPayment && refund === null && intent !== null && intent.clientSecret === null;
+  }
+
+  private get awaitsPayment(): boolean {
+    return STATES_AWAITING_PAYMENT.includes(this.current.state);
+  }
+
   public get owesRefund(): boolean {
     const { refund, state } = this.current;
     return refund !== null && state !== OrderState.REFUNDED;
@@ -204,9 +233,14 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
       this.advance({ intent: current.intent ?? intent, intentCancelOwedAt: now });
       return;
     }
-    if (!movesForward(current.state, state)) return;
-    this.advance({ state, intent: current.intent ?? intent });
-    this.apply(new SeatOrderIntentRecorded(current.id, intent.ref, state, now));
+    if (!this.awaitsPayment) return;
+    const intentKnown = completedIntent(current.intent, intent);
+    if (movesForward(current.state, state)) {
+      this.advance({ state, intent: intentKnown });
+      this.apply(new SeatOrderIntentRecorded(current.id, intent.ref, state, now));
+    } else if (intentKnown !== current.intent) {
+      this.advance({ intent: intentKnown });
+    }
   }
 
   /** Paid, with one seat per seat bought; nothing when it cannot accept a payment any more. */
@@ -254,7 +288,7 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
   /** False, changing nothing, once the order no longer waits for its payment. */
   public fail(failure: OrderFailure, now: Instant): boolean {
     const current = this.current;
-    if (!STATES_AWAITING_PAYMENT.includes(current.state)) return false;
+    if (!this.awaitsPayment) return false;
     this.advance({ state: OrderState.FAILED, failure });
     this.apply(new SeatOrderFailed(current.id, current.dateId, failure.code, now));
     return true;

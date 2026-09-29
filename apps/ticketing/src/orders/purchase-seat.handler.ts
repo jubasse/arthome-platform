@@ -224,6 +224,9 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     if (stored !== null) return this.answered(stored, true);
 
     const order = await this.loadOrder(transaction, orderId);
+    if (order.awaitsClientSecret) {
+      return { kind: 'create_intent', request: this.intentRequestOf(order) };
+    }
     if (!order.awaitsIntent) return this.answerOf(transaction, order);
 
     const now = this.clock.now();

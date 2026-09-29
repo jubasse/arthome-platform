@@ -4,6 +4,7 @@ import { OrderErrorCode, PriceTier, RefundReason, money } from '@arthome/core';
 
 import { OrderState, SeatState } from './commerce-vocabulary.js';
 import { SeatOrder, type SeatIssue, type SeatOrderPlacement } from './seat-order.aggregate.js';
+import { NextActionKind } from '../payments/payment.port.js';
 
 const NOW = '2026-09-28T10:00:00.000Z';
 const LATER = '2026-09-28T10:05:00.000Z';
@@ -139,5 +140,36 @@ describe('SeatOrder', () => {
     expect(() => {
       (order.snapshot as { state: string }).state = OrderState.PAID;
     }).toThrow(TypeError);
+  });
+});
+
+describe('SeatOrder, its intent told in either order (review M4)', () => {
+  const learnt = { ref: INTENT.ref, clientSecret: null, nextAction: null };
+  const told = {
+    ref: INTENT.ref,
+    clientSecret: INTENT.clientSecret,
+    nextAction: { kind: NextActionKind.REDIRECT_TO_URL, redirectUrl: 'https://3ds.test' },
+  };
+
+  it('completes an intent its webhook recorded with the secret the purchase is told', () => {
+    const order = placed();
+    order.recordIntent(learnt, OrderState.AWAITING_ACTION, NOW);
+    expect(order.awaitsClientSecret).toBe(true);
+
+    order.recordIntent(told, OrderState.AWAITING_ACTION, LATER);
+
+    expect(order.snapshot).toMatchObject({ state: OrderState.AWAITING_ACTION, intent: told });
+    expect(order.awaitsClientSecret).toBe(false);
+  });
+
+  it('keeps the secret it knows when the webhook comes second, and moves nothing for another ref', () => {
+    const order = placed();
+    order.recordIntent(told, OrderState.AWAITING_ACTION, NOW);
+    const version = order.snapshot.version;
+
+    order.recordIntent(learnt, OrderState.AWAITING_ACTION, LATER);
+    order.recordIntent({ ...told, ref: 'pi_other' }, OrderState.AWAITING_ACTION, LATER);
+
+    expect(order.snapshot).toMatchObject({ intent: told, version });
   });
 });
