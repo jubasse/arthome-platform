@@ -1,7 +1,7 @@
 import { readPublicWebOrigin } from '@arthome-platform/config';
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-import { DateOutcome, type Bilingual } from '@arthome/core';
+import { DateOutcome, SystemClock, type Bilingual } from '@arthome/core';
 
 import { writeDateScheduled } from '../dates/date-integration-events.js';
 import { dateRecordsOf } from '../dates/date-records.js';
@@ -86,7 +86,7 @@ export class PublicSlugs1790420900000 implements MigrationInterface {
       'CREATE UNIQUE INDEX date_detail_public_slug ON date_detail_public (show_id, slug)',
     );
 
-    const occurredAt = new Date().toISOString();
+    const occurredAt = new SystemClock().now();
     const origin = readPublicWebOrigin();
     for (const { id } of dates) {
       const { date, show, venue } = await dateRecordsOf(queryRunner.manager, id);

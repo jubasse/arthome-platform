@@ -69,6 +69,7 @@ export async function dispatch(
   producer: Producer,
   service: string,
   payload: EachMessagePayload,
+  // eslint-disable-next-line arthome-platform/no-wall-clock -- the retry consumer waits for the not-before on the machine's time
   now: Date = new Date(),
 ): Promise<Disposition> {
   try {

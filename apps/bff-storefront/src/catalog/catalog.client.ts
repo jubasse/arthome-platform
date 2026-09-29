@@ -63,6 +63,7 @@ export class CatalogClient {
     const query = params.toString();
     const url = `${this.baseUrl}${path}${query === '' ? '' : `?${query}`}`;
     // Giving up locally and remotely are the same instant (transport.md §5.3).
+    // eslint-disable-next-line arthome-platform/no-wall-clock -- a timer runs on the machine's time
     const timeout = AbortSignal.timeout(Math.max(0, call.deadline.getTime() - Date.now()));
     let status: number;
     let body: unknown;

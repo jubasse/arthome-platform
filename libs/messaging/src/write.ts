@@ -29,7 +29,7 @@ export interface OutboxFact {
 export async function writeOutboxEvent(
   manager: EntityManager,
   fact: OutboxFact,
-  occurredAt: Date = new Date(),
+  occurredAt: Date,
 ): Promise<string> {
   const messageId = uuidv7();
   await manager.insert(OutboxEvent, {

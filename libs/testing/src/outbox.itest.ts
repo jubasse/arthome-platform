@@ -81,14 +81,18 @@ describe('the outbox, against a real Postgres', () => {
       const payload = Buffer.from('{"probe":true}', 'utf8');
 
       const messageId = await dataSource.transaction((manager) =>
-        writeOutboxEvent(manager, {
-          aggregateType: AGGREGATE_TYPE,
-          aggregateId,
-          type: EVENT_TYPE,
-          payload,
-          traceparent: TRACEPARENT,
-          actorId: null,
-        }),
+        writeOutboxEvent(
+          manager,
+          {
+            aggregateType: AGGREGATE_TYPE,
+            aggregateId,
+            type: EVENT_TYPE,
+            payload,
+            traceparent: TRACEPARENT,
+            actorId: null,
+          },
+          new Date(),
+        ),
       );
 
       const rows = await dataSource.getRepository(OutboxEvent).find();
@@ -113,13 +117,17 @@ describe('the outbox, against a real Postgres', () => {
       // past a DLQ a SOURCE connector does not have: the task dies and the
       // replication slot retains the write-ahead log until the disk is full.
       const refused = dataSource.transaction((manager) =>
-        writeOutboxEvent(manager, {
-          aggregateType: 'harness probe',
-          aggregateId: randomUUID(),
-          type: EVENT_TYPE,
-          payload: Buffer.from('{}', 'utf8'),
-          traceparent: null,
-        }),
+        writeOutboxEvent(
+          manager,
+          {
+            aggregateType: 'harness probe',
+            aggregateId: randomUUID(),
+            type: EVENT_TYPE,
+            payload: Buffer.from('{}', 'utf8'),
+            traceparent: null,
+          },
+          new Date(),
+        ),
       );
 
       await expect(refused).rejects.toThrow(/outbox_event_aggregatetype_is_topic_safe/);
@@ -132,13 +140,17 @@ describe('the outbox, against a real Postgres', () => {
     'refuses a payload of zero bytes, which would decode as a fact saying nothing',
     async () => {
       const refused = dataSource.transaction((manager) =>
-        writeOutboxEvent(manager, {
-          aggregateType: AGGREGATE_TYPE,
-          aggregateId: randomUUID(),
-          type: EVENT_TYPE,
-          payload: new Uint8Array(0),
-          traceparent: null,
-        }),
+        writeOutboxEvent(
+          manager,
+          {
+            aggregateType: AGGREGATE_TYPE,
+            aggregateId: randomUUID(),
+            type: EVENT_TYPE,
+            payload: new Uint8Array(0),
+            traceparent: null,
+          },
+          new Date(),
+        ),
       );
 
       await expect(refused).rejects.toThrow(/outbox_event_payload_not_empty/);
@@ -150,13 +162,17 @@ describe('the outbox, against a real Postgres', () => {
     'empties the tables between tests and leaves the migration record standing',
     async () => {
       await dataSource.transaction((manager) =>
-        writeOutboxEvent(manager, {
-          aggregateType: AGGREGATE_TYPE,
-          aggregateId: randomUUID(),
-          type: EVENT_TYPE,
-          payload: Buffer.from('{}', 'utf8'),
-          traceparent: null,
-        }),
+        writeOutboxEvent(
+          manager,
+          {
+            aggregateType: AGGREGATE_TYPE,
+            aggregateId: randomUUID(),
+            type: EVENT_TYPE,
+            payload: Buffer.from('{}', 'utf8'),
+            traceparent: null,
+          },
+          new Date(),
+        ),
       );
 
       await truncateAll(dataSource);

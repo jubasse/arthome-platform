@@ -15,6 +15,8 @@ import prettier from 'eslint-config-prettier/flat';
 
 import node from '@arthome/tooling/eslint/node';
 
+import { noWallClock } from './tools/eslint/no-wall-clock.mjs';
+
 export default defineConfig([
   globalIgnores([
     'apps/*/dist/**',
@@ -47,6 +49,16 @@ export default defineConfig([
     ],
     rules: {
       'no-console': 'off',
+    },
+  },
+
+  {
+    // Tests and their harness pick their own time; the services read it through the Clock.
+    files: ['apps/*/src/**/*.ts', 'libs/*/src/**/*.ts'],
+    ignores: ['**/*.spec.ts', '**/*.itest.ts', 'apps/*/src/itest/**', 'libs/testing/**'],
+    plugins: { 'arthome-platform': { rules: { 'no-wall-clock': noWallClock } } },
+    rules: {
+      'arthome-platform/no-wall-clock': 'error',
     },
   },
 

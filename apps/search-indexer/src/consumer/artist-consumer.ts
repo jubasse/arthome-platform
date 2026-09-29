@@ -64,7 +64,7 @@ export async function applyArtistMessage(
   dataSource: DataSource,
   indices: Indices,
   payload: EachMessagePayload,
-  now: Date = new Date(),
+  now: Date,
 ): Promise<Outcome> {
   const incoming = incomingOf(payload);
   if (incoming.type !== ARTIST_UPDATED) return 'ignored';

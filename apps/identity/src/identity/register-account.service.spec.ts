@@ -4,6 +4,8 @@ import { fromBinary } from '@bufbuild/protobuf';
 import type { DataSource, EntityManager } from 'typeorm';
 import { describe, expect, it } from 'vitest';
 
+import { FixedClock } from '@arthome/core';
+
 import { Account } from './account.entity.js';
 import { RegisterAccountService } from './register-account.service.js';
 
@@ -27,6 +29,8 @@ function recordingDataSource(inserts: Insert[]): DataSource {
   } as unknown as DataSource;
 }
 
+const clock = new FixedClock('2026-09-29T10:00:00.000Z');
+
 const command = {
   publicHandle: '@marie.j',
   email: 'marie@example.test',
@@ -38,7 +42,7 @@ const command = {
 describe('RegisterAccountService', () => {
   it('writes the account and the outbox row through ONE manager', async () => {
     const inserts: Insert[] = [];
-    await new RegisterAccountService(recordingDataSource(inserts)).register(command);
+    await new RegisterAccountService(recordingDataSource(inserts), clock).register(command);
 
     expect(inserts).toHaveLength(2);
     expect(inserts[0]?.target).toBe(Account);
@@ -51,7 +55,9 @@ describe('RegisterAccountService', () => {
 
   it('routes by aggregate, and keys by the account so one account stays ordered', async () => {
     const inserts: Insert[] = [];
-    const result = await new RegisterAccountService(recordingDataSource(inserts)).register(command);
+    const result = await new RegisterAccountService(recordingDataSource(inserts), clock).register(
+      command,
+    );
     const outbox = inserts[1]?.values ?? {};
 
     expect(outbox.aggregatetype).toBe('identity.account');
@@ -61,13 +67,13 @@ describe('RegisterAccountService', () => {
 
   it('injects the traceparent at WRITE time, not at publication time', async () => {
     const inserts: Insert[] = [];
-    await new RegisterAccountService(recordingDataSource(inserts)).register(command);
+    await new RegisterAccountService(recordingDataSource(inserts), clock).register(command);
     expect(inserts[1]?.values.tracecontext).toBe(command.traceparent);
   });
 
   it('carries no traceparent rather than inventing one', async () => {
     const inserts: Insert[] = [];
-    await new RegisterAccountService(recordingDataSource(inserts)).register({
+    await new RegisterAccountService(recordingDataSource(inserts), clock).register({
       ...command,
       traceparent: null,
     });
@@ -76,7 +82,9 @@ describe('RegisterAccountService', () => {
 
   it('writes a payload that decodes back to the event', async () => {
     const inserts: Insert[] = [];
-    const result = await new RegisterAccountService(recordingDataSource(inserts)).register(command);
+    const result = await new RegisterAccountService(recordingDataSource(inserts), clock).register(
+      command,
+    );
 
     const payload = inserts[1]?.values.payload as Buffer;
     const decoded = fromBinary(AccountRegisteredSchema, new Uint8Array(payload));
@@ -87,7 +95,9 @@ describe('RegisterAccountService', () => {
 
   it('gives the message an identifier of its own, distinct from the account', async () => {
     const inserts: Insert[] = [];
-    const result = await new RegisterAccountService(recordingDataSource(inserts)).register(command);
+    const result = await new RegisterAccountService(recordingDataSource(inserts), clock).register(
+      command,
+    );
     // The message-id deduplicates deliveries; the account id identifies a
     // person. Reusing one for the other makes a second event about the same
     // account look like a duplicate of the first.

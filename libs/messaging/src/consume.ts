@@ -54,15 +54,15 @@ async function waitUntilDue(
   heartbeat: () => Promise<void>,
   isStopping: () => boolean,
 ): Promise<void> {
-  const due = Date.now() + waitMs;
-  while (Date.now() < due) {
+  const due = performance.now() + waitMs;
+  while (performance.now() < due) {
     if (isStopping()) {
       throw new Error(
         'consumer is shutting down during a retry backoff — leaving the message uncommitted ' +
           'so it is redelivered rather than dropped',
       );
     }
-    const slice = Math.min(HEARTBEAT_INTERVAL_MS, due - Date.now());
+    const slice = Math.min(HEARTBEAT_INTERVAL_MS, due - performance.now());
     if (slice > 0) await new Promise((resolve) => setTimeout(resolve, slice));
     await heartbeat();
   }
@@ -108,6 +108,7 @@ export async function runConsumers(setup: ConsumerSetup): Promise<() => Promise<
       eachMessage: async (payload) => {
         if (honourDelay) {
           const notBefore = header(payload, NOT_BEFORE_HEADER);
+          // eslint-disable-next-line arthome-platform/no-wall-clock -- another process's instant, waited for in real time
           const waitMs = notBefore === null ? 0 : Date.parse(notBefore) - Date.now();
           if (waitMs > 0)
             await waitUntilDue(

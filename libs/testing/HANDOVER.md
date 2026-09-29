@@ -30,7 +30,7 @@ const dataSource = await applyMigrations(target, {
   migrations: [Initial1758700000000, OutboxGuards1758700200000],
 });
 
-await dataSource.transaction((manager) => writeOutboxEvent(manager, fact));
+await dataSource.transaction((manager) => writeOutboxEvent(manager, fact, occurredAt));
 // ... assertions ...
 
 await truncateAll(dataSource);   // between tests
