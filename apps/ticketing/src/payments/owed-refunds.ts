@@ -4,12 +4,7 @@ import { DataSource } from 'typeorm';
 
 import type { Clock } from '@arthome/core';
 
-import {
-  OWED_REFUND,
-  PROVIDER_ATTEMPTS_MAX,
-  claimOwedCalls,
-  giveUpOwedCall,
-} from './owed-calls.js';
+import { OWED_REFUND, attemptsMaxOf, claimOwedCalls, giveUpOwedCall } from './owed-calls.js';
 import { PaymentPort } from './payment.port.js';
 import { CLOCK } from '../clock.js';
 import { OrderState } from '../orders/commerce-vocabulary.js';
@@ -92,16 +87,19 @@ export class OwedRefunds {
 
   private async failed(orderId: string, attempts: number, error: unknown): Promise<void> {
     const stack = error instanceof Error ? error.stack : String(error);
-    if (attempts < PROVIDER_ATTEMPTS_MAX) {
+    const attemptsMax = attemptsMaxOf(OWED_REFUND);
+    if (attempts < attemptsMax) {
       this.logger.warn(
-        `refund owed by order ${orderId} not made, attempt ${String(attempts)} of ${String(PROVIDER_ATTEMPTS_MAX)}`,
+        `refund owed by order ${orderId} not made, attempt ${String(attempts)} of ${String(attemptsMax)}`,
         stack,
       );
       return;
     }
     await giveUpOwedCall(this.dataSource, OWED_REFUND, orderId, this.clock.nowMs());
     this.logger.error(
-      `refund owed by order ${orderId} given up after ${String(attempts)} attempts: money kept without a seat`,
+      `refund owed by order ${orderId} given up after ${String(attempts)} attempts over a day: ` +
+        "the buyer's money is held without a seat until an operator replays the refund " +
+        '(apps/ticketing/HANDOVER.md §0k)',
       stack,
     );
   }

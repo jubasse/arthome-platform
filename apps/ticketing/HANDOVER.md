@@ -350,10 +350,15 @@ adr-payments.md §7.
   (`refund_owed_at`, `intent_cancel_owed_at`, never overwritten), `*_attempts`,
   `*_next_attempt_at` and `*_dead_at` (`1790441000000-provider-call-retries.ts`). A pass claims up
   to 100 due calls `FOR UPDATE SKIP LOCKED` in a short transaction that counts the attempt and moves
-  the next one out by the same delays, so another replica's pass skips them and a crash mid-call
-  leaves them due again later; the call itself runs outside any transaction. After the fourth
-  failed attempt the call is given up on (`*_dead_at`) with an error logged. A call refused for
-  good waits its delays like any other, so it never holds newer ones back.
+  the next one out by its delays, so another replica's pass skips them and a crash mid-call leaves
+  them due again later; the call itself runs outside any transaction. After its last failed attempt
+  the call is given up on (`*_dead_at`) with an error logged. A call refused for good waits its
+  delays like any other, so it never holds newer ones back.
+- **Each kind of call has its own delays** (correctness re-review m-a). A refund owed is money held
+  without a seat, so it outlasts a provider's incident: from 5 s, doubled up to an hour, until a
+  day has passed (`REFUND_RETRY_DELAYS_MS`: 34 attempts over 24.4 hours, up to a fifth more with
+  the jitter), the call being idempotent under its key. An intent's cancellation is best effort
+  and keeps the consumers' delays (5 s, 30 s, 5 min: four attempts within about 6 minutes).
 - **The worker pauses unless it is behind**: each of its three commands answers what it settled
   (applied, refunded, cancelled, or given up on), not what it looked at, so a pass whose batch all
   failed waits the next tick instead of spinning.
@@ -386,6 +391,25 @@ path and the webhook worker both ask at once, a first try the attempts do not co
 leaves the refund due at once to `RefundOwedPayments`, whose claimed attempts back off and are
 bounded (§0j); the key makes a second ask the same refund. Never an oversold date, never money kept
 without a seat. `payouts` receives this `order.refunded` for an order it never saw `order.paid`.
+
+**Replaying a refund given up on.** After a day of failed attempts (§0j) the refund is marked
+`refund_dead_at` and an error is logged: "the buyer's money is held without a seat until an
+operator replays the refund". Find them with `SELECT id, reference, refund_owed_at, refund_dead_at
+FROM seat_order WHERE refund_dead_at IS NOT NULL`. Once the cause is gone (the provider's incident
+over, or the refusal understood and settled at the provider), replay one with:
+
+```sql
+UPDATE seat_order
+   SET refund_dead_at = NULL, refund_attempts = 0, refund_next_attempt_at = NULL
+ WHERE id = '<order id>' AND refund_dead_at IS NOT NULL;
+```
+
+The payment worker asks it again within a second, on a new schedule, under the same key
+`refund:{orderId}`, so a refund the provider made meanwhile is not made twice, and the order is
+then `refunded` with its `order.refunded`. Do not replay while the provider still refuses it for
+a reason of its own (a disputed charge): the call would be given up on again a day later. The same
+statement over the `intent_cancel_*` columns replays an intent's cancellation, which is only worth
+it while the intent could still be confirmed.
 
 A purchase replayed under its key once its hold expired, never having reached the provider,
 answers `order.sold_out` from the failed order and asks the provider nothing.
@@ -466,12 +490,13 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
 | `date-sales/postponement-reopen.itest.ts` | the correctness review's case, as written: a sale closed by time, a postponement stated before the old start and applied after it reopening the sale until thirty minutes after the new start |
 | `migrations/seat-sales-cutoff.itest.ts` | the backfill on a database already holding dates: an end thirty minutes after each start, none without one |
 | `orders/capacity.itest.ts` | adr-ticketing.md §3's concurrency test: 300 purchases at once on one date of 100 seats, ten at a time on its row through the pool: exactly 100 held (100 answered 202, 200 sold out), `seats_available` 0 and never below, and all 100 back at expiry; with quantities of one to three, paid or held, every seat accounted for (available + sold + held = capacity, one `seat` row per seat sold). Measured, three runs: the 300 purchases took 574, 634 and 946 ms, fake provider included |
-| `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, refunded at once under `refund:{orderId}` with `order.refunded`); a refund owed through a provider outage, made once on a later pass; a purchase resumed past its hold answering sold out; an expired order's intent cancelled, and asked again after an outage |
+| `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, refunded at once under `refund:{orderId}` with `order.refunded`); a refund owed through a provider outage, made once on a later pass; a purchase resumed past its hold answering sold out; an expired order's intent cancelled, and asked again after an outage; a refund owed through an outage of a day, asked again on its schedule, given up on with the error that says money is held without a seat, and made once replayed with §0k's statement |
 | `orders/expiry-plan.itest.ts` | the correctness review's case, as written: over 20,000 orders, the expiry pass's plan reads no `seat_order` sequentially |
 | `orders/payment-races.itest.ts` | the correctness review's cases, as written: a payment inserting its seats (slowed 1 s) leaves the date's row free, a hold's decrement bounded at 200 ms passing; expiry passes racing late payments on one date, every seat accounted for |
 | `orders/three-d-secure.itest.ts` | the correctness review's cases, as written: a `requires_action` webhook applied before tx B, and one applied after a crash between tx A and tx B then the purchase replayed: 202 with the handoff and its client secret both times |
 | `payments/payment-worker.itest.ts` | the correctness review's cases, as written: a webhook retried after a transient failure then applied once, backed off by `RETRY_DELAYS_MS` and given up on after the last; an event about no order kept and ignored; owed refunds not queued behind one refused for good, and a worker that pauses while a full batch is refused |
 | `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, a signature over the exact bytes and its tolerance |
+| `payments/owed-calls.spec.ts` | a refund's delays doubling from 5 s to their one-hour cap, adding up to a day, with the consumers' jitter; an intent's cancellation on the consumers' bound |
 
 **`catalog-exchange.itest.ts` imports fourteen of catalog's internal modules by relative path**, no
 manifest recording it (architecture review M5), and that is accepted, in a test only. Its point is
@@ -498,8 +523,9 @@ first.
   `refund_reason` and `refund_traceparent`) and `intent_cancel_owed_at`, each with its attempts,
   next attempt and dead mark, asked by the API process's payment worker under `refund:{orderId}` and
   `cancel:{orderId}` (§0j, §0k). T4's BullMQ queues (rate limit, bounded retries, a DLQ row and an
-  alert, §8) can take them over from those columns, job ids being those keys; which process runs
-  them is T4's to decide and record here, the sweeper staying on Postgres alone.
+  alert, §8) can take them over from those columns, job ids being those keys, and with them each
+  call's schedule: a refund's lasts a day, and §0k's replay of a dead one becomes the queue's; which
+  process runs them is T4's to decide and record here, the sweeper staying on Postgres alone.
 - **`cancelSeat` and `refundSeat`**: seats exist from payment with their code and a cancel deadline
   (an interim, §3); `seat.cancelled`, `SeatState` beyond `active`, and the order's
   `partially_refunded` are T4's. `refundReasonCode` is served once an order is `refunded`.

@@ -8,10 +8,11 @@ import {
   type StartedStack,
 } from '@arthome-platform/testing';
 import { fromBinary } from '@bufbuild/protobuf';
+import { Logger } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { DataSource } from 'typeorm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ApiErrorCode,
@@ -30,6 +31,7 @@ import {
   intentRefOf,
   type SignedWebhook,
 } from './fake-payment-provider.js';
+import { OWED_REFUND, REFUND_GIVE_UP_AFTER_MS, attemptsMaxOf } from './owed-calls.js';
 import { refundKeyOf } from './owed-refunds.js';
 import { PaymentWebhooksModule } from './payment-webhooks.module.js';
 import { PaymentWorker } from './payment-worker.js';
@@ -490,6 +492,79 @@ describe('the intent of an order whose hold expired (adr-ticketing.md §6)', () 
         [orderId],
       );
       expect(cancelled?.intent_cancel_owed_at).toBeNull();
+    },
+    CASE_MS,
+  );
+});
+
+describe('a refund owed through a provider outage of hours (D-082, adr-ticketing.md §8)', () => {
+  it(
+    'is asked again for about a day, then given up on loudly, and made once an operator replays it',
+    async () => {
+      const dateId = await dateOnSale(2);
+      const orderId = await awaitingOrder(dateId);
+      await expireDueHolds();
+      await commands().execute(purchaseOf(dateId, 2));
+      await deliver(fake.completeAction(intentRefOf(orderId)));
+      fake.down = true;
+      await applyEvents();
+      const owedAtMs = clock.nowMs();
+      const scheduleOf = async () => {
+        const [row] = await dataSource.query<
+          {
+            refund_attempts: number;
+            refund_next_attempt_at: Date | null;
+            refund_dead_at: Date | null;
+          }[]
+        >(
+          `SELECT refund_attempts, refund_next_attempt_at, refund_dead_at FROM seat_order
+            WHERE id = $1`,
+          [orderId],
+        );
+        if (row === undefined) throw new Error(`no order ${orderId}`);
+        return row;
+      };
+      const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        let passes = 0;
+        for (;;) {
+          await commands().execute(new RefundOwedPayments(100));
+          passes += 1;
+          const { refund_next_attempt_at: next, refund_dead_at: dead } = await scheduleOf();
+          if (dead !== null || next === null || passes > attemptsMaxOf(OWED_REFUND)) break;
+          clock.advance(next.getTime() - clock.nowMs());
+        }
+
+        const given = await scheduleOf();
+        expect(passes).toBe(attemptsMaxOf(OWED_REFUND));
+        expect(given.refund_attempts).toBe(attemptsMaxOf(OWED_REFUND));
+        expect(given.refund_dead_at?.getTime()).toBeGreaterThanOrEqual(
+          owedAtMs + REFUND_GIVE_UP_AFTER_MS,
+        );
+        expect((await orderOf(orderId)).order.state).toBe(OrderState.FAILED);
+        expect(
+          errors.mock.calls.filter(([message]) =>
+            String(message).includes(`order ${orderId} given up`),
+          ),
+        ).toEqual([[expect.stringContaining('money is held without a seat'), expect.anything()]]);
+      } finally {
+        errors.mockRestore();
+        fake.down = false;
+      }
+
+      // HANDOVER §0k's replay, as an operator runs it.
+      await dataSource.query(
+        `UPDATE seat_order
+            SET refund_dead_at = NULL, refund_attempts = 0, refund_next_attempt_at = NULL
+          WHERE id = $1 AND refund_dead_at IS NOT NULL`,
+        [orderId],
+      );
+      const refundsBefore = fake.refundsMade;
+      await commands().execute(new RefundOwedPayments(100));
+      await commands().execute(new RefundOwedPayments(100));
+
+      expect((await orderOf(orderId)).order.state).toBe(OrderState.REFUNDED);
+      expect(fake.refundsMade).toBe(refundsBefore + 1);
     },
     CASE_MS,
   );

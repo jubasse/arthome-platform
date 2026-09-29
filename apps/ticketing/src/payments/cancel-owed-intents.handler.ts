@@ -8,7 +8,7 @@ import type { Clock } from '@arthome/core';
 import { CancelOwedIntents } from './cancel-owed-intents.command.js';
 import {
   OWED_INTENT_CANCELLATION,
-  PROVIDER_ATTEMPTS_MAX,
+  attemptsMaxOf,
   claimOwedCalls,
   giveUpOwedCall,
 } from './owed-calls.js';
@@ -66,9 +66,10 @@ export class CancelOwedIntentsHandler implements ICommandHandler<CancelOwedInten
 
   private async failed(orderId: string, attempts: number, error: unknown): Promise<void> {
     const stack = error instanceof Error ? error.stack : String(error);
-    if (attempts < PROVIDER_ATTEMPTS_MAX) {
+    const attemptsMax = attemptsMaxOf(OWED_INTENT_CANCELLATION);
+    if (attempts < attemptsMax) {
       this.logger.warn(
-        `intent of order ${orderId} not cancelled, attempt ${String(attempts)} of ${String(PROVIDER_ATTEMPTS_MAX)}`,
+        `intent of order ${orderId} not cancelled, attempt ${String(attempts)} of ${String(attemptsMax)}`,
         stack,
       );
       return;
