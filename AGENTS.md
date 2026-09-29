@@ -440,6 +440,21 @@ The capacity invariant is proven by `orders/capacity.itest.ts` on a real Postgre
 §3): 300 purchases at once on 100 seats hold exactly 100, never below zero, and all 100 come back at
 expiry; measured over three runs, the 300 took 574, 634 and 946 ms with the fake provider and a pool
 of ten. The load test at 10,000 buyers a minute is T6's.
+
+Proven on the running stack on 2026-09-29 at 040190f, the four new migrations run on the database
+that already held T2's dates, ticketing's three processes started from that build, a date drafted,
+scheduled and engaged by catalog's facts sent on `arthome.catalog.date`, 5 seats at 24 EUR:
+
+| Check | Result |
+| --- | --- |
+| `quoteSeat` for 3 | 200, one `tier` line of 7200 EUR, `validUntil` 60 s out |
+| `purchaseSeat` for 3 | 201 in 40 ms: three seats `ATH-XXXXXX`, their cancel deadline an hour before the start, order `ATH-2026-00001` paid |
+| the same key again | 201 in 5 ms, `Idempotency-Replayed: true`, the body byte for byte |
+| 3 more under a new key | 409 `order.sold_out`, 2 seats left |
+| `arthome.ticketing.order` | `order.paid`, key the order id, the request's `traceparent` |
+| `arthome.ticketing.date_sales` | three `seat.activated` on the date's key, then the sweeper's `availability_changed` 0.25 s after the purchase |
+| a webhook forged, then a genuine `payment_failed` twice | 401; 200 recorded; 200 `duplicate: true`; applied by the worker within 2.5 s, the paid order left paid |
+| SIGTERM to the three | stopped, no ticketing connection left in `pg_stat_activity` |
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
 instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` to

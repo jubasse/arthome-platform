@@ -177,6 +177,13 @@ saves with `saveVersioned`, commands answer through `runIdempotentlyVersioned`, 
 Refusals: the aggregate throws core's `DomainError`; the studio handlers wrap it in `asConflict`
 (409), the consumer maps it (retry for an unknown date, dead-letter otherwise).
 
+T3's `SeatHold` and `SeatOrder` follow them, `TicketingTransaction` carrying `holds` and `orders`
+beside `dateSales`, with three departures, each for a reason stated where it is built: the purchase
+runs in two transactions with the provider between them (§0h), the sweeper's expiry is set-based
+SQL over its batch rather than one aggregate per row (§0i), and the purchase is keyed on its order
+rather than `runIdempotently` (§0h). The storefront's handlers throw `RefusalException`, reached
+from HTTP alone; the payment worker's, reached from no request, log a failure and leave it due.
+
 ## 0g. The payment ports (T3)
 
 `src/payments/payment.port.ts` holds `adr-payments.md` §4's ports until core carries them (§3):
@@ -383,35 +390,37 @@ catalog's checklist rules accept what ticketing's aggregate writes. The cost is 
 inside catalog breaks this suite, which is where it should be noticed. No production code of
 either service imports the other.
 
-## 2. What T3 inherits
+## 2. What T4 inherits
 
-- The hot decrement: `UPDATE date_sales SET seats_available = seats_available - $q,
-  availability_moves = availability_moves + 1 WHERE date_id = $1 AND on_sale AND seats_available >=
-  $q`, executed by the repository and registered with `AggregateTracker.writtenUnversioned`; it must
-  update the tracker's stored snapshot too, or a later save in the transaction applies the delta
-  again. The publisher takes no lock it could wait on. **Built: `takeSeats`, §0h.**
-- `seats_sold` moves at payment by the same kind of statement; the fill rate reads it. **Built:
-  `sellHeldSeats`.**
-- **`findById` always loads `FOR UPDATE`**: the hold path must not reuse it (ADR §11: no lock across
-  application code), but load unlocked, or not at all, before its conditional decrement. **Built:
-  `findUnlocked`.**
-- **`on_sale` has no end in time**: prices locked and not closed. A decrement on `on_sale` alone
-  would sell after the show and its replay are over, unless T3 bounds its WHERE by the date's window
-  or a sweeper closes the sale. The publisher's pass reads every sale on sale, so it stays bounded
-  only once sales end: a sweeper closing them is the one that serves both. **Built: the sweeper's
-  closing, behind `salesEndOf`, which gives no end until a rule does (§0l).**
-- **The stored snapshot moves both ways**: if T3 also moves the aggregate's counters after its
-  decrement, it moves the repository's stored snapshot by the same amount, or the next save applies
-  the delta a second time.
-- The purchase claims its idempotency key in tx A and answers in tx B, which `runIdempotently`
-  (one transaction) does not cover: settle it in T3's first change, or key the purchase on
-  `seat_order` alone (libs review L1). **Keyed on `seat_order` alone, §0h.**
-- The sweeper process for hold expiry: a second loop beside `AvailabilityPublisher`. **Built: §0i.**
-- Topics `arthome.ticketing.order` (6, `order_id`) and `.account` (3) are provisioned.
-- For T4: refunds run on BullMQ (ADR §8), which needs Redis; the sweeper stays on Postgres alone,
-  so those workers need a process of their own or the consumer's. T4 decides and records it here.
-  **T3 put its provider calls in the API process's payment worker (§0j), each owed on an order
-  before it is asked, so a queue can take them over from those marks.**
+What T3 inherited from T2 is built: the hot decrement (`takeSeats`) and `seats_sold`'s statement
+(§0h), the unlocked load (`findUnlocked`), the stored snapshot moved with the decrement, the key on
+`seat_order` alone (libs review L1), the hold expiry beside the publisher (§0i), and the closing
+of sales by time, whose rule is still missing (§0l). Topics `arthome.ticketing.order` (6,
+`order_id`) and `.account` (3) are provisioned, and `order.paid` and `order.refunded` now reach the
+first.
+
+- **Refunds on a cancelled date** (adr-ticketing.md §8). A cancellation already closes the sale
+  (T2), so no new hold is taken; but a hold active at that instant is still consumed by its payment,
+  which never reads `on_sale`, so an order can be paid after its date was cancelled. T4's
+  enumeration of the paid orders has to catch those too, or settle them as refunds.
+- **The provider calls are marks on the order before they are calls**: `refund_owed_at` (with
+  `refund_reason`) and `intent_cancel_owed_at`, each asked by the API process's payment worker every
+  second, under `refund:{orderId}` and `cancel:{orderId}` (§0j, §0k). T4's BullMQ queues (rate
+  limit, bounded retries, a DLQ row and an alert, §8) can take them over from those marks; which
+  process runs them is T4's to decide and record here, the sweeper staying on Postgres alone.
+- **`cancelSeat` and `refundSeat`**: seats exist from payment with their code and a cancel deadline
+  (an interim, §3); `seat.cancelled`, `SeatState` beyond `active`, and the order's
+  `partially_refunded` are T4's. `refundReasonCode` is served once an order is `refunded`.
+- **The race suite of adr-ticketing.md §12**: a duplicated and an out-of-order webhook, a success
+  after the hold expired, declines and an abandoned action are proven (`payment-webhooks.itest.ts`,
+  `purchase.itest.ts`); a refund racing a payment and a chargeback (`disputed`) are T4's.
+- **A Stripe adapter** implements the two ports: an intent already succeeded is a cancellation that
+  succeeded (`cancelIntent` is best effort), the intent is re-read from Stripe when a webhook leaves
+  doubt (adr-payments.md §7.3, not built here), and the webhook route, refused in production like
+  every write, is exempted once its signature is Stripe's.
+- For T6: the TV pairing's hold (`SeatHoldOrigin.PAIRING`) has no order; the expiry pass joins each
+  hold to its order, so a pairing hold needs its own branch there. The expiry's cost under load is
+  the load test's.
 
 ## 3. Gaps
 
@@ -477,3 +486,9 @@ Known and left, each judged:
 - Proven on the development stack on 2026-09-27 at 630dbd5, at e0967b4, and at 70307cb after the
   re-review's three fixes and their migration `1790440400000`: the interval, the 10 s retry of an
   unpublishable date, and a closing published through `closing_due` (AGENTS.md).
+- T3 proven on the development stack on 2026-09-29 at 040190f (AGENTS.md, "The ticketing purchase
+  path"): a purchase paid at once and replayed byte for byte, sold out past the seats, `order.paid`
+  routed to `arthome.ticketing.order` on the order's key, the seats' events and the next
+  availability on the date's, and a forged, a genuine and a duplicate webhook. A 202, the expiry and
+  a late payment were not played there: the running fake confirms every intent, and the suites play
+  them (§1).
