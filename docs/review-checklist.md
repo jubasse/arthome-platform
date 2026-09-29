@@ -2,12 +2,13 @@
 
 The defects reviews have found here more than once, or that shipped and were measured. **An
 implementer walks it on their own diff before handing over; a reviewer walks it on the same diff.**
-A row a guard enforces says so: the guard runs in `pnpm run verify`, the rest is read. A review that
-finds a new recurring defect adds its row, with the commit or finding that measured it.
+A row names a lint rule when one enforces it in `pnpm run verify`; a helper it names prevents the
+defect only where it is used, so the rest is read. A review that finds a new recurring defect adds
+its row, with the commit or finding that measured it.
 
 | Defect | How to spot it | What prevents it |
 | --- | --- | --- |
-| The time read outside the injected clock | `new Date()`, `Date()` or `Date.now()` in a handler, a repository, a lib; a default parameter `now = new Date()`. Passes until real time crosses the suite's fixed instant (e52e1ab) | Lint `arthome-platform/no-wall-clock`. Inject core's `Clock` (`CLOCK` token), `new Date(clock.nowMs())`; a migration uses `new SystemClock()`; a duration is `performance.now()`; a real wait or timer disables the line with its reason |
+| The time read outside the injected clock | `new Date()`, `Date()` or `Date.now()` in a handler, a repository, a lib; a default parameter `now = new Date()`. Passes until real time crosses the suite's fixed instant (e52e1ab) | Lint `arthome-platform/no-wall-clock`. Inject core's `Clock` (`CLOCK` token), `new Date(clock.nowMs())`; a migration uses `new SystemClock()`; a duration is `performance.now()`; a real wait or timer disables the line with its reason after `--`, which lint requires (`require-description`) |
 | A test pinned to wall time | A suite on a `FixedClock` that seeds or asserts against the machine's time, or code under it that reads it; a deadline or budget asserted under `verify`'s parallel load | Every instant from the suite's `FixedClock`, or from the database's `now()` when the rows are seeded there (`boot.itest.ts`); a budget read exactly with the controllers' clock pinned ahead (1308fed) |
 | `query()` on an UPDATE or DELETE … RETURNING read as rows | `const [row] = await x.query<Row[]>('UPDATE … RETURNING …')`: TypeORM answers those two commands `[rows, rowCount]`, so `row` is the rows array (T3 correctness M1: no event was ever dead-lettered) | `updateReturning` from `@arthome-platform/transactions`. A count reads `[, affected]`; an INSERT, an upsert included, and a SELECT answer their rows alone |
 | The hot row locked across other writes | The counter statement (`date_sales` seats) runs before the transaction's inserts, updates, outbox rows or kept answer: every hold on the date queues behind them (T3 M2, N1) | The counter statement last in its transaction: hand it back as a `PendingCounterMove` and run it just before commit. An early one only when its result decides what follows, said at the line |

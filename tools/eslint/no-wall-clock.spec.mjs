@@ -16,6 +16,9 @@ new RuleTester().run('no-wall-clock', noWallClock, {
     'Date.parse(instant)',
     'clock.now()',
     'performance.now()',
+    'new globalThis.Date(0)',
+    'const { parse } = Date;',
+    'clock.Now',
   ],
   invalid: [
     { code: 'new Date()', errors: wallClock },
@@ -25,5 +28,11 @@ new RuleTester().run('no-wall-clock', noWallClock, {
     { code: 'Date()', errors: wallClock },
     { code: 'new Date(Date.now())', errors: wallClock },
     { code: 'function stamp(now = new Date()) { return now; }', errors: wallClock },
+    { code: 'new globalThis.Date()', errors: wallClock },
+    { code: 'globalThis.Date.now()', errors: wallClock },
+    { code: "Date['now']()", errors: wallClock },
+    { code: 'const { now } = Date;', errors: wallClock },
+    { code: 'Temporal.Now.instant()', errors: wallClock },
+    { code: 'globalThis.Temporal.Now.plainDateISO()', errors: wallClock },
   ],
 });

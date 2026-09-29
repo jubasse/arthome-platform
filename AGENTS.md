@@ -105,10 +105,18 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 
 - **Walk [`docs/review-checklist.md`](docs/review-checklist.md) on your diff before handing over**;
   a reviewer walks it again. Each row is a defect reviews here found more than once, how to spot it
-  and what prevents it. Three are guarded: the lint rule `arthome-platform/no-wall-clock` refuses a
-  time read outside the injected `Clock`, `updateReturning` (`@arthome-platform/transactions`) reads
-  an UPDATE's RETURNING rows, and `nextAttemptAt`, `doublingDelays` and `attemptsAllowedBy`
-  (`@arthome-platform/messaging`) are the one retry schedule, consumers and provider calls alike.
+  and what prevents it.
+  - **Enforced by `verify`**, through lint: `arthome-platform/no-wall-clock` refuses a time read
+    outside the injected `Clock`, and every `eslint-disable` must name its rules and give its reason
+    after `--` (`@eslint-community/eslint-comments`'s `no-unlimited-disable` and
+    `require-description`).
+  - **Shared helpers, which only a reviewer enforces**: `updateReturning`
+    (`@arthome-platform/transactions`) reads an UPDATE's or a DELETE's RETURNING rows, and
+    `nextAttemptAt`, `doublingDelays` and `attemptsAllowedBy` (`@arthome-platform/messaging`) are
+    the one retry schedule, consumers and provider calls alike.
+  - **A change to a rule in `tools/eslint/` bumps `meta.version` in `tools/eslint/plugin.mjs`**:
+    `eslint --cache` keys its results on it, and without the bump a tightened rule does not re-check
+    unchanged files.
 
 ## The commands
 
