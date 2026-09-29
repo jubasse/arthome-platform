@@ -103,6 +103,13 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 - **`pnpm run verify` is the gate.** Run it before every commit — and chain with `&&`, never `;`:
   this project has twice pushed with a red `verify` because a `;` let the commit run anyway.
 
+- **Walk [`docs/review-checklist.md`](docs/review-checklist.md) on your diff before handing over**;
+  a reviewer walks it again. Each row is a defect reviews here found more than once, how to spot it
+  and what prevents it. Three are guarded: the lint rule `arthome-platform/no-wall-clock` refuses a
+  time read outside the injected `Clock`, `updateReturning` (`@arthome-platform/transactions`) reads
+  an UPDATE's RETURNING rows, and `nextAttemptAt`, `doublingDelays` and `attemptsAllowedBy`
+  (`@arthome-platform/messaging`) are the one retry schedule, consumers and provider calls alike.
+
 ## The commands
 
 | command | what it does |
