@@ -282,10 +282,12 @@ beside `AvailabilityPublisher` in the sweeper process, which stays on Postgres a
 the pass in flight awaited at shutdown, the next one at once after a full batch.
 
 - **A pass is one transaction, set-based**: up to 500 expired active holds, joined with their
-  orders, `FOR UPDATE OF hold, placed SKIP LOCKED`. A hold whose order a payment holds is skipped,
-  left to that payment, which consumes it or takes the seats again (D-082), and the pass never waits
-  on a lock a payment could be waiting behind: the purchase and the webhook lock an order before its
-  hold, the pass takes both or neither. Each hold is `expired`, its order `failed` if it still waited
+  orders by `seat_order.hold_id`'s index (`1790441100000`, review m3: without it every order ever
+  placed was read each second), `FOR UPDATE OF hold, placed SKIP LOCKED`. A hold whose order a
+  payment holds is skipped, left to that payment, which consumes it or takes the seats again
+  (D-082). The pass does keep the hold's lock it took before finding the order locked, so that
+  payment waits for the pass's commit; no deadlock follows, since the pass waits on nothing but
+  dates' rows, which a payment takes after its hold. Each hold is `expired`, its order `failed` if it still waited
   for its payment, and the seats go back by `returnHeldSeats`, one statement per date in `date_id`
   order, the dates' rows last, each counting a move for the publisher.
 - **A pass also fails an order still pending past its expiry with no intent and no active hold**:
@@ -436,6 +438,7 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
 | `migrations/seat-sales-cutoff.itest.ts` | the backfill on a database already holding dates: an end thirty minutes after each start, none without one |
 | `orders/capacity.itest.ts` | adr-ticketing.md §3's concurrency test: 300 purchases at once on one date of 100 seats, ten at a time on its row through the pool: exactly 100 held (100 answered 202, 200 sold out), `seats_available` 0 and never below, and all 100 back at expiry; with quantities of one to three, paid or held, every seat accounted for (available + sold + held = capacity, one `seat` row per seat sold). Measured, three runs: the 300 purchases took 574, 634 and 946 ms, fake provider included |
 | `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, refunded at once under `refund:{orderId}` with `order.refunded`); a refund owed through a provider outage, made once on a later pass; a purchase resumed past its hold answering sold out; an expired order's intent cancelled, and asked again after an outage |
+| `orders/expiry-plan.itest.ts` | the correctness review's case, as written: over 20,000 orders, the expiry pass's plan reads no `seat_order` sequentially |
 | `orders/payment-races.itest.ts` | the correctness review's cases, as written: a payment inserting its seats (slowed 1 s) leaves the date's row free, a hold's decrement bounded at 200 ms passing; expiry passes racing late payments on one date, every seat accounted for |
 | `orders/three-d-secure.itest.ts` | the correctness review's cases, as written: a `requires_action` webhook applied before tx B, and one applied after a crash between tx A and tx B then the purchase replayed: 202 with the handoff and its client secret both times |
 | `payments/payment-worker.itest.ts` | the correctness review's cases, as written: a webhook retried after a transient failure then applied once, backed off by `RETRY_DELAYS_MS` and given up on after the last; an event about no order kept and ignored; owed refunds not queued behind one refused for good, and a worker that pauses while a full batch is refused |

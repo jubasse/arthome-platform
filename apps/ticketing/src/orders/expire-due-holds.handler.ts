@@ -19,12 +19,12 @@ interface DueHold {
 const AWAITING_PAYMENT = [OrderState.PENDING, OrderState.AWAITING_ACTION, OrderState.PROCESSING];
 
 /**
- * adr-ticketing.md §6, set-based: a pass takes the expired active holds with their orders, both
- *   `FOR UPDATE SKIP LOCKED`, so a hold whose order a payment holds is left to that payment, and
- *   this pass never waits on a lock a payment could be waiting behind. Each hold is `expired`, its
- *   order `failed` (owing the cancellation of an intent it holds), and its seats go back, one
- *   statement per date in `date_id` order, the dates' rows last. The database is the truth: a
- *   pass missed or crashed leaves them due for the next one.
+ * adr-ticketing.md §6, set-based (HANDOVER §0i): the expired active holds with their orders,
+ *   `FOR UPDATE SKIP LOCKED`, each hold `expired`, its order `failed`, its seats back last, one
+ *   statement per date in `date_id` order. A hold whose order a payment holds is skipped, though
+ *   the pass keeps the hold's lock it took first: that payment then waits for this pass's commit,
+ *   and no deadlock follows, since the pass waits on nothing but dates' rows, which a payment takes
+ *   after its hold.
  */
 @CommandHandler(ExpireDueHolds)
 export class ExpireDueHoldsHandler implements ICommandHandler<ExpireDueHolds> {
