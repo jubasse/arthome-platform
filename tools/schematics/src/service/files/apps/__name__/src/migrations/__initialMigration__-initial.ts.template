@@ -1,0 +1,28 @@
+import { idempotencyRecordTableDdl } from '@arthome-platform/http-edge';
+import { outboxTableDdl, processedMessageTableDdl } from '@arthome-platform/messaging';
+import type { MigrationInterface, QueryRunner } from 'typeorm';
+
+/**
+ * The outbox, the processed-message ledger and the idempotency store come from their libraries,
+ *   constraints included: a copy here would drift from the one every other service runs.
+ */
+export class Initial<%= initialMigration %> implements MigrationInterface {
+  name = 'Initial<%= initialMigration %>';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(processedMessageTableDdl());
+    await queryRunner.query(idempotencyRecordTableDdl());
+
+    await queryRunner.query(outboxTableDdl());
+    // Not part of `outboxTableDdl()`: the retention purge's scan (AGENTS.md).
+    await queryRunner.query(
+      'CREATE INDEX idx_outbox_event_created_at ON outbox_event (created_at)',
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query('DROP TABLE outbox_event');
+    await queryRunner.query('DROP TABLE idempotency_record');
+    await queryRunner.query('DROP TABLE processed_message');
+  }
+}

@@ -1,0 +1,23 @@
+<%= imports([
+  { name: 'Column', from: 'typeorm' },
+  { name: 'CreateDateColumn', from: 'typeorm' },
+  { name: 'Entity', from: 'typeorm' },
+  { name: 'PrimaryColumn', from: 'typeorm' },
+  { name: 'UpdateDateColumn', from: 'typeorm' },
+]) %>
+
+/** The `<%= pascal %>` aggregate's row; its writes are conditioned on `version`. */
+@Entity('<%= table %>')
+export class <%= row %> {
+  @PrimaryColumn('uuid')
+  <%= idColumn %>!: string;
+
+  @Column('integer')
+  version!: number;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  created_at!: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz' })
+  updated_at!: Date;
+}

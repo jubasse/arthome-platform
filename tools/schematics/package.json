@@ -1,0 +1,19 @@
+{
+  "name": "@arthome-platform/schematics",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The repository's own code generators: a service, an aggregate, a command and a consumer handler, shaped like the current services.",
+  "license": "UNLICENSED",
+  "schematics": "./collection.json",
+  "imports": {
+    "#schematics/*": "./src/lib/*.ts"
+  },
+  "devDependencies": {
+    "@angular-devkit/core": "22.1.8",
+    "@angular-devkit/schematics": "22.1.8",
+    "@arthome/core": "file:../../vendor/arthome-core-9fb19108c720.tgz",
+    "prettier": "3.9.8",
+    "typescript": "6.0.3"
+  }
+}

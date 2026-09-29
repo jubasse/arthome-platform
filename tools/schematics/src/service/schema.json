@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ArthomeService",
+  "title": "A new service under apps/, shaped like ticketing",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "One lowercase word: the app, its database, its topic prefix and its outbox slot.",
+      "pattern": "^[a-z][a-z0-9]*$"
+    },
+    "port": {
+      "type": "integer",
+      "description": "The API's PORT in .env.example; refused when another app's already.",
+      "minimum": 1024,
+      "maximum": 65535
+    },
+    "topics": {
+      "type": "string",
+      "description": "The topics it publishes, aggregate:partitions and comma-separated (events.md §3): order:6,account:3."
+    },
+    "consumer": {
+      "type": "boolean",
+      "description": "A consumer process on ConsumerHostModule, with its retry and dead-letter topics.",
+      "default": false
+    },
+    "sweeper": {
+      "type": "boolean",
+      "description": "A sweeper process for work that runs on a clock against Postgres alone.",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run pnpm install once the files are written.",
+      "default": false
+    }
+  },
+  "required": ["name", "port", "topics"],
+  "additionalProperties": false
+}

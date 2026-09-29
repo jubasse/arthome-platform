@@ -1,0 +1,94 @@
+<%= imports([
+  { name: 'Outcome', from: '@arthome-platform/messaging' },
+  { name: 'applyMigrations', from: '@arthome-platform/testing' },
+  { name: 'createDatabase', from: '@arthome-platform/testing' },
+  { name: 'startStack', from: '@arthome-platform/testing' },
+  { name: 'StartedStack', from: '@arthome-platform/testing', typeOnly: true },
+  { name: 'CommandBus', from: '@nestjs/cqrs' },
+  { name: 'CqrsModule', from: '@nestjs/cqrs' },
+  { name: 'Test', from: '@nestjs/testing' },
+  { name: 'TestingModule', from: '@nestjs/testing', typeOnly: true },
+  { name: 'TypeOrmModule', from: '@nestjs/typeorm' },
+  { name: 'DataSource', from: 'typeorm', typeOnly: true },
+  { name: 'afterAll', from: 'vitest' },
+  { name: 'beforeAll', from: 'vitest' },
+  { name: 'describe', from: 'vitest' },
+  { name: 'expect', from: 'vitest' },
+  { name: 'it', from: 'vitest' },
+  { name: command.pascal, from: `./${file}.command.js` },
+  { name: consumerModule, from: `./${consumerModuleFile}.js` },
+  { name: app.schema, from: '../itest/schema.js' },
+]) %>
+
+/**
+ * `<%= command.pascal %>` through the consumer's module and the real bus, against Postgres: the
+ *   message claimed in the transaction that keeps its fact, and the older of two facts refused.
+ */
+
+const STARTUP_MS = 240_000;
+const CASE_MS = 30_000;
+
+const TOPIC = '<%= topic %>';
+const KEY = '01a0f100-0000-7000-8000-000000000001';
+
+let stack: StartedStack;
+let dataSource: DataSource;
+let moduleRef: TestingModule;
+
+function messageId(n: number): string {
+  return `01a0f1ee-0000-7000-8000-${String(n).padStart(12, '0')}`;
+}
+
+function recorded(id: string, occurredAt: string): Promise<Outcome> {
+  return moduleRef
+    .get(CommandBus)
+    .execute(
+      new <%= command.pascal %>(
+        { messageId: id, topic: TOPIC, traceparent: null },
+        { <%= key %>: KEY, occurredAt: new Date(occurredAt) },
+      ),
+    );
+}
+
+beforeAll(async () => {
+  stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
+  const database = await createDatabase(stack.postgres, '<%= database %>');
+  dataSource = await applyMigrations(database, <%= app.schema %>);
+  moduleRef = await Test.createTestingModule({
+    imports: [
+      TypeOrmModule.forRootAsync({
+        useFactory: () => dataSource.options,
+        dataSourceFactory: () => Promise.resolve(dataSource),
+      }),
+      CqrsModule.forRoot(),
+      <%= consumerModule %>,
+    ],
+  }).compile();
+  await moduleRef.init();
+}, STARTUP_MS);
+
+afterAll(async () => {
+  await moduleRef?.close();
+  await stack?.stop();
+});
+
+describe('<%= command.pascal %>Handler', () => {
+  it(
+    'applies a fact, answers duplicate to its message-id again, and keeps the newer of two facts',
+    async () => {
+      expect(await recorded(messageId(1), '2026-09-29T10:00:00.000Z')).toBe(Outcome.APPLIED);
+      expect(await recorded(messageId(1), '2026-09-29T10:00:00.000Z')).toBe(Outcome.DUPLICATE);
+      expect(await recorded(messageId(2), '2026-09-29T09:00:00.000Z')).toBe(Outcome.SUPERSEDED);
+      expect(await recorded(messageId(3), '2026-09-29T11:00:00.000Z')).toBe(Outcome.APPLIED);
+
+      const kept = await dataSource.query<{ occurred_at: Date }[]>(
+        'SELECT occurred_at FROM <%= table %> WHERE <%= keyColumn %> = $1',
+        [KEY],
+      );
+      expect(kept.map((row) => row.occurred_at.toISOString())).toEqual([
+        '2026-09-29T11:00:00.000Z',
+      ]);
+    },
+    CASE_MS,
+  );
+});

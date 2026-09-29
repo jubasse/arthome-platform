@@ -1,0 +1,24 @@
+<%= imports([
+  { name: 'describe', from: 'vitest' },
+  { name: 'expect', from: 'vitest' },
+  { name: 'it', from: 'vitest' },
+  { name: pascal, from: `./${kebab}.aggregate.js` },
+  { name: `${pascal}Created`, from: `./${kebab}.events.js` },
+]) %>
+
+const <%= constant %>_ID = '01a0f000-0000-7000-8000-000000000001';
+const NOW = '2026-09-29T10:00:00.000Z';
+
+describe('<%= pascal %>', () => {
+  it('is created at version 1, applying <%= pascal %>Created', () => {
+    const <%= camel %> = <%= pascal %>.create(<%= constant %>_ID, NOW);
+    expect(<%= camel %>.snapshot).toEqual({ <%= id %>: <%= constant %>_ID, version: 1 });
+    expect(<%= camel %>.getUncommittedEvents()).toEqual([new <%= pascal %>Created(<%= constant %>_ID, NOW)]);
+  });
+
+  it('is restored from its snapshot with nothing to publish', () => {
+    const <%= camel %> = <%= pascal %>.restore({ <%= id %>: <%= constant %>_ID, version: 3 });
+    expect(<%= camel %>.snapshot.version).toBe(3);
+    expect(<%= camel %>.getUncommittedEvents()).toEqual([]);
+  });
+});

@@ -1,0 +1,176 @@
+<%= imports([
+  ...(route
+    ? [
+        { name: 'RefusalException', from: '@arthome-platform/http-edge' },
+        { name: 'idempotentRequestOf', from: '@arthome-platform/http-edge' },
+      ]
+    : []),
+  { name: 'EventPublisher', from: '@nestjs/cqrs' },
+  { name: 'EventBus', from: '@nestjs/cqrs', typeOnly: true },
+  { name: 'IEvent', from: '@nestjs/cqrs', typeOnly: true },
+  { name: 'DataSource', from: 'typeorm', typeOnly: true },
+  { name: 'EntityManager', from: 'typeorm', typeOnly: true },
+  { name: 'describe', from: 'vitest' },
+  { name: 'expect', from: 'vitest' },
+  { name: 'it', from: 'vitest' },
+  ...(route ? [] : [{ name: 'ApiErrorCode', from: '@arthome/core' }, { name: 'DomainError', from: '@arthome/core' }]),
+  { name: 'DomainErrorCode', from: '@arthome/core' },
+  { name: 'FixedClock', from: '@arthome/core' },
+  { name: command.pascal, from: `./${command.kebab}.command.js` },
+  { name: `${command.pascal}Handler`, from: `./${command.kebab}.handler.js` },
+  { name: aggregate.row, from: `./${aggregate.kebab}.entity.js`, typeOnly: true },
+  { name: event, from: `./${aggregate.kebab}.events.js` },
+  { name: app.transactionsClass, from: `../${app.app}-transactions.js` },
+]) %>
+
+/**
+ * The handler through the service's own transaction runner and TypeORM repository, over a manager
+ *   that answers as Postgres would: what it decides, and that its events reach the bus only once
+ *   the transaction has committed. The SQL itself is the integration suites'.
+ */
+
+const <%= aggregate.constant %>_ID = '01a0f000-0000-7000-8000-000000000001';
+const NOW = '2026-09-29T10:00:00.000Z';
+const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+<% if (route) { %>const IDEMPOTENCY_KEY = '01a0f0ff-0000-7000-8000-000000000001';
+<% } %>
+type StoredRow = Pick<<%= aggregate.row %>, '<%= aggregate.idColumn %>' | 'version'>;
+
+interface ById {
+  readonly <%= aggregate.idColumn %>: string;
+}
+
+class FakeManager {
+  public readonly rows = new Map<string, StoredRow>();
+
+  public findOne(_entity: unknown, { where }: { readonly where: ById }): Promise<StoredRow | null> {
+    const row = this.rows.get(where.<%= aggregate.idColumn %>);
+    return Promise.resolve(row === undefined ? null : { ...row });
+  }
+
+  public findOneByOrFail(_entity: unknown, where: ById): Promise<StoredRow> {
+    const row = this.rows.get(where.<%= aggregate.idColumn %>);
+    return row === undefined ? Promise.reject(new Error('no row')) : Promise.resolve({ ...row });
+  }
+
+  /** The version-conditional UPDATE, counting the row it changed. */
+  public update(
+    _entity: unknown,
+    where: ById & { readonly version: number },
+    columns: Partial<StoredRow>,
+  ): Promise<{ affected: number }> {
+    const row = this.rows.get(where.<%= aggregate.idColumn %>);
+    if (row?.version !== where.version) return Promise.resolve({ affected: 0 });
+    Object.assign(row, columns);
+    return Promise.resolve({ affected: 1 });
+  }
+<% if (route) { %>
+  /** The idempotency claim inserts its record; every other statement answers no row. */
+  public query(sql: string): Promise<unknown[]> {
+    return Promise.resolve(sql.includes('INSERT INTO idempotency_record') ? [{ key: 'claimed' }] : []);
+  }
+<% } %>}
+
+interface Harness {
+  readonly manager: FakeManager;
+  readonly delivered: IEvent[];
+  /** Whether the transaction had committed when each event reached the bus. */
+  readonly committedAtDelivery: boolean[];
+  readonly handler: <%= command.pascal %>Handler;
+}
+
+function harness(): Harness {
+  const manager = new FakeManager();
+  const delivered: IEvent[] = [];
+  const committedAtDelivery: boolean[] = [];
+  let committed = false;
+  const dataSource = {
+    transaction: async (work: (transactional: EntityManager) => Promise<unknown>) => {
+      committed = false;
+      const result = await work(manager as unknown as EntityManager);
+      committed = true;
+      return result;
+    },
+  } as unknown as DataSource;
+  const bus = {
+    publishAll: (events: IEvent[]) => {
+      delivered.push(...events);
+      committedAtDelivery.push(...events.map(() => committed));
+    },
+  } as unknown as EventBus;
+  const transactions = new <%= app.transactionsClass %>(dataSource, new EventPublisher(bus));
+  return {
+    manager,
+    delivered,
+    committedAtDelivery,
+    handler: new <%= command.pascal %>Handler(transactions, new FixedClock(NOW)),
+  };
+}
+<% if (route) { %>
+function <%= command.camel %>(expectedVersion: number): <%= command.pascal %> {
+  const body = { expectedVersion };
+  const <%= aggregate.id %> = <%= aggregate.constant %>_ID;
+  return new <%= command.pascal %>(
+    <%= aggregate.id %>,
+    body,
+    TRACEPARENT,
+    idempotentRequestOf('<%= route.method %>', `<%= route.requestPath %>`, body, 200, IDEMPOTENCY_KEY),
+  );
+}
+
+async function refusalOf(pending: Promise<unknown>): Promise<RefusalException> {
+  const error = await pending.then(
+    () => undefined,
+    (rejection: unknown) => rejection,
+  );
+  if (error instanceof RefusalException) return error;
+  throw new Error(`expected a refusal, got ${String(error)}`);
+}
+<% } else { %>
+function <%= command.camel %>(expectedVersion: number): <%= command.pascal %> {
+  return new <%= command.pascal %>(<%= aggregate.constant %>_ID, expectedVersion, TRACEPARENT);
+}
+
+async function refusalOf(pending: Promise<unknown>): Promise<DomainError> {
+  const error = await pending.then(
+    () => undefined,
+    (rejection: unknown) => rejection,
+  );
+  if (error instanceof DomainError) return error;
+  throw new Error(`expected a refusal, got ${String(error)}`);
+}
+<% } %>
+describe('<%= command.pascal %>Handler', () => {
+  it('decides on the version it read, saves the next, and publishes <%= event %> once committed', async () => {
+    const h = harness();
+    h.manager.rows.set(<%= aggregate.constant %>_ID, { <%= aggregate.idColumn %>: <%= aggregate.constant %>_ID, version: 1 });
+
+    await h.handler.execute(<%= command.camel %>(1));
+
+    expect(h.manager.rows.get(<%= aggregate.constant %>_ID)?.version).toBe(2);
+    expect(h.delivered).toEqual([new <%= event %>(<%= aggregate.constant %>_ID, NOW)]);
+    expect(h.committedAtDelivery).toEqual([true]);
+  });
+
+  it('refuses a stale version, naming the current one, and publishes nothing', async () => {
+    const h = harness();
+    h.manager.rows.set(<%= aggregate.constant %>_ID, { <%= aggregate.idColumn %>: <%= aggregate.constant %>_ID, version: 2 });
+
+    const refusal = await refusalOf(h.handler.execute(<%= command.camel %>(1)));
+<% if (route) { %>
+    expect(refusal.getStatus()).toBe(409);
+    expect(refusal.refusal).toMatchObject({
+      code: DomainErrorCode.STATE_CONFLICT,
+      params: { version: 2 },
+    });<% } else { %>
+    expect([refusal.code, refusal.params]).toEqual([DomainErrorCode.STATE_CONFLICT, { version: 2 }]);<% } %>
+    expect(h.delivered).toEqual([]);
+  });
+
+  it('refuses a <%= aggregate.camel %> it does not hold', async () => {
+    const refusal = await refusalOf(harness().handler.execute(<%= command.camel %>(1)));
+<% if (route) { %>
+    expect(refusal.getStatus()).toBe(404);<% } else { %>
+    expect(refusal.code).toBe(ApiErrorCode.NOT_FOUND);<% } %>
+  });
+});

@@ -1,0 +1,7 @@
+<%= imports([{ name: 'z', from: 'zod' }]) %>
+
+export const <%= command.pascal %>Schema = z.strictObject({
+  expectedVersion: z.int().min(1),
+});
+
+export type <%= command.pascal %>Body = z.infer<typeof <%= command.pascal %>Schema>;
