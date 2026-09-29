@@ -18,6 +18,7 @@ import {
   paymentUnavailable,
   priceStale,
   refusalOfUnpaid,
+  salesClosed,
   soldOut,
 } from './purchase-refusals.js';
 import { PurchaseSeat, PurchaseStatus, type PurchaseAnswer } from './purchase-seat.command.js';
@@ -26,6 +27,7 @@ import { writeSeatOrderIntegrationEvents } from './seat-order-integration-events
 import { SeatOrder } from './seat-order.aggregate.js';
 import { settleConfirmedPayment, type PendingCounterMove } from './settle-payment.js';
 import { CLOCK } from '../clock.js';
+import { INTERIM_SALES_CLOSED, salesEndedBy } from '../date-sales/seat-sales-window.js';
 import { OwedRefunds } from '../payments/owed-refunds.js';
 import {
   IntentStatus,
@@ -216,35 +218,45 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     orderId: string,
     { traceparent, lateEntryAcknowledged }: PurchaseSeat,
   ): Promise<Resumption> {
-    const { manager, orders, holds, dateSales } = transaction;
+    const { manager, holds, dateSales } = transaction;
     const stored = await storedAnswerOf(manager, orderId);
     if (stored !== null) return this.answered(stored, true);
 
     const order = await this.loadOrder(transaction, orderId);
     if (!order.awaitsClientSecret && !order.awaitsIntent) return this.answerOf(transaction, order);
 
-    // A purchase that goes on to the provider after the start is asked like a new one (D-089): the
-    //   acknowledgement is a header, outside the key's fingerprint, so a retry can carry it.
     const now = this.clock.now();
     const sales = await dateSales.findUnlocked(order.snapshot.dateId);
+    const holdGone =
+      !order.awaitsClientSecret && (await holds.findById(order.snapshot.holdId))?.isActive !== true;
+    // Seats to take again past the end: closed, as a new purchase is, before it is asked anything.
+    const salesEndAt = sales?.snapshot.salesEndAt ?? null;
+    if (holdGone && salesEndAt !== null && salesEndedBy(salesEndAt, now)) {
+      order.fail({ code: INTERIM_SALES_CLOSED, declineCode: null }, now);
+      await this.saveResumed(transaction, order, traceparent);
+      return { kind: 'refusal', refusal: salesClosed(salesEndAt) };
+    }
+    // A purchase that goes on to the provider after the start is asked like a new one (D-089): the
+    //   acknowledgement is a header, outside the key's fingerprint, so a retry can carry it.
     const lateEntry = sales?.lateEntryAt(now) ?? null;
     if (lateEntry !== null && !lateEntryAcknowledged) {
       return { kind: 'refusal', refusal: lateEntryUnacknowledged(lateEntry) };
     }
-    if (order.awaitsClientSecret) {
-      return { kind: 'create_intent', request: this.intentRequestOf(order) };
-    }
-
-    const hold = await holds.findById(order.snapshot.holdId);
-    if (hold?.isActive !== true) {
+    if (holdGone) {
       const renewed = await this.renewHoldIn(transaction, order, now);
-      await orders.save(order);
-      await writeSeatOrderIntegrationEvents(manager, order.getUncommittedEvents(), {
-        traceparent,
-      });
+      await this.saveResumed(transaction, order, traceparent);
       if (!renewed) return { kind: 'refusal', refusal: soldOut() };
     }
     return { kind: 'create_intent', request: this.intentRequestOf(order) };
+  }
+
+  private async saveResumed(
+    { manager, orders }: TicketingTransaction,
+    order: SeatOrder,
+    traceparent: string | null,
+  ): Promise<void> {
+    await orders.save(order);
+    await writeSeatOrderIntegrationEvents(manager, order.getUncommittedEvents(), { traceparent });
   }
 
   private intentRequestOf(order: SeatOrder): PaymentIntentRequest {
@@ -367,7 +379,10 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
   }
 
   /** The first answer the order gives, kept for its replays; a refusal is answered from its state. */
-  private async answerOf({ manager }: TicketingTransaction, order: SeatOrder): Promise<Resumption> {
+  private async answerOf(
+    { manager, dateSales }: TicketingTransaction,
+    order: SeatOrder,
+  ): Promise<Resumption> {
     const snapshot = order.snapshot;
     if (snapshot.state === OrderState.PAID) {
       return this.kept(manager, snapshot.id, {
@@ -387,7 +402,11 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
         envelope: { servedAt: this.clock.now(), data: handoff },
       });
     }
-    return { kind: 'refusal', refusal: refusalOfUnpaid(snapshot) };
+    const sales = await dateSales.findUnlocked(snapshot.dateId);
+    return {
+      kind: 'refusal',
+      refusal: refusalOfUnpaid(snapshot, sales?.snapshot.salesEndAt ?? null),
+    };
   }
 
   private async kept(

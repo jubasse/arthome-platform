@@ -4,7 +4,6 @@ import { AggregateRoot } from '@nestjs/cqrs';
 import type {
   Instant,
   Money,
-  OrderErrorCode,
   PriceTier,
   RefundReason,
   OrderQuote as CoreOrderQuote,
@@ -15,6 +14,7 @@ import {
   OrderState,
   SeatState,
   movesForward,
+  type OrderFailureCode,
 } from './commerce-vocabulary.js';
 import {
   SeatOrderFailed,
@@ -66,7 +66,7 @@ export interface SeatIssue {
 
 export interface OrderFailure {
   /** The refusal a replay of the purchase answers again; null for a hold that expired unpaid. */
-  readonly code: OrderErrorCode | null;
+  readonly code: OrderFailureCode | null;
   readonly declineCode: string | null;
 }
 

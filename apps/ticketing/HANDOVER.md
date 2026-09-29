@@ -438,7 +438,10 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
   too.** A purchase resumed under its key that goes on to the provider after the start (its first
   attempt interrupted, or the provider down) is refused unacknowledged like a new one, its order
   untouched, and resumes once the retry carries the header. A replay of an answer already kept
-  answers it again, whatever the clock says since.
+  answers it again, whatever the clock says since. Past the cutoff, a resumed purchase whose hold is
+  gone is answered 409 `order.sales_closed` at once, before it is asked anything, as a new one is,
+  and its order fails with that code, so every retry under the key answers the same; one whose hold
+  is still active took its seats in time and goes on.
 
 ## 1. What proves it
 
@@ -454,7 +457,7 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
 | `boot.itest.ts` | the three root modules |
 | `orders/seat-order.aggregate.spec.ts`, `orders/seat-hold.aggregate.spec.ts` | the order's forward-only states, its seats created at payment, a payment after a failure (D-082), a refund owed; the hold's expiry its intent's, consumed or released once |
 | `date-sales.aggregate.spec.ts` (T3's block) | on sale, the quote through core, a hold that moves the counter and not the version |
-| `orders/purchase.itest.ts` | 19 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, the quote; D-089: a purchase before the start without the flag, one after it refused unacknowledged with the facts and nothing held then sold acknowledged, one past the cutoff refused holding nothing, the hold's statement refusing past the cutoff on its own, the quote's `lateEntry` only after the start |
+| `orders/purchase.itest.ts` | 21 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, the quote; D-089: a purchase before the start without the header, one after it refused unacknowledged with the facts and nothing held then sold acknowledged, one past the cutoff refused `order.sales_closed` holding nothing, the hold's statement refusing past the cutoff on its own, the quote's `lateEntry` only after the start, a purchase resumed after the start asked then sold, and one resumed past the cutoff closed at once and for good |
 | `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry |
 | `boot.itest.ts` (T3's case) | the sweeper root expiring a due hold on its first pass |
 | `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes; a late entry quoted, refused, then sold, `lateEntry` parsed by the contract's schema extended as the report gives it |
@@ -512,6 +515,9 @@ first.
     out of the idempotent request, or sends the first one;
   - the intent is re-read from Stripe when a webhook leaves doubt (adr-payments.md §7.3, not built
     here);
+  - its request timeout stays below the claim's 5 s lease (`owed-calls.ts`: a claimed call's next
+    attempt is at least the first delay away): a call still in flight past it is claimed again by
+    the next pass, and asked twice;
   - the webhook route, refused in production like every write, is exempted once its signature is
     Stripe's.
 - **Lifting `DenyInProductionGuard` needs a real adapter bound first**: `payments.module.ts` binds

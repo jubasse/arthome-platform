@@ -85,12 +85,16 @@ export function paymentUnavailable(cause: unknown): RefusalException {
  * What a purchase whose order ended without seats answers, first time or replayed: the decline and
  *   its code, and otherwise sold out, since the seats it held went back, or its money did (D-082).
  */
-export function refusalOfUnpaid(order: SeatOrderSnapshot): RefusalException {
+export function refusalOfUnpaid(
+  order: SeatOrderSnapshot,
+  salesEndAt: Instant | null,
+): RefusalException {
   const { failure } = order;
   if (failure?.code === OrderErrorCode.PAYMENT_DECLINED) {
     return refused(OrderErrorCode.PAYMENT_DECLINED, {
       ...(failure.declineCode !== null && { declineCode: failure.declineCode }),
     });
   }
+  if (failure?.code === INTERIM_SALES_CLOSED && salesEndAt !== null) return salesClosed(salesEndAt);
   return soldOut();
 }

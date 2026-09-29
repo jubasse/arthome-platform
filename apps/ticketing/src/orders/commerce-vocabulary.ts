@@ -4,6 +4,10 @@
  *   decide, so they are core's to own.
  */
 
+import type { OrderErrorCode } from '@arthome/core';
+
+import type { INTERIM_SALES_CLOSED } from '../date-sales/seat-sales-window.js';
+
 /** adr-payments.md §8, in the contract's order. */
 export const ORDER_STATES = [
   'pending',
@@ -53,6 +57,9 @@ export const ORDER_STATES_AWAITING_PAYMENT: readonly OrderState[] = [
   OrderState.AWAITING_ACTION,
   OrderState.PROCESSING,
 ];
+
+/** What a replay of a failed purchase answers: core's codes, and D-089's closed sale until core has it. */
+export type OrderFailureCode = OrderErrorCode | typeof INTERIM_SALES_CLOSED;
 
 /** data-model.md §3.3, `held` gone (D-077). */
 export const SEAT_STATES = ['active', 'cancelled', 'refunded', 'transferred', 'credited'] as const;

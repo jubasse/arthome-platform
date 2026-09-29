@@ -683,4 +683,32 @@ describe('a purchase resumed after the start (D-089, the acknowledgement in a he
     },
     CASE_MS,
   );
+
+  it(
+    'is refused order.sales_closed past the cutoff, before it is asked anything, and for good',
+    async () => {
+      const startsAt = plusMinutes(clock.now(), -25);
+      const dateId = await dateOnSale(10, startsAt);
+      const key = nextKey();
+      fake.scenarioOf = () => FakePaymentScenario.UNAVAILABLE;
+      expect((await refusalOf(purchase(dateId, 2, key, {}, null, true))).getStatus()).toBe(503);
+      fake.scenarioOf = () => FakePaymentScenario.CONFIRM;
+      clock.advance(10 * 60_000);
+      const before = await countersOf(dateId);
+
+      const unacknowledged = await refusalOf(purchase(dateId, 2, key));
+      const acknowledged = await refusalOf(purchase(dateId, 2, key, {}, null, true));
+
+      const closed = {
+        code: INTERIM_SALES_CLOSED,
+        params: { salesEndAt: plusMinutes(startsAt, 30) },
+      };
+      expect(unacknowledged.refusal).toMatchObject(closed);
+      expect(acknowledged.refusal).toMatchObject(closed);
+      expect(await countersOf(dateId)).toEqual(before);
+      expect((await holdsOf(dateId)).map(({ state }) => state)).toEqual([SeatHoldState.RELEASED]);
+      expect((await ordersOf(dateId)).map(({ state }) => state)).toEqual([OrderState.FAILED]);
+    },
+    CASE_MS,
+  );
 });

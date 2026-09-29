@@ -1,8 +1,8 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
-import type { OrderErrorCode, PriceTier, RefundReason } from '@arthome/core';
+import type { PriceTier, RefundReason } from '@arthome/core';
 
-import type { OrderState } from './commerce-vocabulary.js';
+import type { OrderFailureCode, OrderState } from './commerce-vocabulary.js';
 import type { NextAction } from '../payments/payment.port.js';
 
 export interface DeclaredTaxLocationColumn {
@@ -88,7 +88,7 @@ export class SeatOrderRow {
   next_action!: NextAction | null;
 
   @Column('text', { nullable: true })
-  failure_code!: OrderErrorCode | null;
+  failure_code!: OrderFailureCode | null;
 
   @Column('text', { nullable: true })
   decline_code!: string | null;
