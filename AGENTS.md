@@ -460,6 +460,7 @@ scheduled and engaged by catalog's facts sent on `arthome.catalog.date`, 5 seats
 | `arthome.ticketing.date_sales` | three `seat.activated` on the date's key, then the sweeper's `availability_changed` 0.25 s after the purchase |
 | a webhook forged, then a genuine `payment_failed` twice | 401; 200 recorded; 200 `duplicate: true`; applied by the worker within 2.5 s, the paid order left paid |
 | SIGTERM to the three | stopped, no ticketing connection left in `pg_stat_activity` |
+
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
 instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` to

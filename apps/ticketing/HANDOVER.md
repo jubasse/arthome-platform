@@ -24,6 +24,11 @@ binds `DenyInProductionGuard`, the envelopes and the validation pipe through
 `@arthome-platform/http-edge`'s `edgeProviders` (`src/edge-providers.ts`), as catalog does. Its readiness fails only on the database; the slot, the publication and the outbox
 retention answer `degraded`.
 
+**From T3 the API needs two more variables in production**, where neither has a default and the
+API refuses to boot without them: `PAYMENT_WEBHOOK_SECRET` (32 characters at least, §0g) and
+`PUBLIC_WEB_ORIGIN` (the payment return URL, §0h). Every route using them is refused in production
+today, but the boot reads them.
+
 **Deployment order: ticketing's consumer runs before the first date is drafted in production**
 (both reviews, 2026-09-27). A sale opens only from `catalog.date.drafted`, and the consumer group
 reads `arthome.catalog.date` from the beginning of what the topic keeps (168 h). A date drafted
@@ -152,8 +157,8 @@ A draft older than the topic's retention is never read: see the deployment order
   own transaction and its last publication clearing it. Measured over 50,000 closed dates of
   history, five idle passes: 1.2 to 1.6 ms, against 32 to 42 ms here (24 to 25 ms in the review)
   when every pass joined every date. **The bound holds only while sales end**: a date that ends
-  without an outcome stays on sale until its end by time closes it (§0l), and stays in the pass
-  until then: while no rule gives that end, it stays for good.
+  without an outcome stays on sale until its end by time, thirty minutes after its start, closes it
+  (§0l), and stays in the pass until then; one with no start has no end.
 - **A date that cannot be published holds back no other** (correctness review): its failure is
   logged, its `failed_at` recorded, and it waits `AVAILABILITY_PUBLISH_RETRY_SECONDS` (10) before it
   is tried again, behind the others, still marked; a publication clears it. The delay stays below
@@ -222,7 +227,10 @@ makes every call fail, the provider-down drill. Its signature is Stripe's scheme
 (`GET /v1/orders/:orderId`), in storefront.yaml's shapes but for `TicketCard.date` and the 201's
 `date`: catalog's `DateCard`, which ticketing cannot build without calling catalog (critical rule 1),
 so the BFF adds them (T7, agreed with the lead). The HTTP suite parses the tickets with the
-contract's `TicketCardSchema` minus `date`. The two reads require `x-arthome-deadline`, as `refreshDateAvailability`
+contract's `TicketCardSchema` minus `date`. **The DateCard's seat figures must be ticketing's**
+(architecture review m6): catalog's projection of them follows `availability_changed`, published at
+most every five seconds, so a card composed from catalog alone repaints the seats as they were
+before the purchase; the BFF overlays `refreshDateAvailability`'s figures, read after the purchase. The two reads require `x-arthome-deadline`, as `refreshDateAvailability`
 does; the three answer `no-store`.
 
 - **The purchase is adr-ticketing.md §2** (`purchase-seat.handler.ts`). Tx A binds the key to a new
@@ -384,9 +392,8 @@ answers `order.sold_out` from the failed order and asks the provider nothing.
 
 ## 0l. Seat sales end thirty minutes after the start, and a late buyer is told (T3, D-089)
 
-`on_sale` had no end in time: a date ending without an outcome stayed on sale, sold after the show,
-and in the publisher's pass for good (§0e). The product owner ruled (D-089, recorded in core by the
-lead): **a seat covers the live alone** (a replay's access is a separate matter, out of T3), **its
+A sale ends by time, so no date is sold after its show and none stays in the publisher's pass for
+good (§0e). The product owner ruled (D-089, recorded in core by the lead): **a seat covers the live alone** (a replay's access is a separate matter, out of T3), **its
 sales end `SEAT_SALES_CUTOFF_MINUTES_AFTER_START` (30) minutes after the live's start**, the same
 for every channel, and **a buyer arriving after the start is told what was missed and must
 acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEndAt(startsAt)` and
@@ -496,10 +503,25 @@ first.
 - **The race suite of adr-ticketing.md §12**: a duplicated and an out-of-order webhook, a success
   after the hold expired, declines and an abandoned action are proven (`payment-webhooks.itest.ts`,
   `purchase.itest.ts`); a refund racing a payment and a chargeback (`disputed`) are T4's.
-- **A Stripe adapter** implements the two ports: an intent already succeeded is a cancellation that
-  succeeded (`cancelIntent` is best effort), the intent is re-read from Stripe when a webhook leaves
-  doubt (adr-payments.md §7.3, not built here), and the webhook route, refused in production like
-  every write, is exempted once its signature is Stripe's.
+- **A Stripe adapter** implements the two ports:
+  - an intent already succeeded is a cancellation that succeeded (`cancelIntent` is best effort),
+    and a refund retried past Stripe's 24 h key retention, answered `charge_already_refunded`, is a
+    refund made;
+  - a renewed hold moves the order's `expiresAt` before `createIntent` is asked again under the same
+    order id, and Stripe refuses a key reused with other parameters: the adapter keeps the expiry
+    out of the idempotent request, or sends the first one;
+  - the intent is re-read from Stripe when a webhook leaves doubt (adr-payments.md §7.3, not built
+    here);
+  - the webhook route, refused in production like every write, is exempted once its signature is
+    Stripe's.
+- **Lifting `DenyInProductionGuard` needs a real adapter bound first**: `payments.module.ts` binds
+  the fake in every environment, and the fake confirms every intent without taking any money.
+- **A postponement moves the seats' cancel deadline** (adr-ticketing.md §8): each seat carries the
+  deadline computed at payment, and `seat.activated` published it; nothing recomputes it or tells
+  streaming and notifications that it moved.
+- **A late payment on a date since cancelled** is refused by `takeAndSellSeats` (`on_sale` false)
+  and refunded as `hold_expired_capacity_lost`, not `date_cancelled`: T4's cancellation refunds
+  decide whether that reason is the one the viewer should read.
 - For T6: the TV pairing's hold (`SeatHoldOrigin.PAIRING`) has no order; the expiry pass joins each
   hold to its order, so a pairing hold needs its own branch there. The expiry's cost under load is
   the load test's.
