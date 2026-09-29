@@ -6,6 +6,10 @@ import { isBefore, minutesBetween, plusMinutes, type Instant } from '@arthome/co
  */
 export const SEAT_SALES_CUTOFF_MINUTES_AFTER_START = 30;
 
+/** D-089's refusals, until core's `ORDER_ERROR_CODES` carries them (HANDOVER §3). */
+export const INTERIM_LATE_ENTRY_UNACKNOWLEDGED = 'order.late_entry_unacknowledged';
+export const INTERIM_SALES_CLOSED = 'order.sales_closed';
+
 export function seatSalesEndAt(startsAt: Instant): Instant {
   return plusMinutes(startsAt, SEAT_SALES_CUTOFF_MINUTES_AFTER_START);
 }

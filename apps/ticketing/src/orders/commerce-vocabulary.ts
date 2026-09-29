@@ -47,6 +47,13 @@ export function movesForward(from: OrderState, to: OrderState): boolean {
   return ORDER_STATE_RANK[to] > ORDER_STATE_RANK[from];
 }
 
+/** An order still waiting for its payment: the only states a payment's failure or expiry moves. */
+export const ORDER_STATES_AWAITING_PAYMENT: readonly OrderState[] = [
+  OrderState.PENDING,
+  OrderState.AWAITING_ACTION,
+  OrderState.PROCESSING,
+];
+
 /** data-model.md §3.3, `held` gone (D-077). */
 export const SEAT_STATES = ['active', 'cancelled', 'refunded', 'transferred', 'credited'] as const;
 export type SeatState = (typeof SEAT_STATES)[number];

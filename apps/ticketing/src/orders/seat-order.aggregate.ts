@@ -10,7 +10,12 @@ import type {
   OrderQuote as CoreOrderQuote,
 } from '@arthome/core';
 
-import { OrderState, SeatState, movesForward } from './commerce-vocabulary.js';
+import {
+  ORDER_STATES_AWAITING_PAYMENT,
+  OrderState,
+  SeatState,
+  movesForward,
+} from './commerce-vocabulary.js';
 import {
   SeatOrderFailed,
   SeatOrderHoldRenewed,
@@ -114,12 +119,6 @@ export interface SeatOrderPlacement {
   readonly expiresAt: Instant;
 }
 
-const STATES_AWAITING_PAYMENT: readonly OrderState[] = [
-  OrderState.PENDING,
-  OrderState.AWAITING_ACTION,
-  OrderState.PROCESSING,
-];
-
 /**
  * The intent as known, completed by what the provider tells of the same one: a webhook carries no
  *   client secret and no next action, the purchase's own answer does, in whichever order they land.
@@ -204,7 +203,7 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
   }
 
   private get awaitsPayment(): boolean {
-    return STATES_AWAITING_PAYMENT.includes(this.current.state);
+    return ORDER_STATES_AWAITING_PAYMENT.includes(this.current.state);
   }
 
   public get owesRefund(): boolean {

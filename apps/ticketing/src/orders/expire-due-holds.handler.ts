@@ -4,7 +4,7 @@ import type { EntityManager } from 'typeorm';
 
 import type { Clock } from '@arthome/core';
 
-import { OrderState, SeatHoldState } from './commerce-vocabulary.js';
+import { ORDER_STATES_AWAITING_PAYMENT, OrderState, SeatHoldState } from './commerce-vocabulary.js';
 import { ExpireDueHolds } from './expire-due-holds.command.js';
 import { CLOCK } from '../clock.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
@@ -15,8 +15,6 @@ interface DueHold {
   readonly date_id: string;
   readonly quantity: number;
 }
-
-const AWAITING_PAYMENT = [OrderState.PENDING, OrderState.AWAITING_ACTION, OrderState.PROCESSING];
 
 /**
  * adr-ticketing.md §6, set-based (HANDOVER §0i): the expired active holds with their orders,
@@ -60,7 +58,12 @@ export class ExpireDueHoldsHandler implements ICommandHandler<ExpireDueHolds> {
                 intent_cancel_owed_at =
                   CASE WHEN payment_intent_ref IS NULL THEN NULL ELSE $3::timestamptz END
           WHERE id = ANY($1) AND state = ANY($4)`,
-        [due.map(({ order_id }) => order_id), OrderState.FAILED, now, AWAITING_PAYMENT],
+        [
+          due.map(({ order_id }) => order_id),
+          OrderState.FAILED,
+          now,
+          ORDER_STATES_AWAITING_PAYMENT,
+        ],
       );
       for (const [dateId, quantity] of seatsByDate(due)) {
         await dateSales.returnHeldSeats(dateId, quantity);

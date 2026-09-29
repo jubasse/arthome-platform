@@ -79,7 +79,7 @@ export const PAYMENT_EVENT_KINDS = [
   'intent_requires_action',
   'intent_processing',
   'intent_failed',
-  'intent_canceled',
+  'intent_cancelled',
   'unhandled',
 ] as const;
 export type PaymentEventKind = (typeof PAYMENT_EVENT_KINDS)[number];
@@ -89,7 +89,7 @@ export const PaymentEventKind = {
   INTENT_REQUIRES_ACTION: 'intent_requires_action',
   INTENT_PROCESSING: 'intent_processing',
   INTENT_FAILED: 'intent_failed',
-  INTENT_CANCELED: 'intent_canceled',
+  INTENT_CANCELLED: 'intent_cancelled',
   UNHANDLED: 'unhandled',
 } as const;
 

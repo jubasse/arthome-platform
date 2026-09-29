@@ -178,11 +178,22 @@ Refusals: the aggregate throws core's `DomainError`; the studio handlers wrap it
 (409), the consumer maps it (retry for an unknown date, dead-letter otherwise).
 
 T3's `SeatHold` and `SeatOrder` follow them, `TicketingTransaction` carrying `holds` and `orders`
-beside `dateSales`, with three departures, each for a reason stated where it is built: the purchase
-runs in two transactions with the provider between them (§0h), the sweeper's expiry is set-based
-SQL over its batch rather than one aggregate per row (§0i), and the purchase is keyed on its order
-rather than `runIdempotently` (§0h). The storefront's handlers throw `RefusalException`, reached
-from HTTP alone; the payment worker's, reached from no request, log a failure and leave it due.
+beside `dateSales`. The departures, each the ADR's or stated where it is built:
+
+- **Several aggregates in one transaction**: tx A writes the order, the hold and the date's counter;
+  tx B and the webhook worker the order with its seats, the hold and the counters; the expiry pass
+  holds, orders and dates. adr-ticketing.md §2 and §6 and data-model.md §3.1 prescribe it: the
+  recorded decision `nestjs-ddd` rule 7 asks for.
+- **The counters move by conditional statements, not by a save** (adr-ticketing.md §11 names the
+  hold's alone): `takeSeats`, whose parameters the aggregate's `holdSeats` decides and refuses, and
+  `sellHeldSeats`, `returnHeldSeats` and `takeAndSellSeats`, which take a bare id since no rule
+  decides a payment's or an expiry's count. Report §8 proposes §11's wording for all four.
+- **The purchase runs in two transactions** with the provider between them, keyed on its order
+  rather than `runIdempotently` (§0h).
+- **The expiry pass is set-based SQL** over its batch rather than one aggregate per row (§0i).
+
+The storefront's handlers throw `RefusalException`, reached from HTTP alone; the payment worker's,
+reached from no request, log a failure and leave it due.
 
 ## 0g. The payment ports (T3)
 

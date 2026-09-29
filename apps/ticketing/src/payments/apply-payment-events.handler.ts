@@ -141,7 +141,7 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
           { code: OrderErrorCode.PAYMENT_DECLINED, declineCode },
           now,
         );
-      case PaymentEventKind.INTENT_CANCELED:
+      case PaymentEventKind.INTENT_CANCELLED:
         return failUnpaidOrder(transaction, order, { code: null, declineCode: null }, now);
       case PaymentEventKind.UNHANDLED:
         return null;

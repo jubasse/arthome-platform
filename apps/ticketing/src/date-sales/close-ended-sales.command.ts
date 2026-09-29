@@ -1,6 +1,5 @@
 import { Command } from '@nestjs/cqrs';
 
-/** Sales a pass closes at most. */
 export const SALES_CLOSING_BATCH = 100;
 
 /** One pass of the sales closing; answers how many sales it closed. */

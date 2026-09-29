@@ -6,7 +6,11 @@ import {
   type RefundReason,
 } from '@arthome/core';
 
-import { OrderState, type SeatState } from './commerce-vocabulary.js';
+import {
+  ORDER_STATES_AWAITING_PAYMENT,
+  OrderState,
+  type SeatState,
+} from './commerce-vocabulary.js';
 import type { SeatOrderSnapshot } from './seat-order.aggregate.js';
 import type { NextAction } from '../payments/payment.port.js';
 
@@ -88,16 +92,11 @@ export function ticketViewsOf(order: SeatOrderSnapshot): TicketView[] {
   }));
 }
 
-const HANDOFF_STATES: readonly OrderState[] = [
-  OrderState.PENDING,
-  OrderState.AWAITING_ACTION,
-  OrderState.PROCESSING,
-];
-
 /** Null once the order stopped waiting for the buyer, or for an intent that carries no secret. */
 export function handoffOf(order: SeatOrderSnapshot, returnUrl: string): PaymentHandoffView | null {
   const { intent } = order;
-  if (intent?.clientSecret == null || !HANDOFF_STATES.includes(order.state)) return null;
+  if (intent?.clientSecret == null || !ORDER_STATES_AWAITING_PAYMENT.includes(order.state))
+    return null;
   return {
     orderId: order.id,
     state: order.state,

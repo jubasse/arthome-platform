@@ -46,7 +46,7 @@ const EVENT_KIND_OF_TYPE: Readonly<Record<string, PaymentEventKind>> = {
   'payment_intent.requires_action': PaymentEventKind.INTENT_REQUIRES_ACTION,
   'payment_intent.processing': PaymentEventKind.INTENT_PROCESSING,
   'payment_intent.payment_failed': PaymentEventKind.INTENT_FAILED,
-  'payment_intent.canceled': PaymentEventKind.INTENT_CANCELED,
+  'payment_intent.canceled': PaymentEventKind.INTENT_CANCELLED,
 };
 
 const TYPE_OF_EVENT_KIND: Readonly<Partial<Record<PaymentEventKind, string>>> = Object.fromEntries(

@@ -7,6 +7,7 @@ import {
   DateOutcome,
   DomainError,
   DomainErrorCode,
+  OrderErrorCode,
   assertPricesShareCurrency,
   assertTechnicalProvisionCovers,
   assertTechnicalProvisionRecordable,
@@ -32,7 +33,13 @@ import {
   type DateSalesEvent,
 } from './date-sales.events.js';
 import { seatQuoteOf, type SeatQuote } from './seat-quote.js';
-import { lateEntryOf, salesEndedBy, seatSalesEndAt, type LateEntry } from './seat-sales-window.js';
+import {
+  INTERIM_SALES_CLOSED,
+  lateEntryOf,
+  salesEndedBy,
+  seatSalesEndAt,
+  type LateEntry,
+} from './seat-sales-window.js';
 import { technicalProvisionOf } from './technical-provision.js';
 
 export interface DateSalesSnapshot {
@@ -151,13 +158,23 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
   }
 
   /**
-   * Decides a hold of `quantity` seats, which the repository's conditional decrement then takes, or
-   *   refuses when fewer are left (adr-ticketing.md §11). Loaded without the row's lock, so this
-   *   counter is only what a later save measures its delta from: the statement's WHERE is the rule.
-   *   The version stays as loaded.
+   * Decides a hold of `quantity` seats (adr-ticketing.md §11): refused for a quantity core refuses,
+   *   past the end by time, or off sale; the repository's conditional decrement then takes them, or
+   *   finds fewer left, which only it can tell. Loaded without the row's lock, so the counter moved
+   *   here is only what a later save measures its delta from; the version stays as loaded.
    */
   public holdSeats(quantity: number, now: Instant): void {
-    const { dateId, seatsAvailable } = this.current;
+    const { dateId, seatsAvailable, salesEndAt } = this.current;
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+      throw new DomainError({
+        code: DomainErrorCode.HOLD_QUANTITY_INVALID,
+        params: { quantity: String(quantity) },
+      });
+    }
+    if (salesEndAt !== null && this.hasEndedBy(now)) {
+      throw new DomainError({ code: INTERIM_SALES_CLOSED, params: { salesEndAt } });
+    }
+    if (!this.isOnSale) throw new DomainError({ code: OrderErrorCode.SOLD_OUT });
     this.current = frozen({ ...this.current, seatsAvailable: seatsAvailable - quantity });
     this.apply(new SeatsHeld(dateId, quantity, now));
   }

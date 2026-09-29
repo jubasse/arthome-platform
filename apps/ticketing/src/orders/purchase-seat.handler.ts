@@ -1,4 +1,4 @@
-import { MemorisedResponse } from '@arthome-platform/http-edge';
+import { MemorisedResponse, asConflict } from '@arthome-platform/http-edge';
 import { Inject, Logger } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { v7 as uuidv7 } from 'uuid';
@@ -18,7 +18,6 @@ import {
   paymentUnavailable,
   priceStale,
   refusalOfUnpaid,
-  salesClosed,
   soldOut,
 } from './purchase-refusals.js';
 import { PurchaseSeat, PurchaseStatus, type PurchaseAnswer } from './purchase-seat.command.js';
@@ -55,13 +54,9 @@ type Resumption =
   | { readonly kind: 'create_intent'; readonly request: PaymentIntentRequest };
 
 /**
- * adr-ticketing.md §2. Tx A binds the key to a new order, verifies the price, takes the seats with
- *   the one conditional decrement and places the hold; the provider is called outside any
- *   transaction, keyed by the order id; tx B records what it said and, confirmed, pays the order.
- *   The key is the order's (a unique `seat_order.idempotency_key`), so a replay finds the order:
- *   answered, it serves the first answer again; interrupted between A and B, it resumes where the
- *   order stands, the provider handing back the intent it already created. A refusal of tx A
- *   rolls the order back with everything else, so the key stays free.
+ * adr-ticketing.md §2 (HANDOVER §0h): tx A binds the key to a new order and takes the seats, the
+ *   provider is called outside any transaction under the order id, tx B records what it said. The
+ *   key is the order's, so a replay serves the kept answer or resumes the order where it stands.
  */
 @CommandHandler(PurchaseSeat)
 export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
@@ -128,9 +123,9 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
 
     const now = this.clock.now();
     const sales = await dateSales.findUnlocked(body.dateId);
-    const { salesEndAt } = sales?.snapshot ?? { salesEndAt: null };
-    if (salesEndAt !== null && sales?.hasEndedBy(now) === true) throw salesClosed(salesEndAt);
-    if (sales?.isOnSale !== true) throw soldOut();
+    if (sales === null) throw soldOut();
+    // Its decision first, its statement last: past the end or off sale, refused before the key.
+    await asConflict(() => sales.holdSeats(body.quantity, now));
     const lateEntry = sales.lateEntryAt(now);
     if (lateEntry !== null && !lateEntryAcknowledged) throw lateEntryUnacknowledged(lateEntry);
     const quote = sales.quote(body.tier, body.quantity);
@@ -190,14 +185,15 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     await writeSeatOrderIntegrationEvents(manager, order.getUncommittedEvents(), { traceparent });
     // Last, so the date's row is locked for the commit alone. The hold's foreign key takes a KEY
     //   SHARE on it, which the decrement's NO KEY UPDATE does not wait on.
-    sales.holdSeats(body.quantity, now);
     if (!(await dateSales.takeSeats(sales, body.quantity, now))) throw soldOut();
     return { kind: 'placed', orderId, request: this.intentRequestOf(order) };
   }
 
   /**
    * The insert waits for a purchase holding the same key until it commits or rolls back, bounded:
-   *   past `KEY_HOLDER_WAIT_MS` the caller is told the first is in flight, and retries.
+   *   past `KEY_HOLDER_WAIT_MS` the caller is told the first is in flight, and retries. The bound
+   *   also covers the order's foreign key waiting on a studio command's lock of the date, which is
+   *   then answered in flight too: a retry a second later is the right answer to both.
    */
   private async bindKey(
     manager: TicketingTransaction['manager'],
@@ -272,8 +268,9 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
   ): Promise<boolean> {
     const { id, dateId, accountId, profileId, tier, quantity } = order.snapshot;
     const sales = await dateSales.findUnlocked(dateId);
-    if (sales !== null) sales.holdSeats(quantity, now);
-    if (sales === null || !(await dateSales.takeSeats(sales, quantity, now))) {
+    const sells = sales?.sellsSeatsAt(now) === true;
+    if (sells) sales.holdSeats(quantity, now);
+    if (!sells || !(await dateSales.takeSeats(sales, quantity, now))) {
       order.fail({ code: OrderErrorCode.SOLD_OUT, declineCode: null }, now);
       return false;
     }

@@ -11,11 +11,13 @@ import {
 } from '@arthome/core';
 
 import type { SeatOrderSnapshot } from './seat-order.aggregate.js';
-import type { LateEntry } from '../date-sales/seat-sales-window.js';
+import {
+  INTERIM_LATE_ENTRY_UNACKNOWLEDGED,
+  INTERIM_SALES_CLOSED,
+  type LateEntry,
+} from '../date-sales/seat-sales-window.js';
 
-/** D-089's refusals, until core's `ORDER_ERROR_CODES` carries them (HANDOVER §3). */
-export const INTERIM_LATE_ENTRY_UNACKNOWLEDGED = 'order.late_entry_unacknowledged';
-export const INTERIM_SALES_CLOSED = 'order.sales_closed';
+export { INTERIM_LATE_ENTRY_UNACKNOWLEDGED, INTERIM_SALES_CLOSED };
 
 /** How long a purchase waits on another one holding its key before being told it is in flight. */
 export const KEY_HOLDER_WAIT_MS = 5_000;

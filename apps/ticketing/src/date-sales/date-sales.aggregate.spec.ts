@@ -5,6 +5,7 @@ import {
   DateOutcome,
   DomainError,
   DomainErrorCode,
+  OrderErrorCode,
   PriceTier,
   TECHNICAL_PROVISION_THRESHOLD,
   money,
@@ -13,6 +14,7 @@ import {
 } from '@arthome/core';
 
 import { DateSales, type DateSalesSnapshot } from './date-sales.aggregate.js';
+import { INTERIM_SALES_CLOSED } from './seat-sales-window.js';
 
 const DATE_ID = '01a0f000-0000-7000-8000-000000000001';
 const CHANNEL_ID = 'channel-sales';
@@ -529,5 +531,22 @@ describe('a sale closed by time, and a postponement applied late (review m1)', (
     const stillPast = closedAtItsEnd();
     stillPast.recordSchedule('2026-12-12T19:10:00.000Z', STATED_AT, '2026-12-12T20:00:00.000Z');
     expect(stillPast.isOnSale).toBe(false);
+  });
+});
+
+describe('a hold the aggregate decides (review m3)', () => {
+  it('refuses past the end by time, off sale, and a quantity core refuses', () => {
+    const ended = restored({
+      pricesLockedAt: NOW,
+      salesEndAt: '2026-09-27T09:30:00.000Z',
+    });
+    expect(refusalOf(() => ended.holdSeats(1, NOW))).toMatchObject({
+      code: INTERIM_SALES_CLOSED,
+      params: { salesEndAt: '2026-09-27T09:30:00.000Z' },
+    });
+    expect(refusalOf(() => restored().holdSeats(1, NOW)).code).toBe(OrderErrorCode.SOLD_OUT);
+    expect(refusalOf(() => restored({ pricesLockedAt: NOW }).holdSeats(0, NOW)).code).toBe(
+      DomainErrorCode.HOLD_QUANTITY_INVALID,
+    );
   });
 });

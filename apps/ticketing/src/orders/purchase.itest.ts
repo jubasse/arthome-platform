@@ -614,7 +614,8 @@ describe('a buyer arriving after the start (D-089)', () => {
         const sales = await dateSales.findUnlocked(dateId);
         if (sales === null) throw new Error('no sale');
         expect(sales.isOnSale).toBe(true);
-        sales.holdSeats(1, NOW);
+        // Decided a minute before the cutoff, as a purchase that reached it just after would be.
+        sales.holdSeats(1, plusMinutes(NOW, -2));
         return dateSales.takeSeats(sales, 1, NOW);
       });
 
