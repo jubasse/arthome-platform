@@ -246,7 +246,14 @@ does; the three answer `no-store`.
   holds the seats again (a new hold, the first `released`) or fails it sold out, and asks the
   provider under the same order id, so a charge the provider made before timing out cannot be made
   twice.
-- **Lock order:** an order before its hold, everywhere; the date's row last, in one statement.
+- **Lock order:** an order before its hold, everywhere; the date's row last. **The counter
+  statement is the last of its transaction** (review M2), so the hot row is locked for the commit
+  alone, as adr-ticketing.md §2 budgets: tx A inserts the hold and writes its events before its
+  decrement; tx B and the webhook worker are handed the payment's or the failure's counter move
+  (`PendingCounterMove`) and run it after the seats, the outbox rows and the kept answer. Two
+  statements still run early, each because its result decides what follows: D-082's
+  `takeAndSellSeats` (pay or owe a refund) and a renewed hold's `takeSeats` (hold again or fail sold
+  out), both off the normal path.
 - **The price** is core's `quoteSeats` over the date's own tier price (`date-sales/seat-quote.ts`),
   the rule `quoteSeat` serves and `purchaseSeat` verifies `expectedTotal` against: 409
   `order.price_stale` with `expectedAmountMinor`, `currentAmountMinor` (absent for a tier not sold)
@@ -415,6 +422,7 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
 | `migrations/seat-sales-cutoff.itest.ts` | the backfill on a database already holding dates: an end thirty minutes after each start, none without one |
 | `orders/capacity.itest.ts` | adr-ticketing.md §3's concurrency test: 300 purchases at once on one date of 100 seats, ten at a time on its row through the pool: exactly 100 held (100 answered 202, 200 sold out), `seats_available` 0 and never below, and all 100 back at expiry; with quantities of one to three, paid or held, every seat accounted for (available + sold + held = capacity, one `seat` row per seat sold). Measured, three runs: the 300 purchases took 574, 634 and 946 ms, fake provider included |
 | `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, refunded at once under `refund:{orderId}` with `order.refunded`); a refund owed through a provider outage, made once on a later pass; a purchase resumed past its hold answering sold out; an expired order's intent cancelled, and asked again after an outage |
+| `orders/payment-races.itest.ts` | the correctness review's cases, as written: a payment inserting its seats (slowed 1 s) leaves the date's row free, a hold's decrement bounded at 200 ms passing; expiry passes racing late payments on one date, every seat accounted for |
 | `payments/payment-worker.itest.ts` | the correctness review's cases, as written: a webhook retried after a transient failure then applied once, backed off by `RETRY_DELAYS_MS` and given up on after the last; an event about no order kept and ignored; owed refunds not queued behind one refused for good, and a worker that pauses while a full batch is refused |
 | `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, a signature over the exact bytes and its tolerance |
 

@@ -14,7 +14,7 @@ import { OrderState } from '../orders/commerce-vocabulary.js';
 import { failUnpaidOrder } from '../orders/fail-unpaid-order.js';
 import { writeSeatOrderIntegrationEvents } from '../orders/seat-order-integration-events.js';
 import type { SeatOrder } from '../orders/seat-order.aggregate.js';
-import { settleConfirmedPayment } from '../orders/settle-payment.js';
+import { settleConfirmedPayment, type PendingCounterMove } from '../orders/settle-payment.js';
 import { TicketingTransactions, type TicketingTransaction } from '../ticketing-transactions.js';
 
 interface InboxRow {
@@ -105,47 +105,46 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
     const order = await orders.findById(row.order_id);
     if (order === null) throw new Unappliable(`no order for payment event ${eventId}`);
 
-    await this.applyTo(transaction, order, row, now);
+    const pending = await this.applyTo(transaction, order, row, now);
     await orders.save(order);
     await writeSeatOrderIntegrationEvents(manager, order.getUncommittedEvents(), {
       traceparent: row.traceparent,
     });
     await markApplied();
+    await pending?.();
     return { orderId: order.snapshot.id, owesRefund: order.owesRefund };
   }
 
+  /** The counter move to run last, if the event moved seats. */
   private async applyTo(
     transaction: TicketingTransaction,
     order: SeatOrder,
     row: InboxRow,
     now: Instant,
-  ): Promise<void> {
+  ): Promise<PendingCounterMove | null> {
     const { kind, intent_ref: intentRef, decline_code: declineCode } = row;
     const intent = { ref: intentRef ?? '', clientSecret: null, nextAction: null };
     switch (kind) {
       case PaymentEventKind.INTENT_SUCCEEDED:
         if (intentRef === null) throw new Unappliable('a confirmation names no intent');
-        await settleConfirmedPayment(transaction, order, intentRef, now, row.traceparent);
-        return;
+        return settleConfirmedPayment(transaction, order, intentRef, now, row.traceparent);
       case PaymentEventKind.INTENT_REQUIRES_ACTION:
         order.recordIntent(intent, OrderState.AWAITING_ACTION, now);
-        return;
+        return null;
       case PaymentEventKind.INTENT_PROCESSING:
         order.recordIntent(intent, OrderState.PROCESSING, now);
-        return;
+        return null;
       case PaymentEventKind.INTENT_FAILED:
-        await failUnpaidOrder(
+        return failUnpaidOrder(
           transaction,
           order,
           { code: OrderErrorCode.PAYMENT_DECLINED, declineCode },
           now,
         );
-        return;
       case PaymentEventKind.INTENT_CANCELED:
-        await failUnpaidOrder(transaction, order, { code: null, declineCode: null }, now);
-        return;
+        return failUnpaidOrder(transaction, order, { code: null, declineCode: null }, now);
       case PaymentEventKind.UNHANDLED:
-        return;
+        return null;
     }
   }
 

@@ -24,7 +24,7 @@ import { PurchaseSeat, PurchaseStatus, type PurchaseAnswer } from './purchase-se
 import { SeatHold } from './seat-hold.aggregate.js';
 import { writeSeatOrderIntegrationEvents } from './seat-order-integration-events.js';
 import { SeatOrder } from './seat-order.aggregate.js';
-import { settleConfirmedPayment } from './settle-payment.js';
+import { settleConfirmedPayment, type PendingCounterMove } from './settle-payment.js';
 import { CLOCK } from '../clock.js';
 import { OwedRefunds } from '../payments/owed-refunds.js';
 import {
@@ -185,10 +185,12 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     if (!(await this.bindKey(manager, () => orders.place(order, idempotency)))) {
       throw new KeyBoundMeanwhile();
     }
-    sales.holdSeats(body.quantity, now);
-    if (!(await dateSales.takeSeats(sales, body.quantity, now))) throw soldOut();
     await holds.save(hold);
     await writeSeatOrderIntegrationEvents(manager, order.getUncommittedEvents(), { traceparent });
+    // Last, so the date's row is locked for the commit alone. The hold's foreign key takes a KEY
+    //   SHARE on it, which the decrement's NO KEY UPDATE does not wait on.
+    sales.holdSeats(body.quantity, now);
+    if (!(await dateSales.takeSeats(sales, body.quantity, now))) throw soldOut();
     return { kind: 'placed', orderId, request: this.intentRequestOf(order) };
   }
 
@@ -283,7 +285,10 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     return true;
   }
 
-  /** Tx B: what the provider said, applied forward only, then the purchase's answer. */
+  /**
+   * Tx B: what the provider said, applied forward only, then the purchase's answer; the date's
+   *   counters move last, so its row is locked for the commit alone.
+   */
   private async recordIntentIn(
     transaction: TicketingTransaction,
     orderId: string,
@@ -298,9 +303,10 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
       clientSecret: intent.clientSecret,
       nextAction: intent.nextAction,
     };
+    let pending: PendingCounterMove | null = null;
     switch (intent.status) {
       case IntentStatus.SUCCEEDED:
-        await settleConfirmedPayment(transaction, order, intent.ref, now, traceparent);
+        pending = await settleConfirmedPayment(transaction, order, intent.ref, now, traceparent);
         break;
       case IntentStatus.REQUIRES_ACTION:
         order.recordIntent(record, OrderState.AWAITING_ACTION, now);
@@ -309,7 +315,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
         order.recordIntent(record, OrderState.PROCESSING, now);
         break;
       case IntentStatus.DECLINED:
-        await failUnpaidOrder(
+        pending = await failUnpaidOrder(
           transaction,
           order,
           { code: OrderErrorCode.PAYMENT_DECLINED, declineCode: intent.declineCode },
@@ -319,7 +325,9 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     }
     await orders.save(order);
     await writeSeatOrderIntegrationEvents(manager, order.getUncommittedEvents(), { traceparent });
-    return this.answerOf(transaction, order);
+    const answer = await this.answerOf(transaction, order);
+    await pending?.();
+    return answer;
   }
 
   /**

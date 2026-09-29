@@ -8,11 +8,17 @@ import type { SeatOrder } from './seat-order.aggregate.js';
 import type { TicketingTransaction } from '../ticketing-transactions.js';
 
 /**
- * A payment the provider confirmed, whether the purchase's own intent said so or its webhook: the
- *   seats are created from the hold (D-077), or taken again with the conditional decrement when the
- *   hold is gone, or, none being left, the money is owed back (D-082) and no seat exists. Never an
- *   oversold date, never money kept without a seat. The order must be loaded, under its lock,
- *   before its hold; the caller saves it and writes its events.
+ * A move of the date's counters kept for the end of the transaction: the hot row stays locked from
+ *   its statement to the commit, which adr-ticketing.md §2 budgets for tx A's alone.
+ */
+export type PendingCounterMove = () => Promise<void>;
+
+/**
+ * A payment the provider confirmed, from tx B or from its webhook (HANDOVER §0h, §0k): the seats
+ *   are created from the hold, taken again when the hold is gone, or, none left, the money is owed
+ *   back. The order is loaded, under its lock, before its hold; the caller saves it, writes its
+ *   events, and runs the counter move it is handed last. Only D-082's retake runs at once, since
+ *   whether it takes decides between paying and refunding.
  */
 export async function settleConfirmedPayment(
   { manager, holds, dateSales }: TicketingTransaction,
@@ -20,14 +26,15 @@ export async function settleConfirmedPayment(
   intentRef: string,
   now: Instant,
   traceparent: string | null,
-): Promise<void> {
-  if (!order.acceptsPayment) return;
+): Promise<PendingCounterMove | null> {
+  if (!order.acceptsPayment) return null;
   const { holdId, dateId, quantity } = order.snapshot;
   const hold = await holds.findById(holdId);
+  let pending: PendingCounterMove | null = null;
   if (hold?.isActive === true) {
     hold.consume(now);
     await holds.save(hold);
-    await dateSales.sellHeldSeats(dateId, quantity);
+    pending = () => dateSales.sellHeldSeats(dateId, quantity);
   } else if (!(await dateSales.takeAndSellSeats(dateId, quantity, now))) {
     order.oweRefund(RefundReason.HOLD_EXPIRED_CAPACITY_LOST, intentRef, now);
     // Its `order.refunded` is written later, maybe by another process: the trace goes with the debt.
@@ -35,7 +42,7 @@ export async function settleConfirmedPayment(
       order.snapshot.id,
       traceparent,
     ]);
-    return;
+    return null;
   }
   const sales = await dateSales.findUnlocked(dateId);
   const cancelDeadline = interimSeatCancelDeadlineOf(sales?.snapshot.startsAt ?? null);
@@ -45,4 +52,5 @@ export async function settleConfirmedPayment(
     codes.map((code) => ({ id: uuidv7(), code, cancelDeadline })),
     now,
   );
+  return pending;
 }
