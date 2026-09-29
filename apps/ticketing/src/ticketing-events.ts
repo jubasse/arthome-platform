@@ -15,10 +15,7 @@ export const TICKETING_EVENT_TOPICS = {
 
 export type TicketingEventType = keyof typeof TICKETING_EVENT_TOPICS;
 
-/**
- * Keyed by `date_id` on `arthome.ticketing.date_sales`, a seat's events with them (events.md §3.1);
- *   by `order_id` on `arthome.ticketing.order` (D-078).
- */
+/** Keyed by `date_id` on `.date_sales`, a seat's too (events.md §3.1); by `order_id` on `.order`. */
 export type TicketingEvent = ServiceEvent<TicketingEventType>;
 
 export const writeTicketingEvent: OutboxWriter<TicketingEventType> =
