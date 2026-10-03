@@ -97,12 +97,15 @@ export class EmailVerificationsService {
     );
   }
 
-  /** `sent: false` when the address is verified already: nothing to send, and not a refusal. */
+  /**
+   * `queued: true` once the link is in the outbox for `notifications`, which owns the sending;
+   *   `queued: false` when the address is verified already, which is not a refusal.
+   */
   public resend(
     accountId: string,
     request: IdempotentRequest,
     traceparent: string | null,
-  ): Promise<MemorisedResponse<{ readonly sent: boolean }>> {
+  ): Promise<MemorisedResponse<{ readonly queued: boolean }>> {
     return this.dataSource.transaction((manager) =>
       runIdempotently(manager, request, this.clock, async () => {
         const account = await manager.findOne(Account, {
@@ -110,13 +113,13 @@ export class EmailVerificationsService {
           lock: { mode: 'pessimistic_write' },
         });
         if (account === null) throw unauthenticated();
-        if (account.email_verified_at !== null) return { sent: false };
+        if (account.email_verified_at !== null) return { queued: false };
         await this.issue(
           manager,
           { accountId, email: account.email, locale: account.locale },
           traceparent,
         );
-        return { sent: true };
+        return { queued: true };
       }),
     );
   }

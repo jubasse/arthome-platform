@@ -592,7 +592,7 @@ describe('the verification link', () => {
   );
 
   it(
-    'is replaced by a resend, which spends the earlier one; nothing is sent once verified',
+    'is replaced by a resend, which spends the earlier one; nothing is queued once verified',
     async () => {
       const { session } = await signedUp();
       const first = await newestLinkTokenOf(session.accountId);
@@ -607,7 +607,7 @@ describe('the verification link', () => {
         },
       );
       expect(resent.statusCode).toBe(200);
-      expect(resent.json()).toMatchObject({ data: { sent: true } });
+      expect(resent.json()).toMatchObject({ data: { queued: true } });
       const second = await newestLinkTokenOf(session.accountId);
       expect(second).not.toBe(first);
 
@@ -622,7 +622,7 @@ describe('the verification link', () => {
           'idempotency-key': randomUUID(),
         },
       );
-      expect(nothing.json()).toMatchObject({ data: { sent: false } });
+      expect(nothing.json()).toMatchObject({ data: { queued: false } });
     },
     CASE_MS,
   );

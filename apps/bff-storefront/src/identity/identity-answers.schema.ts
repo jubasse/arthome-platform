@@ -43,8 +43,8 @@ export const SessionResolvedSchema = z.looseObject({
 
 export const SignedOutSchema = z.looseObject({ data: z.looseObject({ signedOut: z.boolean() }) });
 
-export const VerificationSentSchema = z.looseObject({
-  data: z.looseObject({ sent: z.boolean() }),
+export const VerificationQueuedSchema = z.looseObject({
+  data: z.looseObject({ queued: z.boolean() }),
 });
 
 export const AddressVerifiedSchema = z.looseObject({

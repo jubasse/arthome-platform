@@ -7,7 +7,7 @@ import {
   SessionOpenedSchema,
   SessionResolvedSchema,
   SignedOutSchema,
-  VerificationSentSchema,
+  VerificationQueuedSchema,
   type ResolvedViewer,
   type SessionOpened,
 } from './identity-answers.schema.js';
@@ -87,7 +87,7 @@ export class IdentityClient {
   public async resendVerification(
     idempotencyKey: string,
     call: ServiceCall,
-  ): Promise<ServiceAnswer<{ readonly sent: boolean }>> {
+  ): Promise<ServiceAnswer<{ readonly queued: boolean }>> {
     const answer = await this.client.request(
       {
         method: 'POST',
@@ -95,7 +95,7 @@ export class IdentityClient {
         headers: { 'idempotency-key': idempotencyKey },
       },
       call,
-      VerificationSentSchema,
+      VerificationQueuedSchema,
     );
     return { body: answer.body.data, replayed: answer.replayed };
   }

@@ -765,7 +765,7 @@ describe('the verification link, through the BFF', () => {
           'idempotency-key': randomUUID(),
         });
         expect(resent.statusCode).toBe(200);
-        expect(resent.json()).toMatchObject({ data: { sent: true } });
+        expect(resent.json()).toMatchObject({ data: { queued: true } });
       }
       const capped = await post(
         '/v1/auth/verify-email/resend',

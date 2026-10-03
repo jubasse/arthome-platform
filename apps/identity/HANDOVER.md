@@ -34,7 +34,7 @@ therefore applies nowhere. Approved by the lead on 2026-10-03 and recorded as an
 | `POST /v1/sessions/resolve` | `{ session }` with its `account` (handle, verified), so the viewer context costs the BFF one call; null for a token that opens nothing; a 401 from here only ever means the BFF's own token |
 | `POST /v1/sessions/revoke` | this session alone; succeeds on a session already gone |
 | `GET /v1/accounts/me` | the handle and whether the address is verified, for the token's `sub`; no BFF route calls it since `resolve` answers the same |
-| `POST /v1/accounts/me/email-verification` | a fresh link, the earlier ones spent; `sent: false` once verified |
+| `POST /v1/accounts/me/email-verification` | a fresh link, the earlier ones spent: `queued`, since `notifications` owns the sending; `queued: false` once verified |
 | `POST /v1/email-verifications/confirm` | spends the token and verifies the address |
 
 **Two stores, one UUIDv7.** better-auth's tables are in the `auth` schema on Kysely, TypeORM's in

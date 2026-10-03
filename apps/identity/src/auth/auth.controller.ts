@@ -109,7 +109,7 @@ export class AuthController {
     @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
-  ): Promise<MemorisedResponse<{ readonly sent: boolean }>> {
+  ): Promise<MemorisedResponse<{ readonly queued: boolean }>> {
     const accountId = accountOf(principal);
     return this.verifications.resend(
       accountId,

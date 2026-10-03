@@ -229,9 +229,9 @@ export class AuthController {
     @Res({ passthrough: true }) reply: SessionReply,
     @Headers(SURFACE_HEADER) surface?: string,
     @Headers('idempotency-key') idempotencyKey?: string,
-  ): Promise<{ readonly sent: boolean }> {
+  ): Promise<{ readonly queued: boolean }> {
     assertStorefrontSurface(surface);
-    const { body: sent, replayed } = await this.identity.resendVerification(
+    const { body: queued, replayed } = await this.identity.resendVerification(
       idempotencyKeyOf(idempotencyKey),
       serviceCallFor(
         request,
@@ -242,7 +242,7 @@ export class AuthController {
       ),
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
-    return sent;
+    return queued;
   }
 
   /**

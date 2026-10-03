@@ -134,8 +134,9 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
 - **The caps' numbers are not sized.** An IPv4 address behind a carrier NAT is shared by hundreds
   of subscribers: at D-079's 10,000 buyers a minute, 20 sign-ins per 15 minutes per address refuses
   real buyers at an opening. The product owner sizes `AuthRateLimit` before the first on-sale.
-- **`resendEmailVerification` answers `sent: true` while nothing sends**: `notifications` has no
-  consumer of the verification topic and no mail adapter yet. A launch prerequisite.
+- **`resendEmailVerification` answers `queued`, not `sent`** (the lead's addendum): the link is
+  recorded for `notifications`, which owns the sending and has no consumer of the verification
+  topic nor mail adapter yet. Sending it is a launch prerequisite.
 - **Service-to-service HTTP is assumed private**: `IDENTITY_URL`, like `CATALOG_URL`, accepts
   `http` in production, and session tokens and internal tokens ride on it. Production runs the
   services on a private network or a mesh with mTLS; `JWKS_URL` is held to `https` because the CDN
