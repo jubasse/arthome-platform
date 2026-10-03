@@ -10,9 +10,18 @@
 set -e
 
 # git feeds "<local ref> <local sha1> <remote ref> <remote sha1>" per line on
-# stdin; nothing here depends on which refs are pushed, so it is drained and
-# discarded rather than read.
-cat >/dev/null
+# stdin. A push whose every line deletes a ref carries no commit and an all-zero
+# local sha1, so there is nothing to verify; any other push runs `verify:full`.
+only_deletes=true
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  case "$local_sha" in
+    *[!0]*) only_deletes=false ;;
+  esac
+done
+
+if [ "$only_deletes" = true ]; then
+  exit 0
+fi
 
 if ! pnpm run verify:full; then
   echo ''
