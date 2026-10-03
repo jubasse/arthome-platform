@@ -64,15 +64,23 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   cache of sessions yet: one identity call per authenticated request, within transport.md §5.9's
   150 ms. Identity answers an unknown session `session: null`, so a 401 from identity means this
   BFF's own token was refused, and becomes `api.upstream_unavailable`.
-- **The mode is the surface's explicit choice** (D-023): `cookie` sets `arthome_session` (the
-  contract's name, `HttpOnly`, `Secure`, `SameSite=Lax`) and the readable `arthome_csrf`, with
-  nothing in the body; `bearer` and `device` answer the token in the body, `refreshToken` null, and
-  set no cookie. A request carrying both carriers is a 401. Sign-out clears with the attributes that
-  set; `getViewerContext` re-sets both cookies with the session's slid expiry.
+- **The mode is the surface's explicit choice** (D-023): `cookie` sets `__Host-arthome_session`
+  (the contract's name, `HttpOnly`, `Secure`, `SameSite=Lax`), the readable `__Host-arthome_csrf`
+  and the CSRF secret, with nothing in the body; `bearer` and `device` answer the token in the
+  body, `refreshToken` null, and set no cookie. A request carrying both carriers is a 401. The three
+  cookies are `__Host-`, so a sibling subdomain cannot plant a session of its own. They live as long
+  as the session; sign-out clears them with the attributes that set them, and `getViewerContext`
+  re-sets all three with the session's slid expiry.
 - **CSRF**: every write carrying the session cookie needs `X-Arthome-Csrf` (storefront.yaml
   `sessionCookie`), checked by `@fastify/csrf-protection` with the token bound to the session. From
-  a guard rather than the plugin's hook, so a refusal leaves through the error envelope; sign-up,
-  sign-in and the email link open no session and are exempt.
+  a guard rather than the plugin's hook, so a refusal leaves through the error envelope. Sign-up,
+  sign-in and the email link open no session and are exempt. Sign-out is exempt too: a forged one
+  grants nothing, its required headers cannot cross origins without a preflight this BFF never
+  answers, and a browser that lost its secret must still be able to sign out.
+- **No CORS is configured**, which denies every cross-origin call: right for a web surface served
+  from the BFF's origin. A cross-origin surface needs an explicit allow-list per environment, never
+  `origin: true` with credentials (`nestjs-web-security` rule 3). No helmet either: the BFF serves
+  JSON alone.
 - **The caps** (`adr-auth.md` §6.2) count per address, an IPv6 one as its /64, until devices carry a
   verified identity; per typed email and address for password guessing; per account for a resend.
   In Redis, so every replica shares them. `TRUSTED_PROXIES` names the proxies whose

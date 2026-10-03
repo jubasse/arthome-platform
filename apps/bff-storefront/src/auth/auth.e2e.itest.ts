@@ -28,7 +28,12 @@ import { PAUSE } from './failed-sign-ins.js';
 import { THROTTLER_REDIS, throttlerRedis } from './throttler-storage.js';
 import { CLOCK } from '../clock.js';
 import { IDENTITY_URL } from '../identity/identity.client.js';
-import { CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE } from '../session/session-carriers.js';
+import {
+  CSRF_COOKIE,
+  CSRF_HEADER,
+  CSRF_SECRET_COOKIE,
+  SESSION_COOKIE,
+} from '../session/session-carriers.js';
 
 /**
  * The storefront's authentication through this BFF and the real identity behind it: better-auth on
@@ -161,13 +166,13 @@ async function browserSession(email: string = nextEmail()) {
   const cookies = cookiesOf(signedUp);
   const session = cookies.get(SESSION_COOKIE)?.value ?? '';
   const csrf = cookies.get(CSRF_COOKIE)?.value ?? '';
-  const secret = [...cookies.values()].find(({ name }) => name.endsWith('csrf_secret'));
+  const secret = cookies.get(CSRF_SECRET_COOKIE)?.value ?? '';
   const cookie = [
     `${SESSION_COOKIE}=${session}`,
     `${CSRF_COOKIE}=${csrf}`,
-    ...(secret === undefined ? [] : [`${secret.name}=${secret.value}`]),
+    `${CSRF_SECRET_COOKIE}=${secret}`,
   ].join('; ');
-  return { email, session, csrf, cookie };
+  return { email, session, csrf, secret, cookie };
 }
 
 async function bearerSession(email: string = nextEmail()) {
@@ -507,7 +512,7 @@ describe('a write with the session cookie', () => {
       const browser = await browserSession();
       const other = await browserSession();
       for (const csrf of [undefined, 'not-a-token', other.csrf]) {
-        const refused = await post('/v1/auth/sign-out', undefined, {
+        const refused = await post('/v1/auth/verify-email/resend', undefined, {
           cookie: browser.cookie,
           'idempotency-key': randomUUID(),
           ...(csrf !== undefined && { [CSRF_HEADER]: csrf }),
@@ -518,6 +523,74 @@ describe('a write with the session cookie', () => {
         });
       }
       expect((await viewerContext({ cookie: browser.cookie })).statusCode).toBe(200);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'binds the token to its session: one browser, one secret, two sessions',
+    async () => {
+      const browser = await browserSession();
+      const again = await post(
+        '/v1/auth/sign-in',
+        { email: browser.email, password: 'a-long-password', mode: SessionMode.COOKIE },
+        { cookie: `${CSRF_SECRET_COOKIE}=${browser.secret}` },
+      );
+      expect(again.statusCode).toBe(200);
+      const cookies = cookiesOf(again);
+      expect(cookies.get(CSRF_SECRET_COOKIE)?.value).toBe(browser.secret);
+      const second = {
+        session: cookies.get(SESSION_COOKIE)?.value ?? '',
+        csrf: cookies.get(CSRF_COOKIE)?.value ?? '',
+      };
+      const cookie = `${SESSION_COOKIE}=${second.session}; ${CSRF_SECRET_COOKIE}=${browser.secret}`;
+
+      const withTheFirstToken = await post('/v1/auth/verify-email/resend', undefined, {
+        cookie,
+        [CSRF_HEADER]: browser.csrf,
+        'idempotency-key': randomUUID(),
+      });
+      expect(withTheFirstToken.statusCode).toBe(403);
+      const withItsOwn = await post('/v1/auth/verify-email/resend', undefined, {
+        cookie,
+        [CSRF_HEADER]: second.csrf,
+        'idempotency-key': randomUUID(),
+      });
+      expect(withItsOwn.statusCode).toBe(200);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'keeps the CSRF secret as long as the session, and slides it with the session',
+    async () => {
+      const signedUp = await signUp(nextEmail(), SessionMode.COOKIE);
+      const cookies = cookiesOf(signedUp);
+      const secret = cookies.get(CSRF_SECRET_COOKIE);
+      expect(secret).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Lax', path: '/' });
+      expect(secret?.maxAge).toBe(cookies.get(SESSION_COOKIE)?.maxAge);
+
+      const browser = [SESSION_COOKIE, CSRF_COOKIE, CSRF_SECRET_COOKIE]
+        .map((name) => `${name}=${cookies.get(name)?.value ?? ''}`)
+        .join('; ');
+      const refreshed = cookiesOf(await viewerContext({ cookie: browser }));
+      expect(refreshed.get(CSRF_SECRET_COOKIE)?.value).toBe(secret?.value);
+      expect(refreshed.get(CSRF_SECRET_COOKIE)?.maxAge).toBe(refreshed.get(SESSION_COOKIE)?.maxAge);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'signs out without a CSRF token, so a browser that lost its secret can still leave',
+    async () => {
+      const browser = await browserSession();
+      const signedOut = await post('/v1/auth/sign-out', undefined, {
+        cookie: `${SESSION_COOKIE}=${browser.session}`,
+        'idempotency-key': randomUUID(),
+      });
+      expect(signedOut.statusCode).toBe(200);
+      expect(cookiesOf(signedOut).get(CSRF_SECRET_COOKIE)).toMatchObject({ value: '' });
+      expect((await viewerContext({ cookie: browser.cookie })).statusCode).toBe(401);
     },
     CASE_MS,
   );

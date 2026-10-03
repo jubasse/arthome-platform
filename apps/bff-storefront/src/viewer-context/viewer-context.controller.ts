@@ -48,12 +48,7 @@ export class ViewerContextController {
       ),
     );
     if (viewer.carrier === SessionMode.COOKIE) {
-      setSessionCookies(
-        reply,
-        viewer,
-        reply.generateCsrf({ userInfo: viewer.token }),
-        this.clock.nowMs(),
-      );
+      setSessionCookies(reply, request, viewer, this.clock.nowMs());
     }
     return viewerContextOf(viewer, account, storefront);
   }

@@ -11,6 +11,7 @@ import {
   presentedSession,
   setSessionCookies,
   type CookieReply,
+  type CsrfReply,
 } from './session-carriers.js';
 
 describe('the session a request presents', () => {
@@ -43,15 +44,21 @@ describe('the session cookies', () => {
   function cookieReply() {
     const setCookie = vi.fn<CookieReply['setCookie']>();
     const clearCookie = vi.fn<CookieReply['clearCookie']>();
-    return { reply: { setCookie, clearCookie } satisfies CookieReply, setCookie, clearCookie };
+    const generateCsrf = vi.fn<CsrfReply['generateCsrf']>().mockReturnValue('csrf-token');
+    return {
+      reply: { setCookie, clearCookie, generateCsrf } satisfies CsrfReply,
+      setCookie,
+      clearCookie,
+      generateCsrf,
+    };
   }
 
   it('live as long as the session, the session one out of the page’s reach', () => {
     const { reply, setCookie } = cookieReply();
     setSessionCookies(
       reply,
+      { headers: {} },
       { token: 'a.b', expiresAt: '2026-10-10T12:00:00.000Z' },
-      'csrf-token',
       Date.parse('2026-10-03T12:00:00.000Z'),
     );
     const week = 7 * 24 * 60 * 60;
@@ -65,6 +72,26 @@ describe('the session cookies', () => {
     expect(setCookie).toHaveBeenCalledWith(CSRF_COOKIE, 'csrf-token', {
       path: '/',
       httpOnly: false,
+      secure: true,
+      sameSite: 'lax',
+      maxAge: week,
+    });
+  });
+
+  it('give the CSRF secret the session’s lifetime, whether minted now or already held', () => {
+    const { reply, setCookie, generateCsrf } = cookieReply();
+    const session = { token: 'a.b', expiresAt: '2026-10-10T12:00:00.000Z' };
+    const week = 7 * 24 * 60 * 60;
+    setSessionCookies(
+      reply,
+      { headers: {}, cookies: { [CSRF_SECRET_COOKIE]: 'held' } },
+      session,
+      Date.parse('2026-10-03T12:00:00.000Z'),
+    );
+    expect(generateCsrf).toHaveBeenCalledWith({ userInfo: 'a.b', maxAge: week });
+    expect(setCookie).toHaveBeenCalledWith(CSRF_SECRET_COOKIE, 'held', {
+      path: '/',
+      httpOnly: true,
       secure: true,
       sameSite: 'lax',
       maxAge: week,

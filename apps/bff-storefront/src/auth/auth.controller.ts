@@ -35,13 +35,13 @@ import { viewerCountryOf } from './viewer-country.js';
 import { CLOCK } from '../clock.js';
 import type { SessionOpened } from '../identity/identity-answers.schema.js';
 import { IdentityClient } from '../identity/identity.client.js';
-import { OpensNoSession } from '../session/csrf.guard.js';
+import { EndsSessionOnly, OpensNoSession } from '../session/csrf.guard.js';
 import {
   clearSessionCookies,
   presentedSession,
   setSessionCookies,
   type CookieCarrier,
-  type CookieReply,
+  type CsrfReply,
 } from '../session/session-carriers.js';
 import { CurrentViewer, RequiresViewer, callerOf, type Viewer } from '../session/viewer.js';
 import { SURFACE_HEADER, assertStorefrontSurface } from '../storefront-surface.js';
@@ -52,10 +52,9 @@ import { viewerContextOf, type ServedViewerContext } from '../viewer-context/vie
 export const VIEWER_COUNTRY_HEADER: unique symbol = Symbol('ViewerCountryHeader');
 
 /** Fastify's reply with `@fastify/cookie` and `@fastify/csrf-protection` registered. */
-export interface SessionReply extends CookieReply {
+export interface SessionReply extends CsrfReply {
   readonly raw: ServerResponse;
   header(name: string, value: string): unknown;
-  generateCsrf(options: { readonly userInfo: string }): string;
 }
 
 type Inbound = CookieCarrier;
@@ -120,7 +119,7 @@ export class AuthController {
       this.anonymousCall(request, reply),
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
-    return this.established(body.mode, opened, storefront, reply);
+    return this.established(body.mode, opened, storefront, request, reply);
   }
 
   /**
@@ -153,7 +152,7 @@ export class AuthController {
       throw error;
     }
     await this.failedSignIns.forget(body.email);
-    return this.established(body.mode, opened, storefront, reply);
+    return this.established(body.mode, opened, storefront, request, reply);
   }
 
   /**
@@ -163,6 +162,7 @@ export class AuthController {
   @Post('sign-out')
   @HttpCode(200)
   @Header('cache-control', 'no-store')
+  @EndsSessionOnly()
   public async signOut(
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
@@ -239,12 +239,12 @@ export class AuthController {
     mode: SignUpRequest['mode'],
     opened: SessionOpened,
     surface: StorefrontSurface,
+    request: Inbound,
     reply: SessionReply,
   ): SessionEstablished {
     const viewerContext = viewerContextOf(opened.session, opened.account, surface);
     if (mode === SessionMode.COOKIE) {
-      const csrfToken = reply.generateCsrf({ userInfo: opened.session.token });
-      setSessionCookies(reply, opened.session, csrfToken, this.clock.nowMs());
+      setSessionCookies(reply, request, opened.session, this.clock.nowMs());
       return { mode, viewerContext };
     }
     return {

@@ -12,6 +12,16 @@ export const OpensNoSession: ReflectableDecorator<void, true> = Reflector.create
   true
 >({ transform: () => true });
 
+/**
+ * Marks sign-out, exempt from the token: a forged one ends a session and grants nothing, it carries
+ *   headers no cross-origin page can send without a preflight this BFF never answers, and a browser
+ *   that lost its CSRF secret must still be able to sign out.
+ */
+export const EndsSessionOnly: ReflectableDecorator<void, true> = Reflector.createDecorator<
+  void,
+  true
+>({ transform: () => true });
+
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 interface CsrfProtecting {
@@ -44,8 +54,10 @@ export class CsrfGuard implements CanActivate {
     const http = context.switchToHttp();
     const request = http.getRequest<CookieCarrier & { readonly method: string }>();
     if (SAFE_METHODS.has(request.method)) return true;
+    const targets = [context.getHandler(), context.getClass()];
     if (
-      this.reflector.getAllAndOverride(OpensNoSession, [context.getHandler(), context.getClass()])
+      this.reflector.getAllAndOverride(OpensNoSession, targets) ||
+      this.reflector.getAllAndOverride(EndsSessionOnly, targets)
     ) {
       return true;
     }
