@@ -81,12 +81,13 @@ export class ServiceClient {
     try {
       const response = await fetch(url, {
         method: request.method,
+        // The relayed headers first, so none of them can replace the token or the deadline.
         headers: {
+          ...request.headers,
           authorization: `Bearer ${await this.minter.mint(this.service, call.caller)}`,
           traceparent: call.traceparent,
           [DEADLINE_HEADER]: call.deadline.toISOString(),
           ...(request.body !== undefined && { 'content-type': 'application/json' }),
-          ...request.headers,
         },
         ...(request.body !== undefined && { body: JSON.stringify(request.body) }),
         signal: AbortSignal.any([timeout, call.callerLeft]),
