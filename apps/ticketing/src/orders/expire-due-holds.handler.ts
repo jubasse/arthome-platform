@@ -2,12 +2,12 @@ import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import type { EntityManager } from 'typeorm';
 
-import type { Clock } from '@arthome/core';
+import { type Clock, OrderState, SeatHoldState } from '@arthome/core';
 
-import { ORDER_STATES_AWAITING_PAYMENT, OrderState, SeatHoldState } from './commerce-vocabulary.js';
 import { ExpireDueHolds } from './expire-due-holds.command.js';
 import { CLOCK } from '../clock.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
+import { ORDER_STATES_AWAITING_PAYMENT } from './awaiting-payment.js';
 
 interface DueHold {
   readonly hold_id: string;

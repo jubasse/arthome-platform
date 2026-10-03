@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { FixedClock, money, plusSeconds } from '@arthome/core';
-
-import { FakePaymentProvider, FakePaymentScenario, intentRefOf } from './fake-payment-provider.js';
 import {
+  FixedClock,
+  money,
+  plusSeconds,
   IntentStatus,
-  NextActionKind,
   PaymentEventKind,
   PaymentProviderUnavailable,
   type PaymentIntentRequest,
-} from './payment.port.js';
+} from '@arthome/core';
+
+import { FakePaymentProvider, FakePaymentScenario, intentRefOf } from './fake-payment-provider.js';
+import { NextActionKind } from './next-action.js';
 
 const NOW = '2026-09-28T10:00:00.000Z';
 const SECRET = 'a-webhook-secret-long-enough-to-pass';

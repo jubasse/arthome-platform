@@ -16,6 +16,10 @@ import {
   type Instant,
   type PriceTier,
   type TierPrice,
+  lateEntryOf,
+  salesEndedBy,
+  seatSalesEndAt,
+  type LateEntry,
 } from '@arthome/core';
 
 import {
@@ -33,13 +37,6 @@ import {
   type DateSalesEvent,
 } from './date-sales.events.js';
 import { seatQuoteOf, type SeatQuote } from './seat-quote.js';
-import {
-  INTERIM_SALES_CLOSED,
-  lateEntryOf,
-  salesEndedBy,
-  seatSalesEndAt,
-  type LateEntry,
-} from './seat-sales-window.js';
 import { technicalProvisionOf } from './technical-provision.js';
 
 export interface DateSalesSnapshot {
@@ -172,7 +169,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
       });
     }
     if (salesEndAt !== null && this.hasEndedBy(now)) {
-      throw new DomainError({ code: INTERIM_SALES_CLOSED, params: { salesEndAt } });
+      throw new DomainError({ code: OrderErrorCode.SALES_CLOSED, params: { salesEndAt } });
     }
     if (!this.isOnSale) throw new DomainError({ code: OrderErrorCode.SOLD_OUT });
     this.current = frozen({ ...this.current, seatsAvailable: seatsAvailable - quantity });

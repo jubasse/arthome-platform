@@ -25,12 +25,11 @@ import {
   OrderKind,
   PriceTier,
   plusMinutes,
+  OrderState,
 } from '@arthome/core';
 import { InstantOut, int64 } from '@arthome/core/schema';
 
-import { OrderState } from './commerce-vocabulary.js';
 import { OrdersModule } from './orders.module.js';
-import { INTERIM_LATE_ENTRY_UNACKNOWLEDGED } from './purchase-refusals.js';
 import { CLOCK } from '../clock.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
 import { DateSalesModule } from '../date-sales/date-sales.module.js';
@@ -278,7 +277,7 @@ describe('a late entry over HTTP (D-089)', () => {
       expect(refused.statusCode).toBe(409);
       expect(refused.json()).toMatchObject({
         error: {
-          code: INTERIM_LATE_ENTRY_UNACKNOWLEDGED,
+          code: OrderErrorCode.LATE_ENTRY_UNACKNOWLEDGED,
           params: { startedAt: startsAt, minutesElapsed: 10 },
         },
       });

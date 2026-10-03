@@ -1,10 +1,12 @@
 import type { IncomingHttpHeaders } from 'node:http';
 
 import { parseTraceparent, schemaInvalidException } from '@arthome-platform/http-edge';
-import { Controller, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, HttpCode, Inject, Post, Req } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 
-import { PaymentWebhookPort } from './payment.port.js';
+import { type PaymentWebhookPort } from '@arthome/core';
+
+import { PAYMENT_WEBHOOK_PORT } from './payment-tokens.js';
 import { RecordPaymentEvent, type PaymentEventReceipt } from './record-payment-event.command.js';
 
 /** What `rawBody: true` leaves on a request (`nestjs-http` rule 13). */
@@ -27,7 +29,7 @@ function headerOf(headers: IncomingHttpHeaders, name: string): string | undefine
 export class PaymentWebhooksController {
   public constructor(
     private readonly commands: CommandBus,
-    private readonly webhooks: PaymentWebhookPort,
+    @Inject(PAYMENT_WEBHOOK_PORT) private readonly webhooks: PaymentWebhookPort,
   ) {}
 
   @Post('webhook')

@@ -1,8 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
 
-import type { PriceTier } from '@arthome/core';
-
-import type { SeatState } from './commerce-vocabulary.js';
+import { type PriceTier, type SeatState } from '@arthome/core';
 
 /** A seat of a `SeatOrder`, written by the order's repository alone. */
 @Entity('seat')

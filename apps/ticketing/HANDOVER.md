@@ -202,12 +202,13 @@ reached from no request, log a failure and leave it due.
 
 ## 0g. The payment ports (T3)
 
-`src/payments/payment.port.ts` holds `adr-payments.md` §4's ports until core carries them (§3):
-`PaymentPort` (`createIntent`, keyed by the order id, `cancelIntent`, `refund`, keyed
-`refund:{orderId}`) and `PaymentWebhookPort` (`verifySignature` on the exact bytes, `parse`). The
-names are `adr-ticketing.md` §2's (`createIntent`), where §4 of the payments ADR sketches
-`authorize`. A provider's references are opaque strings; `PaymentProviderUnavailable` says the
-provider could not say what it did, so the caller retries under the same key.
+`@arthome/core` carries `adr-payments.md` §4's ports: `PaymentPort` (`createIntent`, keyed by the
+order id, `cancelIntent`, `refund`, keyed `refund:{orderId}`) and `PaymentWebhookPort`
+(`verifySignature` on the exact bytes, `parse`). They are interfaces, so `payments/payment-tokens.ts`
+holds the two injection tokens, `PAYMENT_PORT` and `PAYMENT_WEBHOOK_PORT`, as `CLOCK` does. A
+provider's references are opaque strings, a next action's `kind` too: `payments/next-action.ts` names
+the two kinds the fake and the suites speak. `PaymentProviderUnavailable` says the provider could not
+say what it did, so the caller retries under the same key.
 
 `FakePaymentProvider` is the adapter bound by default (`payments.module.ts`), both ports on one
 instance, since a webhook speaks of the intents it created. Deterministic: an intent's reference is
@@ -215,8 +216,8 @@ derived from its order id, event ids are counted, and each intent plays `scenari
 `confirm` (the default, confirmed synchronously), `require_action` (then `completeAction` or
 `failAction` hands back the signed webhook saying how it ended), `decline`, `unavailable`. `down`
 makes every call fail, the provider-down drill. Its signature is Stripe's scheme on its own header,
-`x-fake-payment-signature: t=<seconds>,v1=<HMAC-SHA256 of "t.body">`, refused past adr-payments.md
-§7.1's five minutes. The secret is `PAYMENT_WEBHOOK_SECRET` (`@arthome-platform/config`'s
+`x-fake-payment-signature: t=<seconds>,v1=<HMAC-SHA256 of "t.body">`, refused past core's
+`PAYMENT_WEBHOOK_TOLERANCE_SECONDS`, adr-payments.md §7.1's five minutes. The secret is `PAYMENT_WEBHOOK_SECRET` (`@arthome-platform/config`'s
 `readPaymentWebhookSecret`), defaulted outside production only, 32 characters at least.
 
 ## 0h. Holds, orders and the purchase (T3)
@@ -430,8 +431,8 @@ A sale ends by time, so no date is sold after its show and none stays in the pub
 good (§0e). The product owner ruled (D-089, recorded in core by the lead): **a seat covers the live alone** (a replay's access is a separate matter, out of T3), **its
 sales end `SEAT_SALES_CUTOFF_MINUTES_AFTER_START` (30) minutes after the live's start**, the same
 for every channel, and **a buyer arriving after the start is told what was missed and must
-acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEndAt(startsAt)` and
-`lateEntryOf(startsAt, now)`, under the names core will give them (§3).
+acknowledge it**. The rules are core's `seatSalesEndAt(startsAt)`, `salesEndedBy` and
+`lateEntryOf(startsAt, now)`.
 
 - **The end** is `date_sales.sales_end_at` (`1790440800000-sales-end.ts`), written by
   `recordSchedule` from `seatSalesEndAt` whenever catalog states or moves the start, so a
@@ -449,7 +450,7 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
   opening's rate is seats sold past the cutoff, and one predicate on a row already found by its key
   costs nothing. The purchase reads the same end off the unlocked aggregate first
   (`sellsSeatsAt`) and refuses before claiming its key. **Past the end both `purchaseSeat` and
-  `quoteSeat` answer 409 `order.sales_closed`** (an interim code, §3; architecture review M2), with
+  `quoteSeat` answer 409 `order.sales_closed`** (core's `OrderErrorCode.SALES_CLOSED`; architecture review M2), with
   `salesEndAt`: sold out is the waiting list's cue, and a sale that ended offers no waiting list.
   Whether it ended is one rule, `salesEndedBy`, which the aggregate, the quote and the statement's
   predicate share.
@@ -462,10 +463,9 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
   `minutesElapsed` in whole minutes, `salesEndAt`), and its `validUntil` is no later than the start
   before it and the end after it, where what it says changes. `purchaseSeat` reads the header
   `X-Arthome-Late-Entry-Acknowledged: true` (anything else but its absence is 400 naming it): from
-  the start and without it, the purchase is refused 409 `order.late_entry_unacknowledged` (an
-  interim code, §3) with the same three facts in `params`, before its key is claimed or any seat
-  taken; before the start it is ignored. The field and the header are ahead of the contract: the
-  report to "main" gives storefront.yaml's and the contracts' text.
+  the start and without it, the purchase is refused 409 `order.late_entry_unacknowledged`
+  (core's `OrderErrorCode.LATE_ENTRY_UNACKNOWLEDGED`) with the same three facts in `params`, before its key is claimed or any seat
+  taken; before the start it is ignored. The field and the header are the contract's.
 - **A header, not the body** (architecture review m2, the lead's decision), as the admission token
   is: the idempotency fingerprint covers the body, so a flag there could never be added to a
   purchase placed before the start and retried after it. **Decided here: such a retry is asked
@@ -495,7 +495,7 @@ acknowledge it**. The rules are `date-sales/seat-sales-window.ts`'s `seatSalesEn
 | `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry |
 | `boot.itest.ts` (T3's case) | the sweeper root expiring a due hold on its first pass |
 | `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes; a late entry quoted, refused, then sold, `lateEntry` parsed by the contract's schema extended as the report gives it |
-| `date-sales/seat-sales-window.spec.ts`, `date-sales.aggregate.spec.ts` (T3's second block) | D-089's end thirty minutes after the start, moved by a postponement; no late entry before the start, whole minutes after it; on sale until the end, not at it |
+| `date-sales.aggregate.spec.ts` (T3's second block) | D-089's end thirty minutes after the start, moved by a postponement; on sale until the end, not at it (core's `seats.spec.ts` proves `seatSalesEndAt` and `lateEntryOf`) |
 | `date-sales/close-ended-sales.itest.ts` | a sale past its end closed once, published a last time at 0 seats and not sold out, refusing a purchase; one running and one with no end left on sale; a sale closed thirty minutes after its start, and a postponed one whose end moved with its start left on sale |
 | `date-sales/postponement-reopen.itest.ts` | the correctness review's case, as written: a sale closed by time, a postponement stated before the old start and applied after it reopening the sale until thirty minutes after the new start |
 | `migrations/seat-sales-cutoff.itest.ts` | the backfill on a database already holding dates: an end thirty minutes after each start, none without one |
@@ -537,7 +537,7 @@ first.
   call's schedule: a refund's lasts a day, and §0k's replay of a dead one becomes the queue's; which
   process runs them is T4's to decide and record here, the sweeper staying on Postgres alone.
 - **`cancelSeat` and `refundSeat`**: seats exist from payment with their code and a cancel deadline
-  (an interim, §3); `seat.cancelled`, `SeatState` beyond `active`, and the order's
+  (core's `seatCancelDeadline`); `seat.cancelled`, `SeatState` beyond `active`, and the order's
   `partially_refunded` are T4's. `refundReasonCode` is served once an order is `refunded`.
 - **The race suite of adr-ticketing.md §12**: a duplicated and an out-of-order webhook, a success
   after the hold expired, declines and an abandoned action are proven (`payment-webhooks.itest.ts`,
@@ -570,31 +570,24 @@ first.
 
 ## 3. Gaps
 
-**Interims T3 holds until core carries them** (each named in the report to "main", with the exact
-addition):
+**T3's interims are core's now** (arthome-core PR #7, a54847c): the payment ports, the order, seat and
+hold vocabularies, the order-state ranks, the seat's cancel deadline, the order reference, the
+payment return path, D-089's `SEAT_SALES_CUTOFF_MINUTES_AFTER_START`, `seatSalesEndAt`,
+`salesEndedBy`, `lateEntryOf` and `LateEntry`, the codes `order.late_entry_unacknowledged` and
+`order.sales_closed`, `HOLD_EXPIRY_BATCH` and `PAYMENT_WEBHOOK_TOLERANCE_SECONDS`. Core's
+`decideWatch` no longer offers `buy_seat` past the cutoff. What stays local, and why:
 
-- `PaymentPort` and `PaymentWebhookPort` (`payments/payment.port.ts`), `adr-payments.md` §4's ports.
-  Their methods take adr-ticketing.md §2's names (`createIntent`, `cancelIntent`, `refund`), as the
-  lead decided on 2026-09-29, where adr-payments.md §4 names `authorize`, `capture`, `refund` and
-  `quote`: core must settle one set when it carries the ports.
-- `ORDER_STATES`, `SEAT_STATES`, `SEAT_HOLD_STATES`, `SEAT_HOLD_ORIGINS` and the order's forward
-  ranks (`orders/commerce-vocabulary.ts`): the contract declares the first two as its own, and the
-  domain decides with them.
-- The seat's cancel deadline, one hour before the start (`orders/seat-cancel-deadline.ts`):
-  needs/storefront-web.md's rule, served by the contract as `cancelDeadlineMinutesBefore: 60`, in
-  no core constant. A date with no start gives its seats none.
-- The order's reference, `ATH-{year}-{five digits}` off one sequence (`orders/order-reference.ts`),
-  the contract's example.
-- The payment return URL, `{PUBLIC_WEB_ORIGIN}/orders/{orderId}` (`orders/payment-return-url.ts`):
-  no document names the storefront's page for it.
+- The injection tokens `PAYMENT_PORT` and `PAYMENT_WEBHOOK_PORT` (`payments/payment-tokens.ts`): core's
+  ports are interfaces, which Nest cannot inject.
+- `NextActionKind` (`payments/next-action.ts`): core keeps a next action's `kind` opaque, and only the
+  fake provider and the suites name two.
+- `ORDER_STATES_AWAITING_PAYMENT` (`orders/awaiting-payment.ts`): which states a payment's failure or
+  expiry moves is this service's decision, not a vocabulary.
+- The year of an order reference, read off the placement instant (`seat-order.typeorm-repository.ts`):
+  core's `orderReference` takes the year and the sequence, the sequence being this database's.
+- The payment return URL, `{PUBLIC_WEB_ORIGIN}` and core's `paymentReturnPath`: the origin is
+  deployment configuration.
 - No service fee (`date-sales/seat-quote.ts`): no fee schedule is set anywhere, as T2's pane says.
-- D-089's rules (`date-sales/seat-sales-window.ts`): `SEAT_SALES_CUTOFF_MINUTES_AFTER_START` (30),
-  `seatSalesEndAt`, `salesEndedBy`, `lateEntryOf` and `LateEntry`, under the names core will give
-  them; the refusals' codes `order.late_entry_unacknowledged` and `order.sales_closed`
-  (`INTERIM_LATE_ENTRY_UNACKNOWLEDGED`, `INTERIM_SALES_CLOSED`, `orders/purchase-refusals.ts`), in no
-  `ORDER_ERROR_CODES` yet; and the contract's field and header ahead of storefront.yaml:
-  `SeatQuote.lateEntry` and `X-Arthome-Late-Entry-Acknowledged` on `purchaseSeat`. Core's `decideWatch` still offers `buy_seat`
-  through the live past the cutoff: the report to "main" gives the change it needs.
 
 **Known and left in T3, each judged:**
 

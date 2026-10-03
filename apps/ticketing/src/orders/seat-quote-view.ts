@@ -1,7 +1,6 @@
-import { isZero, type Instant, type Money } from '@arthome/core';
+import { isZero, type Instant, type Money, type LateEntry } from '@arthome/core';
 
 import type { SeatQuote } from '../date-sales/seat-quote.js';
-import type { LateEntry } from '../date-sales/seat-sales-window.js';
 
 /**
  * The storefront contract's `SeatQuote` line kinds that ticketing composes, a vocabulary of that
@@ -20,7 +19,7 @@ export interface SeatQuoteLine {
 }
 
 /**
- * storefront.yaml's `SeatQuote`, and D-089's `lateEntry` ahead of the contract (HANDOVER §3), present
+ * storefront.yaml's `SeatQuote`, with D-089's `lateEntry`, present
  *   once the live has started; no `vatIncluded` while the tax model awaits counsel.
  */
 export interface SeatQuoteView {

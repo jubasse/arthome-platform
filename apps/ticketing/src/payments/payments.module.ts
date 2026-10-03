@@ -4,7 +4,7 @@ import { Module } from '@nestjs/common';
 import { SystemClock } from '@arthome/core';
 
 import { FakePaymentProvider } from './fake-payment-provider.js';
-import { PaymentPort, PaymentWebhookPort } from './payment.port.js';
+import { PAYMENT_PORT, PAYMENT_WEBHOOK_PORT } from './payment-tokens.js';
 
 /**
  * The payment ports, bound to the fake adapter: adr-payments.md §4 makes it the default, so a clone
@@ -17,9 +17,9 @@ import { PaymentPort, PaymentWebhookPort } from './payment.port.js';
       useFactory: (): FakePaymentProvider =>
         new FakePaymentProvider(readPaymentWebhookSecret(), new SystemClock()),
     },
-    { provide: PaymentPort, useExisting: FakePaymentProvider },
-    { provide: PaymentWebhookPort, useExisting: FakePaymentProvider },
+    { provide: PAYMENT_PORT, useExisting: FakePaymentProvider },
+    { provide: PAYMENT_WEBHOOK_PORT, useExisting: FakePaymentProvider },
   ],
-  exports: [PaymentPort, PaymentWebhookPort, FakePaymentProvider],
+  exports: [PAYMENT_PORT, PAYMENT_WEBHOOK_PORT, FakePaymentProvider],
 })
 export class PaymentsModule {}

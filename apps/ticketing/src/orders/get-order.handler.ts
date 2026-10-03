@@ -4,10 +4,10 @@ import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { OrderState } from './commerce-vocabulary.js';
+import { OrderState, paymentReturnPath } from '@arthome/core';
+
 import { GetOrder } from './get-order.query.js';
 import { handoffOf, orderViewOf, ticketViewsOf, type OrderDetail } from './order-views.js';
-import { interimPaymentReturnUrlOf } from './payment-return-url.js';
 import { SeatOrderRow } from './seat-order.entity.js';
 import { seatOrderSnapshotOf } from './seat-order.typeorm-repository.js';
 import { SeatRow } from './seat.entity.js';
@@ -38,7 +38,7 @@ export class GetOrderHandler implements IQueryHandler<GetOrder> {
     if (snapshot === null) throw notFound();
     const handoff =
       snapshot.state === OrderState.AWAITING_ACTION
-        ? handoffOf(snapshot, interimPaymentReturnUrlOf(this.publicWebOrigin, orderId))
+        ? handoffOf(snapshot, `${this.publicWebOrigin}${paymentReturnPath(orderId)}`)
         : null;
     return {
       order: orderViewOf(snapshot),

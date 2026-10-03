@@ -1,8 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
-import type { PriceTier } from '@arthome/core';
-
-import type { SeatHoldOrigin, SeatHoldState } from './commerce-vocabulary.js';
+import { type PriceTier, type SeatHoldOrigin, type SeatHoldState } from '@arthome/core';
 
 /** The `SeatHold` aggregate's row; the sweeper expires active ones in bulk. */
 @Entity('seat_hold')

@@ -5,13 +5,17 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { OrderErrorCode, type Clock, type Instant } from '@arthome/core';
+import {
+  OrderErrorCode,
+  type Clock,
+  type Instant,
+  OrderState,
+  PaymentEventKind,
+} from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
 import { OwedRefunds } from './owed-refunds.js';
-import { PaymentEventKind } from './payment.port.js';
 import { CLOCK } from '../clock.js';
-import { OrderState } from '../orders/commerce-vocabulary.js';
 import { failUnpaidOrder } from '../orders/fail-unpaid-order.js';
 import { recordWaitingIntent } from '../orders/record-waiting-intent.js';
 import { writeSeatOrderIntegrationEvents } from '../orders/seat-order-integration-events.js';

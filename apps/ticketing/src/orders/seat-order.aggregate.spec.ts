@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { OrderErrorCode, PriceTier, RefundReason, money } from '@arthome/core';
+import {
+  OrderErrorCode,
+  PriceTier,
+  RefundReason,
+  money,
+  OrderState,
+  SeatState,
+} from '@arthome/core';
 
-import { OrderState, SeatState } from './commerce-vocabulary.js';
 import { SeatOrder, type SeatIssue, type SeatOrderPlacement } from './seat-order.aggregate.js';
-import { NextActionKind } from '../payments/payment.port.js';
+import { NextActionKind } from '../payments/next-action.js';
 
 const NOW = '2026-09-28T10:00:00.000Z';
 const LATER = '2026-09-28T10:05:00.000Z';

@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 
-import { ExpireDueHolds, HOLD_EXPIRY_BATCH } from './expire-due-holds.command.js';
+import { HOLD_EXPIRY_BATCH } from '@arthome/core';
+
+import { ExpireDueHolds } from './expire-due-holds.command.js';
 import { SweeperLoop } from '../sweeper-loop.js';
 
 /** adr-ticketing.md §6: every second. */

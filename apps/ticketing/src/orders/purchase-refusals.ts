@@ -8,16 +8,10 @@ import {
   type Instant,
   type Money,
   type MessageParams,
+  type LateEntry,
 } from '@arthome/core';
 
 import type { SeatOrderSnapshot } from './seat-order.aggregate.js';
-import {
-  INTERIM_LATE_ENTRY_UNACKNOWLEDGED,
-  INTERIM_SALES_CLOSED,
-  type LateEntry,
-} from '../date-sales/seat-sales-window.js';
-
-export { INTERIM_LATE_ENTRY_UNACKNOWLEDGED, INTERIM_SALES_CLOSED };
 
 /** How long a purchase waits on another one holding its key before being told it is in flight. */
 export const KEY_HOLDER_WAIT_MS = 5_000;
@@ -36,7 +30,7 @@ export function soldOut(): RefusalException {
  *   is the waiting list's cue.
  */
 export function salesClosed(salesEndAt: Instant): RefusalException {
-  return refused(INTERIM_SALES_CLOSED, { salesEndAt });
+  return refused(OrderErrorCode.SALES_CLOSED, { salesEndAt });
 }
 
 /** The storefront contract's params: what the surface showed, and the price now, when there is one. */
@@ -57,7 +51,11 @@ export function lateEntryUnacknowledged({
   minutesElapsed,
   salesEndAt,
 }: LateEntry): RefusalException {
-  return refused(INTERIM_LATE_ENTRY_UNACKNOWLEDGED, { startedAt, minutesElapsed, salesEndAt });
+  return refused(OrderErrorCode.LATE_ENTRY_UNACKNOWLEDGED, {
+    startedAt,
+    minutesElapsed,
+    salesEndAt,
+  });
 }
 
 export function keyReused(): RefusalException {
@@ -95,6 +93,7 @@ export function refusalOfUnpaid(
       ...(failure.declineCode !== null && { declineCode: failure.declineCode }),
     });
   }
-  if (failure?.code === INTERIM_SALES_CLOSED && salesEndAt !== null) return salesClosed(salesEndAt);
+  if (failure?.code === OrderErrorCode.SALES_CLOSED && salesEndAt !== null)
+    return salesClosed(salesEndAt);
   return soldOut();
 }

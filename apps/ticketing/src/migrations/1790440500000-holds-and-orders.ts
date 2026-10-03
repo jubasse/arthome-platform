@@ -1,6 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-import { OrderState, SeatHoldState } from '../orders/commerce-vocabulary.js';
+import { OrderState, SeatHoldState } from '@arthome/core';
 
 /**
  * A purchase's three tables (data-model.md §3.2, §3.3). `seat_order` binds the purchase's

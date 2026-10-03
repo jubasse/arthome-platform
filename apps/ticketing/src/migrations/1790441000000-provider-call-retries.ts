@@ -1,6 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-import { OrderState } from '../orders/commerce-vocabulary.js';
+import { OrderState } from '@arthome/core';
 
 /**
  * The attempts of the calls the payment worker owes the provider, beside the facts they serve

@@ -1,9 +1,14 @@
 import { frozen } from '@arthome-platform/transactions';
 import { AggregateRoot } from '@nestjs/cqrs';
 
-import { holdFor, type Instant, type PriceTier } from '@arthome/core';
+import {
+  holdFor,
+  type Instant,
+  type PriceTier,
+  SeatHoldState,
+  type SeatHoldOrigin,
+} from '@arthome/core';
 
-import { SeatHoldState, type SeatHoldOrigin } from './commerce-vocabulary.js';
 import {
   SeatHoldConsumed,
   SeatHoldPlaced,

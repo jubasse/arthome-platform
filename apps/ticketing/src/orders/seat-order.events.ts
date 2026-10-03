@@ -1,8 +1,14 @@
 import type { IEvent } from '@nestjs/cqrs';
 
-import type { Instant, Money, PriceTier, RefundReason } from '@arthome/core';
+import {
+  type Instant,
+  type Money,
+  type PriceTier,
+  type RefundReason,
+  type OrderErrorCode,
+  type OrderState,
+} from '@arthome/core';
 
-import type { OrderFailureCode, OrderState } from './commerce-vocabulary.js';
 import type { DeclaredTaxLocation, OrderQuote, SeatSnapshot } from './seat-order.aggregate.js';
 
 export class SeatOrderPlaced implements IEvent {
@@ -66,7 +72,7 @@ export class SeatOrderFailed implements IEvent {
     public readonly orderId: string,
     public readonly dateId: string,
     /** Null when it failed for want of a payment: its hold expired, its intent was cancelled. */
-    public readonly failureCode: OrderFailureCode | null,
+    public readonly failureCode: OrderErrorCode | null,
     public readonly occurredAt: Instant,
   ) {}
 }

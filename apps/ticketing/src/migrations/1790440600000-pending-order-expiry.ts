@@ -1,6 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-import { OrderState } from '../orders/commerce-vocabulary.js';
+import { OrderState } from '@arthome/core';
 
 /**
  * The sweeper's second scan: an order still pending past its expiry with no intent, whose hold went
