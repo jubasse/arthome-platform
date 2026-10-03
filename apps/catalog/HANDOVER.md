@@ -905,6 +905,10 @@ exist.
   in the same position: `canDecide` is true for every caller, where it must come from the operator's
   verified rights.
 
+  Since auth slice A (2026-10-03) every route needs the BFF's internal token, and the public reads
+  and the search are allowed in production; the studio's commands stay refused there until slice B
+  authorises them on the loaded channel or date.
+
 - ~~**No idempotency key.**~~ **DONE for the date commands** (2026-09-26): `idempotency_record`,
   written inside the command's transaction, covers transport.md §5.4's four cases. `POST /shows`
   still takes none: no contract describes it.

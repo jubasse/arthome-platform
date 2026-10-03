@@ -534,6 +534,30 @@ describe('the verification link', () => {
   );
 
   it(
+    'lets a confirmation and a resend race on one account without a deadlock',
+    async () => {
+      for (let round = 0; round < 5; round += 1) {
+        const { session } = await signedUp();
+        const token = await newestLinkTokenOf(session.accountId);
+        const [confirmed, resent] = await Promise.all([
+          confirm(token),
+          post(
+            '/v1/accounts/me/email-verification',
+            {},
+            {
+              authorization: await asAccount(clock, session.accountId),
+              'idempotency-key': randomUUID(),
+            },
+          ),
+        ]);
+        expect([200, 410]).toContain(confirmed.statusCode);
+        expect(resent.statusCode).toBe(200);
+      }
+    },
+    CASE_MS,
+  );
+
+  it(
     'verifies nothing once the address it was sent to is no longer the account’s',
     async () => {
       const { session } = await signedUp();

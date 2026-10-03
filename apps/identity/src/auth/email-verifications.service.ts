@@ -120,8 +120,9 @@ export class EmailVerificationsService {
   }
 
   /**
-   * Spends the token and verifies the address in one statement pair, under the claim of the
-   *   request's key: a replay answers the first `200`, another key the `410`.
+   * Spends the token and verifies the address, under the claim of the request's key: a replay
+   *   answers the first `200`, another key the `410`. The account's row is locked before the link's,
+   *   the order `resend` takes too, so the two never wait on each other.
    */
   public confirm(
     token: string,
@@ -130,6 +131,14 @@ export class EmailVerificationsService {
     return this.dataSource.transaction((manager) =>
       runIdempotently(manager, request, this.clock, async () => {
         const now = new Date(this.clock.nowMs());
+        const tokenHash = hashOf(token);
+        const link = await manager.findOneBy(EmailVerification, { token_hash: tokenHash });
+        if (link === null) throw verificationLinkInvalid();
+        await manager.findOne(Account, {
+          where: { id: link.account_id },
+          lock: { mode: 'pessimistic_write' },
+        });
+
         const [spent] = await updateReturning<{ readonly account_id: string }>(
           manager,
           `UPDATE email_verification v
@@ -141,7 +150,7 @@ export class EmailVerificationsService {
               AND a.id = v.account_id
               AND a.email = v.email
         RETURNING v.account_id`,
-          [hashOf(token), now],
+          [tokenHash, now],
         );
         if (spent === undefined) throw verificationLinkInvalid();
         await manager.query(

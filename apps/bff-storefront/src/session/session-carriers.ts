@@ -46,7 +46,8 @@ const SESSION_ATTRIBUTES = {
 /** Readable by the page, which echoes it: that is the double submit. */
 const CSRF_ATTRIBUTES = { ...SESSION_ATTRIBUTES, httpOnly: false } as const;
 
-const BEARER = /^Bearer ([A-Za-z0-9._~+/=-]+)$/;
+/** A signed session token, percent-encoded when its signature needs it; identity verifies it. */
+const BEARER = /^Bearer ([A-Za-z0-9._~+/=%-]+)$/;
 
 /**
  * The session the request presents, or null when it presents none. Both carriers at once is a 401:
