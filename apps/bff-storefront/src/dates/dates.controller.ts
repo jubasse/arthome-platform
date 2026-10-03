@@ -1,6 +1,10 @@
 import type { ServerResponse } from 'node:http';
 
-import { PerishableResponse, whenCallerLeaves } from '@arthome-platform/http-edge';
+import {
+  AllowInProduction,
+  PerishableResponse,
+  whenCallerLeaves,
+} from '@arthome-platform/http-edge';
 import { Controller, Get, Header, Headers, Inject, Param, Query, Res } from '@nestjs/common';
 import type { z } from 'zod';
 
@@ -32,6 +36,7 @@ interface Reply {
 }
 
 /** Public and anonymous, like the search: the body is the same for every caller today. */
+@AllowInProduction()
 @Controller('v1')
 export class DatesController {
   public constructor(

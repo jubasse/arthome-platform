@@ -1,4 +1,3 @@
-import { unauthenticated } from '@arthome-platform/http-edge';
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -31,6 +30,17 @@ export interface EstablishedSession extends ResolvedSession {
   readonly token: string;
 }
 
+function describe(found: {
+  readonly user: { readonly id: string };
+  readonly session: { readonly id: string; readonly expiresAt: Date };
+}): ResolvedSession {
+  return {
+    accountId: found.user.id,
+    deviceId: found.session.id,
+    expiresAt: found.session.expiresAt.toISOString(),
+  };
+}
+
 function bearerHeaders(token: string): Headers {
   return new Headers({ authorization: `Bearer ${token}` });
 }
@@ -46,12 +56,15 @@ export class SessionsService {
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
-  /** A session whose account may still sign in; anything else is a 401. */
-  public async resolve(token: string): Promise<ResolvedSession> {
-    const session = await this.sessionOf(token);
-    const account = await this.dataSource.manager.findOneBy(Account, { id: session.accountId });
-    if (!this.isAllowedToSignIn(account)) throw unauthenticated();
-    return session;
+  /**
+   * A session whose account may still sign in, else null: an answer, not a 401, so a 401 from
+   *   identity always means the BFF's own token was refused.
+   */
+  public async resolve(token: string): Promise<ResolvedSession | null> {
+    const found = await this.find(token);
+    if (found === null) return null;
+    const account = await this.dataSource.manager.findOneBy(Account, { id: found.user.id });
+    return this.isAllowedToSignIn(account) ? describe(found) : null;
   }
 
   /** A session just opened: its account is the caller's to check, in its own transaction. */
@@ -73,12 +86,8 @@ export class SessionsService {
 
   private async sessionOf(token: string): Promise<ResolvedSession> {
     const found = await this.find(token);
-    if (found === null) throw unauthenticated();
-    return {
-      accountId: found.user.id,
-      deviceId: found.session.id,
-      expiresAt: found.session.expiresAt.toISOString(),
-    };
+    if (found === null) throw new Error('a session just opened could not be read back');
+    return describe(found);
   }
 
   private find(token: string) {

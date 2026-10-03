@@ -22,16 +22,55 @@ import {
   HttpAdapterHost,
   Reflector,
 } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
+import type { Redis } from 'ioredis';
 
 import { SystemClock } from '@arthome/core';
 
+import { AuthThrottlerGuard, authThrottlers } from './auth/auth-rate-limits.js';
+import { AuthModule } from './auth/auth.module.js';
+import {
+  THROTTLER_REDIS,
+  ThrottlerRedisLifecycle,
+  throttlerRedis,
+  throttlerStorage,
+} from './auth/throttler-storage.js';
+import { CLOCK } from './clock.js';
 import { DatesModule } from './dates/dates.module.js';
+import { authEnv } from './env.js';
+import { IdentityModule } from './identity/identity.module.js';
 import { SearchModule } from './search/search.module.js';
+import { CsrfGuard } from './session/csrf.guard.js';
+import { CSRF_SECRET, EdgePlugins } from './session/edge-plugins.js';
+import { ViewerGuard } from './session/viewer.guard.js';
 import { TraceparentMiddleware } from './traceparent.middleware.js';
+
+/** The Redis client the throttler counts in, closed on shutdown by `ThrottlerRedisLifecycle`. */
+const ThrottlerRedisModule = {
+  module: class ThrottlerRedisModule {},
+  providers: [
+    { provide: THROTTLER_REDIS, useFactory: (): Redis => throttlerRedis(authEnv.redisUrl) },
+    ThrottlerRedisLifecycle,
+  ],
+  exports: [THROTTLER_REDIS],
+};
 
 @Module({
   controllers: [HealthController],
-  imports: [SearchModule, DatesModule],
+  imports: [
+    SearchModule,
+    DatesModule,
+    IdentityModule,
+    AuthModule,
+    ThrottlerModule.forRootAsync({
+      imports: [ThrottlerRedisModule],
+      inject: [Reflector, THROTTLER_REDIS],
+      useFactory: (reflector: Reflector, redis: Redis) => ({
+        throttlers: authThrottlers(reflector),
+        storage: throttlerStorage(redis),
+      }),
+    }),
+  ],
   providers: [
     {
       provide: APP_PIPE,
@@ -48,14 +87,21 @@ import { TraceparentMiddleware } from './traceparent.middleware.js';
       useFactory: (): SuccessEnvelopeInterceptor =>
         new SuccessEnvelopeInterceptor(new SystemClock()),
     },
-    // Not production-ready: it mints no service token, and the services it calls refuse every
-    // request in production for the same reason.
+    // In this order: a forged write is refused before anything is resolved, the viewer is resolved
+    //   before the caps that count by account, and the production guard keeps closed what no slice
+    //   has opened.
+    { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: ViewerGuard },
+    { provide: APP_GUARD, useClass: AuthThrottlerGuard },
     {
       provide: APP_GUARD,
       inject: [Reflector],
       useFactory: (reflector: Reflector): DenyInProductionGuard =>
         new DenyInProductionGuard(isProductionEnvironment(), reflector),
     },
+    { provide: CLOCK, useValue: new SystemClock() },
+    { provide: CSRF_SECRET, useValue: authEnv.csrfSecret },
+    EdgePlugins,
     // Nothing downstream: a catalog outage fails the searches, not the BFF's place in rotation.
     { provide: READINESS_CHECKS, useValue: [] satisfies ReadinessCheck[] },
   ],

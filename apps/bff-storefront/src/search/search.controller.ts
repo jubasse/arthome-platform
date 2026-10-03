@@ -1,6 +1,10 @@
 import type { ServerResponse } from 'node:http';
 
-import { CollectionResponse, whenCallerLeaves } from '@arthome-platform/http-edge';
+import {
+  AllowInProduction,
+  CollectionResponse,
+  whenCallerLeaves,
+} from '@arthome-platform/http-edge';
 import { Controller, Get, Header, Headers, Inject, Query, Res } from '@nestjs/common';
 
 import type { Clock } from '@arthome/core';
@@ -17,6 +21,7 @@ const SEARCH_BUDGET_MS = 200;
 
 type Fields = Pick<SearchResponse, 'groups' | 'facets' | 'page'>;
 
+@AllowInProduction()
 @Controller('v1/search')
 export class SearchController {
   public constructor(

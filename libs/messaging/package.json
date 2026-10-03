@@ -27,7 +27,7 @@
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/transactions": "workspace:*",
-    "@arthome/core": "file:../../vendor/arthome-core-c53bda271676.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-abf61594d220.tgz",
     "kafkajs": "2.2.4",
     "typeorm": "1.1.1",
     "uuid": "14.0.2"

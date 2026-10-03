@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { EmailVerificationRequestedSchema } from '@arthome-platform/events';
 import { mintInternalToken } from '@arthome-platform/testing';
-import { fromBinary } from '@bufbuild/protobuf';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -20,6 +18,7 @@ import { PublicHandleSchema } from '@arthome/core/schema';
 
 import { AUTH_SCHEMA, createAuth } from './better-auth.js';
 import { asAccount, startIdentity, type IdentityHarness } from '../itest/identity-app.js';
+import { newestLinkTokenTo } from '../itest/verification-links.js';
 
 /**
  * Identity's side of auth slice A, over HTTP as the storefront BFF calls it: the two stores of a
@@ -103,16 +102,12 @@ async function outboxTypesOf(accountId: string): Promise<string[]> {
   return rows.map(({ type }) => type);
 }
 
-/** What `notifications` would put in the link: the newest token the outbox carried. */
 async function newestLinkTokenOf(accountId: string): Promise<string> {
-  const [row] = await identity.dataSource.query<{ payload: Buffer }[]>(
-    `SELECT payload FROM outbox_event
-      WHERE aggregateid = $1 AND type = 'identity.account.email_verification_requested.v1'
-      ORDER BY created_at DESC, id DESC LIMIT 1`,
+  const [account] = await identity.dataSource.query<{ email: string }[]>(
+    'SELECT email FROM account WHERE id = $1',
     [accountId],
   );
-  if (row === undefined) throw new Error(`no verification link for ${accountId}`);
-  return fromBinary(EmailVerificationRequestedSchema, new Uint8Array(row.payload)).token;
+  return newestLinkTokenTo(identity.dataSource, account?.email ?? '');
 }
 
 function confirm(token: string, key: string = randomUUID()) {
@@ -342,7 +337,7 @@ describe('sign-in', () => {
         error: { code: IdentityErrorCode.INVALID_CREDENTIALS },
       });
       const resolved = await post('/v1/sessions/resolve', { token: session.token });
-      expect(resolved.statusCode).toBe(401);
+      expect(resolved.json()).toMatchObject({ data: { session: null } });
     },
     CASE_MS,
   );
@@ -356,7 +351,7 @@ describe('a session', () => {
       const resolved = await post('/v1/sessions/resolve', { token: session.token });
       expect(resolved.statusCode).toBe(200);
       expect(resolved.json()).toMatchObject({
-        data: { accountId: session.accountId, deviceId: session.deviceId },
+        data: { session: { accountId: session.accountId, deviceId: session.deviceId } },
       });
 
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -365,8 +360,8 @@ describe('a session', () => {
         expect(revoked.json()).toMatchObject({ data: { signedOut: true } });
       }
       const gone = await post('/v1/sessions/resolve', { token: session.token });
-      expect(gone.statusCode).toBe(401);
-      expect(gone.json()).toMatchObject({ error: { code: ApiErrorCode.UNAUTHENTICATED } });
+      expect(gone.statusCode).toBe(200);
+      expect(gone.json()).toMatchObject({ data: { session: null } });
     },
     CASE_MS,
   );
@@ -379,7 +374,7 @@ describe('a session', () => {
       const forged = `${raw ?? ''}.${(signature ?? '').replace(/^./, (first) => (first === 'A' ? 'B' : 'A'))}`;
       for (const token of [raw ?? '', forged, 'garbage']) {
         const refused = await post('/v1/sessions/resolve', { token });
-        expect(refused.statusCode).toBe(401);
+        expect(refused.json()).toMatchObject({ data: { session: null } });
       }
     },
     CASE_MS,
@@ -395,7 +390,11 @@ describe('a session', () => {
       ).json<SignUpAnswer>().data.session;
 
       await post('/v1/sessions/revoke', { token: first.token });
-      expect((await post('/v1/sessions/resolve', { token: second.token })).statusCode).toBe(200);
+      expect(
+        (await post('/v1/sessions/resolve', { token: second.token })).json<{
+          data: { session: unknown };
+        }>().data.session,
+      ).not.toBeNull();
     },
     CASE_MS,
   );

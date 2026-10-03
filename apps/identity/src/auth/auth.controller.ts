@@ -77,8 +77,10 @@ export class AuthController {
   @Post('sessions/resolve')
   @HttpCode(200)
   @Header('cache-control', 'no-store')
-  public resolve(@Body({ schema: TokenSchema }) body: TokenBody): Promise<ResolvedSession> {
-    return this.sessions.resolve(body.token);
+  public async resolve(
+    @Body({ schema: TokenSchema }) body: TokenBody,
+  ): Promise<{ readonly session: ResolvedSession | null }> {
+    return { session: await this.sessions.resolve(body.token) };
   }
 
   /** Revoking a session already gone succeeds: the contract's sign-out replays as a success. */
