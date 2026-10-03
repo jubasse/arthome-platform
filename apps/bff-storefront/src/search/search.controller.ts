@@ -6,16 +6,15 @@ import {
   Endpoint,
   EndpointHeaders,
   EndpointQuery,
+  successSchemaOf,
   whenCallerLeaves,
 } from '@arthome-platform/http-edge';
 import { Controller, Header, Headers, Inject, Res } from '@nestjs/common';
 
-import type { RouteHeaders } from '@arthome/contracts/http';
+import type { RouteHeaders, RouteQuery, RouteResponseBody } from '@arthome/contracts/http';
 import { storefrontApi } from '@arthome/contracts/storefront-api';
 import type { Clock } from '@arthome/core';
 
-import type { SearchQuery } from './search-query.schema.js';
-import { SearchResponseSchema, type SearchResponse } from './search-response.schema.js';
 import { CatalogClient } from '../catalog/catalog.client.js';
 import { CLOCK } from '../clock.js';
 import { searchParamsOf } from '../query-string.js';
@@ -24,9 +23,9 @@ import { VARY_AUTH } from '../storefront-surface.js';
 /** transport.md §5.9 and the operation's own description: a television types one key at a time. */
 const SEARCH_BUDGET_MS = 200;
 
-type Fields = Pick<SearchResponse, 'groups' | 'facets' | 'page'>;
-
 const { search } = storefrontApi.routes;
+
+type Fields = Pick<RouteResponseBody<typeof search, 200>, 'groups' | 'facets' | 'page'>;
 
 @AllowInProduction()
 @Controller()
@@ -45,7 +44,7 @@ export class SearchController {
   @Header('cache-control', 'public, max-age=60')
   @Header('vary', VARY_AUTH)
   public async search(
-    @EndpointQuery(search) query: SearchQuery,
+    @EndpointQuery(search) query: RouteQuery<typeof search>,
     // Validated for the refusal alone: a caller that is not a storefront surface is answered 400.
     @EndpointHeaders(search) _headers: RouteHeaders<typeof search>,
     @Headers('traceparent') traceparent: string,
@@ -59,7 +58,7 @@ export class SearchController {
         traceparent,
         callerLeft: whenCallerLeaves(reply.raw),
       },
-      SearchResponseSchema,
+      successSchemaOf(search),
     );
     return new CollectionResponse(
       { ...(groups !== undefined && { groups }), facets, page },

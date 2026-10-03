@@ -2,35 +2,21 @@ import type { ServerResponse } from 'node:http';
 
 import {
   AllowInProduction,
+  Endpoint,
+  EndpointBody,
+  EndpointHeaders,
   RefusalException,
   idempotencyKeyOf,
   unauthenticated,
 } from '@arthome-platform/http-edge';
-import {
-  Body,
-  Controller,
-  Header,
-  Headers,
-  HttpCode,
-  Inject,
-  Logger,
-  Post,
-  Req,
-  Res,
-} from '@nestjs/common';
+import { Controller, Header, Inject, Logger, Req, Res } from '@nestjs/common';
 
+import type { RouteBody, RouteHeaders } from '@arthome/contracts/http';
 import { SessionMode } from '@arthome/contracts/identity';
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import { IdentityErrorCode, type Clock, type StorefrontSurface } from '@arthome/core';
 
 import { RateLimitedBy } from './auth-rate-limits.js';
-import {
-  SignInRequestSchema,
-  SignUpRequestSchema,
-  VerificationLinkSchema,
-  type SignInRequest,
-  type SignUpRequest,
-  type VerificationLink,
-} from './auth-requests.schema.js';
 import { FailedSignIns } from './failed-sign-ins.js';
 import { viewerCountryOf } from './viewer-country.js';
 import { CLOCK } from '../clock.js';
@@ -46,10 +32,12 @@ import {
   type PresentedSession,
 } from '../session/session-carriers.js';
 import { CurrentViewer, RequiresViewer, callerOf, type Viewer } from '../session/viewer.js';
-import { SURFACE_HEADER, assertStorefrontSurface } from '../storefront-surface.js';
 import { AUTHENTICATION_WRITE_BUDGET_MS, serviceCallFor } from '../upstream/service-call.js';
 import type { ServiceCall } from '../upstream/service-client.js';
 import { viewerContextOf, type ServedViewerContext } from '../viewer-context/viewer-context.js';
+
+const { signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification } =
+  storefrontApi.routes;
 
 export const VIEWER_COUNTRY_HEADER: unique symbol = Symbol('ViewerCountryHeader');
 
@@ -94,7 +82,7 @@ export type SessionEstablished =
  *   hardening. better-auth's own shapes and English never reach a surface.
  */
 @AllowInProduction()
-@Controller('v1/auth')
+@Controller()
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
 
@@ -106,19 +94,16 @@ export class AuthController {
   ) {}
 
   /** A replayed key answers the first session again, with `Idempotency-Replayed`. */
-  @Post('sign-up')
-  @HttpCode(201)
+  @Endpoint(signUp)
   @Header('cache-control', 'no-store')
   @OpensNoSession()
   @RateLimitedBy(['SIGN_UP_PER_ADDRESS'])
   public async signUp(
-    @Body({ schema: SignUpRequestSchema }) body: SignUpRequest,
+    @EndpointBody(signUp) body: RouteBody<typeof signUp>,
+    @EndpointHeaders(signUp) headers: RouteHeaders<typeof signUp>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-    @Headers(SURFACE_HEADER) surface?: string,
-    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<SessionEstablished> {
-    const storefront = assertStorefrontSurface(surface);
     const { body: opened, replayed } = await this.identity.signUp(
       {
         email: body.email,
@@ -128,12 +113,12 @@ export class AuthController {
         country: viewerCountryOf(request.headers, this.countryHeader),
         acceptedTermsVersion: body.acceptedTermsVersion,
       },
-      idempotencyKeyOf(idempotencyKey),
+      idempotencyKeyOf(headers['idempotency-key']),
       this.anonymousCall(request, reply),
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
     await this.closeReplaced(request, reply, opened);
-    return this.established(body.mode, opened, storefront, request, reply);
+    return this.established(body.mode, opened, headers['x-arthome-surface'], request, reply);
   }
 
   /**
@@ -141,18 +126,16 @@ export class AuthController {
    *   email's recent failures hold the attempt before identity hears it, and only a wrong password
    *   counts as one.
    */
-  @Post('sign-in')
-  @HttpCode(200)
+  @Endpoint(signIn)
   @Header('cache-control', 'no-store')
   @OpensNoSession()
   @RateLimitedBy(['SIGN_IN_PER_ADDRESS', 'SIGN_IN_PER_EMAIL'])
   public async signIn(
-    @Body({ schema: SignInRequestSchema }) body: SignInRequest,
+    @EndpointBody(signIn) body: RouteBody<typeof signIn>,
+    @EndpointHeaders(signIn) headers: RouteHeaders<typeof signIn>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-    @Headers(SURFACE_HEADER) surface?: string,
   ): Promise<SessionEstablished> {
-    const storefront = assertStorefrontSurface(surface);
     await this.failedSignIns.holdBefore(body.email);
     let opened: SessionOpened;
     try {
@@ -167,25 +150,22 @@ export class AuthController {
     }
     await this.failedSignIns.forget(body.email);
     await this.closeReplaced(request, reply, opened);
-    return this.established(body.mode, opened, storefront, request, reply);
+    return this.established(body.mode, opened, headers['x-arthome-surface'], request, reply);
   }
 
   /**
    * Closes the presented session and nothing else, and succeeds again on a replay: a session already
    *   gone is still signed out. In cookie mode the cookies leave with the attributes that set them.
    */
-  @Post('sign-out')
-  @HttpCode(200)
+  @Endpoint(signOut)
   @Header('cache-control', 'no-store')
   @EndsSessionOnly()
   public async signOut(
+    @EndpointHeaders(signOut) headers: RouteHeaders<typeof signOut>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-    @Headers(SURFACE_HEADER) surface?: string,
-    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<{ readonly signedOut: true }> {
-    assertStorefrontSurface(surface);
-    idempotencyKeyOf(idempotencyKey);
+    idempotencyKeyOf(headers['idempotency-key']);
     const presented = presentedSession(request);
     if (presented === null) throw unauthenticated();
     await this.identity.revoke(presented.token, this.anonymousCall(request, reply));
@@ -193,30 +173,27 @@ export class AuthController {
     return { signedOut: true };
   }
 
-  @Post('verify-email')
-  @HttpCode(200)
+  @Endpoint(confirmEmailVerification)
   @Header('cache-control', 'no-store')
   @OpensNoSession()
   @RateLimitedBy(['EMAIL_VERIFICATION_CONFIRM_PER_ADDRESS'])
   public async confirmEmailVerification(
-    @Body({ schema: VerificationLinkSchema }) body: VerificationLink,
+    @EndpointBody(confirmEmailVerification) body: RouteBody<typeof confirmEmailVerification>,
+    @EndpointHeaders(confirmEmailVerification)
+    headers: RouteHeaders<typeof confirmEmailVerification>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-    @Headers(SURFACE_HEADER) surface?: string,
-    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<{ readonly verified: boolean }> {
-    assertStorefrontSurface(surface);
     const { body: verified, replayed } = await this.identity.confirmVerification(
       body.token,
-      idempotencyKeyOf(idempotencyKey),
+      idempotencyKeyOf(headers['idempotency-key']),
       this.anonymousCall(request, reply),
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
     return verified;
   }
 
-  @Post('verify-email/resend')
-  @HttpCode(200)
+  @Endpoint(resendEmailVerification)
   @Header('cache-control', 'no-store')
   @RequiresViewer()
   @RateLimitedBy([
@@ -225,14 +202,13 @@ export class AuthController {
   ])
   public async resendEmailVerification(
     @CurrentViewer() viewer: Viewer,
+    @EndpointHeaders(resendEmailVerification)
+    headers: RouteHeaders<typeof resendEmailVerification>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-    @Headers(SURFACE_HEADER) surface?: string,
-    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<{ readonly queued: boolean }> {
-    assertStorefrontSurface(surface);
     const { body: queued, replayed } = await this.identity.resendVerification(
-      idempotencyKeyOf(idempotencyKey),
+      idempotencyKeyOf(headers['idempotency-key']),
       serviceCallFor(
         request,
         reply.raw,
@@ -269,7 +245,7 @@ export class AuthController {
 
   /** The mode is the surface's explicit choice (D-023), never inferred from its `User-Agent`. */
   private established(
-    mode: SignUpRequest['mode'],
+    mode: RouteBody<typeof signUp>['mode'],
     opened: SessionOpened,
     surface: StorefrontSurface,
     request: Inbound,

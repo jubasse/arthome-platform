@@ -2,33 +2,39 @@ import type { ServerResponse } from 'node:http';
 
 import {
   AllowInProduction,
+  Endpoint,
+  EndpointHeaders,
+  EndpointParams,
+  EndpointQuery,
   PerishableResponse,
+  successSchemaOf,
   whenCallerLeaves,
 } from '@arthome-platform/http-edge';
-import { Controller, Get, Header, Headers, Inject, Param, Query, Res } from '@nestjs/common';
-import type { z } from 'zod';
+import { Controller, Header, Headers, Inject, Res } from '@nestjs/common';
 
+import type {
+  RouteHeaders,
+  RouteParams,
+  RouteQuery,
+  RouteResponseBody,
+} from '@arthome/contracts/http';
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import type { Clock } from '@arthome/core';
-import { ArtistIdSchema, DateIdSchema } from '@arthome/core/schema';
 
-import {
-  ArtistDetailResponseSchema,
-  DateDetailResponseSchema,
-  ResolveResponseSchema,
-} from './date-responses.schema.js';
-import { ResolveQuerySchema, type ResolveQuery } from './resolve-query.schema.js';
 import { CatalogClient, type CatalogCall } from '../catalog/catalog.client.js';
 import { CLOCK } from '../clock.js';
 import { entityTagOf } from '../conditional-get.js';
 import { searchParamsOf } from '../query-string.js';
-import { SURFACE_HEADER, VARY_AUTH, assertStorefrontSurface } from '../storefront-surface.js';
+import { VARY_AUTH } from '../storefront-surface.js';
 
 /** transport.md §5.9's composed public read. */
 const PUBLIC_READ_BUDGET_MS = 400;
 
-type DateDetail = z.output<typeof DateDetailResponseSchema>['data'];
-type ResolvedLink = z.output<typeof ResolveResponseSchema>['data'];
-type ArtistDetail = z.output<typeof ArtistDetailResponseSchema>['data'];
+const { getDateDetail, getArtistDetail, resolvePublicLink } = storefrontApi.routes;
+
+type DateDetail = RouteResponseBody<typeof getDateDetail, 200>['data'];
+type ArtistDetail = RouteResponseBody<typeof getArtistDetail, 200>['data'];
+type ResolvedLink = RouteResponseBody<typeof resolvePublicLink, 200>['data'];
 
 interface Reply {
   readonly raw: ServerResponse;
@@ -37,7 +43,7 @@ interface Reply {
 
 /** Public and anonymous, like the search: the body is the same for every caller today. */
 @AllowInProduction()
-@Controller('v1')
+@Controller()
 export class DatesController {
   public constructor(
     private readonly catalog: CatalogClient,
@@ -45,60 +51,57 @@ export class DatesController {
   ) {}
 
   /** The TV prefetches the focused date: the `ETag` spares it a second payment (the contract). */
-  @Get('dates/:dateId')
+  @Endpoint(getDateDetail)
   @Header('cache-control', 'public, max-age=60')
   @Header('vary', VARY_AUTH)
   public async detail(
-    @Param('dateId', { schema: DateIdSchema }) dateId: string,
-    @Headers(SURFACE_HEADER) surface: string | undefined,
+    @EndpointParams(getDateDetail) { dateId }: RouteParams<typeof getDateDetail>,
+    @EndpointHeaders(getDateDetail) _headers: RouteHeaders<typeof getDateDetail>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: Reply,
   ): Promise<PerishableResponse<DateDetail>> {
-    assertStorefrontSurface(surface);
     const { data, validUntil } = await this.catalog.get(
       `/v1/dates/${dateId}`,
       new URLSearchParams(),
       this.callFor(traceparent, reply),
-      DateDetailResponseSchema,
+      successSchemaOf(getDateDetail),
     );
     reply.header('etag', entityTagOf({ data, validUntil }));
     return new PerishableResponse(data, validUntil ?? null);
   }
 
-  @Get('artists/:artistId')
+  @Endpoint(getArtistDetail)
   @Header('cache-control', 'public, max-age=300')
   @Header('vary', VARY_AUTH)
   public async artist(
-    @Param('artistId', { schema: ArtistIdSchema }) artistId: string,
-    @Headers(SURFACE_HEADER) surface: string | undefined,
+    @EndpointParams(getArtistDetail) { artistId }: RouteParams<typeof getArtistDetail>,
+    @EndpointHeaders(getArtistDetail) _headers: RouteHeaders<typeof getArtistDetail>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: Reply,
   ): Promise<PerishableResponse<ArtistDetail>> {
-    assertStorefrontSurface(surface);
     const { data, validUntil } = await this.catalog.get(
       `/v1/artists/${artistId}`,
       new URLSearchParams(),
       this.callFor(traceparent, reply),
-      ArtistDetailResponseSchema,
+      successSchemaOf(getArtistDetail),
     );
     return new PerishableResponse(data, validUntil ?? null);
   }
 
-  @Get('resolve')
+  @Endpoint(resolvePublicLink)
   @Header('cache-control', 'public, max-age=300')
   @Header('vary', VARY_AUTH)
   public async resolve(
-    @Query({ schema: ResolveQuerySchema }) query: ResolveQuery,
-    @Headers(SURFACE_HEADER) surface: string | undefined,
+    @EndpointQuery(resolvePublicLink) query: RouteQuery<typeof resolvePublicLink>,
+    @EndpointHeaders(resolvePublicLink) _headers: RouteHeaders<typeof resolvePublicLink>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: Reply,
   ): Promise<PerishableResponse<ResolvedLink>> {
-    assertStorefrontSurface(surface);
     const { data, validUntil } = await this.catalog.get(
       '/v1/resolve',
       searchParamsOf(query),
       this.callFor(traceparent, reply),
-      ResolveResponseSchema,
+      successSchemaOf(resolvePublicLink),
     );
     return new PerishableResponse(data, validUntil ?? null);
   }

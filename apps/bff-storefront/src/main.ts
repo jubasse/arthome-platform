@@ -1,7 +1,10 @@
 import 'reflect-metadata';
 
+import { mountDevDocs } from '@arthome-platform/http-edge';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 
 import { AppModule } from './app.module.js';
 import { answerNotModified } from './conditional-get.js';
@@ -17,6 +20,11 @@ async function bootstrap(): Promise<void> {
   answerNotModified(app);
   // Same limits as the services: no drain window yet, so a rollout still cuts in-flight requests.
   app.enableShutdownHooks();
+  mountDevDocs(app, storefrontApi, {
+    title: String(storefrontApi.info.title),
+    description: String(storefrontApi.info.description),
+    path: 'docs',
+  });
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 }
 
