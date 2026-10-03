@@ -31,8 +31,7 @@ import { AuthThrottlerGuard, authThrottlers } from './auth/auth-rate-limits.js';
 import { AuthModule } from './auth/auth.module.js';
 import {
   THROTTLER_REDIS,
-  ThrottlerRedisLifecycle,
-  throttlerRedis,
+  ThrottlerRedisModule,
   throttlerStorage,
 } from './auth/throttler-storage.js';
 import { CLOCK } from './clock.js';
@@ -44,16 +43,6 @@ import { CsrfGuard } from './session/csrf.guard.js';
 import { CSRF_SECRET, EdgePlugins } from './session/edge-plugins.js';
 import { ViewerGuard } from './session/viewer.guard.js';
 import { TraceparentMiddleware } from './traceparent.middleware.js';
-
-/** The Redis client the throttler counts in, closed on shutdown by `ThrottlerRedisLifecycle`. */
-const ThrottlerRedisModule = {
-  module: class ThrottlerRedisModule {},
-  providers: [
-    { provide: THROTTLER_REDIS, useFactory: (): Redis => throttlerRedis(authEnv.redisUrl) },
-    ThrottlerRedisLifecycle,
-  ],
-  exports: [THROTTLER_REDIS],
-};
 
 @Module({
   controllers: [HealthController],

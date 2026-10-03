@@ -1,6 +1,11 @@
 import type { ServerResponse } from 'node:http';
 
-import { AllowInProduction, idempotencyKeyOf, unauthenticated } from '@arthome-platform/http-edge';
+import {
+  AllowInProduction,
+  RefusalException,
+  idempotencyKeyOf,
+  unauthenticated,
+} from '@arthome-platform/http-edge';
 import {
   Body,
   Controller,
@@ -14,7 +19,7 @@ import {
 } from '@nestjs/common';
 
 import { SessionMode } from '@arthome/contracts/identity';
-import type { Clock, StorefrontSurface } from '@arthome/core';
+import { IdentityErrorCode, type Clock, type StorefrontSurface } from '@arthome/core';
 
 import { RateLimitedBy } from './auth-rate-limits.js';
 import {
@@ -25,6 +30,7 @@ import {
   type SignUpRequest,
   type VerificationLink,
 } from './auth-requests.schema.js';
+import { FailedSignIns } from './failed-sign-ins.js';
 import { viewerCountryOf } from './viewer-country.js';
 import { CLOCK } from '../clock.js';
 import type { SessionOpened } from '../identity/identity-answers.schema.js';
@@ -54,6 +60,13 @@ export interface SessionReply extends CookieReply {
 
 type Inbound = CookieCarrier;
 
+function isWrongPassword(error: unknown): boolean {
+  return (
+    error instanceof RefusalException &&
+    error.refusal.code === IdentityErrorCode.INVALID_CREDENTIALS
+  );
+}
+
 /** storefront.yaml `SessionEstablished`: a cookie and nothing in the body, or a token and no cookie. */
 export type SessionEstablished =
   | { readonly mode: typeof SessionMode.COOKIE; readonly viewerContext: ServedViewerContext }
@@ -75,6 +88,7 @@ export type SessionEstablished =
 export class AuthController {
   public constructor(
     private readonly identity: IdentityClient,
+    private readonly failedSignIns: FailedSignIns,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(VIEWER_COUNTRY_HEADER) private readonly countryHeader: string | null,
   ) {}
@@ -109,7 +123,11 @@ export class AuthController {
     return this.established(body.mode, opened, storefront, reply);
   }
 
-  /** No idempotency key, by the contract's prohibition: a replay would open a session unchecked. */
+  /**
+   * No idempotency key, by the contract's prohibition: a replay would open a session unchecked. The
+   *   email's recent failures hold the attempt before identity hears it, and only a wrong password
+   *   counts as one.
+   */
   @Post('sign-in')
   @HttpCode(200)
   @Header('cache-control', 'no-store')
@@ -122,11 +140,19 @@ export class AuthController {
     @Headers(SURFACE_HEADER) surface?: string,
   ): Promise<SessionEstablished> {
     const storefront = assertStorefrontSurface(surface);
-    const opened = await this.identity.signIn(
-      body.email,
-      body.password,
-      this.anonymousCall(request, reply),
-    );
+    await this.failedSignIns.holdBefore(body.email);
+    let opened: SessionOpened;
+    try {
+      opened = await this.identity.signIn(
+        body.email,
+        body.password,
+        this.anonymousCall(request, reply),
+      );
+    } catch (error) {
+      if (isWrongPassword(error)) await this.failedSignIns.count(body.email);
+      throw error;
+    }
+    await this.failedSignIns.forget(body.email);
     return this.established(body.mode, opened, storefront, reply);
   }
 

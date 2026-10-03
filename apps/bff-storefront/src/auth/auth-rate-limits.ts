@@ -27,9 +27,14 @@ interface TrackedRequest {
   readonly body?: unknown;
 }
 
+/** The address as identity matches it, so `A@x` and `a@x ` count as one. */
+export function normalisedEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 function emailOf(request: TrackedRequest): string {
   const email = (request.body as { readonly email?: unknown } | undefined)?.email;
-  return typeof email === 'string' ? email.trim().toLowerCase() : '';
+  return typeof email === 'string' ? normalisedEmail(email) : '';
 }
 
 /**
@@ -43,12 +48,13 @@ export function addressOf(request: TrackedRequest): string {
 
 /**
  * Who a cap counts: the network address until a device carries a verified identity (core's
- *   `AuthRateLimit` says why), the typed address for password guessing, the account for a resend.
+ *   `AuthRateLimit` says why), the typed email from one network for password guessing, so nobody
+ *   spends another's allowance (`FailedSignIns` slows the rest), and the account for a resend.
  */
 const TRACKERS: Record<AuthRateLimitName, (request: TrackedRequest) => string> = {
   SIGN_UP_PER_ADDRESS: addressOf,
   SIGN_IN_PER_ADDRESS: addressOf,
-  SIGN_IN_PER_EMAIL: emailOf,
+  SIGN_IN_PER_EMAIL: (request) => `${emailOf(request)} ${addressOf(request)}`,
   EMAIL_VERIFICATION_CONFIRM_PER_ADDRESS: addressOf,
   EMAIL_VERIFICATION_RESEND_PER_ACCOUNT: (request) =>
     viewerOf(request)?.accountId ?? addressOf(request),

@@ -73,9 +73,15 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   `sessionCookie`), checked by `@fastify/csrf-protection` with the token bound to the session. From
   a guard rather than the plugin's hook, so a refusal leaves through the error envelope; sign-up,
   sign-in and the email link open no session and are exempt.
-- **The caps** (`adr-auth.md` §6.2) count per address until devices carry a verified identity, per
-  typed address for password guessing, per account for a resend; in Redis, so every replica shares
-  them. `TRUSTED_PROXIES` names the proxies whose `X-Forwarded-For` is believed, none by default.
+- **The caps** (`adr-auth.md` §6.2) count per address, an IPv6 one as its /64, until devices carry a
+  verified identity; per typed email and address for password guessing; per account for a resend.
+  In Redis, so every replica shares them. `TRUSTED_PROXIES` names the proxies whose
+  `X-Forwarded-For` is believed, none by default.
+- **No lockout per email** (the lead's ruling, 2026-10-03): an email's wrong passwords, from any
+  address, hold its next sign-in for a doubling pause bounded at four seconds (`FailedSignIns`,
+  core's `SignInSlowdown`), and never refuse it; a success clears the count. A stranger who knows an
+  address can slow its owner by four seconds, never sign them out (`auth.e2e.itest.ts`, "never
+  locks the owner out"). The pause holds a connection: the per-address caps bound how many.
 - **The country at sign-up** is the gateway's geolocation header, named by `VIEWER_COUNTRY_HEADER`,
   or `ZZ`, CLDR's unknown region, when the header is missing or holds no country: the surface is
   never asked, and no other header is trusted. The variable is required in production (the lead's

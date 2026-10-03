@@ -1,6 +1,8 @@
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
-import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Injectable, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { Redis } from 'ioredis';
+
+import { authEnv } from '../env.js';
 
 export const THROTTLER_REDIS: unique symbol = Symbol('ThrottlerRedis');
 
@@ -30,3 +32,13 @@ export class ThrottlerRedisLifecycle implements OnApplicationShutdown {
     await this.redis.quit();
   }
 }
+
+/** The client the caps and `FailedSignIns` count in, one per process. */
+@Module({
+  providers: [
+    { provide: THROTTLER_REDIS, useFactory: (): Redis => throttlerRedis(authEnv.redisUrl) },
+    ThrottlerRedisLifecycle,
+  ],
+  exports: [THROTTLER_REDIS],
+})
+export class ThrottlerRedisModule {}

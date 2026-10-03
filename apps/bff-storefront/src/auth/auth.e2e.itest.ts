@@ -19,10 +19,12 @@ import {
   FixedClock,
   IdentityErrorCode,
   Locale,
+  SignInSlowdown,
   Surface,
 } from '@arthome/core';
 
 import { VIEWER_COUNTRY_HEADER } from './auth.controller.js';
+import { PAUSE } from './failed-sign-ins.js';
 import { THROTTLER_REDIS, throttlerRedis } from './throttler-storage.js';
 import { CLOCK } from '../clock.js';
 import { IDENTITY_URL } from '../identity/identity.client.js';
@@ -50,6 +52,8 @@ let redis: StartedStack;
 let app: NestFastifyApplication;
 let addresses = 0;
 let emails = 0;
+/** The pauses sign-in asked for, recorded rather than waited out. */
+const pauses: number[] = [];
 
 beforeAll(async () => {
   identity = await startIdentity('bff_auth_e2e_identity', clock);
@@ -66,6 +70,11 @@ beforeAll(async () => {
     .useValue(throttlerRedis(redis.redis.url))
     .overrideProvider(VIEWER_COUNTRY_HEADER)
     .useValue(COUNTRY_HEADER)
+    .overrideProvider(PAUSE)
+    .useValue((ms: number) => {
+      pauses.push(ms);
+      return Promise.resolve();
+    })
     .compile();
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
@@ -379,7 +388,7 @@ describe('the caps', () => {
   );
 
   it(
-    'caps password guessing against one address whatever network it comes from',
+    'caps password guessing against one email from one network, and that network alone',
     async () => {
       const email = nextEmail();
       await signUp(email, SessionMode.BEARER);
@@ -389,17 +398,65 @@ describe('the caps', () => {
           '/v1/auth/sign-in',
           { email, password: 'not-the-password', mode: SessionMode.BEARER },
           {},
-          `10.8.0.${attempt}`,
+          '10.8.0.1',
         );
         expect(refused.statusCode).toBe(401);
       }
+      const owner = { email: email.toUpperCase(), password: 'a-long-password' };
       const capped = await post(
         '/v1/auth/sign-in',
-        { email: email.toUpperCase(), password: 'a-long-password', mode: SessionMode.BEARER },
+        { ...owner, mode: SessionMode.BEARER },
+        {},
+        '10.8.0.1',
+      );
+      expect(capped.statusCode).toBe(429);
+
+      const elsewhere = await post(
+        '/v1/auth/sign-in',
+        { ...owner, mode: SessionMode.BEARER },
         {},
         '10.8.1.1',
       );
-      expect(capped.statusCode).toBe(429);
+      expect(elsewhere.statusCode).toBe(200);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'never locks the owner out: failures from many networks slow the next attempt, within a bound',
+    async () => {
+      const email = nextEmail();
+      await signUp(email, SessionMode.BEARER);
+      pauses.length = 0;
+      const attempts = 3 * AuthRateLimit.SIGN_IN_PER_EMAIL.limit;
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const refused = await post(
+          '/v1/auth/sign-in',
+          { email, password: 'not-the-password', mode: SessionMode.BEARER },
+          {},
+          `10.8.2.${attempt}`,
+        );
+        expect(refused.statusCode).toBe(401);
+      }
+
+      const owner = await post(
+        '/v1/auth/sign-in',
+        { email, password: 'a-long-password', mode: SessionMode.BEARER },
+        {},
+        '10.8.3.1',
+      );
+      expect(owner.statusCode).toBe(200);
+      expect(pauses.slice(0, SignInSlowdown.FREE_FAILURES + 1).every((ms) => ms === 0)).toBe(true);
+      expect(pauses.every((ms, at) => at === 0 || ms >= (pauses[at - 1] ?? 0))).toBe(true);
+      expect(pauses.at(-1)).toBe(SignInSlowdown.MAX_DELAY_MS);
+
+      await post(
+        '/v1/auth/sign-in',
+        { email, password: 'a-long-password', mode: SessionMode.BEARER },
+        {},
+        '10.8.3.1',
+      );
+      expect(pauses.at(-1)).toBe(0);
     },
     CASE_MS,
   );
