@@ -94,7 +94,8 @@ is the session's own id until devices register (auth slice C).
   token's path: its delivery is D's decision.
 - **Nothing consumes `arthome.identity.email_verification` yet**: `notifications` records the
   welcome email only, and no email is sent by anyone today. Its consumer, when written, is the
-  topic's only one.
+  topic's only one (`verification-topic.spec.ts` fails on any other app naming it), and production
+  enforces it with the ACLs `infra/kafka/README.md` requires.
 
 ## 1. What is here
 

@@ -423,7 +423,7 @@ What should then be true, and what is worth checking because each step can fail 
 | Where | What you should see |
 | --- | --- |
 | `identity.outbox_event` | two rows, `aggregateid` = the account id: `identity.account.registered.v1` (`aggregatetype = identity.account`) and `identity.email_verification.requested.v1` (`identity.email_verification`, a topic of its own: it carries the link's token, which `notifications` alone may read) |
-| topic `arthome.identity.account` | one message, **key = the account id**, so one account stays ordered; the token's message is on `arthome.identity.email_verification` |
+| topic `arthome.identity.account` | one message, **key = the account id**, so one account stays ordered; the token's message is on `arthome.identity.email_verification`, whose production ACLs `infra/kafka/README.md` requires |
 | its headers | all five: `message-id`, `type`, `traceparent`, `actor-id`, `occurred-at` — the traceparent being the one the request carried. Debezium renders a NULL column as the four characters `null`, not as an absent header |
 | `notifications.welcome_email` | one row, holding that same traceparent; nothing reads the verification topic yet |
 | replaying the message | the consumer says `duplicate` and the row count does **not** move |
