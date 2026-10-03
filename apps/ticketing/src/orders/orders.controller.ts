@@ -36,7 +36,7 @@ import { CLOCK } from '../clock.js';
 const PURCHASE_PATH = '/v1/orders/seats';
 
 /**
- * D-089's acknowledgement, ahead of the contract (HANDOVER §3): a header, as the admission token is,
+ * D-089's acknowledgement, a header in the contract as the admission token is,
  *   so the idempotency fingerprint never covers it and a retry after the start can add it.
  */
 const LATE_ENTRY_ACKNOWLEDGED_HEADER = 'x-arthome-late-entry-acknowledged';

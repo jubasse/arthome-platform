@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { DomainError, DomainErrorCode, PriceTier } from '@arthome/core';
+import {
+  DomainError,
+  DomainErrorCode,
+  PriceTier,
+  SeatHoldOrigin,
+  SeatHoldState,
+} from '@arthome/core';
 
-import { SeatHoldOrigin, SeatHoldState } from './commerce-vocabulary.js';
 import { SeatHold, type SeatHoldPlacement } from './seat-hold.aggregate.js';
 
 const NOW = '2026-09-28T10:00:00.000Z';

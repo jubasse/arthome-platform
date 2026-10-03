@@ -1,6 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-import { SEAT_SALES_CUTOFF_MINUTES_AFTER_START } from '../date-sales/seat-sales-window.js';
+import { SEAT_SALES_CUTOFF_MINUTES_AFTER_START } from '@arthome/core';
 
 /**
  * D-089 for the dates scheduled before it: each sale's end by time, its start plus the cutoff, as

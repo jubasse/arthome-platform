@@ -14,7 +14,6 @@ import {
 } from '@arthome/core';
 
 import { DateSales, type DateSalesSnapshot } from './date-sales.aggregate.js';
-import { INTERIM_SALES_CLOSED } from './seat-sales-window.js';
 
 const DATE_ID = '01a0f000-0000-7000-8000-000000000001';
 const CHANNEL_ID = 'channel-sales';
@@ -541,7 +540,7 @@ describe('a hold the aggregate decides (review m3)', () => {
       salesEndAt: '2026-09-27T09:30:00.000Z',
     });
     expect(refusalOf(() => ended.holdSeats(1, NOW))).toMatchObject({
-      code: INTERIM_SALES_CLOSED,
+      code: OrderErrorCode.SALES_CLOSED,
       params: { salesEndAt: '2026-09-27T09:30:00.000Z' },
     });
     expect(refusalOf(() => restored().holdSeats(1, NOW)).code).toBe(OrderErrorCode.SOLD_OUT);

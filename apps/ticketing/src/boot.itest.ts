@@ -21,9 +21,14 @@ import {
 import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, PriceTier, Service } from '@arthome/core';
-
-import { OrderState, SeatHoldOrigin, SeatHoldState } from './orders/commerce-vocabulary.js';
+import {
+  ApiErrorCode,
+  PriceTier,
+  Service,
+  OrderState,
+  SeatHoldOrigin,
+  SeatHoldState,
+} from '@arthome/core';
 
 /**
  * The three processes' root modules, booted as `main.ts`, `consumer.ts` and `sweeper.ts` boot them,

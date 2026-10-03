@@ -10,10 +10,9 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { FixedClock, MINUTE_MS, PriceTier } from '@arthome/core';
+import { FixedClock, MINUTE_MS, PriceTier, OrderState, SeatHoldState } from '@arthome/core';
 
 import { CLOCK } from '../clock.js';
-import { OrderState, SeatHoldState } from './commerce-vocabulary.js';
 import { ExpireDueHolds } from './expire-due-holds.command.js';
 import { HoldExpirySweeper } from './hold-expiry-sweeper.js';
 import { HoldExpiryModule } from './hold-expiry.module.js';

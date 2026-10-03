@@ -9,9 +9,8 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, FixedClock, MINUTE_MS } from '@arthome/core';
+import { ApiErrorCode, FixedClock, MINUTE_MS, OrderState, SeatHoldState } from '@arthome/core';
 
-import { OrderState, SeatHoldState } from './commerce-vocabulary.js';
 import { ExpireDueHolds } from './expire-due-holds.command.js';
 import { ExpireDueHoldsHandler } from './expire-due-holds.handler.js';
 import { GetOrderHandler } from './get-order.handler.js';
@@ -27,7 +26,7 @@ import { purchaseOf, putOnSale } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { FakePaymentProvider, FakePaymentScenario } from '../payments/fake-payment-provider.js';
 import { OwedRefunds } from '../payments/owed-refunds.js';
-import { PaymentPort } from '../payments/payment.port.js';
+import { PAYMENT_PORT } from '../payments/payment-tokens.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 
@@ -109,7 +108,7 @@ beforeAll(async () => {
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: clock },
       OwedRefunds,
-      { provide: PaymentPort, useValue: fake },
+      { provide: PAYMENT_PORT, useValue: fake },
       { provide: PUBLIC_WEB_ORIGIN, useValue: 'http://storefront.test' },
     ],
   }).compile();

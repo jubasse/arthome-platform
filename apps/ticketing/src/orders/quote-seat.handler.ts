@@ -4,7 +4,14 @@ import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { availabilityValidUntil, earliest, type Clock, type Instant } from '@arthome/core';
+import {
+  availabilityValidUntil,
+  earliest,
+  type Clock,
+  type Instant,
+  lateEntryOf,
+  salesEndedBy,
+} from '@arthome/core';
 
 import { salesClosed } from './purchase-refusals.js';
 import { QuoteSeat } from './quote-seat.query.js';
@@ -13,7 +20,6 @@ import { CLOCK } from '../clock.js';
 import { tierPricesOf } from '../date-sales/date-sales-figures.js';
 import { DateSalesRow } from '../date-sales/date-sales.entity.js';
 import { seatQuoteOf } from '../date-sales/seat-quote.js';
-import { lateEntryOf, salesEndedBy } from '../date-sales/seat-sales-window.js';
 
 /**
  * Read off the row, as `refreshDateAvailability` is, and composed by the rule `purchaseSeat` verifies

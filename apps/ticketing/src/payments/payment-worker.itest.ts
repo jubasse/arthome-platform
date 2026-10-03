@@ -11,7 +11,15 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { FixedClock, MINUTE_MS, PriceTier, RefundReason } from '@arthome/core';
+import {
+  FixedClock,
+  MINUTE_MS,
+  PriceTier,
+  RefundReason,
+  OrderState,
+  SeatHoldOrigin,
+  SeatHoldState,
+} from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
 import {
@@ -33,7 +41,6 @@ import { SalesClosingModule } from '../date-sales/sales-closing.module.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { FULL_PRICE_MINOR, nextKey, purchaseOf, putOnSale } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
-import { OrderState, SeatHoldOrigin, SeatHoldState } from '../orders/commerce-vocabulary.js';
 import { ExpireDueHolds } from '../orders/expire-due-holds.command.js';
 import { HoldExpirySweeper } from '../orders/hold-expiry-sweeper.js';
 import { HoldExpiryModule } from '../orders/hold-expiry.module.js';

@@ -3,12 +3,24 @@ import { Inject, Logger } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { v7 as uuidv7 } from 'uuid';
 
-import { OrderErrorCode, checkoutIntentExpiry, type Clock, type Instant } from '@arthome/core';
+import {
+  OrderErrorCode,
+  checkoutIntentExpiry,
+  type Clock,
+  type Instant,
+  OrderState,
+  SeatHoldOrigin,
+  salesEndedBy,
+  paymentReturnPath,
+  IntentStatus,
+  type PaymentPort,
+  PaymentProviderUnavailable,
+  type PaymentIntent,
+  type PaymentIntentRequest,
+} from '@arthome/core';
 
-import { OrderState, SeatHoldOrigin } from './commerce-vocabulary.js';
 import { failUnpaidOrder } from './fail-unpaid-order.js';
 import { handoffOf, orderViewOf, ticketViewsOf } from './order-views.js';
-import { interimPaymentReturnUrlOf } from './payment-return-url.js';
 import { storeAnswer, storedAnswerOf, type StoredAnswer } from './purchase-answers.js';
 import {
   KEY_HOLDER_WAIT_MS,
@@ -29,15 +41,8 @@ import { SeatOrder } from './seat-order.aggregate.js';
 import { settleConfirmedPayment, type PendingCounterMove } from './settle-payment.js';
 import { CLOCK } from '../clock.js';
 import type { DateSales } from '../date-sales/date-sales.aggregate.js';
-import { INTERIM_SALES_CLOSED, salesEndedBy } from '../date-sales/seat-sales-window.js';
 import { OwedRefunds } from '../payments/owed-refunds.js';
-import {
-  IntentStatus,
-  PaymentPort,
-  PaymentProviderUnavailable,
-  type PaymentIntent,
-  type PaymentIntentRequest,
-} from '../payments/payment.port.js';
+import { PAYMENT_PORT } from '../payments/payment-tokens.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactions, type TicketingTransaction } from '../ticketing-transactions.js';
 
@@ -78,7 +83,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
 
   public constructor(
     private readonly transactions: TicketingTransactions,
-    private readonly payments: PaymentPort,
+    @Inject(PAYMENT_PORT) private readonly payments: PaymentPort,
     private readonly refunds: OwedRefunds,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PUBLIC_WEB_ORIGIN) private readonly publicWebOrigin: string,
@@ -255,7 +260,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     // Seats to take again past the end: closed, as a new purchase is, before it is asked anything.
     const salesEndAt = sales?.snapshot.salesEndAt ?? null;
     if (holdGone && salesEndAt !== null && salesEndedBy(salesEndAt, now)) {
-      order.fail({ code: INTERIM_SALES_CLOSED, declineCode: null }, now);
+      order.fail({ code: OrderErrorCode.SALES_CLOSED, declineCode: null }, now);
       await this.saveResumed(transaction, order, traceparent);
       return { kind: 'refusal', refusal: salesClosed(salesEndAt) };
     }
@@ -309,7 +314,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
       orderId: id,
       amount: quote.total,
       expiresAt,
-      returnUrl: interimPaymentReturnUrlOf(this.publicWebOrigin, id),
+      returnUrl: `${this.publicWebOrigin}${paymentReturnPath(id)}`,
     };
   }
 
@@ -440,7 +445,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     }
     const handoff = order.owesRefund
       ? null
-      : handoffOf(snapshot, interimPaymentReturnUrlOf(this.publicWebOrigin, snapshot.id));
+      : handoffOf(snapshot, `${this.publicWebOrigin}${paymentReturnPath(snapshot.id)}`);
     if (handoff !== null) {
       return this.kept(manager, snapshot.id, {
         status: PurchaseStatus.AWAITING_PAYMENT,

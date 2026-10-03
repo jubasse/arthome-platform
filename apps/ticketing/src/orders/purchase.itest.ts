@@ -23,13 +23,13 @@ import {
   isSeatCode,
   plusMinutes,
   plusSeconds,
+  OrderState,
+  SeatHoldState,
 } from '@arthome/core';
 
-import { OrderState, SeatHoldState } from './commerce-vocabulary.js';
 import { GetOrderHandler } from './get-order.handler.js';
 import { GetOrder } from './get-order.query.js';
 import type { PaymentHandoffView, PurchasedSeats } from './order-views.js';
-import { INTERIM_LATE_ENTRY_UNACKNOWLEDGED, INTERIM_SALES_CLOSED } from './purchase-refusals.js';
 import { PurchaseStatus, type PurchaseAnswer } from './purchase-seat.command.js';
 import { PurchaseSeatHandler } from './purchase-seat.handler.js';
 import { QuoteSeatHandler } from './quote-seat.handler.js';
@@ -46,8 +46,9 @@ import {
   FakePaymentScenario,
   intentRefOf,
 } from '../payments/fake-payment-provider.js';
+import { NextActionKind } from '../payments/next-action.js';
 import { OwedRefunds } from '../payments/owed-refunds.js';
-import { NextActionKind, PaymentPort } from '../payments/payment.port.js';
+import { PAYMENT_PORT } from '../payments/payment-tokens.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 
@@ -152,7 +153,7 @@ beforeAll(async () => {
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: clock },
       OwedRefunds,
-      { provide: PaymentPort, useValue: fake },
+      { provide: PAYMENT_PORT, useValue: fake },
       { provide: PUBLIC_WEB_ORIGIN, useValue: ORIGIN },
     ],
   }).compile();
@@ -666,7 +667,7 @@ describe('a buyer arriving after the start (D-089)', () => {
 
       expect(unacknowledged.getStatus()).toBe(409);
       expect(unacknowledged.refusal).toEqual({
-        code: INTERIM_LATE_ENTRY_UNACKNOWLEDGED,
+        code: OrderErrorCode.LATE_ENTRY_UNACKNOWLEDGED,
         params: { startedAt: startsAt, minutesElapsed: 10, salesEndAt: plusMinutes(startsAt, 30) },
         nature: FailureNature.REFUSED,
       });
@@ -688,7 +689,7 @@ describe('a buyer arriving after the start (D-089)', () => {
 
       const late = await refusalOf(purchase(dateId, 1, nextKey(), {}, null, true));
 
-      expect(late.refusal.code).toBe(INTERIM_SALES_CLOSED);
+      expect(late.refusal.code).toBe(OrderErrorCode.SALES_CLOSED);
       expect(await countersOf(dateId)).toEqual(before);
       expect(await holdsOf(dateId)).toEqual([]);
     },
@@ -741,7 +742,7 @@ describe('a buyer arriving after the start (D-089)', () => {
       const over = await dateOnSale(10, plusMinutes(NOW, -30));
       await expect(
         queries.execute(new QuoteSeat(over, { tier: PriceTier.FULL, quantity: 1 })),
-      ).rejects.toMatchObject({ refusal: { code: INTERIM_SALES_CLOSED } });
+      ).rejects.toMatchObject({ refusal: { code: OrderErrorCode.SALES_CLOSED } });
     },
     CASE_MS,
   );
@@ -762,7 +763,7 @@ describe('a purchase resumed after the start (D-089, the acknowledgement in a he
       const unacknowledged = await refusalOf(purchase(dateId, 2, key));
 
       expect(unacknowledged.refusal).toMatchObject({
-        code: INTERIM_LATE_ENTRY_UNACKNOWLEDGED,
+        code: OrderErrorCode.LATE_ENTRY_UNACKNOWLEDGED,
         params: { startedAt: startsAt, minutesElapsed: 5 },
       });
       expect((await holdsOf(dateId)).map(({ state }) => state)).toEqual([SeatHoldState.RELEASED]);
@@ -790,7 +791,7 @@ describe('a purchase resumed after the start (D-089, the acknowledgement in a he
       const acknowledged = await refusalOf(purchase(dateId, 2, key, {}, null, true));
 
       const closed = {
-        code: INTERIM_SALES_CLOSED,
+        code: OrderErrorCode.SALES_CLOSED,
         params: { salesEndAt: plusMinutes(startsAt, 30) },
       };
       expect(unacknowledged.refusal).toMatchObject(closed);

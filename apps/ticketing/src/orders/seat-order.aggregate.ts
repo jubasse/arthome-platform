@@ -1,21 +1,19 @@
 import { frozen } from '@arthome-platform/transactions';
 import { AggregateRoot } from '@nestjs/cqrs';
 
-import type {
-  Instant,
-  Money,
-  PriceTier,
-  RefundReason,
-  OrderQuote as CoreOrderQuote,
-} from '@arthome/core';
-
 import {
-  ORDER_STATES_AWAITING_PAYMENT,
+  type Instant,
+  type Money,
+  type PriceTier,
+  type RefundReason,
+  type OrderQuote as CoreOrderQuote,
   OrderState,
   SeatState,
-  movesForward,
-  type OrderFailureCode,
-} from './commerce-vocabulary.js';
+  orderStateMovesForward,
+  type OrderErrorCode,
+} from '@arthome/core';
+
+import { ORDER_STATES_AWAITING_PAYMENT } from './awaiting-payment.js';
 import {
   SeatOrderFailed,
   SeatOrderHoldRenewed,
@@ -26,7 +24,7 @@ import {
   SeatOrderRefunded,
   type SeatOrderEvent,
 } from './seat-order.events.js';
-import type { NextAction } from '../payments/payment.port.js';
+import { type NextAction } from '../payments/next-action.js';
 
 /** Core's four lines, and the unit price they were composed from, frozen at placement. */
 export interface OrderQuote extends CoreOrderQuote {
@@ -66,7 +64,7 @@ export interface SeatIssue {
 
 export interface OrderFailure {
   /** The refusal a replay of the purchase answers again; null for a hold that expired unpaid. */
-  readonly code: OrderFailureCode | null;
+  readonly code: OrderErrorCode | null;
   readonly declineCode: string | null;
 }
 
@@ -184,7 +182,7 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
   /** Still waiting for its money, and owing none back: a confirmation pays it. */
   public get acceptsPayment(): boolean {
     const { state, refund } = this.current;
-    return refund === null && movesForward(state, OrderState.PAID);
+    return refund === null && orderStateMovesForward(state, OrderState.PAID);
   }
 
   /** Placed, and no intent created for it yet: the purchase resumes by creating one. */
@@ -238,7 +236,7 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
     }
     if (!this.awaitsPayment) return false;
     const intentKnown = completedIntent(current.intent, intent);
-    if (movesForward(current.state, state)) {
+    if (orderStateMovesForward(current.state, state)) {
       this.advance({ state, intent: intentKnown });
       this.apply(new SeatOrderIntentRecorded(current.id, intent.ref, state, now));
     } else if (intentKnown !== current.intent) {

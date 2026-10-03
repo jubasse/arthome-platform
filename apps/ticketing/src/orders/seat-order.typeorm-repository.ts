@@ -1,10 +1,8 @@
 import { AggregateTracker, saveVersioned, type Track } from '@arthome-platform/transactions';
 import type { EntityManager } from 'typeorm';
 
-import { money, type Instant } from '@arthome/core';
+import { money, orderReference, type Instant, OrderState } from '@arthome/core';
 
-import { OrderState } from './commerce-vocabulary.js';
-import { interimOrderReferenceOf } from './order-reference.js';
 import { SeatOrder, type SeatOrderSnapshot, type SeatSnapshot } from './seat-order.aggregate.js';
 import { SeatOrderRow } from './seat-order.entity.js';
 import {
@@ -56,7 +54,7 @@ export class TypeOrmSeatOrderRepository extends SeatOrderRepository {
       "SELECT nextval('seat_order_reference') AS sequence",
     );
     if (next === undefined) throw new Error('seat_order_reference answered no value');
-    return interimOrderReferenceOf(placedAt, Number(next.sequence));
+    return orderReference(Number(placedAt.slice(0, 4)), Number(next.sequence));
   }
 
   public async place(order: SeatOrder, binding: IdempotencyBinding): Promise<boolean> {

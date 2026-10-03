@@ -21,6 +21,8 @@ import {
   OrderErrorCode,
   PriceTier,
   RefundReason,
+  OrderState,
+  PaymentEventKind,
 } from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
@@ -36,7 +38,6 @@ import { refundKeyOf } from './owed-refunds.js';
 import { PaymentWebhooksModule } from './payment-webhooks.module.js';
 import { PaymentWorker } from './payment-worker.js';
 import { PaymentWorkerModule } from './payment-worker.module.js';
-import { PaymentEventKind } from './payment.port.js';
 import { RefundOwedPayments } from './refund-owed-payments.command.js';
 import { CLOCK } from '../clock.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
@@ -44,7 +45,6 @@ import { DateSalesModule } from '../date-sales/date-sales.module.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { FULL_PRICE_MINOR, nextKey, purchaseOf, putOnSale } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
-import { OrderState } from '../orders/commerce-vocabulary.js';
 import { ExpireDueHolds } from '../orders/expire-due-holds.command.js';
 import { HoldExpirySweeper } from '../orders/hold-expiry-sweeper.js';
 import { HoldExpiryModule } from '../orders/hold-expiry.module.js';
@@ -245,7 +245,9 @@ describe('POST /v1/payments/webhook', () => {
       const genuine = fake.completeAction(intentRefOf(orderId));
 
       const forged = await deliver({
-        body: Buffer.from(genuine.body.toString().replace('succeeded', 'canceled')),
+        body: Buffer.from(
+          genuine.body.toString().replace('payment_intent.succeeded', 'payment_intent.canceled'),
+        ),
         signature: genuine.signature,
       });
       expect(forged.statusCode).toBe(401);

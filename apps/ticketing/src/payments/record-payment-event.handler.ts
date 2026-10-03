@@ -4,11 +4,11 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { ApiErrorCode, FailureNature, type Clock } from '@arthome/core';
+import { ApiErrorCode, FailureNature, type Clock, type PaymentWebhookPort } from '@arthome/core';
 
-import { PaymentWebhookPort } from './payment.port.js';
 import { RecordPaymentEvent, type PaymentEventReceipt } from './record-payment-event.command.js';
 import { CLOCK } from '../clock.js';
+import { PAYMENT_WEBHOOK_PORT } from './payment-tokens.js';
 
 /**
  * adr-ticketing.md §8: verified on the raw bytes, recorded unique on the provider's event id, and
@@ -19,7 +19,7 @@ import { CLOCK } from '../clock.js';
 @CommandHandler(RecordPaymentEvent)
 export class RecordPaymentEventHandler implements ICommandHandler<RecordPaymentEvent> {
   public constructor(
-    private readonly webhooks: PaymentWebhookPort,
+    @Inject(PAYMENT_WEBHOOK_PORT) private readonly webhooks: PaymentWebhookPort,
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}

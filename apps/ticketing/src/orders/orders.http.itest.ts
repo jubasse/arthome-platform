@@ -9,7 +9,6 @@ import { CommandBus } from '@nestjs/cqrs';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
 import {
   OrderSchema,
@@ -25,12 +24,10 @@ import {
   OrderKind,
   PriceTier,
   plusMinutes,
+  OrderState,
 } from '@arthome/core';
-import { InstantOut, int64 } from '@arthome/core/schema';
 
-import { OrderState } from './commerce-vocabulary.js';
 import { OrdersModule } from './orders.module.js';
-import { INTERIM_LATE_ENTRY_UNACKNOWLEDGED } from './purchase-refusals.js';
 import { CLOCK } from '../clock.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
 import { DateSalesModule } from '../date-sales/date-sales.module.js';
@@ -54,13 +51,6 @@ const DEADLINE = '2026-09-28T11:00:00.000Z';
 const CHANNEL = '01a0fc0c-0000-7000-8000-000000000001';
 
 const TicketWithoutDateSchema = TicketCardSchema.omit({ date: true });
-
-/** D-089's quote field ahead of the contract, as the report gives it for storefront.yaml. */
-const SeatQuoteWithLateEntrySchema = SeatQuoteSchema.extend({
-  lateEntry: z
-    .looseObject({ startedAt: InstantOut, minutesElapsed: int64(), salesEndAt: InstantOut })
-    .optional(),
-});
 
 let stack: StartedStack;
 let dataSource: DataSource;
@@ -270,15 +260,17 @@ describe('a late entry over HTTP (D-089)', () => {
         headers: { 'content-type': 'application/json', 'x-arthome-deadline': DEADLINE },
         payload: { tier: PriceTier.FULL, quantity: 2 },
       });
-      expect(
-        SeatQuoteWithLateEntrySchema.parse(quote.json<{ data: unknown }>().data).lateEntry,
-      ).toEqual({ startedAt: startsAt, minutesElapsed: 10, salesEndAt: plusMinutes(startsAt, 30) });
+      expect(SeatQuoteSchema.parse(quote.json<{ data: unknown }>().data).lateEntry).toEqual({
+        startedAt: startsAt,
+        minutesElapsed: 10,
+        salesEndAt: plusMinutes(startsAt, 30),
+      });
 
       const refused = await postPurchase(purchaseBody(dateId));
       expect(refused.statusCode).toBe(409);
       expect(refused.json()).toMatchObject({
         error: {
-          code: INTERIM_LATE_ENTRY_UNACKNOWLEDGED,
+          code: OrderErrorCode.LATE_ENTRY_UNACKNOWLEDGED,
           params: { startedAt: startsAt, minutesElapsed: 10 },
         },
       });

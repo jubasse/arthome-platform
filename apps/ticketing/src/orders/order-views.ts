@@ -4,15 +4,13 @@ import {
   type Money,
   type PriceTier,
   type RefundReason,
-} from '@arthome/core';
-
-import {
-  ORDER_STATES_AWAITING_PAYMENT,
   OrderState,
   type SeatState,
-} from './commerce-vocabulary.js';
+} from '@arthome/core';
+
+import { ORDER_STATES_AWAITING_PAYMENT } from './awaiting-payment.js';
 import type { SeatOrderSnapshot } from './seat-order.aggregate.js';
-import type { NextAction } from '../payments/payment.port.js';
+import { type NextAction } from '../payments/next-action.js';
 
 /**
  * storefront.yaml's `TicketCard` but its `date`, catalog's `DateCard`, which ticketing cannot build

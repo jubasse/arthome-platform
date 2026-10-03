@@ -2,11 +2,13 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import { z } from 'zod';
 
-import { fromEpochMs, toEpochMs, type Clock, type Instant } from '@arthome/core';
-
 import {
+  PAYMENT_WEBHOOK_TOLERANCE_SECONDS,
+  fromEpochMs,
+  toEpochMs,
+  type Clock,
+  type Instant,
   IntentStatus,
-  NextActionKind,
   PaymentEventKind,
   PaymentProviderUnavailable,
   type PaymentEvent,
@@ -15,7 +17,9 @@ import {
   type PaymentPort,
   type PaymentWebhookPort,
   type RefundRequest,
-} from './payment.port.js';
+} from '@arthome/core';
+
+import { NextActionKind } from './next-action.js';
 
 /** What the fake does with an intent it creates, chosen per request (adr-payments.md §4). */
 export const FAKE_PAYMENT_SCENARIOS = [
@@ -35,9 +39,6 @@ export const FakePaymentScenario = {
   /** The provider does not answer, and creates nothing. */
   UNAVAILABLE: 'unavailable',
 } as const;
-
-/** adr-payments.md §7.1: a signature older or newer than this is refused. */
-const SIGNATURE_TOLERANCE_SECONDS = 300;
 
 const SIGNATURE = /^t=(\d+),v1=([0-9a-f]{64})$/;
 
@@ -202,21 +203,25 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
     return `t=${seconds},v1=${this.mac(seconds, body).toString('hex')}`;
   }
 
-  public verifySignature(rawBody: Buffer, signature: string | undefined, now: Instant): boolean {
+  public verifySignature(
+    rawBody: Uint8Array,
+    signature: string | undefined,
+    now: Instant,
+  ): boolean {
     const match = SIGNATURE.exec(signature ?? '');
     const [, seconds, received] = match ?? [];
     if (seconds === undefined || received === undefined) return false;
     const skewSeconds = Math.abs(toEpochMs(now) / 1_000 - Number(seconds));
-    if (skewSeconds > SIGNATURE_TOLERANCE_SECONDS) return false;
+    if (skewSeconds > PAYMENT_WEBHOOK_TOLERANCE_SECONDS) return false;
     const expected = this.mac(seconds, rawBody);
     const given = Buffer.from(received, 'hex');
     return given.length === expected.length && timingSafeEqual(given, expected);
   }
 
-  public parse(rawBody: Buffer): PaymentEvent | null {
+  public parse(rawBody: Uint8Array): PaymentEvent | null {
     let json: unknown;
     try {
-      json = JSON.parse(rawBody.toString('utf8'));
+      json = JSON.parse(Buffer.from(rawBody).toString('utf8'));
     } catch {
       return null;
     }
@@ -265,7 +270,7 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
     throw new Error(`fake provider: no intent ${intentRef}`);
   }
 
-  private mac(seconds: string, body: Buffer): Buffer {
+  private mac(seconds: string, body: Uint8Array): Buffer {
     return createHmac('sha256', this.webhookSecret).update(`${seconds}.`).update(body).digest();
   }
 }

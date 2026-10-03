@@ -3,7 +3,7 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import type { Clock } from '@arthome/core';
+import { type Clock, type PaymentPort } from '@arthome/core';
 
 import { CancelOwedIntents } from './cancel-owed-intents.command.js';
 import {
@@ -12,9 +12,9 @@ import {
   claimOwedCalls,
   giveUpOwedCall,
 } from './owed-calls.js';
-import { PaymentPort } from './payment.port.js';
 import { CLOCK } from '../clock.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
+import { PAYMENT_PORT } from './payment-tokens.js';
 
 /**
  * adr-ticketing.md §6's cancellation of the intent of an order that failed, recorded by the
@@ -27,7 +27,7 @@ export class CancelOwedIntentsHandler implements ICommandHandler<CancelOwedInten
 
   public constructor(
     private readonly transactions: TicketingTransactions,
-    private readonly payments: PaymentPort,
+    @Inject(PAYMENT_PORT) private readonly payments: PaymentPort,
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}

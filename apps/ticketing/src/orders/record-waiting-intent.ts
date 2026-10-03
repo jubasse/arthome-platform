@@ -1,6 +1,5 @@
-import type { Instant } from '@arthome/core';
+import { type Instant, type OrderState } from '@arthome/core';
 
-import type { OrderState } from './commerce-vocabulary.js';
 import type { PaymentIntentRecord, SeatOrder } from './seat-order.aggregate.js';
 import { OWED_INTENT_CANCELLATION, restartOwedCall } from '../payments/owed-calls.js';
 import type { TicketingTransaction } from '../ticketing-transactions.js';

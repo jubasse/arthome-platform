@@ -1,8 +1,7 @@
 import { v7 as uuidv7 } from 'uuid';
 
-import { RefundReason, type Instant } from '@arthome/core';
+import { RefundReason, seatCancelDeadline, type Instant } from '@arthome/core';
 
-import { interimSeatCancelDeadlineOf } from './seat-cancel-deadline.js';
 import { drawFreeSeatCodes } from './seat-codes.js';
 import type { SeatOrder } from './seat-order.aggregate.js';
 import type { TicketingTransaction } from '../ticketing-transactions.js';
@@ -45,7 +44,8 @@ export async function settleConfirmedPayment(
     return null;
   }
   const sales = await dateSales.findUnlocked(dateId);
-  const cancelDeadline = interimSeatCancelDeadlineOf(sales?.snapshot.startsAt ?? null);
+  const startsAt = sales?.snapshot.startsAt ?? null;
+  const cancelDeadline = startsAt === null ? null : seatCancelDeadline(startsAt);
   const codes = await drawFreeSeatCodes(manager, quantity);
   order.pay(
     intentRef,

@@ -2,14 +2,13 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import type { Clock } from '@arthome/core';
+import { type Clock, OrderState, type PaymentPort } from '@arthome/core';
 
 import { OWED_REFUND, attemptsMaxOf, claimOwedCalls, giveUpOwedCall } from './owed-calls.js';
-import { PaymentPort } from './payment.port.js';
 import { CLOCK } from '../clock.js';
-import { OrderState } from '../orders/commerce-vocabulary.js';
 import { writeSeatOrderIntegrationEvents } from '../orders/seat-order-integration-events.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
+import { PAYMENT_PORT } from './payment-tokens.js';
 
 /** adr-ticketing.md §8: a refund asked twice under one key is made once by the provider. */
 export function refundKeyOf(orderId: string): string {
@@ -27,7 +26,7 @@ export class OwedRefunds {
 
   public constructor(
     private readonly transactions: TicketingTransactions,
-    private readonly payments: PaymentPort,
+    @Inject(PAYMENT_PORT) private readonly payments: PaymentPort,
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
