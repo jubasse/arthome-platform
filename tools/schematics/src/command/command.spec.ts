@@ -127,3 +127,37 @@ describe('command', () => {
     RUN_MS,
   );
 });
+
+describe('command, through an aggregate named with --plural', () => {
+  it(
+    'takes the repository under the key the transaction declares',
+    async () => {
+      const runner = testRunner();
+      const service = await runner.runSchematic('service', LIGHTING, repositoryTree());
+      const withPerson = await runner.runSchematic(
+        'aggregate',
+        { app: 'lighting', module: 'crew', name: 'person', plural: 'people' },
+        service,
+      );
+      const tree = await runner.runSchematic(
+        'command',
+        {
+          app: 'lighting',
+          module: 'crew',
+          name: 'rename-person',
+          aggregate: 'person',
+          event: 'PersonRenamed',
+          route: 'v1/people/:personId/rename',
+        },
+        withPerson,
+      );
+      expect(tree.readText(`${SRC}/crew/rename-person.handler.ts`)).toContain(
+        'await asConflict(() => people.save(person));',
+      );
+      expect(tree.readText(`${SRC}/crew/rename-person.http.itest.ts`)).toContain(
+        '.run(({ people }) => people.save(',
+      );
+    },
+    RUN_MS,
+  );
+});

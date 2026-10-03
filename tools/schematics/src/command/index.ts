@@ -24,6 +24,7 @@ import {
   addUnionMember,
   hasClassMember,
   hasDeclaration,
+  memberTyped,
   renderImports,
 } from '#schematics/source-file';
 import { editText, existingApp, readText, type AppNames } from '#schematics/workspace';
@@ -283,13 +284,29 @@ function registerHandler(names: AppNames, module: string, handler: string, file:
   };
 }
 
+/** The aggregate's names, its repository's key read from the transaction that declares it. */
+function aggregateNamed(tree: Tree, names: AppNames, directory: string, name: string): Aggregate {
+  const naive = aggregateNames(name);
+  readText(tree, `${directory}/${naive.kebab}.aggregate.ts`);
+  const key = memberTyped(
+    readText(tree, names.transactionsFile),
+    names.transactionScope,
+    naive.repository,
+  );
+  if (key === null) {
+    throw new SchematicsException(
+      `${names.transactionsFile}: ${names.transactionScope} has no member typed ${naive.repository}`,
+    );
+  }
+  return aggregateNames(name, key);
+}
+
 export function command(options: CommandOptions): Rule {
   return (tree) => {
     const names = existingApp(tree, options.app);
     const module = kebab(options.module);
     const directory = `${names.src}/${module}`;
-    const aggregate = aggregateNames(options.aggregate);
-    readText(tree, `${directory}/${aggregate.kebab}.aggregate.ts`);
+    const aggregate = aggregateNamed(tree, names, directory, options.aggregate);
     if (!/^[A-Z][A-Za-z0-9]*$/.test(options.event)) {
       throw new SchematicsException(`--event "${options.event}": a class name, such as RigFocused`);
     }

@@ -473,6 +473,18 @@ export function addInterfaceMember(text: string, name: string, member: string): 
   return applied(text, [{ start: alias.getStart(), end: alias.end, text: rewritten }]);
 }
 
+/** The name of interface `name`'s member typed `typeName`, or null when it has none. */
+export function memberTyped(text: string, name: string, typeName: string): string | null {
+  const declaration = parse(text).statements.find(
+    (statement): statement is ts.InterfaceDeclaration =>
+      ts.isInterfaceDeclaration(statement) && statement.name.text === name,
+  );
+  const member = declaration?.members.find(
+    (candidate) => ts.isPropertySignature(candidate) && candidate.type?.getText() === typeName,
+  );
+  return member?.name?.getText() ?? null;
+}
+
 /** An `it(…)` appended to the `describe(title, …)` block. */
 export function addToDescribe(text: string, title: string, testCase: string): string {
   const describe = located(
