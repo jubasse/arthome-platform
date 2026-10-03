@@ -251,7 +251,8 @@ what changed (the agent's own loop).
 
    **A push that only deletes refs skips it.** `pre-push` reads `<local ref> <local sha> <remote ref>
    <remote sha>` per line on stdin; a deletion's local sha is all zeros and the push carries no
-   commit, so when every line is one the hook exits 0 at once. A push that creates or updates any ref
+   commit, so when at least one line was read and every line is one the hook exits 0 at once. An empty
+   stdin fails closed and runs `verify:full`. A push that creates or updates any ref
    alongside a deletion still runs `verify:full`. Proven against a local bare remote, never origin:
    a branch creation ran `verify:full` (67 s), a deletion alone took under a second, and a push of
    one new branch with another's deletion ran it again (75 s).

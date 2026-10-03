@@ -204,11 +204,12 @@ reached from no request, log a failure and leave it due.
 
 `@arthome/core` carries `adr-payments.md` §4's ports: `PaymentPort` (`createIntent`, keyed by the
 order id, `cancelIntent`, `refund`, keyed `refund:{orderId}`) and `PaymentWebhookPort`
-(`verifySignature` on the exact bytes, `parse`). They are interfaces, so `payments/payment-tokens.ts`
-holds the two injection tokens, `PAYMENT_PORT` and `PAYMENT_WEBHOOK_PORT`, as `CLOCK` does. A
-provider's references are opaque strings, a next action's `kind` too: `payments/next-action.ts` names
-the two kinds the fake and the suites speak. `PaymentProviderUnavailable` says the provider could not
-say what it did, so the caller retries under the same key.
+(`verifySignature` on the exact bytes, `parse`). They are interfaces, so
+`payments/payment-tokens.ts` holds the two injection tokens, `PAYMENT_PORT` and
+`PAYMENT_WEBHOOK_PORT`, as `CLOCK` does. A provider's references are opaque strings, a next action's
+`kind` too: `payments/next-action.ts` names the two kinds the fake and the suites speak.
+`PaymentProviderUnavailable` says the provider could not say what it did, so the caller retries
+under the same key.
 
 `FakePaymentProvider` is the adapter bound by default (`payments.module.ts`), both ports on one
 instance, since a webhook speaks of the intents it created. Deterministic: an intent's reference is
@@ -570,23 +571,22 @@ first.
 
 ## 3. Gaps
 
-**T3's interims are core's now** (arthome-core PR #7, a54847c): the payment ports, the order, seat and
-hold vocabularies, the order-state ranks, the seat's cancel deadline, the order reference, the
+**T3's interims are core's now** (arthome-core PR #7, a54847c): the payment ports, the order, seat
+and hold vocabularies, the order-state ranks, the seat's cancel deadline, the order reference, the
 payment return path, D-089's `SEAT_SALES_CUTOFF_MINUTES_AFTER_START`, `seatSalesEndAt`,
 `salesEndedBy`, `lateEntryOf` and `LateEntry`, the codes `order.late_entry_unacknowledged` and
 `order.sales_closed`, `HOLD_EXPIRY_BATCH` and `PAYMENT_WEBHOOK_TOLERANCE_SECONDS`. Core's
 `decideWatch` no longer offers `buy_seat` past the cutoff. What stays local, and why:
 
-- The injection tokens `PAYMENT_PORT` and `PAYMENT_WEBHOOK_PORT` (`payments/payment-tokens.ts`): core's
-  ports are interfaces, which Nest cannot inject.
-- `NextActionKind` (`payments/next-action.ts`): core keeps a next action's `kind` opaque, and only the
-  fake provider and the suites name two.
-- `ORDER_STATES_AWAITING_PAYMENT` (`orders/awaiting-payment.ts`): which states a payment's failure or
-  expiry moves is this service's decision, not a vocabulary.
-- The year of an order reference, read off the placement instant (`seat-order.typeorm-repository.ts`):
-  core's `orderReference` takes the year and the sequence, the sequence being this database's.
-- The payment return URL, `{PUBLIC_WEB_ORIGIN}` and core's `paymentReturnPath`: the origin is
-  deployment configuration.
+- The injection tokens `PAYMENT_PORT` and `PAYMENT_WEBHOOK_PORT` (`payments/payment-tokens.ts`):
+  core's ports are interfaces, which Nest cannot inject.
+- `NextActionKind` (`payments/next-action.ts`): core keeps a next action's `kind` opaque, and only
+  the fake provider and the suites name two.
+- `ORDER_STATES_AWAITING_PAYMENT` (`orders/awaiting-payment.ts`): which states a payment's failure
+  or expiry moves is this service's decision, not a vocabulary.
+- Two seams core leaves to the caller: the year of an order reference, read off the placement
+  instant, the sequence being this database's (`seat-order.typeorm-repository.ts`), and the
+  `PUBLIC_WEB_ORIGIN` before core's `paymentReturnPath`, the origin being deployment configuration.
 - No service fee (`date-sales/seat-quote.ts`): no fee schedule is set anywhere, as T2's pane says.
 
 **Known and left in T3, each judged:**
