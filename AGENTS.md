@@ -160,7 +160,8 @@ dry run after `service --skip-install` rewrites `pnpm-lock.yaml` and links the n
 `node_modules` before the generator even starts. Options are kebab-case (`--skip-install`,
 `--occurred-at`): the CLI refuses camelCase. Every run formats what it touched with the repository's
 Prettier, then `pnpm run verify` and the app's `test:integration` are the check. Proven on
-2026-09-29 with a throwaway `sample` built from all four, then deleted: both passed as generated.
+2026-10-03 with a throwaway `sample` built from all four, an aggregate taking `--plural` and a
+command through it included, then deleted: both passed as generated.
 
 ```bash
 pnpm --config.verify-deps-before-run=false exec schematics ./tools/schematics:service \
