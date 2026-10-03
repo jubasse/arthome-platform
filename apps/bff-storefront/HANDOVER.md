@@ -97,7 +97,10 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   or `ZZ`, CLDR's unknown region, when the header is missing or holds no country: the surface is
   never asked, and no other header is trusted. The variable is required in production (the lead's
   ruling, 2026-10-03), so a deployment cannot record every country as unknown in silence; outside
-  production it is unset and every country is `ZZ`.
+  production it is unset and every country is `ZZ`. The BFF believes that header from whoever sends
+  it, so **the gateway must strip or overwrite it on every client request**, a deployment
+  requirement. The impact is low: the country only feeds `AccountRegistered`, and every read
+  evaluates it again.
 - **The viewer context is the contract's type** (`ServedViewerContext`), served from the session
   `ViewerGuard` resolved: identity answers the account with it, so `getViewerContext` makes one
   identity call, within §5.9's session validation. The label catalogue and the taxonomy artifact
@@ -124,8 +127,58 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   minimum and `limit`'s bounds would drift in silence.
 - No per-viewer overlay (`watchVerdict`, `viewerRelations`, `viewerProgress`): catalog is called
   anonymously.
-- `getViewerContext` lacks the contract's `labelCatalog`, `taxonomyArtifact` and
-  `constants.reactionQuotaPerDate` (above), and accepts no `device_token` yet (auth slice C).
+- `getViewerContext` accepts no `device_token` yet (auth slice C).
+- **Session validation at scale**: one identity call per signed-in request, no cache. At an
+  opening's scale a slow identity turns every signed-in call into a 504; `adr-auth.md` §8's Redis
+  cache of sessions is the follow-up, measured by T6's load test.
+- **The caps' numbers are not sized.** An IPv4 address behind a carrier NAT is shared by hundreds
+  of subscribers: at D-079's 10,000 buyers a minute, 20 sign-ins per 15 minutes per address refuses
+  real buyers at an opening. The product owner sizes `AuthRateLimit` before the first on-sale.
+- **`resendEmailVerification` answers `sent: true` while nothing sends**: `notifications` has no
+  consumer of the verification topic and no mail adapter yet. A launch prerequisite.
+- **Service-to-service HTTP is assumed private**: `IDENTITY_URL`, like `CATALOG_URL`, accepts
+  `http` in production, and session tokens and internal tokens ride on it. Production runs the
+  services on a private network or a mesh with mTLS; `JWKS_URL` is held to `https` because the CDN
+  is outside it.
+- **The JWKS document has no publisher**: infrastructure's (`definition-of-done.md` §7.6, J1 to
+  J3). The key ceremony publishes `bff-sf-<date>` before this BFF signs with it.
 - The `deviceId` a sign-up or sign-in body asserts is ignored until devices register: the viewer's
   device is the session's own id.
 - No drain window on shutdown, like the services.
+
+## 4. What slice B must do first
+
+The architecture review's P2 to P5, in order:
+
+1. **Record the actor of every write.** `libs/messaging`'s `outboxWriter` still writes
+   `actorId: null`, on the premise that no actor was verified, which slice A made false. identity's
+   `writeOutboxEvent` sets it; catalog and ticketing do not. Feed `ServiceEvent.actorId` from the
+   principal, and have `ServiceClient` send `x-arthome-actor-surface` on every human write
+   (transport.md §5.2); it sends neither today. An actor not recorded cannot be rebuilt (events.md),
+   so every purchase written before this loses its buyer as actor.
+2. **Make an account route require an account by default.** `CurrentPrincipal` hands any handler
+   an anonymous principal, and each must remember `accountOf`. The studio commands pass a nullable
+   `principal.accountId` into the idempotency scope (catalog's dates and artists controllers,
+   ticketing's date-sales controller), and the `command` generator emits that shape. Add a
+   `@CurrentAccount()` parameter decorator, 401 without `sub`, as the generator's default;
+   `CurrentPrincipal` stays for routes that serve anonymous visitors.
+3. **Authorise the studio's routes before any `AllowInProduction`.** They accept anonymous tokens
+   today. Require an account, authorise on the loaded instance (critical rule 5), and check the
+   issuer or the roles only the studio BFF mints: `Principal.issuer` is carried and checked nowhere.
+4. **Give the studio BFF a development key.** The development key and the local JWKS know
+   `bff-sf-development` alone (`libs/config/src/development-token-key.ts`), so every service refuses
+   a studio token in development until a `bff-st-development` key is published beside it, refused
+   in production by its coordinates as this one is. The minter is storefront-only.
+5. **Give identity ticketing's shape**: `CqrsModule`, a `TransactionRunner` and an `outboxWriter`
+   topic table, before the `aggregate` and `command` generators can produce Channel, membership and
+   invitation. A's flows straddle better-auth's store and identity's, so plain services fit them.
+6. **Extract the BFF plumbing into a library** (recommended): `libs/bff-edge`, with the minter
+   parameterised by issuer, `ServiceClient`, the session carriers, `CsrfGuard`, `FailedSignIns` and
+   the throttler wiring, before `bff-studio` exists. Two copies of token minting, CSRF and the error
+   allowlist would drift. The routes, the caps used and CORS stay per BFF; the studio's CORS allows
+   the literal Capacitor origins (`adr-auth.md` §6.6).
+
+Also open for B: the claims `chn` and `rol` (and `scope`) in `InternalTokenClaimsSchema`, loose so
+A's services keep working; studio.yaml's `bearerToken`, which describes a device-bound refresh token
+against the storefront's sliding session; `CHANNEL_ACCESS_REVOKED`, the studio's reset confirmation
+and Q4's invitation sign-up, not in core yet.

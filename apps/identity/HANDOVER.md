@@ -91,11 +91,17 @@ is the session's own id until devices register (auth slice C).
 ### What later slices inherit
 
 - **B (studio)**: the studio BFF's issuer is already in `INTERNAL_TOKEN_ISSUERS`; the claims schema
-  is loose for its `chn` and `rol`; Q4's invitation sign-up reuses `SignUpService`'s order.
+  is loose for its `chn` and `rol`; Q4's invitation sign-up reuses `SignUpService`'s order. What B
+  must do first, identity's CQRS shape included, is in `apps/bff-storefront/HANDOVER.md` §4.
 - **C (devices)**: `deviceId` becomes the registered device; the bearer plugin is in place;
   `multi-session` and `device-authorization` are not installed yet.
 - **D**: password reset, two-factor, social sign-in. A reset token must not take the verification
-  token's path: its delivery is D's decision.
+  token's path: its delivery is D's decision. **Linking a social sign-in to an existing address**
+  (D-106) must also require identity's own `email_verified_at`, or drop the password and revoke the
+  sessions on link: D-100 lets a stranger register the address unverified, and that stranger's
+  password would still open the account the owner later links (the security review's m7). From
+  then on a verified address unlocks something, which ends the premise that lets the verification
+  token travel in clear.
 - **Nothing consumes `arthome.identity.email_verification` yet**: `notifications` records the
   welcome email only, and no email is sent by anyone today. Its consumer, when written, is the
   topic's only one (`verification-topic.spec.ts` fails on any other app naming it), and production

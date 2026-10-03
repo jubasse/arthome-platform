@@ -27,3 +27,6 @@ these ACLs are a deployment requirement:
   `apps/identity/src/auth/verification-topic.spec.ts` fails when an app other than `notifications`
   names the topic.
 - **The account topic, `arthome.identity.account`, carries no token.** Other contexts may read it.
+- **Retention**: the verification topic keeps the standard 168 h (`topic-retention.spec.ts` holds
+  every topic above the republish horizon), so it holds about six days of tokens already dead, a
+  link living 24 h and serving once. identity's `outbox_event` keeps a copy for seven days, in clear.
