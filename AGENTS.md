@@ -96,12 +96,17 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 
 - **Branches (arthome-core D-087).** Nothing is committed on `main` or `develop`. Work goes on
   `feature/{name}` from `develop`, one per repository it touches, and reaches `develop` through a
-  pull request once `verify` is green. A release is `release/{version}` from `develop`, merged into
+  pull request once `verify:full` is green — enforced by `.githooks/pre-push` on every push, since
+  a PR always starts from one. A release is `release/{version}` from `develop`, merged into
   `main`, tagged `v{version}` and merged back, in the four repositories at once with one shared
   version. A worktree, an agent's included, branches from `develop`.
 
 - **`pnpm run verify` is the gate.** Run it before every commit — and chain with `&&`, never `;`:
   this project has twice pushed with a red `verify` because a `;` let the commit run anyway.
+  It is cached (ESLint, Prettier and `tsc` each skip what has not changed since the last run), which
+  is fast enough to run on every commit but is not the full check — `pnpm run verify:full` is, every
+  cache off, and it is what `.githooks/pre-push` runs before a push leaves the machine. See
+  **Gates: three levels** below.
 
 - **Walk [`docs/review-checklist.md`](docs/review-checklist.md) on your diff before handing over**;
   a reviewer walks it again. Each row is a defect reviews here found more than once, how to spot it
@@ -125,15 +130,72 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 
 | command | what it does |
 | --- | --- |
-| `pnpm run bootstrap` | packs the sibling arthome-core into `vendor/`, then installs |
-| `pnpm run verify` | everything below, in order, stopping at the first failure |
+| `pnpm run bootstrap` | packs the sibling arthome-core into `vendor/`, installs, then builds every lib (`build:libs`) |
+| `pnpm run build:libs` | `tsc -p tsconfig.build.json` in every `libs/*`; also what makes their `dist/` exist for ESLint's `import-x/order` (see below) |
+| `pnpm run verify` | everything below, in order, stopping at the first failure — cached |
+| `pnpm run verify:full` | the same, every cache off; what `.githooks/pre-push` runs before a push |
 | `pnpm run verify:offline` | the subset needing no install — vendor, versions, tsconfig, enums, language, symbols |
 | `pnpm run check:enums` | string literals that duplicate a domain vocabulary |
 | `pnpm run fix` | Prettier, then ESLint `--fix`, then Prettier again |
+| `pnpm run test:affected` | Vitest limited to what changed against `origin/develop` — the agent's working loop, not the gate |
 | `pnpm run test:integration` | the container suites (`*.itest.ts`) that `verify` skips; needs Docker. Run it after touching a consumer, the outbox or `libs/testing` |
+| `pnpm run test:integration:affected` | the same suites, limited to packages changed against `origin/develop` and their dependents |
 | `pnpm run purge:retention <service>` | what the retention job would delete; `--apply` to do it |
 | `pnpm run ops:check <service>` | the operational checks; exits 1 when anything is degraded |
 | `pnpm run republish:outbox <service>` | outbox rows never published to their topic; `--apply` republishes them |
+
+## Gates: three levels
+
+Three different amounts of checking, for three different moments, so that the checking that must
+never be skipped (before a PR) is never confused with the checking that only has to be honest about
+what changed (the agent's own loop).
+
+1. **The agent's working loop: affected only.** `pnpm run test:affected` is Vitest's own
+   `--changed origin/develop` selection; `pnpm run test:integration:affected` is
+   `pnpm --filter "...[origin/develop]" run test:integration`, dependents included through pnpm's
+   dependency graph, not just the packages that changed. Both diff against `origin/develop`'s tip as
+   last fetched — a stale ref only over-selects, which is safe, but `git fetch` first if it might be
+   old. **Except**: a change under `vendor/`, `libs/events`, `infra/`, any `.proto` file, or a root
+   config (`package.json`, a `tsconfig*.json`, `eslint.config.js`, `vitest.config.mjs`,
+   `pnpm-workspace.yaml`) — run the full `pnpm run test` and `pnpm run test:integration` instead.
+   `vendor/` is gitignored, so a filter based on `git diff` never sees a tarball change at all;
+   `libs/events` and a proto both name the wire contract every service and consumer reads; `infra/`
+   feeds the integration stack (`libs/testing/src/stack.ts`'s Debezium and topic config) from outside
+   every workspace package, so a package-based filter cannot select it; and a root config changes
+   what every package's build, lint or test does, not one package's own dependency graph.
+
+2. **The commit hook: full `verify`, cached — or the docs path.** ESLint, Prettier and `tsc` each
+   check the same files `verify` has always checked, each keeping a cache under an ignored
+   `node_modules/.cache/` (ESLint `--cache --cache-strategy content`, Prettier `--cache
+   --cache-strategy content`, `tsc --incremental`). **The ESLint cache has a real gap**: the shared
+   config is type-aware (`no-floating-promises`, `import-x/no-cycle` and others), so a file's result
+   can depend on another file that changed while the file itself did not — its cached "clean" result
+   is then stale, and a warm hook commits a cross-file lint error the same code would fail cold. The
+   pre-push hook below is what closes that gap, not this one. When every staged file matches `*.md`
+   — checked over `git diff --cached --name-only --no-renames`, with no `--diff-filter`, so a deleted
+   or renamed non-`.md` path still counts as "not docs" — `.githooks/pre-commit` instead runs only
+   `check:symbols` and `check:language`, the two `verify:offline` checks that read prose; both scan
+   every tracked file already, so this only skips what a documentation-only change cannot move.
+
+3. **Before the branch leaves the machine: `pnpm run verify:full`.** `.githooks/pre-push` runs it and
+   refuses the push when it is red. Every cache is off (no `--cache`, no `--incremental`), so this is
+   what actually re-lints, re-typechecks and re-tests everything, closing the cached lint gap above,
+   since every commit that reaches `develop` goes through a pushed branch and a PR. After a merge,
+   the full `verify` and `test:integration` run again on a clean checkout.
+
+Measured 2026-09-29, develop at 89c8a25, on a shared machine whose load varied with other agents
+running at the same time: `verify:full` about 109 s; `verify` cold (empty caches, right after
+`bootstrap`) about 110–140 s; `verify` warm, nothing changed, about 25–55 s; `verify` warm after a
+one-line change in one file, roughly 20–30 s above the warm-unchanged run, almost all of it the
+touched project's `tsc` re-check; a docs-only commit through the hook, under 1 s. A deliberate type
+error, lint error and failing test, tried one at a time against the cached commit hook, were each
+still caught, then reverted; a cross-file type-aware lint error and a staged deletion, tried against
+the cached commit hook, were each missed as designed and then caught by `pre-push`'s `verify:full`.
+
+**Why `bootstrap` builds the libs.** `pnpm run build:libs`, now inside `bootstrap`, exists because
+ESLint's `import-x/order` resolves a workspace import through the package's `exports` map's `default`
+condition, i.e. `dist/` — absent in a fresh worktree, which used to fail lint on
+`tools/ops-check.mjs` and `tools/republish-outbox.mjs`.
 
 ## Running the event path
 

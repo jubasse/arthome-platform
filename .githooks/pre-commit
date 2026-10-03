@@ -24,16 +24,36 @@ if [ -n "$files" ]; then
   echo "$files" | xargs git add
 fi
 
-# 2. The gate. It runs in about a second and a half and needs no Docker — that
-#    is a property worth protecting, and the reason the integration tests are
-#    named `*.itest.ts` and live behind their own command.
+# 2. The gate: `verify`, cached, or the docs-only path below. Its cache can miss
+#    a cross-file lint error (a warm ESLint result for an unchanged file); that
+#    gap is closed by `.githooks/pre-push`'s `verify:full`, not here. Measured
+#    times and the three-level model are in AGENTS.md's "Gates: three levels".
 #
 #    `git commit --no-verify` skips this. That is git's design and not a hole
 #      to plug: a hook is a reflex, not an authority. What it removes is the
 #      accident.
-if ! pnpm run verify; then
+#
+#    `--no-renames` and no `--diff-filter`: a deleted or renamed non-`.md` path
+#    must still count as "not docs", or a module deleted alongside its doc line
+#    would take the fast path and skip the typecheck that deletion needs.
+staged=$(git diff --cached --name-only --no-renames)
+docs_only=true
+for f in $staged; do
+  case "$f" in
+    *.md) ;;
+    *) docs_only=false ;;
+  esac
+done
+
+if [ "$docs_only" = true ] && [ -n "$staged" ]; then
+  gate='pnpm run check:symbols && pnpm run check:language'
+else
+  gate='pnpm run verify'
+fi
+
+if ! eval "$gate"; then
   echo ''
-  echo 'pre-commit: `pnpm run verify` failed — nothing was committed.'
+  echo "pre-commit: \`$gate\` failed — nothing was committed."
   echo '  Fix it, or state why and use `git commit --no-verify` deliberately.'
   exit 1
 fi

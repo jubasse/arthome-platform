@@ -1,0 +1,22 @@
+#!/bin/sh
+# Closes the gap the commit hook's cache leaves open (AGENTS.md's "Gates:
+# three levels", level 2): a cross-file lint result the ESLint cache never
+# re-examines. Every commit that reaches `develop` goes through a pushed
+# branch and a PR, so this is where the full, uncached `verify:full` always
+# runs — no `--cache`, no `--incremental`, everything re-checked.
+#
+# `git push --no-verify` skips this, same posture as the commit hook.
+
+set -e
+
+# git feeds "<local ref> <local sha1> <remote ref> <remote sha1>" per line on
+# stdin; nothing here depends on which refs are pushed, so it is drained and
+# discarded rather than read.
+cat >/dev/null
+
+if ! pnpm run verify:full; then
+  echo ''
+  echo 'pre-push: `pnpm run verify:full` failed — nothing was pushed.'
+  echo '  Fix it, or state why and use `git push --no-verify` deliberately.'
+  exit 1
+fi

@@ -53,9 +53,13 @@ Kafka 4.0 in KRaft mode, Debezium 3.0, OpenSearch 2.18, Redis 8.8 with no evicti
 append-only file. Postgres publishes on **55432**, not 5432, and Redis on **56379**: a development
 stack that fights for well-known ports is one you cannot run beside anything else.
 
-**`pnpm run verify` runs in under two seconds** and needs no Docker. The
-integration tests that do need it are `*.itest.ts`, behind their own command — a gate that costs
-half a minute stops being run, and then stops being true.
+**`pnpm run verify` needs no Docker**, and stays fast enough to run on every commit because it is
+cached: ESLint, Prettier and `tsc` each skip what has not changed — warm, about 25-55 s; cold, about
+110-140 s. Caching a cross-file lint check has a cost: a warm `verify` can miss a lint error that
+only shows up through another file's change. `pnpm run verify:full`, the same gate with every cache
+off, closes that gap and is what `.githooks/pre-push` runs before every push, so a PR never reaches
+review without it. The integration tests that do need Docker are `*.itest.ts`, behind their own
+command.
 
 See **[AGENTS.md](AGENTS.md)** for the commands, how to replay the event path, and what happens when
 a message cannot be applied.
