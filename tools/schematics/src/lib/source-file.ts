@@ -285,6 +285,40 @@ export function addToArrayProperty(
   return appendedElement(text, arrayOf(assignment.initializer, property), element);
 }
 
+/**
+ * The `property` of the object passed to each `callee(…)`: a string, or a `const` of the file bound
+ *   to one, as its value; any other expression as its text (`Service.TICKETING`).
+ */
+export function propertyPassedTo(text: string, callee: string, property: string): string[] {
+  const nodes = descendants(parse(text));
+  const constants = new Map(
+    nodes
+      .filter(ts.isVariableDeclaration)
+      .flatMap((declaration) =>
+        declaration.initializer !== undefined && ts.isStringLiteralLike(declaration.initializer)
+          ? [[declaration.name.getText(), declaration.initializer.text] as const]
+          : [],
+      ),
+  );
+  return nodes
+    .filter(
+      (node): node is ts.CallExpression =>
+        ts.isCallExpression(node) && node.expression.getText() === callee,
+    )
+    .flatMap((call) => {
+      const [argument] = call.arguments;
+      if (argument === undefined || !ts.isObjectLiteralExpression(argument)) return [];
+      const passed = argument.properties.find(
+        (candidate) => candidate.name?.getText() === property,
+      );
+      if (passed === undefined) return [];
+      const value = ts.isPropertyAssignment(passed) ? passed.initializer : passed.name;
+      if (value === undefined) return [];
+      if (ts.isStringLiteralLike(value)) return [value.text];
+      return [constants.get(value.getText()) ?? value.getText()];
+    });
+}
+
 export function hasProperty(text: string, locator: ObjectLocator, key: string): boolean {
   return propertyNamed(objectAt(parse(text), locator), key) !== undefined;
 }

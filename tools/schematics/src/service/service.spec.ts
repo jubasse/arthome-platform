@@ -187,6 +187,61 @@ describe('service, refused', () => {
   );
 
   it(
+    'refuses a name used outside apps/: a database, a topic, a connector, a consumer group',
+    async () => {
+      const search = String(await refusal({ name: 'search' }));
+      expect(search).toContain('database search in infra/postgres/init-databases.sql');
+      expect(search).toContain('topic arthome.search.retry in infra/kafka/topics.json');
+      expect(search).toContain('topic arthome.search.dlq in infra/kafka/topics.json');
+      expect(search).toContain('consumer group search in apps/search-indexer/src/main.ts');
+      expect(String(await refusal({ name: 'identity' }))).toContain('database identity');
+      expect(String(await refusal({ name: 'ticketing' }))).toContain(
+        'consumer group ticketing in apps/ticketing/src/consumer.module.ts',
+      );
+
+      const legacy = repositoryTree();
+      const catalog = JSON.parse(
+        legacy.readText('/infra/debezium/catalog-outbox.json'),
+      ) as Connector;
+      legacy.create(
+        '/infra/debezium/legacy-outbox.json',
+        JSON.stringify({
+          name: 'legacy-outbox',
+          config: { ...catalog.config, 'slot.name': 'arthome_lighting_outbox' },
+        }),
+      );
+      legacy.create(
+        '/apps/legacy/src/main.ts',
+        "const GROUP = 'lighting';\nawait runConsumers({ kafka, producer, service: GROUP, sources });\n",
+      );
+      const lighting = String(
+        await testRunner()
+          .runSchematic('service', LIGHTING, legacy)
+          .then(
+            () => undefined,
+            (error: unknown) => error,
+          ),
+      );
+      expect(lighting).toContain('connector infra/debezium/legacy-outbox.json (slot.name)');
+      expect(lighting).toContain('consumer group lighting in apps/legacy/src/main.ts');
+    },
+    RUN_MS,
+  );
+
+  it(
+    'owns a topic declared before the service only at its partitions, and no failure topic',
+    async () => {
+      for (const topics of ['run:6', 'session:3']) {
+        expect(String(await refusal({ name: 'streaming', topics }))).toContain(
+          'topic arthome.streaming.run in infra/kafka/topics.json (--topics run:12 owns it)',
+        );
+      }
+      expect(String(await refusal({ topics: 'rig:3,retry:3' }))).toContain('failure topic');
+    },
+    RUN_MS,
+  );
+
+  it(
     'schedules pnpm install unless told not to',
     async () => {
       const runner = testRunner();

@@ -187,7 +187,11 @@ real effect, a refusal it raises is dead-lettered (a fact that waits for an earl
 ticketing's do for `drafted`, is made transient by hand), and its key must be a string field. A
 type `READERS` reads already is refused: one type has one handler, which is the one to extend. An
 anchor the service cannot find in the README, this file or a tool is a warning to act on, not a
-failure. Nothing is ever deleted or renamed, and a name that exists is refused.
+failure. Nothing is ever deleted or renamed, and a file that exists is refused. So is a service
+name used anywhere: an app directory, a database, a topic (its retry and dead-letter ones
+included), a connector's name, slot or publication, a consumer group. The one exception is a
+topic declared before its service, as `arthome.streaming.run` is for catalog to consume:
+`--topics run:12` owns it, at exactly its declared partitions.
 
 The collection is ESM TypeScript loaded without a build: the engine's `require()` reaches it
 through Node's `require(esm)` and type stripping, so its code stays erasable (no enum, no parameter

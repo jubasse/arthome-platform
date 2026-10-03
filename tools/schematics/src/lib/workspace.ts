@@ -41,18 +41,20 @@ interface CoreManifest {
   readonly exports: { readonly '.': { readonly import: string } };
 }
 
+/** Core's `Service` vocabulary, each value by its member's name: `TICKETING` → `ticketing`. */
+export type ServiceVocabulary = Readonly<Record<string, string>>;
+
 /**
- * The member of core's `Service` vocabulary named `name`, or null when core has none. Loaded from
- *   the `import` target its manifest declares: Vitest runs its workers under the `@arthome/source`
- *   condition, which resolves the package to TypeScript that Node refuses to strip in node_modules.
+ * Loaded from the `import` target core's manifest declares: Vitest runs its workers under the
+ *   `@arthome/source` condition, which resolves the package to TypeScript that Node refuses to
+ *   strip in node_modules.
  */
-export async function serviceMemberOf(name: string): Promise<string | null> {
+export async function serviceVocabulary(): Promise<ServiceVocabulary> {
   const manifestPath = createRequire(import.meta.url).resolve('@arthome/core/package.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as CoreManifest;
   const entry = pathToFileURL(join(dirname(manifestPath), manifest.exports['.'].import)).href;
-  const { Service } = (await import(entry)) as { Service: Readonly<Record<string, string>> };
-  const member = Object.entries(Service).find(([, value]) => value === name);
-  return member === undefined ? null : member[0];
+  const { Service } = (await import(entry)) as { Service: ServiceVocabulary };
+  return Service;
 }
 
 export interface AppNames {

@@ -9,12 +9,16 @@ import { SchematicTestRunner, UnitTestTree } from '@angular-devkit/schematics/te
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const COLLECTION = fileURLToPath(new URL('../../collection.json', import.meta.url));
 
-/** What the generators read or edit: the sibling manifests, the infra files, the tools, the docs. */
+/**
+ * What the generators read or edit: the sibling manifests and sources (their consumer groups), the
+ *   infra files, the tools, the docs.
+ */
 const SEEDED = [
   'README.md',
   'AGENTS.md',
   'apps/*/package.json',
   'apps/*/.env.example',
+  'apps/*/src/*.ts',
   'infra',
   'tools/ops-check.mjs',
   'tools/purge-retention.mjs',

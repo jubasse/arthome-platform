@@ -15,14 +15,16 @@ import { NodePackageInstallTask } from '@angular-devkit/schematics/tasks/index.j
 
 import { formatTouchedFiles } from '#schematics/format';
 import { spellings } from '#schematics/names';
-import { addToCollection, addToSortedStringArray } from '#schematics/source-file';
+import { addToCollection, addToSortedStringArray, propertyPassedTo } from '#schematics/source-file';
 import {
   editText,
   nextMigrationTimestamp,
   readJson,
-  serviceMemberOf,
+  readText,
+  serviceVocabulary,
   siblingPins,
   writeJson,
+  type ServiceVocabulary,
 } from '#schematics/workspace';
 
 export interface ServiceOptions {
@@ -40,8 +42,21 @@ interface Topic {
   readonly partitions: number;
 }
 
+interface DeclaredTopics {
+  readonly topics: readonly { readonly name: string; readonly partitions: number }[];
+}
+
 /** events.md §3: a context's retry and dead-letter topics take 3 partitions, like every other's. */
 const FAILURE_TOPIC_PARTITIONS = 3;
+const FAILURE_TOPICS = ['retry', 'dlq'];
+
+const DATABASES = '/infra/postgres/init-databases.sql';
+const TOPICS = '/infra/kafka/topics.json';
+const CONNECTORS = '/infra/debezium';
+/** A connector's fields named after its service; the files differ in nothing else. */
+const NAMED_AFTER_SERVICE = ['database.dbname', 'topic.prefix', 'slot.name', 'publication.name'];
+/** What starts a service's consumer groups, named after its `service`: `runConsumers` (consume.ts). */
+const CONSUMER_HOSTS = ['ConsumerHostModule.forRoot', 'runConsumers'];
 
 const CONSUMER_FILES = [
   '/consumer.ts',
@@ -90,21 +105,133 @@ function topicsOf(option: string): Topic[] {
           `--topics: "${entry}" is not aggregate:partitions, such as order:6 (events.md §3)`,
         );
       }
-      return { aggregate: parsed[1] ?? '', partitions: Number(parsed[2]) };
+      const aggregate = parsed[1] ?? '';
+      if (FAILURE_TOPICS.includes(aggregate)) {
+        throw new SchematicsException(`--topics: "${aggregate}" names a consumer's failure topic`);
+      }
+      return { aggregate, partitions: Number(parsed[2]) };
     });
   if (topics.length === 0) throw new SchematicsException('--topics names no topic');
   return topics;
 }
 
-function refuseCollisions(tree: Tree, { name, port }: ServiceOptions): void {
+function refuseName(name: string): void {
   if (!/^[a-z][a-z0-9]*$/.test(name)) {
     throw new SchematicsException(
       `--name "${name}": one lowercase word, since it names a database, a slot and a topic prefix`,
     );
   }
-  if (tree.exists(`/apps/${name}/package.json`)) {
-    throw new SchematicsException(`apps/${name} exists already`);
+}
+
+interface Connector {
+  readonly name: string;
+  readonly config: Record<string, string>;
+}
+
+/**
+ * Copied from the alphabetically-first connector, the fields named after its service renamed:
+ *   `connector-config.spec.ts` holds that they differ in nothing else.
+ */
+function connectorOf(tree: Tree, name: string): Connector {
+  const model = tree
+    .getDir(CONNECTORS)
+    .subfiles.filter((file) => file.endsWith('-outbox.json'))
+    .sort()[0];
+  if (model === undefined) {
+    throw new SchematicsException('no infra/debezium/*-outbox.json to copy');
   }
+  const source = readJson<Connector>(tree, `${CONNECTORS}/${model}`);
+  const modelService = source.config['database.dbname'] ?? '';
+  const renamed = (value: string): string => value.split(modelService).join(name);
+  const config = Object.fromEntries(
+    Object.entries(source.config).map(([key, value]) => [
+      key,
+      NAMED_AFTER_SERVICE.includes(key) ? renamed(value) : value,
+    ]),
+  );
+  return { name: `${name}-outbox`, config };
+}
+
+function connectorUses(tree: Tree, name: string): string[] {
+  const wanted = connectorOf(tree, name);
+  return tree
+    .getDir(CONNECTORS)
+    .subfiles.filter((file) => file.endsWith('.json'))
+    .flatMap((file) => {
+      const existing = readJson<Partial<Connector>>(tree, `${CONNECTORS}/${file}`);
+      const shared = [
+        ...(existing.name === wanted.name ? ['name'] : []),
+        ...NAMED_AFTER_SERVICE.filter(
+          (key) =>
+            existing.config?.[key] === wanted.config[key] && wanted.config[key] !== undefined,
+        ),
+      ];
+      return shared.length === 0 ? [] : [`connector infra/debezium/${file} (${shared.join(', ')})`];
+    });
+}
+
+/**
+ * A topic `arthome.<name>.*` declared for this service before it was built, as
+ *   `arthome.streaming.run` is for catalog to consume, is its own when `--topics` claims it at
+ *   its partitions. Any other is another service's.
+ */
+function topicUses(tree: Tree, name: string, topics: readonly Topic[]): string[] {
+  const prefix = `arthome.${name}.`;
+  return readJson<DeclaredTopics>(tree, TOPICS)
+    .topics.filter((topic) => topic.name.startsWith(prefix))
+    .flatMap(({ name: declared, partitions }) => {
+      const claimed = topics.find(({ aggregate }) => `${prefix}${aggregate}` === declared);
+      if (claimed?.partitions === partitions) return [];
+      const aggregate = declared.slice(prefix.length);
+      const claim = FAILURE_TOPICS.includes(aggregate)
+        ? ''
+        : ` (--topics ${aggregate}:${partitions} owns it)`;
+      return [`topic ${declared} in infra/kafka/topics.json${claim}`];
+    });
+}
+
+function consumerGroupUses(tree: Tree, name: string, vocabulary: ServiceVocabulary): string[] {
+  const members = new Map(
+    Object.entries(vocabulary).map(([member, value]) => [`Service.${member}`, value]),
+  );
+  const uses: string[] = [];
+  for (const app of tree.getDir('/apps').subdirs) {
+    tree.getDir(`/apps/${app}/src`).visit((path) => {
+      if (!path.endsWith('.ts') || /\.(spec|itest)\.ts$/.test(path)) return;
+      const text = tree.readText(path);
+      const groups = CONSUMER_HOSTS.filter((callee) => text.includes(callee)).flatMap((callee) =>
+        propertyPassedTo(text, callee, 'service').map((value) => members.get(value) ?? value),
+      );
+      if (groups.includes(name)) uses.push(`consumer group ${name} in ${path.slice(1)}`);
+    });
+  }
+  return uses;
+}
+
+/** Everything already named `name`: refused all at once, since a service shares none of them. */
+function refuseUsedName(
+  tree: Tree,
+  { name }: ServiceOptions,
+  topics: readonly Topic[],
+  vocabulary: ServiceVocabulary,
+): void {
+  const uses = [
+    ...(tree.getDir('/apps').subdirs.some((app) => app === name)
+      ? [`apps/${name} exists already`]
+      : []),
+    ...(new RegExp(`^(CREATE|ALTER) DATABASE ${name}\\s`, 'm').test(readText(tree, DATABASES))
+      ? [`database ${name} in infra/postgres/init-databases.sql`]
+      : []),
+    ...topicUses(tree, name, topics),
+    ...connectorUses(tree, name),
+    ...consumerGroupUses(tree, name, vocabulary),
+  ];
+  if (uses.length > 0) {
+    throw new SchematicsException(`--name ${name} is taken: ${uses.join('; ')}`);
+  }
+}
+
+function refusePort(tree: Tree, { port }: ServiceOptions): void {
   for (const app of tree.getDir('/apps').subdirs) {
     const example = `/apps/${app}/.env.example`;
     if (tree.exists(example) && new RegExp(`^PORT=${port}$`, 'm').test(tree.readText(example))) {
@@ -145,8 +272,7 @@ function manifest(options: ServiceOptions): Rule {
 /** Its database, with the timeouts every other one takes. */
 function database({ name }: ServiceOptions): Rule {
   return (tree) => {
-    editText(tree, '/infra/postgres/init-databases.sql', (text) => {
-      if (new RegExp(`^CREATE DATABASE ${name} `, 'm').test(text)) return text;
+    editText(tree, DATABASES, (text) => {
       const lines = text.split('\n');
       const afterLast = (pattern: RegExp, line: (padded: string) => string): void => {
         const indices = lines.flatMap((candidate, index) =>
@@ -171,52 +297,22 @@ function database({ name }: ServiceOptions): Rule {
   };
 }
 
-interface Connector {
-  readonly name: string;
-  readonly config: Record<string, string>;
-}
-
-/**
- * Copied from an existing connector, the fields named after its service renamed: the files differ
- *   in nothing else, which `connector-config.spec.ts` holds.
- */
 function connector({ name }: ServiceOptions): Rule {
   return (tree) => {
-    const directory = tree.getDir('/infra/debezium');
-    const model = directory.subfiles.filter((file) => file.endsWith('-outbox.json')).sort()[0];
-    if (model === undefined) {
-      throw new SchematicsException('no infra/debezium/*-outbox.json to copy');
-    }
-    const source = readJson<Connector>(tree, `/infra/debezium/${model}`);
-    const modelService = source.config['database.dbname'] ?? '';
-    const renamed = (value: string): string => value.split(modelService).join(name);
-    const config = Object.fromEntries(
-      Object.entries(source.config).map(([key, value]) => [
-        key,
-        ['database.dbname', 'topic.prefix', 'slot.name', 'publication.name'].includes(key)
-          ? renamed(value)
-          : value,
-      ]),
-    );
-    writeJson(tree, `/infra/debezium/${name}-outbox.json`, { name: `${name}-outbox`, config });
+    writeJson(tree, `${CONNECTORS}/${name}-outbox.json`, connectorOf(tree, name));
   };
-}
-
-interface DeclaredTopics {
-  readonly topics: readonly { readonly name: string; readonly partitions: number }[];
 }
 
 function kafkaTopics({ name, consumer }: ServiceOptions, topics: readonly Topic[]): Rule {
   return (tree) => {
-    const path = '/infra/kafka/topics.json';
-    const declared = readJson<DeclaredTopics>(tree, path);
+    const declared = readJson<DeclaredTopics>(tree, TOPICS);
     const wanted = [
       ...topics.map(({ aggregate, partitions }) => ({
         name: `arthome.${name}.${aggregate}`,
         partitions,
       })),
       ...(consumer
-        ? ['retry', 'dlq'].map((suffix) => ({
+        ? FAILURE_TOPICS.map((suffix) => ({
             name: `arthome.${name}.${suffix}`,
             partitions: FAILURE_TOPIC_PARTITIONS,
           }))
@@ -224,7 +320,7 @@ function kafkaTopics({ name, consumer }: ServiceOptions, topics: readonly Topic[
     ];
     const existing = new Set(declared.topics.map((topic) => topic.name));
     const added = wanted.filter((topic) => !existing.has(topic.name));
-    writeJson(tree, path, { ...declared, topics: [...declared.topics, ...added] });
+    writeJson(tree, TOPICS, { ...declared, topics: [...declared.topics, ...added] });
   };
 }
 
@@ -312,9 +408,13 @@ function install(options: ServiceOptions): Rule {
 
 export function service(options: ServiceOptions): Rule {
   return async (tree) => {
-    refuseCollisions(tree, options);
+    refuseName(options.name);
     const topics = topicsOf(options.topics);
-    const member = await serviceMemberOf(options.name);
+    const vocabulary = await serviceVocabulary();
+    refuseUsedName(tree, options, topics, vocabulary);
+    refusePort(tree, options);
+    const member =
+      Object.entries(vocabulary).find(([, value]) => value === options.name)?.[0] ?? null;
     const files = apply(url('./files'), [
       filter((path) => options.consumer || !CONSUMER_FILES.some(renders(path))),
       filter((path) => options.sweeper || !SWEEPER_FILES.some(renders(path))),
