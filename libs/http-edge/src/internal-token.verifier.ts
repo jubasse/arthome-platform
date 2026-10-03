@@ -110,8 +110,9 @@ export class InternalTokenVerifier {
 
     const claims = InternalTokenClaimsSchema.safeParse(verified.payload);
     if (!claims.success || !isKeyIdOfIssuer(verified.protectedHeader.kid, claims.data.iss)) {
+      // Quoted: the kid is the caller's to choose, and a raw one could forge a log line.
       this.logger.warn(
-        `an internal token signed with ${verified.protectedHeader.kid ?? 'no kid'} was refused`,
+        `an internal token signed with ${JSON.stringify(verified.protectedHeader.kid ?? null)} was refused`,
       );
       throw unauthenticated();
     }

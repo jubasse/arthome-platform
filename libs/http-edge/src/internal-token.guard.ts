@@ -1,8 +1,8 @@
 import { Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
-import type { Reflector } from '@nestjs/core';
+import { Reflector } from '@nestjs/core';
 
 import { AllowAnonymous } from './allow-anonymous.js';
-import type { InternalTokenVerifier } from './internal-token.verifier.js';
+import { InternalTokenVerifier } from './internal-token.verifier.js';
 import { attachPrincipal, unauthenticated } from './principal.js';
 
 const BEARER = /^Bearer ([A-Za-z0-9._-]+)$/;
