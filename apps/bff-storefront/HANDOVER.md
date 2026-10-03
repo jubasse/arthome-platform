@@ -84,7 +84,9 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
 - **The caps** (`adr-auth.md` §6.2) count per address, an IPv6 one as its /64, until devices carry a
   verified identity; per typed email and address for password guessing; per account for a resend.
   In Redis, so every replica shares them. `TRUSTED_PROXIES` names the proxies whose
-  `X-Forwarded-For` is believed, none by default.
+  `X-Forwarded-For` is believed. It is required in production, `none` when no proxy fronts the
+  BFF: trusting none behind a proxy would make every client the proxy's address and the caps
+  platform-wide. Outside production it defaults to none.
 - **No lockout per email** (the lead's ruling, 2026-10-03): an email's wrong passwords, from any
   address, hold its next sign-in for a doubling pause bounded at four seconds (`FailedSignIns`,
   core's `SignInSlowdown`), and never refuse it; a success clears the count. A stranger who knows an

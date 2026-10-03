@@ -121,12 +121,20 @@ describe('the secrets and addresses of the authentication edge', () => {
   });
 
   it('trusts no proxy unless told, and refuses an entry that is not an address', () => {
-    expect(readTrustedProxies({})).toEqual([]);
+    expect(readTrustedProxies({ NODE_ENV: 'development' })).toEqual([]);
     expect(readTrustedProxies({ TRUSTED_PROXIES: '10.0.0.0/8, 127.0.0.1' })).toEqual([
       '10.0.0.0/8',
       '127.0.0.1',
     ]);
     expect(() => readTrustedProxies({ TRUSTED_PROXIES: 'everything' })).toThrow();
+  });
+
+  it('requires the proxies to be named in production, `none` included', () => {
+    expect(() => readTrustedProxies({ NODE_ENV: 'production' })).toThrow(/TRUSTED_PROXIES/);
+    expect(readTrustedProxies({ NODE_ENV: 'production', TRUSTED_PROXIES: 'none' })).toEqual([]);
+    expect(readTrustedProxies({ NODE_ENV: 'production', TRUSTED_PROXIES: '10.0.0.0/8' })).toEqual([
+      '10.0.0.0/8',
+    ]);
   });
 
   it('reads the country header only when one is named, and requires one in production', () => {

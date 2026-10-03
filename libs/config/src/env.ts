@@ -350,14 +350,23 @@ export function readCsrfSecret(source: Record<string, string | undefined> = proc
 
 /**
  * `TRUSTED_PROXIES`: the addresses or subnets whose `X-Forwarded-For` a BFF believes, comma
- * separated. Unset, none: every client then shares the proxy's address, which is wrong behind one
- * but never forgeable (`nestjs-web-security` rule 7).
+ * separated, or `none` when clients reach it directly (`nestjs-web-security` rule 7). Required in
+ * production: behind a proxy, a BFF trusting none counts every client as the proxy's address, and the
+ * per-address caps become platform-wide, in silence. Outside production, unset means none.
  */
 export function readTrustedProxies(
   source: Record<string, string | undefined> = process.env,
 ): readonly string[] {
   const raw = stripEmpty(source).TRUSTED_PROXIES;
-  if (raw === undefined) return [];
+  if (raw === undefined) {
+    if (readNodeEnv(source) === 'production') {
+      throw new Error(
+        'TRUSTED_PROXIES: required in production, `none` when no proxy fronts the BFF',
+      );
+    }
+    return [];
+  }
+  if (raw.trim() === 'none') return [];
   return z
     .array(z.union([z.ipv4(), z.ipv6(), z.cidrv4(), z.cidrv6()]))
     .min(1)
