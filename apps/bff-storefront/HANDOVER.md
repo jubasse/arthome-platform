@@ -70,7 +70,8 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   body, `refreshToken` null, and set no cookie. A request carrying both carriers is a 401. The three
   cookies are `__Host-`, so a sibling subdomain cannot plant a session of its own. They live as long
   as the session; sign-out clears them with the attributes that set them, and `getViewerContext`
-  re-sets all three with the session's slid expiry.
+  re-sets all three with the session's slid expiry. Signing in or up over a session closes that
+  session, best effort, so it does not live on for seven days in a browser that dropped it.
 - **CSRF**: every write carrying the session cookie needs `X-Arthome-Csrf` (storefront.yaml
   `sessionCookie`), checked by `@fastify/csrf-protection` with the token bound to the session. From
   a guard rather than the plugin's hook, so a refusal leaves through the error envelope. Sign-up,

@@ -13,6 +13,7 @@ import {
   Headers,
   HttpCode,
   Inject,
+  Logger,
   Post,
   Req,
   Res,
@@ -42,6 +43,7 @@ import {
   setSessionCookies,
   type CookieCarrier,
   type CsrfReply,
+  type PresentedSession,
 } from '../session/session-carriers.js';
 import { CurrentViewer, RequiresViewer, callerOf, type Viewer } from '../session/viewer.js';
 import { SURFACE_HEADER, assertStorefrontSurface } from '../storefront-surface.js';
@@ -58,6 +60,15 @@ export interface SessionReply extends CsrfReply {
 }
 
 type Inbound = CookieCarrier;
+
+/** Any session the request carries, a malformed carrier being none: it is about to be replaced. */
+function replacedSession(request: Inbound): PresentedSession | null {
+  try {
+    return presentedSession(request);
+  } catch {
+    return null;
+  }
+}
 
 function isWrongPassword(error: unknown): boolean {
   return (
@@ -85,6 +96,8 @@ export type SessionEstablished =
 @AllowInProduction()
 @Controller('v1/auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   public constructor(
     private readonly identity: IdentityClient,
     private readonly failedSignIns: FailedSignIns,
@@ -119,6 +132,7 @@ export class AuthController {
       this.anonymousCall(request, reply),
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
+    await this.closeReplaced(request, reply, opened);
     return this.established(body.mode, opened, storefront, request, reply);
   }
 
@@ -152,6 +166,7 @@ export class AuthController {
       throw error;
     }
     await this.failedSignIns.forget(body.email);
+    await this.closeReplaced(request, reply, opened);
     return this.established(body.mode, opened, storefront, request, reply);
   }
 
@@ -228,6 +243,24 @@ export class AuthController {
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
     return sent;
+  }
+
+  /**
+   * Signing in over a session closes it, or it would live on for seven days in a browser that no
+   *   longer holds it. Best effort: the new session is open, and a failure here must not lose it.
+   */
+  private async closeReplaced(
+    request: Inbound,
+    reply: SessionReply,
+    opened: SessionOpened,
+  ): Promise<void> {
+    const replaced = replacedSession(request);
+    if (replaced === null || replaced.token === opened.session.token) return;
+    try {
+      await this.identity.revoke(replaced.token, this.anonymousCall(request, reply));
+    } catch (error) {
+      this.logger.warn('the session signed in over could not be closed', error);
+    }
   }
 
   private anonymousCall(request: Inbound, reply: SessionReply): ServiceCall {

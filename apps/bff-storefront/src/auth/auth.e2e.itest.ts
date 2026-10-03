@@ -670,6 +670,26 @@ describe('a write with the session cookie', () => {
   );
 });
 
+describe('signing in over a session', () => {
+  it(
+    'closes the session the browser held, and the new one opens',
+    async () => {
+      const browser = await browserSession();
+      const again = await post(
+        '/v1/auth/sign-in',
+        { email: browser.email, password: 'a-long-password', mode: SessionMode.COOKIE },
+        { cookie: browser.cookie },
+      );
+      expect(again.statusCode).toBe(200);
+      const fresh = cookiesOf(again).get(SESSION_COOKIE)?.value ?? '';
+
+      expect((await viewerContext({ cookie: browser.cookie })).statusCode).toBe(401);
+      expect((await viewerContext({ cookie: `${SESSION_COOKIE}=${fresh}` })).statusCode).toBe(200);
+    },
+    CASE_MS,
+  );
+});
+
 describe('signing out by bearer', () => {
   it(
     'closes that session alone and succeeds again on a replay',
