@@ -55,7 +55,10 @@ finds (better-auth says the address is taken while the account row was free) and
 
 **Passwords** are argon2id at OWASP's floor (`password-hashing.ts`), between 12 and 128
 characters, NFKC-normalised before hashing and verifying; a sign-in hashes again a digest made with
-older parameters, so raising them reaches every account that signs in. **Sessions** live 7 days and slide once a day (`@arthome/core`'s lifetimes, owned by
+older parameters, so raising them reaches every account that signs in. **better-auth's `baseURL`**
+is `PUBLIC_WEB_ORIGIN`, required in production: the public origin the surfaces and the BFF share
+(`adr-auth.md` §8.2.7), never identity's internal address. No link better-auth builds is sent today;
+a reset link (slice D) overrides `sendResetPassword` to point at the surface. **Sessions** live 7 days and slide once a day (`@arthome/core`'s lifetimes, owned by
 `adr-auth.md` §6.1); the token handed out is the signed one, and `bearer({ requireSignature: true
 })` refuses an unsigned one. **The idempotency fingerprint of a sign-up is keyed**
 (`keyedFingerprintOf`, the key derived from `BETTER_AUTH_SECRET`): the body carries a password, and

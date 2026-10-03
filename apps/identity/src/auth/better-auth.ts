@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+import { readPublicWebOrigin } from '@arthome-platform/config';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { PostgresDialect } from 'kysely';
@@ -31,10 +32,12 @@ export function withPresetUserId<T>(userId: string, create: () => Promise<T>): P
  * better-auth as a library: identity's controllers call `auth.api`, and no better-auth route is
  *   mounted, so none escapes the internal token's guard (`adr-auth.md` §3.1). The session token it
  *   hands out is the signed one the `bearer` plugin reads back, and an unsigned one is refused.
+ *   `baseURL` is the public origin the surfaces and the BFF share (§8.2.7), never identity's own.
  */
-export function authOptions(pool: Pool, secret: string) {
+export function authOptions(pool: Pool, secret: string, baseURL: string = readPublicWebOrigin()) {
   return {
     secret,
+    baseURL,
     database: {
       dialect: new PostgresDialect({ pool }),
       type: 'postgres' as const,
