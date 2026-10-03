@@ -630,6 +630,22 @@ describe('a write with the session cookie', () => {
   );
 
   it(
+    'refuses a sign-out carrying the cookie alone, as a cross-site form sends it; the session lives',
+    async () => {
+      const browser = await browserSession();
+      const forged = await app.inject({
+        method: 'POST',
+        url: '/v1/auth/sign-out',
+        remoteAddress: address,
+        headers: { cookie: browser.cookie },
+      });
+      expect(forged.statusCode).toBe(400);
+      expect((await viewerContext({ cookie: browser.cookie })).statusCode).toBe(200);
+    },
+    CASE_MS,
+  );
+
+  it(
     'signs out without a CSRF token, so a browser that lost its secret can still leave',
     async () => {
       const browser = await browserSession();
