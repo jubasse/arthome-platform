@@ -62,6 +62,13 @@ Failing loudly is the recoverable posture: the connector stops, the replication 
 WAL, and the lag is measurable (`confirmed_flush_lsn`). It is also the posture that fills a disk
 if nobody looks — alert on slot lag, and never leave a stopped connector registered.
 
+## A failed record's error is logged, never its payload
+
+`errors.log.include.messages` is `false` on every connector: identity's outbox carries D-100's
+verification token (`events.md` §3), which nothing may log, and the connectors differ only in the
+fields named after their service (`connector-config.spec.ts`). The error, the topic and the offset
+are still logged; the payload is protobuf bytes, which the log could not have rendered anyway.
+
 ## The publication is created `FOR ALL TABLES` unless you say otherwise
 
 Both files now set `publication.autocreate.mode: filtered`. What follows is why, and what it cost

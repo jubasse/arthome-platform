@@ -17,7 +17,7 @@
     "@arthome-platform/events": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome-platform/search-index": "workspace:*",
-    "@arthome/core": "file:../../vendor/arthome-core-abf61594d220.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-4ad2de4a5485.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "@opensearch-project/opensearch": "3.6.0",
     "kafkajs": "2.2.4",

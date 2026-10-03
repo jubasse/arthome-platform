@@ -36,7 +36,7 @@ function hashOf(token: string): string {
 }
 
 /**
- * Email verification (`adr-auth.md` §6.7, auth Q2): a link at sign-up and on request, spent by its
+ * Email verification (`adr-auth.md` §6.7, D-100): a link at sign-up and on request, spent by its
  *   first use, expired after a day, and good only for the address it was sent to.
  */
 @Injectable()
@@ -84,9 +84,11 @@ export class EmailVerificationsService {
     await writeOutboxEvent(
       manager,
       {
-        aggregateType: 'identity.account',
+        // Its own topic, which `notifications` alone reads (events.md §3). The token is never
+        //   logged, here or by the connector.
+        aggregateType: 'identity.email_verification',
         aggregateId: recipient.accountId,
-        type: 'identity.account.email_verification_requested.v1',
+        type: 'identity.email_verification.requested.v1',
         payload: toBinary(EmailVerificationRequestedSchema, event),
         traceparent,
         actorId: recipient.accountId,

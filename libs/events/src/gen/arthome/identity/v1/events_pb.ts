@@ -62,14 +62,15 @@ export const AccountRegisteredSchema: GenMessage<AccountRegistered> = /*@__PURE_
 
 /**
  * A verification link to send to the account's address: at sign-up, and again on
- * `resendEmailVerification`, which spends the earlier links (auth Q2, 2026-10-03).
+ * `resendEmailVerification`, which spends the earlier links (D-100).
  *
- * THE TOKEN TRAVELS IN CLEAR, through the outbox and the topic, and that is the
- * decision: `notifications` builds the link, and identity cannot call it (critical
- * rule 1). It is acceptable for THIS token because a verified address unlocks
- * nothing, so a leaked one can only mark an address verified, once, within its
- * expiry; identity keeps only its hash. A token that opens an account (a password
- * reset) is not carried this way without its own decision.
+ * THE TOKEN TRAVELS IN CLEAR, through the outbox and its own topic,
+ * `arthome.identity.email_verification`, which `notifications` alone reads and which
+ * is retained only as long as the link lives (events.md §3). `notifications` builds
+ * the link, and identity cannot call it (critical rule 1). It is acceptable for THIS
+ * token because a verified address unlocks nothing, so a leaked one can only mark an
+ * address verified, once, within its expiry; identity keeps only its hash, and nobody
+ * logs it. A PASSWORD RESET'S TOKEN MUST NOT TAKE THIS PATH: slice D decides its own.
  *
  * @generated from message arthome.identity.v1.EmailVerificationRequested
  */

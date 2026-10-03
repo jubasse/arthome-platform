@@ -101,8 +101,16 @@ describe('the secrets and addresses of the authentication edge', () => {
     expect(() => readTrustedProxies({ TRUSTED_PROXIES: 'everything' })).toThrow();
   });
 
-  it('reads the country header only when one is named', () => {
-    expect(readViewerCountryHeader({})).toBeNull();
-    expect(readViewerCountryHeader({ VIEWER_COUNTRY_HEADER: 'CF-IPCountry' })).toBe('cf-ipcountry');
+  it('reads the country header only when one is named, and requires one in production', () => {
+    expect(readViewerCountryHeader({ NODE_ENV: 'development' })).toBeNull();
+    expect(
+      readViewerCountryHeader({ NODE_ENV: 'production', VIEWER_COUNTRY_HEADER: 'CF-IPCountry' }),
+    ).toBe('cf-ipcountry');
+    expect(() => readViewerCountryHeader({ NODE_ENV: 'production' })).toThrow(
+      /VIEWER_COUNTRY_HEADER/,
+    );
+    expect(() =>
+      readViewerCountryHeader({ NODE_ENV: 'test', VIEWER_COUNTRY_HEADER: 'not a header' }),
+    ).toThrow(/VIEWER_COUNTRY_HEADER/);
   });
 });

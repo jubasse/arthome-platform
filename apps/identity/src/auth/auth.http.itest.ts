@@ -148,8 +148,20 @@ describe('sign-up', () => {
       expect(credential?.id).toBe(session.accountId);
 
       expect(await outboxTypesOf(session.accountId)).toEqual([
-        'identity.account.email_verification_requested.v1',
         'identity.account.registered.v1',
+        'identity.email_verification.requested.v1',
+      ]);
+      // The token rides a topic of its own, which notifications alone reads (events.md §3).
+      const topics = await identity.dataSource.query<{ type: string; aggregatetype: string }[]>(
+        'SELECT type, aggregatetype FROM outbox_event WHERE aggregateid = $1 ORDER BY type',
+        [session.accountId],
+      );
+      expect(topics).toEqual([
+        { type: 'identity.account.registered.v1', aggregatetype: 'identity.account' },
+        {
+          type: 'identity.email_verification.requested.v1',
+          aggregatetype: 'identity.email_verification',
+        },
       ]);
       const traces = await identity.dataSource.query<{ tracecontext: string }[]>(
         'SELECT DISTINCT tracecontext FROM outbox_event WHERE aggregateid = $1',

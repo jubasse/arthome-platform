@@ -23,8 +23,9 @@ events through the outbox in one transaction, the inbound `traceparent` injected
 implemented it). `src/auth/better-auth.ts` builds the instance; identity's own controllers call
 `auth.api`; no better-auth route is mounted, so every route sits behind the internal token's guard
 and a caller reaching identity directly cannot skip the BFF's caps, which is what bounds
-enumeration (auth Q1). `@thallesp/nestjs-better-auth` is not installed, and `bodyParser: false`
-therefore applies nowhere.
+enumeration (D-099). `@thallesp/nestjs-better-auth` is not installed, and `bodyParser: false`
+therefore applies nowhere. Approved by the lead on 2026-10-03 and recorded as an amendment to
+`adr-auth.md` §3.1, not as a decision.
 
 | Route (BFF only) | What it does |
 | --- | --- |
@@ -59,19 +60,26 @@ characters. **Sessions** live 7 days and slide once a day (`@arthome/core`'s lif
 (`keyedFingerprintOf`, the key derived from `BETTER_AUTH_SECRET`): the body carries a password, and
 the record keeps it for a day.
 
-**The email verification link** (`adr-auth.md` §6.7, auth Q2) is identity's, not better-auth's,
+**The email verification link** (`adr-auth.md` §6.7, D-100) is identity's, not better-auth's,
 whose token is a signed JWT a second use does not spend. 256 random bits, the hash alone stored in
 `email_verification`, spent by its first use, expired after
 `EMAIL_VERIFICATION_LINK_LIFETIME_HOURS`, bound to the address it was sent to; a resend spends the
-earlier ones. `identity.account.email_verification_requested.v1` carries the token to
-`notifications`, in clear: the proto's comment says why that is acceptable for this token and not
-for a reset token. Unknown, expired and used answer one 410 `identity.verification_link_invalid`.
+earlier ones. `identity.email_verification.requested.v1` carries the token to `notifications`, in
+clear, on a topic of its own, `arthome.identity.email_verification`, which `notifications` alone
+may read (`events.md` §3): the account topic, which other contexts may read, never carries a token.
+The token is never logged: identity logs none, and the connectors log a failed record's error, not
+its payload (`infra/debezium/README.md`). The topic keeps the standard week, since a shorter
+retention would make the republish check republish an expired link; the token dies with the link
+anyway. Unknown, expired and used answer one 410 `identity.verification_link_invalid`.
+
+**A password reset's token must NOT take this path.** It opens an account where this one only marks
+an address verified; slice D decides how it reaches the person (the lead's ruling, 2026-10-03).
 
 **One lock order** (the review checklist's): an account's row, then its links. `resend` locks the
 account and spends the outstanding links; `confirm` reads the link, locks its account, then spends
 the link. The race between the two is a suite case.
 
-**The public handle** is generated and neutral (`generatedPublicHandle`, auth Q3), changeable
+**The public handle** is generated and neutral (`generatedPublicHandle`, D-101), changeable
 later through `updateProfile` (not yet served). **The country** is the one the BFF sends: the
 gateway's geolocation, or `ZZ`, CLDR's unknown region. **The device id** the BFF puts in the token
 is the session's own id until devices register (auth slice C).
@@ -82,10 +90,11 @@ is the session's own id until devices register (auth slice C).
   is loose for its `chn` and `rol`; Q4's invitation sign-up reuses `SignUpService`'s order.
 - **C (devices)**: `deviceId` becomes the registered device; the bearer plugin is in place;
   `multi-session` and `device-authorization` are not installed yet.
-- **D**: password reset, two-factor, social sign-in. A reset token must not travel in clear as the
-  verification token does: its delivery path is D's decision.
-- **Nothing consumes `email_verification_requested` yet**: `notifications` records the welcome
-  email only, and no email is sent by anyone today.
+- **D**: password reset, two-factor, social sign-in. A reset token must not take the verification
+  token's path: its delivery is D's decision.
+- **Nothing consumes `arthome.identity.email_verification` yet**: `notifications` records the
+  welcome email only, and no email is sent by anyone today. Its consumer, when written, is the
+  topic's only one.
 
 ## 1. What is here
 
@@ -303,7 +312,7 @@ the published vocabulary is the project's current answer — so `EMAIL_TAKEN` is
 and carried upward during this pass; **not implemented, deliberately.** If it is ever decided the
 other way, this filter's per-column mapping and `identity.email_taken` itself are what change.
 
-**Decided on 2026-10-03 (auth Q1): sign-up keeps answering `409` `identity.email_taken`**, the
+**Decided on 2026-10-03 (D-099): sign-up keeps answering `409` `identity.email_taken`**, the
 enumeration slowed by the storefront BFF's cap per address (`AuthRateLimit.SIGN_UP_PER_ADDRESS`).
 Sign-up now answers it itself, before the unique constraint is reached (§0).
 

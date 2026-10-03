@@ -33,6 +33,10 @@
       "partitions": 3
     },
     {
+      "name": "arthome.identity.email_verification",
+      "partitions": 3
+    },
+    {
       "name": "arthome.identity.retry",
       "partitions": 3
     },

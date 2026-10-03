@@ -3,7 +3,7 @@
 The storefront's BFF (`context-map.md`: one BFF per product, owned by its surfaces). It serves
 `openapi/storefront.yaml` from the services behind it and holds no domain rule. From catalog:
 `GET /v1/search`, `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`. From
-identity (auth slice A, 2026-10-03): `/v1/auth/sign-up`, `sign-in`, `sign-out`, `verify-email`,
+identity (auth slice A, D-107, 2026-10-03): `/v1/auth/sign-up`, `sign-in`, `sign-out`, `verify-email`,
 `verify-email/resend` and `GET /v1/viewer-context`.
 Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10-03.
 
@@ -51,6 +51,11 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   forwarded, naming the viewer's account and device, or no account for an anonymous visitor.
   `DenyInProductionGuard` stays bound behind the others, and every route here is allowed in
   production now that the services can verify who calls them.
+- **The signing key** comes from `INTERNAL_TOKEN_SIGNING_KEY`, required in production. Outside it,
+  the development key `libs/config` publishes (`development-token-key.ts`) signs, so a fresh clone
+  runs; production refuses that key by its `kid` even when it is configured, which
+  `libs/config/src/auth-env.spec.ts` proves, and the production JWKS document never carries it
+  (approved by the lead, 2026-10-03). The minter refuses a key whose `kid` is not `bff-sf-`.
 - **The session is identity's, validated here** (§8): `ViewerGuard` asks identity on the routes
   marked `RequiresViewer`, and nowhere else, so a public read never waits on identity. No Redis
   cache of sessions yet: one identity call per authenticated request, within transport.md §5.9's
@@ -69,7 +74,10 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   typed address for password guessing, per account for a resend; in Redis, so every replica shares
   them. `TRUSTED_PROXIES` names the proxies whose `X-Forwarded-For` is believed, none by default.
 - **The country at sign-up** is the gateway's geolocation header, named by `VIEWER_COUNTRY_HEADER`,
-  or `ZZ`: the surface is never asked.
+  or `ZZ`, CLDR's unknown region, when the header is missing or holds no country: the surface is
+  never asked, and no other header is trusted. The variable is required in production (the lead's
+  ruling, 2026-10-03), so a deployment cannot record every country as unknown in silence; outside
+  production it is unset and every country is `ZZ`.
 - **The viewer context serves what has an owner**: the auth half and core's constants. The reaction
   quota per date, the label catalogue and the taxonomy artifact have no owner yet, and
   `ServedViewerContext` says so; the contract requires all three.

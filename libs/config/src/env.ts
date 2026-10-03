@@ -348,20 +348,24 @@ export function readTrustedProxies(
     .parse(raw.split(',').map((entry) => entry.trim()));
 }
 
+const headerName = z
+  .string()
+  .regex(/^[A-Za-z0-9-]+$/)
+  .transform((name) => name.toLowerCase());
+
 /**
  * `VIEWER_COUNTRY_HEADER`: the header the infrastructure gateway writes the visitor's country into,
- * from its geolocation. Unset, no header is read and every country is unknown.
+ * from its geolocation, and the only one trusted. Required in production, where a BFF reading no
+ * header would record every visitor's country as unknown in silence; outside production, unset
+ * means no header is read and every country is unknown.
  */
 export function readViewerCountryHeader(
   source: Record<string, string | undefined> = process.env,
 ): string | null {
   const raw = stripEmpty(source).VIEWER_COUNTRY_HEADER;
-  return raw === undefined
-    ? null
-    : z
-        .string()
-        .regex(/^[a-z0-9-]+$/)
-        .parse(raw.toLowerCase());
+  if (raw === undefined && readNodeEnv(source) !== 'production') return null;
+  return z.object({ VIEWER_COUNTRY_HEADER: headerName }).parse({ VIEWER_COUNTRY_HEADER: raw })
+    .VIEWER_COUNTRY_HEADER;
 }
 
 function parseJson(raw: string | undefined, name: string): unknown {
