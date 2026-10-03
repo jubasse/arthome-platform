@@ -462,7 +462,10 @@ export function addParameter(text: string, functionName: string, parameter: stri
   return applied(text, [insertion(at, `${last === undefined ? '' : ', '}${parameter}`)]);
 }
 
-/** A property added first to the object literal `functionName` returns. */
+/**
+ * A property added to the object literal `functionName` returns, in its key's order among the
+ *   assignments and before the shorthands, as the services write `{ dateSales, holds, manager }`.
+ */
 export function addReturnedProperty(text: string, functionName: string, property: string): string {
   const declaration = functionNamed(parse(text), functionName);
   const returned = located(
@@ -474,15 +477,20 @@ export function addReturnedProperty(text: string, functionName: string, property
     ),
     `returned object in ${functionName}`,
   ).expression as ts.ObjectLiteralExpression;
-  const key = property.split(':')[0]?.trim();
-  if (returned.properties.some((existing) => existing.name?.getText() === key)) return text;
-  const first = returned.properties[0];
-  if (first === undefined) return applied(text, [insertion(returned.end - 1, ` ${property} `)]);
-  return applied(text, [insertion(first.getStart(), `${property}, `)]);
+  const key = property.split(':')[0]?.trim() ?? '';
+  const { properties } = returned;
+  if (properties.some((existing) => existing.name?.getText() === key)) return text;
+  const next = properties.find(
+    (existing) => !ts.isPropertyAssignment(existing) || existing.name.getText() > key,
+  );
+  if (next !== undefined) return applied(text, [insertion(next.getStart(), `${property}, `)]);
+  const last = properties[properties.length - 1];
+  if (last === undefined) return applied(text, [insertion(returned.end - 1, ` ${property} `)]);
+  return applied(text, [insertion(last.end, `, ${property}`)]);
 }
 
 /**
- * A member added to interface `name`; a `type name = Base` alias becomes
+ * A member added to interface `name` in its key's order; a `type name = Base` alias becomes
  *   `interface name extends Base`, since an empty interface is what lint refuses.
  */
 export function addInterfaceMember(text: string, name: string, member: string): string {
@@ -496,12 +504,18 @@ export function addInterfaceMember(text: string, name: string, member: string): 
     `interface ${name}`,
   );
   if (ts.isInterfaceDeclaration(statement)) {
-    const key = member
-      .replace(/^readonly\s+/, '')
-      .split(':')[0]
-      ?.trim();
-    if (statement.members.some((existing) => existing.name?.getText() === key)) return text;
-    return applied(text, [insertion(statement.end - 1, `\n${member}\n`)]);
+    const key =
+      member
+        .replace(/^readonly\s+/, '')
+        .split(':')[0]
+        ?.trim() ?? '';
+    const { members } = statement;
+    if (members.some((existing) => existing.name?.getText() === key)) return text;
+    const next = members.find((existing) => (existing.name?.getText() ?? '') > key);
+    if (next !== undefined) return applied(text, [insertion(next.getStart(), `${member}\n`)]);
+    const last = members[members.length - 1];
+    if (last === undefined) return applied(text, [insertion(statement.end - 1, `\n${member}\n`)]);
+    return applied(text, [insertion(last.end, `\n${member}`)]);
   }
   const alias = statement as ts.TypeAliasDeclaration;
   const exported = alias.modifiers?.some(

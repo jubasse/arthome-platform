@@ -62,7 +62,13 @@ describe('service', () => {
     for (const [name, spec] of Object.entries(lighting.dependencies)) {
       expect(spec, name).toBe(ticketing.dependencies[name]);
     }
-    expect(lighting.devDependencies).toEqual(ticketing.devDependencies);
+    expect(Object.keys(lighting.devDependencies)).toEqual([
+      '@arthome-platform/testing',
+      '@nestjs/testing',
+    ]);
+    for (const [name, spec] of Object.entries(lighting.devDependencies)) {
+      expect(spec, name).toBe(ticketing.devDependencies[name]);
+    }
   });
 
   it('declares its topics at their partitions, and its retry and dead-letter topics', () => {
@@ -179,7 +185,12 @@ describe('service, refused', () => {
     'refuses an app that exists, a port taken, a topic without partitions, a name of two words',
     async () => {
       expect(String(await refusal({ name: 'ticketing' }))).toContain('exists already');
-      expect(String(await refusal({ port: 3004 }))).toContain("apps/ticketing's already");
+      const ticketingPort = /^PORT=(\d+)$/m.exec(
+        repositoryTree().readText('/apps/ticketing/.env.example'),
+      )?.[1];
+      expect(String(await refusal({ port: Number(ticketingPort) }))).toContain(
+        "apps/ticketing's already",
+      );
       expect(String(await refusal({ topics: 'rig' }))).toContain('not aggregate:partitions');
       expect(String(await refusal({ name: 'stage-lighting' }))).toMatch(/name/);
     },

@@ -4,6 +4,7 @@ import {
   addImports,
   addInterfaceMember,
   addNullCase,
+  addReturnedProperty,
   addToArrayProperty,
   addToCollection,
   compareModules,
@@ -101,8 +102,22 @@ describe('addInterfaceMember', () => {
     const text = 'export type T = Base;\n';
     const first = addInterfaceMember(text, 'T', 'readonly a: A;');
     expect(first).toBe('export interface T extends Base {\nreadonly a: A;\n}\n');
-    expect(addInterfaceMember(first, 'T', 'readonly b: B;')).toContain(
-      'readonly a: A;\n\nreadonly b: B;',
+    const second = addInterfaceMember(first, 'T', 'readonly c: C;');
+    expect(second).toContain('readonly a: A;\nreadonly c: C;\n}');
+    expect(addInterfaceMember(second, 'T', 'readonly b: B;')).toContain(
+      'readonly a: A;\nreadonly b: B;\nreadonly c: C;',
+    );
+  });
+});
+
+describe('addReturnedProperty', () => {
+  it('places a property in its key’s order among the assignments, before the shorthands', () => {
+    const text = 'function of(manager: M): T {\n  return { manager };\n}\n';
+    const orders = addReturnedProperty(text, 'of', 'orders: new Orders(manager)');
+    const holds = addReturnedProperty(orders, 'of', 'holds: new Holds(manager)');
+    const sales = addReturnedProperty(holds, 'of', 'sales: new Sales(manager)');
+    expect(flat(sales)).toContain(
+      'return { holds: new Holds(manager), orders: new Orders(manager), sales: new Sales(manager), manager };',
     );
   });
 });
