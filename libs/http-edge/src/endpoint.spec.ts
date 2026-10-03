@@ -1,17 +1,20 @@
 import { httpApp } from '@arthome-platform/testing';
 import { Controller, Module } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import {
   defineRoute,
+  type Api,
   type RouteBody,
   type RouteHeaders,
   type RouteParams,
   type RouteQuery,
 } from '@arthome/contracts/http';
-import { ApiErrorCode } from '@arthome/core';
+import { ApiErrorCode, FixedClock, Service } from '@arthome/core';
 
+import { contractSchemaConverter } from './dev-docs.js';
 import { edgeProviders } from './edge-providers.js';
 import {
   Endpoint,
@@ -23,8 +26,12 @@ import {
 
 const renameDate = defineRoute({
   method: 'post',
-  path: '/v1/dates/{dateId}/title',
+  version: 1,
+  path: '/dates/{dateId}/title',
   operationId: 'renameDate',
+  tags: ['dates'],
+  summary: 'Renames a date.',
+  security: [{ sessionCookie: [], csrfToken: [] }, { bearerToken: [] }],
   parameters: [
     { name: 'dateId', in: 'path', required: true, schema: z.string() },
     { name: 'X-Arthome-Surface', in: 'header', required: true, schema: z.enum(['web', 'tv']) },
@@ -46,6 +53,7 @@ const renameDate = defineRoute({
         },
       },
     },
+    404: { description: 'No such date.' },
   },
 });
 
@@ -83,13 +91,20 @@ class AnswersOutsideItsRoute {
 
 const CLOCK = Symbol('clock');
 
-@Module({ controllers: [DatesController], providers: edgeProviders({ clock: CLOCK }) })
+@Module({
+  controllers: [DatesController],
+  providers: edgeProviders({ service: Service.CATALOG, clock: CLOCK }),
+})
 class DatesModule {}
 
 let app: Awaited<ReturnType<typeof httpApp>>;
 
 beforeAll(async () => {
-  app = await httpApp({ imports: [DatesModule], providers: [] });
+  app = await httpApp({
+    imports: [DatesModule],
+    providers: [],
+    caller: { service: Service.CATALOG, clock: new FixedClock(Date.now()) },
+  });
 });
 
 afterAll(async () => {
@@ -136,5 +151,30 @@ describe('a handler bound to its route', () => {
 
     expect(body.json()).toMatchObject({ error: { params: { fields: ['title'] } } });
     expect(query.json()).toMatchObject({ error: { params: { fields: ['page'] } } });
+  });
+
+  it('documents the operation from the route: id, tag, a response per status, security, header', () => {
+    const document = SwaggerModule.createDocument(app, new DocumentBuilder().build(), {
+      autoTagControllers: false,
+      standardSchemaConverter: contractSchemaConverter({ components: {} } as unknown as Api),
+    });
+    const operation = document.paths['/v1/dates/{dateId}/title']?.post;
+
+    expect(operation).toMatchObject({
+      operationId: 'renameDate',
+      tags: ['dates'],
+      summary: 'Renames a date.',
+      security: [{ sessionCookie: [], csrfToken: [] }, { bearerToken: [] }],
+    });
+    expect(Object.keys(operation?.responses ?? {})).toEqual(['201', '404']);
+    expect(JSON.stringify(operation?.responses['201'])).toContain('"title"');
+    expect(operation?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'X-Arthome-Surface', in: 'header', required: true }),
+        expect.objectContaining({ name: 'dateId', in: 'path' }),
+        expect.objectContaining({ name: 'notify', in: 'query' }),
+      ]),
+    );
+    expect(operation?.requestBody).toBeDefined();
   });
 });

@@ -53,6 +53,18 @@ The shared response envelope and its meta instants (subpath @arthome/contracts/e
 
 `STOREFRONT_RELAYED_CODES` · `StorefrontEnvelopeMetaSchema` · `StorefrontErrorEnvelopeSchema` · `StorefrontErrorSchema` · `StudioEnvelopeMetaSchema` · `StudioErrorEnvelopeSchema` · `StudioErrorSchema`
 
+### `@arthome/contracts/http`
+
+Routes as TypeScript: an operation mirrors OpenAPI with zod in place of JSON Schema, typed for a server handler and a client, with the request decoders a server validates against.
+
+`AccessorOf` · `Api` · `ApiComponents` · `ApiDefinition` · `BuiltRoute` · `BuiltRouteDefinition` · `Extensions` · `Header` · `HeaderParameter` · `HttpMethod` · `JsonRequestBody` · `JsonResponse` · `MediaType` · `Parameter` · `ParameterLocation` · `PathParameter` · `QueryParameter` · `RequestBody` · `Response` · `Route` · `RouteBody` · `RouteBuilder` · `RouteDefinition` · `RouteHeaders` · `RouteInput` · `RouteParams` · `RouteQuery` · `RouteResponseBody` · `RouteShape` · `RouteStatus` · `RouteSuccessStatus` · `SecurityRequirement` · `VersionedPath` · `accessorOf` · `bodySchemaOf` · `defineApi` · `defineRoute` · `headersSchemaOf` · `paramsSchemaOf` · `querySchemaOf` · `routeBuilder` · `successStatusOf` · `versionedPath`
+
+### `@arthome/contracts/http-client`
+
+The typed client: one method per operation id, over any `fetch` (browser, React Native, Node).
+
+`Client` · `ClientInput` · `ClientMethod` · `ClientOptions` · `ClientResponse` · `FetchInit` · `FetchLike` · `FetchResponseLike` · `UndeclaredStatusError` · `createClient`
+
 ### `@arthome/contracts/identity`
 
 Who is asking: sessions, devices, pairing, consents, and the context a surface is handed.
@@ -65,11 +77,23 @@ The tax basis of an amount on the wire (subpath @arthome/contracts/money).
 
 `TaxBasis` · `TaxExclusive` · `TaxInclusive` · `Taxed`
 
+### `@arthome/contracts/openapi`
+
+The OpenAPI document an api emits from its routes and components, through one zod registry per direction.
+
+`OpenApiDocument` · `openApiDocumentOf`
+
 ### `@arthome/contracts/pagination`
 
 Cursor pagination primitives (subpath @arthome/contracts/pagination).
 
-`EMPTY_REASONS` · `OffsetPageInfoSchema` · `StorefrontCursorPageInfoSchema` · `StudioCursorPageInfoSchema`
+`EMPTY_REASONS` · `EmptyReason` · `OffsetPageInfoSchema` · `StorefrontCursorPageInfoSchema` · `StudioCursorPageInfoSchema`
+
+### `@arthome/contracts/storefront-api`
+
+Every operation of the storefront contract, declared as TypeScript: the source of openapi/storefront.yaml.
+
+`storefrontApi`
 
 ### `@arthome/contracts/streaming`
 
@@ -82,6 +106,12 @@ Watching: the entitlement verdict, the playback ticket and its renewal, and what
 Who may operate, and with what: the actor, their effective rights, and the bootstrap a studio surface is handed on sign-in. Separate from `identity` because the two products' session shapes genuinely differ — a viewer receives a ViewerContext, a control room receives a StudioBootstrap.
 
 `ActorSchema` · `ChannelMemberSchema` · `DateAccessGrantSchema` · `DutySchema` · `EffectiveRightsSchema` · `StudioBootstrapSchema` · `StudioCountersSchema` · `StudioSessionEstablishedBearerSchema` · `StudioSessionEstablishedCookieSchema` · `StudioSessionEstablishedSchema` · `StudioSessionModeSchema`
+
+### `@arthome/contracts/studio-api`
+
+Every operation of the studio contract, declared as TypeScript: the source of openapi/studio.yaml.
+
+`studioApi`
 
 ### `@arthome/contracts/studio-desk`
 
@@ -123,10 +153,10 @@ Sources of @arthome/core, one directory per bounded module; index.ts re-exports 
 
 The boundary schemas (`@arthome/core/schema`); the only part of the package that imports zod.
 
-`AccountIdSchema` · `ArtistIdSchema` · `BasisPointsSchema` · `BuyerTaxLocationSchema` · `ChannelIdSchema` · `CountryCodeSchema` · `CurrencyCodeSchema` · `DateIdSchema` · `DeviceIdSchema` · `ErrorSchema` · `FailureNatureOut` · `IanaTimeZoneSchema` · `InstantIn` · `InstantOut` · `InternalTokenClaims` · `InternalTokenClaimsSchema` · `LocaleIn` · `LocaleOut` · `MoneyIn` · `MoneyOut` · `OrderIdSchema` · `PageCursorSchema` · `PersonIdSchema` · `ProfileIdSchema` · `PublicHandleSchema` · `SeatIdSchema` · `ShowIdSchema` · `SlugSchema` · `TaxEvidenceKindIn` · `TaxEvidenceKindOut` · `TaxEvidenceSchema` · `TaxJurisdictionLevelIn` · `TaxJurisdictionLevelOut` · `TaxSupplyKindIn` · `TaxSupplyKindOut` · `VOCABULARY_SOURCE_LOCAL` · `VatLineSchema` · `VenueClockSchema` · `VenueIdSchema` · `VocabularyIn` · `VocabularyOut` · `VocabularyOutNullable` · `int64` · `issueToCode` · `sourceNameOf` · `uuidOut` · `vocabularyIn` · `vocabularyOut` · `vocabularyOutLocal` · `vocabularyOutLocalNullable` · `vocabularyOutNullable`
+`AccountIdSchema` · `ArtistIdSchema` · `BasisPointsSchema` · `BuyerTaxLocationSchema` · `ChannelIdSchema` · `CountryCodeSchema` · `CurrencyCodeSchema` · `DateIdSchema` · `DeviceIdSchema` · `ErrorSchema` · `FailureNatureOut` · `IanaTimeZoneSchema` · `InstantIn` · `InstantOut` · `InternalTokenClaims` · `InternalTokenClaimsSchema` · `LocaleIn` · `LocaleOut` · `MoneyIn` · `MoneyOut` · `OrderIdSchema` · `PageCursorSchema` · `PersonIdSchema` · `ProfileIdSchema` · `PublicHandleSchema` · `SeatIdSchema` · `ShowIdSchema` · `SlugSchema` · `TaxEvidenceKindIn` · `TaxEvidenceKindOut` · `TaxEvidenceSchema` · `TaxJurisdictionLevelIn` · `TaxJurisdictionLevelOut` · `TaxSupplyKindIn` · `TaxSupplyKindOut` · `VOCABULARY_SOURCE_LOCAL` · `VatLineSchema` · `VenueClockSchema` · `VenueIdSchema` · `VocabularyIn` · `VocabularyOut` · `VocabularyOutNullable` · `dateIn` · `dateTimeIn` · `int64` · `issueToCode` · `sourceNameOf` · `uriIn` · `uuidIn` · `uuidOut` · `vocabularyIn` · `vocabularyOut` · `vocabularyOutLocal` · `vocabularyOutLocalNullable` · `vocabularyOutNullable`
 
 ---
 
-624 exported names across 16 subpaths.
+686 exported names across 21 subpaths.
 A name is listed here only if it is reachable through a package’s `exports` map — if it is
 not in this file, a consumer cannot import it, whatever the source says.

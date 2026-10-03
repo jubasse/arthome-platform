@@ -15,6 +15,8 @@ import {
   createParamDecorator,
   type ExecutionContext,
 } from '@nestjs/common';
+import { ApiHeader, ApiOperation, ApiResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import { z } from 'zod';
 
 import {
   bodySchemaOf,
@@ -22,13 +24,18 @@ import {
   paramsSchemaOf,
   querySchemaOf,
   successStatusOf,
+  versionedPath,
   type HttpMethod,
+  type Parameter,
+  type Route,
   type RouteResponseBody,
   type RouteShape,
+  type SecurityRequirement,
   type RouteSuccessStatus,
 } from '@arthome/contracts/http';
 
 import { schemaInvalidException } from './refusal.js';
+import { requirementObjectOf } from './security-requirement.js';
 import type {
   CollectionResponse,
   MemorisedResponse,
@@ -93,19 +100,79 @@ export type EndpointDecorator<R extends RouteShape> = <
   descriptor: TypedPropertyDescriptor<Handler> & AnswerCheck<R, NoInfer<Handler>>,
 ) => void;
 
+/** `{}` is a call with no credential at all, which a decorator spells as an empty requirement. */
+function securityOf(requirements: readonly SecurityRequirement[]): MethodDecorator[] {
+  if (requirements.length === 0) return [ApiSecurity({})];
+  return requirements.map((requirement) => ApiSecurity(requirementObjectOf(requirement)));
+}
+
+function inputJsonSchemaOf(schema: z.ZodType): Record<string, unknown> {
+  const { $schema: _dialect, ...jsonSchema } = z.toJSONSchema(schema, {
+    io: 'input',
+    unrepresentable: 'any',
+  });
+  return jsonSchema;
+}
+
+/** Only headers: a path and a query parameter are documented from the pipe's schema. */
+function headerDocumentationOf(parameter: Parameter): MethodDecorator {
+  return ApiHeader({
+    name: parameter.name,
+    required: parameter.required === true,
+    ...(parameter.description !== undefined && { description: parameter.description }),
+    schema: inputJsonSchemaOf(parameter.schema),
+  });
+}
+
+function responseDocumentationOf(route: RouteShape): MethodDecorator[] {
+  return Object.entries(route.responses).map(([status, response]) => {
+    const schema = response.content?.['application/json']?.schema;
+    return ApiResponse({
+      status: Number(status),
+      description: response.description,
+      ...(schema !== undefined && { standardSchema: schema }),
+    });
+  });
+}
+
 /**
- * Binds a handler to its route: the method, the path and the success status come from the
- *   contract, and the compiler refuses a handler whose answer, once enveloped, is not the route's
- *   success body. Its inputs are bound by the `Endpoint*` parameter decorators below.
+ * Binds a handler to its route, with real NestJS and `@nestjs/swagger` decorators only: the
+ *   method, the path and the success status come from the contract, the document is filled from
+ *   it (operation, tags, one response per declared status, security, headers), and the compiler
+ *   refuses a handler whose answer, once enveloped, is not the route's success body. Its inputs
+ *   are bound by the `Endpoint*` parameter decorators below.
  */
-export function Endpoint<R extends RouteShape>(route: R): EndpointDecorator<R> {
+export function Endpoint<R extends Route>(route: R): EndpointDecorator<R> {
   const decorators = applyDecorators(
-    ROUTE_METHOD[route.method](routerPathOf(route.path)),
+    ROUTE_METHOD[route.method](routerPathOf(versionedPath(route))),
     HttpCode(successStatusOf(route)),
+    ApiOperation({
+      operationId: route.operationId,
+      ...(route.summary !== undefined && { summary: route.summary }),
+      ...(route.description !== undefined && { description: route.description }),
+      ...(route.deprecated === true && { deprecated: true }),
+    }),
+    ...(route.tags === undefined ? [] : [ApiTags(...route.tags)]),
+    ...responseDocumentationOf(route),
+    ...(route.security === undefined ? [] : securityOf(route.security)),
+    ...(route.parameters ?? [])
+      .filter((parameter) => parameter.in === 'header')
+      .map(headerDocumentationOf),
   );
   return (target, key, descriptor) => {
     decorators(target, key, descriptor);
   };
+}
+
+/** The schema of the route's success body: what a relay validates an upstream answer against. */
+export function successSchemaOf<R extends RouteShape>(
+  route: R,
+): z.ZodType<RouteResponseBody<R, RouteSuccessStatus<R>>, unknown> {
+  const schema = route.responses[successStatusOf(route)]?.content?.['application/json']?.schema;
+  if (schema === undefined) {
+    throw new Error(`${route.method.toUpperCase()} ${versionedPath(route)} answers no JSON body.`);
+  }
+  return schema as z.ZodType<RouteResponseBody<R, RouteSuccessStatus<R>>, unknown>;
 }
 
 /** Validated by the app's global `StandardSchemaValidationPipe`, as `@Query({ schema })` is. */

@@ -22,8 +22,8 @@
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-fdb81944cf38.tgz",
-    "@arthome/core": "file:../../vendor/arthome-core-f3136e57e73c.tgz",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-358826d770d8.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-a9edd7f5a6b7.tgz",
     "jose": "6.2.12",
     "rxjs": "7.8.2",
     "zod": "4.6.5"
@@ -31,6 +31,7 @@
   "peerDependencies": {
     "@nestjs/common": "^12.0.3",
     "@nestjs/core": "^12.0.3",
+    "@nestjs/swagger": "^12.0.2",
     "typeorm": "^1.1.1"
   },
   "peerDependenciesMeta": {
@@ -40,8 +41,12 @@
   },
   "devDependencies": {
     "@arthome-platform/testing": "workspace:*",
+    "@fastify/static": "10.1.5",
     "@nestjs/common": "12.0.3",
     "@nestjs/core": "12.0.3",
+    "@nestjs/platform-fastify": "12.0.3",
+    "@nestjs/swagger": "12.0.2",
+    "@nestjs/testing": "12.0.3",
     "reflect-metadata": "0.2.2",
     "typeorm": "1.1.1"
   }

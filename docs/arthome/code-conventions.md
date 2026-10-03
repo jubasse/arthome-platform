@@ -610,11 +610,11 @@ structure is authorial — a line per clause is what makes a prose diff reviewab
 corrected in place but not ours to restyle), the lockfile and every generated directory.
 
 **And it does not own a generated artefact's target either — the same boundary, one category further
-out.** `openapi/storefront.yaml` and `openapi/studio.yaml` are the **target** that
-`@arthome/contracts` must emit, and the moment of truth for that package is `contracts:emit`
-producing an **empty diff** against them. That makes their byte-level formatting a property of the
-**emitter**, not of the formatter: if Prettier restyles them, the emitter has to learn to reproduce
-Prettier's YAML style, or the diff is never empty.
+out.** `openapi/storefront.yaml` and `openapi/studio.yaml` are **generated** from the route
+declarations of `@arthome/contracts` (D-120), and the gate `check:openapi-generated` requires the
+committed file to be byte for byte what the generator writes. That makes their formatting a property
+of the **generator**, not of the formatter: if Prettier restyles them, the generator has to learn to
+reproduce Prettier's YAML style, or the gate is never green.
 
 This one was not reasoned out in advance. It was written after a repository-wide `prettier --write`
 reflowed `storefront.yaml` while another agent was mid-translation — single quotes to double, flow
@@ -2911,6 +2911,23 @@ The account's Actions quota is exhausted. No gate assumes a remote runner.
 | 17 | No French prose committed | `pnpm exec arthome-check-language` | `PASS` | D-024 |
 | 18 | **Contracts and domain share one vocabulary** | `python3 tools/check-vocabulary.py openapi/*.yaml` | `PASS` | §5.3.1 |
 | 19 | No warning sign, check mark or emoji | `pnpm exec arthome-check-symbols` | `PASS` | §5.10 |
+| 20 | **The documents are what the declarations generate** | `pnpm run check:openapi-generated` | `PASS` for both documents | D-120 |
+
+Gate 20 compares the whole of each committed document with what the route declarations of
+`@arthome/contracts` generate: paths, components and top-level keys, byte for byte. It builds first,
+since it reads `dist/`. To add or change an operation, edit its declaration in
+`packages/contracts/src/{storefront,studio}-api/`, run `pnpm run generate:openapi`, and commit both;
+a hand edit of a document is overwritten by the next generation and refused by the gate before it.
+It replaces `check:emit-diff`, which compared `components/schemas` alone against a document that was
+the authority (D-058); once the document is generated from the code, there is no second copy left to
+compare.
+
+A route carries its API `version` as a field and its `path` without the `/v{n}` prefix, which the
+emitter composes (URI strategy, `versionedPath`). Version 1 keeps the bare `operationId`; a second
+declaration of the same operation with `version: 2` is named `{operationId}V2` and is served beside
+v1. Routes are declared through the immutable group builder (`packages/contracts/README.md`), which
+holds what a group shares. The order of an operation's `parameters` has no meaning, so the semantic
+comparison used to review a change to the generated documents treats the list as a set.
 
 Gate 18 is five checks, and **three of them need no annotation**, which is why it was worth
 building before the 120-block migration rather than after it:
@@ -3319,7 +3336,7 @@ revealed, each recorded in the section it corrects.
 | command | time | the question it answers |
 |---|---|---|
 | `pnpm run typecheck` | **2 s** | does it compile? a missing import, a wrong name, a bad shape |
-| `pnpm run check:emit-diff` | 5 s | does this schema reproduce the document it publishes? |
+| `pnpm run check:openapi-generated` | 17 s | is the committed document what the declarations generate? |
 | `pnpm run verify` | **29 s** | is this ready to hand back? |
 
 **Iterate on the first, finish on the second, hand back on the third.** Four workers writing schemas

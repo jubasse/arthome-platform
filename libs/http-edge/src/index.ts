@@ -58,8 +58,12 @@ export {
   EndpointHeaders,
   EndpointParams,
   EndpointQuery,
+  successSchemaOf,
 } from './endpoint.js';
 export type { EndpointDecorator } from './endpoint.js';
+
+export { contractSchemaConverter, mountDevDocs } from './dev-docs.js';
+export type { DevDocsOptions } from './dev-docs.js';
 
 export { AllowInProduction } from './allow-in-production.js';
 export { HealthController, READINESS_CHECKS } from './health.controller.js';
