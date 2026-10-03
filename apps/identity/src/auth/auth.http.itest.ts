@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { mintInternalToken } from '@arthome-platform/testing';
 import { Pool } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   AccountStatus,
@@ -362,6 +362,24 @@ describe('a session', () => {
       const gone = await post('/v1/sessions/resolve', { token: session.token });
       expect(gone.statusCode).toBe(200);
       expect(gone.json()).toMatchObject({ data: { session: null } });
+    },
+    CASE_MS,
+  );
+
+  /** better-auth reads the machine's time for a session's expiry: the machine's clock moves here. */
+  it(
+    'resolves to nothing once its seven days have passed unused',
+    async () => {
+      const { session } = await signedUp();
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(Date.parse(session.expiresAt) + 1_000);
+        const expired = await post('/v1/sessions/resolve', { token: session.token });
+        expect(expired.statusCode).toBe(200);
+        expect(expired.json()).toMatchObject({ data: { session: null } });
+      } finally {
+        vi.useRealTimers();
+      }
     },
     CASE_MS,
   );
