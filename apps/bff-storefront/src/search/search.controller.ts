@@ -3,26 +3,33 @@ import type { ServerResponse } from 'node:http';
 import {
   AllowInProduction,
   CollectionResponse,
+  Endpoint,
+  EndpointHeaders,
+  EndpointQuery,
   whenCallerLeaves,
 } from '@arthome-platform/http-edge';
-import { Controller, Get, Header, Headers, Inject, Query, Res } from '@nestjs/common';
+import { Controller, Header, Headers, Inject, Res } from '@nestjs/common';
 
+import type { RouteHeaders } from '@arthome/contracts/http';
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import type { Clock } from '@arthome/core';
 
-import { SearchQuerySchema, type SearchQuery } from './search-query.schema.js';
+import type { SearchQuery } from './search-query.schema.js';
 import { SearchResponseSchema, type SearchResponse } from './search-response.schema.js';
 import { CatalogClient } from '../catalog/catalog.client.js';
 import { CLOCK } from '../clock.js';
 import { searchParamsOf } from '../query-string.js';
-import { SURFACE_HEADER, VARY_AUTH, assertStorefrontSurface } from '../storefront-surface.js';
+import { VARY_AUTH } from '../storefront-surface.js';
 
 /** transport.md §5.9 and the operation's own description: a television types one key at a time. */
 const SEARCH_BUDGET_MS = 200;
 
 type Fields = Pick<SearchResponse, 'groups' | 'facets' | 'page'>;
 
+const { search } = storefrontApi.routes;
+
 @AllowInProduction()
-@Controller('v1/search')
+@Controller()
 export class SearchController {
   public constructor(
     private readonly catalog: CatalogClient,
@@ -34,16 +41,16 @@ export class SearchController {
    *   for every caller and `public` is honest. The day a session adds overlays, this header
    *   must turn `private` for that caller.
    */
-  @Get()
+  @Endpoint(search)
   @Header('cache-control', 'public, max-age=60')
   @Header('vary', VARY_AUTH)
   public async search(
-    @Query({ schema: SearchQuerySchema }) query: SearchQuery,
-    @Headers(SURFACE_HEADER) surface: string | undefined,
+    @EndpointQuery(search) query: SearchQuery,
+    // Validated for the refusal alone: a caller that is not a storefront surface is answered 400.
+    @EndpointHeaders(search) _headers: RouteHeaders<typeof search>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: { readonly raw: ServerResponse },
   ): Promise<CollectionResponse<Fields>> {
-    assertStorefrontSurface(surface);
     const { groups, facets, page, validUntil } = await this.catalog.get(
       '/v1/search',
       searchParamsOf(query),

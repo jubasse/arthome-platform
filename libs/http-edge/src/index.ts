@@ -52,6 +52,15 @@ export {
 } from './success-envelope.interceptor.js';
 export type { SuccessEnvelope } from './success-envelope.interceptor.js';
 
+export {
+  Endpoint,
+  EndpointBody,
+  EndpointHeaders,
+  EndpointParams,
+  EndpointQuery,
+} from './endpoint.js';
+export type { EndpointDecorator } from './endpoint.js';
+
 export { AllowInProduction } from './allow-in-production.js';
 export { HealthController, READINESS_CHECKS } from './health.controller.js';
 export type { ReadinessCheck, ReadinessReport } from './health.controller.js';

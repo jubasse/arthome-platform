@@ -664,6 +664,11 @@ cd apps/bff-storefront && PORT=3003 node dist/main.js
 curl 'localhost:3003/v1/search?q=nuit&sort=soon' -H 'X-Arthome-Surface: storefront_tv'
 ```
 
+The handler is bound to `storefrontApi.routes.search` from `@arthome/contracts/storefront-api` with
+`@Endpoint` (`libs/http-edge/src/endpoint.ts`): the path, the status, the query and the
+`X-Arthome-Surface` header are validated against the contract, and the compiler checks the answer
+against the route's 200 body.
+
 The BFF gives catalog a deadline 200 ms out (`x-arthome-deadline`, transport.md §5.9), creates the
 `traceparent` when the surface sent none, relays only `STOREFRONT_RELAYED_CODES`, and turns every
 other failure into `api.upstream_unavailable` (502) or `api.upstream_timeout` (504). Catalog
