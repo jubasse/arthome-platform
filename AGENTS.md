@@ -321,14 +321,18 @@ slot, the publication's scope and the outbox retention answer `degraded` — a 2
 the body — because a stopped connector must delay publishing, not take the API out of rotation.
 Proven on the running stack: with `connect` stopped, readiness stays 200 and a registration still
 answers 201. Both routes are exempt from the internal token's guard and from
-`DenyInProductionGuard`, as is ticketing's payment webhook, which its signature authenticates.
+`DenyInProductionGuard`. Ticketing's payment webhook is exempt from the token alone, since its
+signature authenticates it.
 
-**Every other route needs the storefront BFF's internal token** (`libs/http-edge`'s
+**Every other route needs a BFF's internal token** (`libs/http-edge`'s
 `InternalTokenGuard`, critical rule 4): ES256, verified locally against `JWKS_URL`, or outside
 production against the development key `libs/config` publishes. A `curl` straight to a service
 answers 401: go through the BFF, or mint one with `@arthome-platform/testing`'s
 `mintInternalToken`. `DenyInProductionGuard` still runs behind it, refusing in production the
-routes no slice has authorised yet: catalog's and ticketing's studio routes until auth slice B.
+routes no slice has authorised yet: catalog's and ticketing's studio routes until auth slice B,
+and ticketing's commerce routes and payment webhook until a real payment adapter is bound. Until
+then ticketing's API does not boot in production at all: `PaymentsModule` refuses to bind the fake
+provider there, which confirms every intent without taking any money.
 
 The two consumers serve no HTTP, so their checks — dead-letter depth and `processed_message`
 retention — run through `pnpm run ops:check`, as does the publishers' `unpublished_outbox`, which

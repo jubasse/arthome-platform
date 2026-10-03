@@ -2,7 +2,6 @@ import type { IncomingHttpHeaders } from 'node:http';
 
 import {
   AllowAnonymous,
-  AllowInProduction,
   parseTraceparent,
   schemaInvalidException,
 } from '@arthome-platform/http-edge';
@@ -29,10 +28,9 @@ function headerOf(headers: IncomingHttpHeaders, name: string): string | undefine
  * The payment provider's webhooks. The raw bytes, never the parsed body: a reformatted body no
  *   longer matches its signature (adr-payments.md §7.1). No body schema, since the signature is
  *   checked before anything is read. The provider holds no internal token: its signature is what
- *   authenticates it.
+ *   authenticates it. Refused in production until a real adapter's signature is the one checked.
  */
 @AllowAnonymous()
-@AllowInProduction()
 @Controller('v1/payments')
 export class PaymentWebhooksController {
   public constructor(

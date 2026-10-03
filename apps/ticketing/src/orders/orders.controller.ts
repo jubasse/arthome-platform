@@ -1,5 +1,4 @@
 import {
-  AllowInProduction,
   CurrentPrincipal,
   DEADLINE_HEADER,
   accountOf,
@@ -59,8 +58,8 @@ interface StatusWriter {
 /**
  * The storefront's commerce operations on seats (openapi/storefront.yaml, tag `commerce`), each for
  *   the account the internal token names: no guest purchase, and an order is its buyer's alone.
+ *   Refused in production until a real payment adapter is bound (`payments.module.ts`).
  */
-@AllowInProduction()
 @Controller('v1')
 export class OrdersController {
   public constructor(
