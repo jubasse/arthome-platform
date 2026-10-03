@@ -24,28 +24,19 @@ if [ -n "$files" ]; then
   echo "$files" | xargs git add
 fi
 
-# 2. The gate, and needs no Docker — that is a property worth protecting, and
-#    the reason the integration tests are named `*.itest.ts` and live behind
-#    their own command.
-#
-#    Measured on 2026-09-29, develop at 89c8a25: cold (empty caches, fresh
-#    worktree right after bootstrap) about 110-140 s; warm, unchanged, about
-#    25-55 s; warm after a one-line change in one file, roughly 20-30 s above
-#    that. A commit whose staged files are all `*.md` takes under 1 s (below).
-#    See AGENTS.md's "Gates: three levels" for the three commands and the
-#    full measurements.
+# 2. The gate: `verify`, cached, or the docs-only path below. Its cache can miss
+#    a cross-file lint error (a warm ESLint result for an unchanged file); that
+#    gap is closed by `.githooks/pre-push`'s `verify:full`, not here. Measured
+#    times and the three-level model are in AGENTS.md's "Gates: three levels".
 #
 #    `git commit --no-verify` skips this. That is git's design and not a hole
 #      to plug: a hook is a reflex, not an authority. What it removes is the
 #      accident.
 #
-#    A commit that touches only documentation (every staged file matching
-#    `*.md`) cannot change what typecheck, lint or a test would report, so it
-#    runs only the two checks that read prose — `check:symbols` and
-#    `check:language` — instead of the full, cached `verify`. Both already
-#    scan every tracked file, so the fast path is not a narrower check, only
-#    a skip of the checks a doc change cannot affect.
-staged=$(git diff --cached --name-only --diff-filter=ACMR)
+#    `--no-renames` and no `--diff-filter`: a deleted or renamed non-`.md` path
+#    must still count as "not docs", or a module deleted alongside its doc line
+#    would take the fast path and skip the typecheck that deletion needs.
+staged=$(git diff --cached --name-only --no-renames)
 docs_only=true
 for f in $staged; do
   case "$f" in
