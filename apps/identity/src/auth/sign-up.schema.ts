@@ -25,7 +25,12 @@ export const SignInSchema = z.strictObject({
 
 export type SignInBody = z.infer<typeof SignInSchema>;
 
-/** A session token, or a verification token, carried in a body rather than a header. */
+/** A verification link's token, carried in a body. */
 export const TokenSchema = z.strictObject({ token: z.string().min(1).max(512) });
 
 export type TokenBody = z.infer<typeof TokenSchema>;
+
+/** A session token, carried in a body rather than a header. An empty one resolves to no session. */
+export const SessionTokenSchema = z.strictObject({ token: z.string().max(512) });
+
+export type SessionTokenBody = z.infer<typeof SessionTokenSchema>;

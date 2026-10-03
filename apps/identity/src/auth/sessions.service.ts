@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -7,6 +9,7 @@ import { AccountStatus } from '@arthome/core';
 import { Account } from './account.entity.js';
 import { BETTER_AUTH } from './auth.tokens.js';
 import type { Auth } from './better-auth.js';
+import { invalidCredentials } from './refusals.js';
 
 /** The statuses whose credential still opens a session: a deletion request is undone by signing in. */
 const SIGNING_IN_STATUSES: readonly AccountStatus[] = [
@@ -41,6 +44,20 @@ function describe(found: {
   };
 }
 
+/** As better-auth hands a session token out: the raw token and its HMAC, which `bearer` checks. */
+function signed(rawToken: string, secret: string): string {
+  return `${rawToken}.${createHmac('sha256', secret).update(rawToken).digest('base64')}`;
+}
+
+/** What a session is without the token that opens it: what may be stored. */
+export function withoutToken({
+  accountId,
+  deviceId,
+  expiresAt,
+}: EstablishedSession): ResolvedSession {
+  return { accountId, deviceId, expiresAt };
+}
+
 function bearerHeaders(token: string): Headers {
   return new Headers({ authorization: `Bearer ${token}` });
 }
@@ -61,6 +78,7 @@ export class SessionsService {
    *   identity always means the BFF's own token was refused.
    */
   public async resolve(token: string): Promise<ResolvedSession | null> {
+    if (token === '') return null;
     const found = await this.find(token);
     if (found === null) return null;
     const account = await this.dataSource.manager.findOneBy(Account, { id: found.user.id });
@@ -74,10 +92,31 @@ export class SessionsService {
 
   /** Closes this session alone: better-auth's `signOut` is not the right gesture on a shared screen. */
   public async revoke(token: string): Promise<void> {
+    if (token === '') return;
     const found = await this.find(token);
     if (found === null) return;
     const context = await this.auth.$context;
     await context.internalAdapter.deleteSession(found.session.token);
+  }
+
+  /**
+   * The signed token of a session known by its id alone, as a replayed sign-up needs it: the
+   *   idempotency record keeps no token (security review M1). The same session while it lives, else
+   *   a fresh one for an account that may still sign in: the replay proved the password, since its
+   *   fingerprint covers it.
+   */
+  public async reissue(stored: ResolvedSession): Promise<EstablishedSession> {
+    const context = await this.auth.$context;
+    const sessions = await context.internalAdapter.listSessions(stored.accountId);
+    const same = sessions.find(({ id }) => id === stored.deviceId);
+    if (same !== undefined) {
+      const token = signed(same.token, context.secret);
+      if ((await this.find(token)) !== null) return this.established(token);
+    }
+    const account = await this.dataSource.manager.findOneBy(Account, { id: stored.accountId });
+    if (!this.isAllowedToSignIn(account)) throw invalidCredentials();
+    const fresh = await context.internalAdapter.createSession(stored.accountId);
+    return this.established(signed(fresh.token, context.secret));
   }
 
   public isAllowedToSignIn(account: Account | null): boolean {

@@ -194,6 +194,32 @@ describe('sign-up', () => {
   );
 
   it(
+    'keeps no session token in the idempotency record; a replay re-signs the same session',
+    async () => {
+      const email = nextEmail();
+      const key = randomUUID();
+      const first = (await signUp(email, key)).json<SignUpAnswer>().data.session;
+      const [record] = await identity.dataSource.query<{ response_body: unknown }[]>(
+        'SELECT response_body FROM idempotency_record WHERE key = $1',
+        [key],
+      );
+      expect(JSON.stringify(record?.response_body)).not.toContain('token');
+      expect(JSON.stringify(record?.response_body)).not.toContain(first.token);
+
+      const replayed = (await signUp(email, key)).json<SignUpAnswer>().data.session;
+      expect(replayed.token).toBe(first.token);
+
+      await post('/v1/sessions/revoke', { token: first.token });
+      const reopened = (await signUp(email, key)).json<SignUpAnswer>().data.session;
+      expect(reopened.token).not.toBe(first.token);
+      expect(reopened.accountId).toBe(first.accountId);
+      const resolved = await post('/v1/sessions/resolve', { token: reopened.token });
+      expect(resolved.json()).toMatchObject({ data: { session: { accountId: first.accountId } } });
+    },
+    CASE_MS,
+  );
+
+  it(
     'keeps no unsalted hash of the password in the idempotency record',
     async () => {
       const key = randomUUID();

@@ -16,9 +16,11 @@ import { EmailVerificationsService } from './email-verifications.service.js';
 import { SessionsService, type ResolvedSession } from './sessions.service.js';
 import { SignInService } from './sign-in.service.js';
 import {
+  SessionTokenSchema,
   SignInSchema,
   SignUpSchema,
   TokenSchema,
+  type SessionTokenBody,
   type SignInBody,
   type SignUpBody,
   type TokenBody,
@@ -78,7 +80,7 @@ export class AuthController {
   @HttpCode(200)
   @Header('cache-control', 'no-store')
   public async resolve(
-    @Body({ schema: TokenSchema }) body: TokenBody,
+    @Body({ schema: SessionTokenSchema }) body: SessionTokenBody,
   ): Promise<{ readonly session: ResolvedSession | null }> {
     return { session: await this.sessions.resolve(body.token) };
   }
@@ -88,7 +90,7 @@ export class AuthController {
   @HttpCode(200)
   @Header('cache-control', 'no-store')
   public async revoke(
-    @Body({ schema: TokenSchema }) body: TokenBody,
+    @Body({ schema: SessionTokenSchema }) body: SessionTokenBody,
   ): Promise<{ readonly signedOut: true }> {
     await this.sessions.revoke(body.token);
     return { signedOut: true };

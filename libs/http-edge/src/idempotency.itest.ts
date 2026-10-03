@@ -11,6 +11,7 @@ import { ApiErrorCode, FixedClock } from '@arthome/core';
 
 import {
   idempotencyRecordTableDdl,
+  purgeIdempotencyRecords,
   runIdempotently,
   type IdempotentRequest,
 } from './idempotency.js';
@@ -212,6 +213,33 @@ describe('an idempotent command against a real Postgres', () => {
 
       expect(retried.replayed).toBe(false);
       expect(retried.envelope.data).toEqual({ attempt: 2 });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'purges the records past their lifetime, and keeps the others answering',
+    async () => {
+      const [expired, live] = [
+        '01a0e000-0000-7000-8000-000000000006',
+        '01a0e000-0000-7000-8000-000000000007',
+      ];
+      for (const key of [expired, live]) {
+        await dataSource.transaction((manager) =>
+          runIdempotently(manager, request(key), clock, () => Promise.resolve({ key })),
+        );
+      }
+      await dataSource.query(
+        `UPDATE idempotency_record SET expires_at = now() - interval '1 second' WHERE key = $1`,
+        [expired],
+      );
+
+      expect(await purgeIdempotencyRecords(dataSource)).toBe(1);
+      const kept = await dataSource.query<{ key: string }[]>(
+        'SELECT key FROM idempotency_record WHERE key = ANY($1)',
+        [[expired, live]],
+      );
+      expect(kept).toEqual([{ key: live }]);
     },
     CASE_MS,
   );

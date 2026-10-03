@@ -46,6 +46,7 @@
   "devDependencies": {
     "@angular-devkit/schematics-cli": "22.1.8",
     "@arthome-platform/config": "workspace:*",
+    "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome/tooling": "file:./vendor/arthome-tooling-2c685e850f0a.tgz",
     "@bufbuild/buf": "1.73.0",

@@ -172,6 +172,9 @@ importers:
       '@arthome-platform/config':
         specifier: workspace:*
         version: link:libs/config
+      '@arthome-platform/http-edge':
+        specifier: workspace:*
+        version: link:libs/http-edge
       '@arthome-platform/messaging':
         specifier: workspace:*
         version: link:libs/messaging

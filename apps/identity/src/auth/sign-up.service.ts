@@ -2,9 +2,9 @@ import { randomBytes } from 'node:crypto';
 
 import { AccountRegisteredSchema } from '@arthome-platform/events';
 import {
+  MemorisedResponse,
   runIdempotently,
   type IdempotentRequest,
-  type MemorisedResponse,
 } from '@arthome-platform/http-edge';
 import { writeOutboxEvent } from '@arthome-platform/messaging';
 import { create, toBinary } from '@bufbuild/protobuf';
@@ -26,7 +26,12 @@ import { BETTER_AUTH } from './auth.tokens.js';
 import { withPresetUserId, type Auth } from './better-auth.js';
 import { EmailVerificationsService } from './email-verifications.service.js';
 import { emailTaken } from './refusals.js';
-import { SessionsService, type EstablishedSession } from './sessions.service.js';
+import {
+  SessionsService,
+  withoutToken,
+  type EstablishedSession,
+  type ResolvedSession,
+} from './sessions.service.js';
 import type { SignUpBody } from './sign-up.schema.js';
 import { CLOCK } from '../clock.js';
 
@@ -38,13 +43,20 @@ export interface SignedUp {
   readonly account: { readonly publicHandle: string; readonly emailVerified: boolean };
 }
 
+/** What the idempotency record keeps of a sign-up: the session by its id, never its token. */
+interface SignUpRecord {
+  readonly session: ResolvedSession;
+  readonly account: SignedUp['account'];
+}
+
 /**
  * Two stores, so the order is the design. Identity's transaction writes the account, its two events
  *   and the idempotency claim, then better-auth writes the credential with the same id on its own
  *   connection, then the transaction commits: a refused credential (a taken address) rolls everything
  *   back, and a commit that fails after the credential exists removes the credential. Only a crash
  *   between the two commits leaves a credential with no account, which the next sign-up of that
- *   address finds and replaces (`replaceOrphanCredential`).
+ *   address finds and replaces (`replaceOrphanCredential`). The idempotency record keeps the
+ *   session by its id, never its token; a replay re-signs it (`SessionsService.reissue`).
  */
 @Injectable()
 export class SignUpService {
@@ -64,9 +76,10 @@ export class SignUpService {
     traceparent: string | null,
   ): Promise<MemorisedResponse<SignedUp>> {
     let credentialOf: string | null = null;
+    let issued: EstablishedSession | null = null;
     try {
-      return await this.dataSource.transaction((manager) =>
-        runIdempotently(manager, request, this.clock, async () => {
+      const memorised = await this.dataSource.transaction((manager) =>
+        runIdempotently(manager, request, this.clock, async (): Promise<SignUpRecord> => {
           const accountId = uuidv7();
           const publicHandle = await this.insertAccount(manager, accountId, body);
           await this.recordRegistration(manager, accountId, body, traceparent);
@@ -77,11 +90,18 @@ export class SignUpService {
           );
           const token = await this.createCredential(accountId, body);
           credentialOf = accountId;
+          issued = await this.sessions.established(token);
           return {
-            session: await this.sessions.established(token),
+            session: withoutToken(issued),
             account: { publicHandle, emailVerified: false },
           };
         }),
+      );
+      const { envelope } = memorised;
+      const session = issued ?? (await this.sessions.reissue(envelope.data.session));
+      return new MemorisedResponse(
+        { ...envelope, data: { ...envelope.data, session } },
+        memorised.replayed,
       );
     } catch (error) {
       if (credentialOf !== null) await this.removeCredential(credentialOf);

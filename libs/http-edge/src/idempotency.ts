@@ -44,6 +44,20 @@ export function idempotencyRecordTableDdl(): string {
   `;
 }
 
+/**
+ * The retention job's half of §5.4: a record past its 24 hours answers nothing any more, and a
+ *   kept one holds a response for as long as it stays. Run by `tools/purge-retention.mjs`.
+ */
+export async function purgeIdempotencyRecords(
+  queryable: Pick<EntityManager, 'query'>,
+): Promise<number> {
+  const result: unknown = await queryable.query(
+    'DELETE FROM idempotency_record WHERE expires_at < now()',
+  );
+  // pg answers [rows, rowCount] for a DELETE.
+  return Array.isArray(result) && typeof result[1] === 'number' ? result[1] : 0;
+}
+
 export interface IdempotentRequest {
   readonly key: string;
   /**

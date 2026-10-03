@@ -63,6 +63,7 @@ export {
   idempotencyRecordTableDdl,
   idempotentRequestOf,
   keyedFingerprintOf,
+  purgeIdempotencyRecords,
   runIdempotently,
   runIdempotentlyVersioned,
 } from './idempotency.js';
