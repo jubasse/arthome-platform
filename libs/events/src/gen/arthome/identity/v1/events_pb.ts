@@ -65,8 +65,8 @@ export const AccountRegisteredSchema: GenMessage<AccountRegistered> = /*@__PURE_
  * `resendEmailVerification`, which spends the earlier links (D-100).
  *
  * THE TOKEN TRAVELS IN CLEAR, through the outbox and its own topic,
- * `arthome.identity.email_verification`, which `notifications` alone reads and which
- * is retained only as long as the link lives (events.md §3). `notifications` builds
+ * `arthome.identity.email_verification`, which `notifications` alone reads
+ * (events.md §3), and it dies with the link, spent or expired. `notifications` builds
  * the link, and identity cannot call it (critical rule 1). It is acceptable for THIS
  * token because a verified address unlocks nothing, so a leaked one can only mark an
  * address verified, once, within its expiry; identity keeps only its hash, and nobody
@@ -182,7 +182,8 @@ export const AccountAnonymisedSchema: GenMessage<AccountAnonymised> = /*@__PURE_
  * Consumed by `streaming`, which invalidates this device's PLAYBACK LEASES.
  * That is what makes "disconnect this device" actually stop playback on the
  * television concerned, and not merely remove a row from a list.
- * Visible at the next playback renewal, so within 120 s at most (adr-auth.md §9.2).
+ * The next renewal is refused; playback stops when the token already in hand
+ * expires, the bound adr-stream-entitlement.md §3.3 owns.
  *
  * @generated from message arthome.identity.v1.DeviceRevoked
  */

@@ -178,7 +178,10 @@ export class AuthController {
   @HttpCode(200)
   @Header('cache-control', 'no-store')
   @RequiresViewer()
-  @RateLimitedBy(['EMAIL_VERIFICATION_RESEND_PER_ACCOUNT'])
+  @RateLimitedBy([
+    'EMAIL_VERIFICATION_RESEND_PER_ACCOUNT',
+    'EMAIL_VERIFICATION_RESEND_PER_ACCOUNT_DAILY',
+  ])
   public async resendEmailVerification(
     @CurrentViewer() viewer: Viewer,
     @Req() request: Inbound,

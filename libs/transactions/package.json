@@ -19,7 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-4ad2de4a5485.tgz"
+    "@arthome/core": "file:../../vendor/arthome-core-e4c8115c333c.tgz"
   },
   "peerDependencies": {
     "@nestjs/cqrs": "^12.0.0",

@@ -40,6 +40,8 @@ const TRACKERS: Record<AuthRateLimitName, (request: TrackedRequest) => string> =
   SIGN_IN_PER_EMAIL: emailOf,
   EMAIL_VERIFICATION_CONFIRM_PER_ADDRESS: (request) => request.ip,
   EMAIL_VERIFICATION_RESEND_PER_ACCOUNT: (request) => viewerOf(request)?.accountId ?? request.ip,
+  EMAIL_VERIFICATION_RESEND_PER_ACCOUNT_DAILY: (request) =>
+    viewerOf(request)?.accountId ?? request.ip,
 };
 
 /** One named throttler per cap, each skipped on every route that does not name it. */
