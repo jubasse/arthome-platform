@@ -17,7 +17,7 @@ export default {
     },
   },
   test: {
-    include: ['{apps,libs,tools}/**/*.{test,spec}.ts'],
+    include: ['{apps,libs,tools}/**/*.{test,spec}.ts', 'tools/**/*.spec.mjs'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/*.itest.ts'],
   },
 };

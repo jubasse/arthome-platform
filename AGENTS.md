@@ -103,6 +103,24 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 - **`pnpm run verify` is the gate.** Run it before every commit — and chain with `&&`, never `;`:
   this project has twice pushed with a red `verify` because a `;` let the commit run anyway.
 
+- **Walk [`docs/review-checklist.md`](docs/review-checklist.md) on your diff before handing over**;
+  a reviewer walks it again. Each row is a defect reviews here found more than once, how to spot it
+  and what prevents it.
+  - **Enforced by `verify`**, through lint: `arthome-platform/no-wall-clock` refuses a time read
+    outside the injected `Clock`, and every `eslint-disable` must name its rules and give its reason
+    after `--` (`@eslint-community/eslint-comments`'s `no-unlimited-disable` and
+    `require-description`).
+  - **Shared helpers, not run by `verify`, which only a reviewer enforces** (a helper prevents its
+    defect only where it is used; `updateReturning` is in ticketing's payment inbox and messaging's
+    `republishOutboxRow`, and `search-indexer`'s artist consumer still destructures its own):
+    `updateReturning` (`@arthome-platform/transactions`) reads an UPDATE's or a DELETE's RETURNING rows, and
+    `nextAttemptAt`, `doublingDelays` and `attemptsAllowedBy` (`@arthome-platform/messaging`) are
+    the one retry schedule, consumers and provider calls alike.
+  - **The local plugin's `meta.version` is the SHA-256 of the rule file, computed when the config
+    loads**, never bumped by hand: `eslint --cache` keys its results on it, so editing a rule in
+    `tools/eslint/` re-checks every file. A new rule file goes into the hash in
+    `tools/eslint/plugin.mjs`.
+
 ## The commands
 
 | command | what it does |

@@ -3,6 +3,8 @@ import 'reflect-metadata';
 import { deadLetterTopic, retryTopic, runConsumers } from '@arthome-platform/messaging';
 import { Kafka } from 'kafkajs';
 
+import { SystemClock } from '@arthome/core';
+
 import { applyArtistMessage } from './consumer/artist-consumer.js';
 import { applyDateMessage } from './consumer/date-consumer.js';
 import { applyShowMessage } from './consumer/show-consumer.js';
@@ -40,17 +42,25 @@ async function main(): Promise<void> {
   await producer.connect();
 
   const indices = indicesOf(opensearch);
+  const clock = new SystemClock();
+  const now = (): Date => new Date(clock.nowMs());
 
   const stop = await runConsumers({
     kafka,
     producer,
     service: SEARCH,
     sources: [
-      { topic: SHOW_TOPIC, handler: (payload) => applyShowMessage(dataSource, indices, payload) },
-      { topic: DATE_TOPIC, handler: (payload) => applyDateMessage(dataSource, indices, payload) },
+      {
+        topic: SHOW_TOPIC,
+        handler: (payload) => applyShowMessage(dataSource, indices, payload, now()),
+      },
+      {
+        topic: DATE_TOPIC,
+        handler: (payload) => applyDateMessage(dataSource, indices, payload, now()),
+      },
       {
         topic: ARTIST_TOPIC,
-        handler: (payload) => applyArtistMessage(dataSource, indices, payload),
+        handler: (payload) => applyArtistMessage(dataSource, indices, payload, now()),
       },
     ],
     onDisposition: (topic, disposition) => console.log(`${topic} ${disposition}`),

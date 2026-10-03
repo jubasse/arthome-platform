@@ -1,3 +1,5 @@
+import { nextAttemptAt } from '@arthome-platform/messaging';
+import { updateReturning } from '@arthome-platform/transactions';
 import { Inject, Logger } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -6,7 +8,6 @@ import { DataSource } from 'typeorm';
 import { OrderErrorCode, type Clock, type Instant } from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
-import { nextAttemptAt } from './owed-calls.js';
 import { OwedRefunds } from './owed-refunds.js';
 import { PaymentEventKind } from './payment.port.js';
 import { CLOCK } from '../clock.js';
@@ -164,8 +165,8 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
   /** True when given up on: the event is settled, as a dead letter (adr-payments.md §7.4). */
   private async failed(eventId: string, error: unknown): Promise<boolean> {
     const reason = error instanceof Error ? error.message : String(error);
-    // An UPDATE answers `[rows, rowCount]` through TypeORM, never the rows alone.
-    const [[row]] = await this.dataSource.query<[{ attempts: number }[], number]>(
+    const [row] = await updateReturning<{ attempts: number }>(
+      this.dataSource,
       `UPDATE stripe_event_inbox SET attempts = attempts + 1, last_error = $2
         WHERE event_id = $1
         RETURNING attempts`,

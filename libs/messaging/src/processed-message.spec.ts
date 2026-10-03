@@ -56,6 +56,7 @@ describe('messageIdOf', () => {
       producer,
       Service.CATALOG,
       message('m-1'),
+      new Date(),
     );
 
     expect(disposition).toBe('dead-lettered');

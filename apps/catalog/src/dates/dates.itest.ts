@@ -650,6 +650,7 @@ describe('a projected checklist fact', () => {
         producer,
         Service.CATALOG,
         pricing(dateId, true, '2026-09-26T10:00:00.000Z', messageId),
+        new Date(),
       );
 
       expect(disposition).toBe('dead-lettered');

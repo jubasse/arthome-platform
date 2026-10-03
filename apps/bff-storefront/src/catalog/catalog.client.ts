@@ -63,6 +63,10 @@ export class CatalogClient {
     const query = params.toString();
     const url = `${this.baseUrl}${path}${query === '' ? '' : `?${query}`}`;
     // Giving up locally and remotely are the same instant (transport.md §5.3).
+    /* eslint-disable-next-line arthome-platform/no-wall-clock -- the machine's time against the
+       injected clock's deadline, on purpose since #48 (1308fed): the e2e suites pin that clock an hour
+       ahead so this abort never fires under verify's load, and in production both are the system
+       clock. Through CLOCK, the flake comes back. */
     const timeout = AbortSignal.timeout(Math.max(0, call.deadline.getTime() - Date.now()));
     let status: number;
     let body: unknown;

@@ -69,7 +69,7 @@ export async function dispatch(
   producer: Producer,
   service: string,
   payload: EachMessagePayload,
-  now: Date = new Date(),
+  now: Date,
 ): Promise<Disposition> {
   try {
     return await handler(payload);

@@ -170,7 +170,12 @@ describe('applyShowMessage, before any write', () => {
 
   it('ignores a type it does not handle', async () => {
     await expect(
-      applyShowMessage(noDatabase, noIndex, message({ ...headers, type: 'x.v1' }, null)),
+      applyShowMessage(
+        noDatabase,
+        noIndex,
+        message({ ...headers, type: 'x.v1' }, null),
+        new Date(),
+      ),
     ).resolves.toBe('ignored');
   });
 
@@ -181,6 +186,8 @@ describe('applyShowMessage, before any write', () => {
     ['bytes that are not this schema', message(headers, new Uint8Array([0xff, 0xff, 0xff]))],
     ['a publication with no occurred_at', message(headers, published(null))],
   ])('refuses %s as permanent', async (_, payload) => {
-    await expect(applyShowMessage(noDatabase, noIndex, payload)).rejects.toThrow(PermanentError);
+    await expect(applyShowMessage(noDatabase, noIndex, payload, new Date())).rejects.toThrow(
+      PermanentError,
+    );
   });
 });

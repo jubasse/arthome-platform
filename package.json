@@ -42,6 +42,7 @@
     "@arthome/tooling": "file:./vendor/arthome-tooling-79f3cf27f932.tgz",
     "@bufbuild/buf": "1.73.0",
     "@bufbuild/protoc-gen-es": "2.15.0",
+    "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",
     "@eslint/js": "10.0.1",
     "@types/node": "^24",
     "eslint": "10.11.0",

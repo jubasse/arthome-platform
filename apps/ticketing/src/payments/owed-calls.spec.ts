@@ -1,4 +1,4 @@
-import { JITTER_RATIO, RETRY_DELAYS_MS } from '@arthome-platform/messaging';
+import { JITTER_RATIO, RETRY_DELAYS_MS, nextAttemptAt } from '@arthome-platform/messaging';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,7 +9,6 @@ import {
   REFUND_RETRY_DELAYS_MS,
   REFUND_RETRY_DELAY_CAP_MS,
   attemptsMaxOf,
-  nextAttemptAt,
 } from './owed-calls.js';
 
 const total = (delays: readonly number[]): number => delays.reduce((sum, delay) => sum + delay, 0);

@@ -2,11 +2,14 @@ import { AccountRegisteredSchema } from '@arthome-platform/events';
 import { writeOutboxEvent } from '@arthome-platform/messaging';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
+import type { Clock } from '@arthome/core';
+
+import { CLOCK } from '../clock.js';
 import { Account } from './account.entity.js';
 
 export interface RegisterAccountCommand {
@@ -24,7 +27,10 @@ export interface RegisteredAccount {
 
 @Injectable()
 export class RegisterAccountService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
 
   /**
    * ONE transaction, and that is the feature: `save()` then `emit()` loses the event on
@@ -35,7 +41,7 @@ export class RegisterAccountService {
    */
   async register(command: RegisterAccountCommand): Promise<RegisteredAccount> {
     const accountId = uuidv7();
-    const occurredAt = new Date();
+    const occurredAt = new Date(this.clock.nowMs());
 
     const event = create(AccountRegisteredSchema, {
       accountId,

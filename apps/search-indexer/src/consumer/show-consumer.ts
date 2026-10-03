@@ -145,7 +145,7 @@ export async function applyShowMessage(
   dataSource: DataSource,
   indices: Indices,
   payload: EachMessagePayload,
-  now: Date = new Date(),
+  now: Date,
 ): Promise<Outcome> {
   const incoming = incomingOf(payload);
   const { type } = incoming;

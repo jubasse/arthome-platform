@@ -361,7 +361,10 @@ adr-payments.md §7.
   without a seat, so it outlasts a provider's incident: from 5 s, doubled up to an hour, until a
   day has passed (`REFUND_RETRY_DELAYS_MS`: 34 attempts over 24.4 hours, up to a fifth more with
   the jitter), the call being idempotent under its key. An intent's cancellation is best effort
-  and keeps the consumers' delays (5 s, 30 s, 5 min: four attempts within about 6 minutes).
+  and keeps the consumers' delays (5 s, 30 s, 5 min: four attempts within about 6 minutes). The
+  schedule itself, the doubling, the jitter and the bound, is `@arthome-platform/messaging`'s
+  (`doublingDelays`, `nextAttemptAt`, `attemptsAllowedBy`), the consumers' own: only the delays are
+  ticketing's.
 - **The worker pauses unless it is behind**: each of its three commands answers what it settled
   (applied, refunded, cancelled, or given up on), not what it looked at, so a pass whose batch all
   failed waits the next tick instead of spinning.

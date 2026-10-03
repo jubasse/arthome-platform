@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { updateReturning } from '@arthome-platform/transactions';
 import type { Kafka } from 'kafkajs';
 import type { DataSource } from 'typeorm';
 
@@ -89,15 +90,12 @@ export async function findUnpublishedOutboxRows(
  */
 export async function republishOutboxRow(dataSource: DataSource, id: string): Promise<boolean> {
   return dataSource.transaction(async (manager) => {
-    const deleted = (await manager.query(
+    const [row] = await updateReturning<Record<string, unknown>>(
+      manager,
       `DELETE FROM outbox_event WHERE id = $1
        RETURNING id, aggregatetype, aggregateid, type, payload, tracecontext, actor_id, created_at`,
       [id],
-    )) as unknown;
-
-    // pg answers a DELETE … RETURNING with [rows, rowCount].
-    const rows = Array.isArray(deleted) && Array.isArray(deleted[0]) ? deleted[0] : [];
-    const row = rows[0] as Record<string, unknown> | undefined;
+    );
     if (row === undefined) return false;
 
     await manager.query(
