@@ -183,7 +183,8 @@ export const AccountAnonymisedSchema: GenMessage<AccountAnonymised> = /*@__PURE_
  * That is what makes "disconnect this device" actually stop playback on the
  * television concerned, and not merely remove a row from a list.
  * The next renewal is refused; playback stops when the token already in hand
- * expires, the bound adr-stream-entitlement.md §3.3 owns.
+ * expires: at most this event's consumer lag plus the token's 120 s
+ * (adr-stream-entitlement.md §3.3).
  *
  * @generated from message arthome.identity.v1.DeviceRevoked
  */

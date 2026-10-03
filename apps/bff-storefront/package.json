@@ -15,7 +15,7 @@
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/http-edge": "workspace:*",
     "@arthome/contracts": "file:../../vendor/arthome-contracts-fdb81944cf38.tgz",
-    "@arthome/core": "file:../../vendor/arthome-core-478bc00908e8.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-f3136e57e73c.tgz",
     "@fastify/cookie": "11.1.2",
     "@fastify/csrf-protection": "8.0.1",
     "@nest-lab/throttler-storage-redis": "1.2.0",
