@@ -53,9 +53,12 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   production now that the services can verify who calls them.
 - **The signing key** comes from `INTERNAL_TOKEN_SIGNING_KEY`, required in production. Outside it,
   the development key `libs/config` publishes (`development-token-key.ts`) signs, so a fresh clone
-  runs; production refuses that key by its `kid` even when it is configured, which
-  `libs/config/src/auth-env.spec.ts` proves, and the production JWKS document never carries it
-  (approved by the lead, 2026-10-03). The minter refuses a key whose `kid` is not `bff-sf-`.
+  runs. Production refuses that key by its public coordinates, under any `kid`, which
+  `libs/config/src/auth-env.spec.ts` proves; so are the development better-auth, CSRF and payment
+  webhook secrets. A service drops that key from any JWKS document it fetches
+  (`internal-token.verifier.spec.ts`), so a CDN document that carried it by mistake still verifies
+  nothing it signed (approved by the lead, 2026-10-03). The minter refuses a key whose `kid` is not
+  `bff-sf-`.
 - **The session is identity's, validated here** (§8): `ViewerGuard` asks identity on the routes
   marked `RequiresViewer`, and nowhere else, so a public read never waits on identity. No Redis
   cache of sessions yet: one identity call per authenticated request, within transport.md §5.9's

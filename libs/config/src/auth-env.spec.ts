@@ -1,3 +1,5 @@
+import { generateKeyPairSync } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,12 +12,13 @@ import {
   readIdentityUrl,
   readInternalTokenSigningKey,
   readJwksSource,
+  readPaymentWebhookSecret,
   readTrustedProxies,
   readViewerCountryHeader,
 } from './env.js';
 
 const PRODUCTION_KEY = JSON.stringify({
-  ...DEVELOPMENT_TOKEN_PRIVATE_JWK,
+  ...generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ format: 'jwk' }),
   kid: 'bff-sf-2026-10-03',
 });
 
@@ -42,6 +45,18 @@ describe('the internal token signing key', () => {
         INTERNAL_TOKEN_SIGNING_KEY: PRODUCTION_KEY,
       }).keyId,
     ).toBe('bff-sf-2026-10-03');
+  });
+
+  it('refuses the development key in production under any kid', () => {
+    expect(() =>
+      readInternalTokenSigningKey({
+        NODE_ENV: 'production',
+        INTERNAL_TOKEN_SIGNING_KEY: JSON.stringify({
+          ...DEVELOPMENT_TOKEN_PRIVATE_JWK,
+          kid: 'bff-sf-2026-10-03',
+        }),
+      }),
+    ).toThrow(/development key/);
   });
 
   it('refuses a key that is not a private P-256 JWK', () => {
@@ -90,6 +105,19 @@ describe('the secrets and addresses of the authentication edge', () => {
       /CSRF_SECRET/,
     );
     expect(() => readIdentityUrl({ NODE_ENV: 'production' })).toThrow(/IDENTITY_URL/);
+  });
+
+  it('refuses in production the development secrets a fresh clone runs on', () => {
+    const development = { NODE_ENV: 'development' };
+    const production = {
+      NODE_ENV: 'production',
+      BETTER_AUTH_SECRET: readBetterAuthSecret(development),
+      CSRF_SECRET: readCsrfSecret(development),
+      PAYMENT_WEBHOOK_SECRET: readPaymentWebhookSecret(development),
+    };
+    expect(() => readBetterAuthSecret(production)).toThrow(/development value/);
+    expect(() => readCsrfSecret(production)).toThrow(/development value/);
+    expect(() => readPaymentWebhookSecret(production)).toThrow(/development value/);
   });
 
   it('trusts no proxy unless told, and refuses an entry that is not an address', () => {

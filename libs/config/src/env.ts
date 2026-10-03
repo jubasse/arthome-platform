@@ -1,9 +1,6 @@
 import { z } from 'zod';
 
-import {
-  DEVELOPMENT_TOKEN_KEY_ID,
-  DEVELOPMENT_TOKEN_PRIVATE_JWK,
-} from './development-token-key.js';
+import { DEVELOPMENT_TOKEN_PRIVATE_JWK, isDevelopmentTokenKey } from './development-token-key.js';
 
 export type NodeEnv = 'development' | 'test' | 'production';
 
@@ -244,8 +241,9 @@ export function readPaymentWebhookSecret(
     readNodeEnv(source) === 'production'
       ? source
       : { PAYMENT_WEBHOOK_SECRET: DEVELOPMENT_PAYMENT_WEBHOOK_SECRET, ...stripEmpty(source) };
-  return z.object({ PAYMENT_WEBHOOK_SECRET: z.string().min(32) }).parse(withDefault)
-    .PAYMENT_WEBHOOK_SECRET;
+  return z
+    .object({ PAYMENT_WEBHOOK_SECRET: secretOutside(DEVELOPMENT_PAYMENT_WEBHOOK_SECRET, source) })
+    .parse(withDefault).PAYMENT_WEBHOOK_SECRET;
 }
 
 /** A P-256 private key as a JWK, with the `kid` the JWKS document publishes its public half under. */
@@ -267,8 +265,8 @@ const privateEcJwk = z.object({
 
 /**
  * The key a BFF signs internal tokens with (`adr-auth.md` §8): `INTERNAL_TOKEN_SIGNING_KEY`, a JSON
- * JWK. Outside production the published development key; in production that key is refused, so a
- * copied `.env` cannot sign for real.
+ * JWK. Outside production the published development key; in production that key is refused by its
+ * coordinates, whatever `kid` it carries, so a copied `.env` or a relabelled key cannot sign.
  */
 export function readInternalTokenSigningKey(
   source: Record<string, string | undefined> = process.env,
@@ -280,7 +278,7 @@ export function readInternalTokenSigningKey(
       ? DEVELOPMENT_TOKEN_PRIVATE_JWK
       : parseJson(raw, 'INTERNAL_TOKEN_SIGNING_KEY'),
   );
-  if (production && jwk.kid === DEVELOPMENT_TOKEN_KEY_ID) {
+  if (production && isDevelopmentTokenKey(jwk)) {
     throw new Error('INTERNAL_TOKEN_SIGNING_KEY: the development key cannot sign in production');
   }
   return { keyId: jwk.kid, privateJwk: jwk };
@@ -308,6 +306,20 @@ export function readJwksSource(
   return { kind: 'remote', url: z.object({ JWKS_URL: jwksUrl }).parse({ JWKS_URL: url }).JWKS_URL };
 }
 
+/** 32 characters at least, and in production never the development value this file publishes. */
+function secretOutside(
+  development: string,
+  source: Record<string, string | undefined>,
+): z.ZodType<string> {
+  const production = readNodeEnv(source) === 'production';
+  return z
+    .string()
+    .min(32)
+    .refine((secret) => !production || secret !== development, {
+      message: 'the development value cannot be used in production',
+    });
+}
+
 const DEVELOPMENT_BETTER_AUTH_SECRET = 'development-better-auth-secret-not-for-production';
 
 /** better-auth's secret, which signs the session tokens identity hands out. */
@@ -318,7 +330,9 @@ export function readBetterAuthSecret(
     readNodeEnv(source) === 'production'
       ? source
       : { BETTER_AUTH_SECRET: DEVELOPMENT_BETTER_AUTH_SECRET, ...stripEmpty(source) };
-  return z.object({ BETTER_AUTH_SECRET: z.string().min(32) }).parse(withDefault).BETTER_AUTH_SECRET;
+  return z
+    .object({ BETTER_AUTH_SECRET: secretOutside(DEVELOPMENT_BETTER_AUTH_SECRET, source) })
+    .parse(withDefault).BETTER_AUTH_SECRET;
 }
 
 const DEVELOPMENT_CSRF_SECRET = 'development-csrf-secret-not-for-production';
@@ -329,7 +343,9 @@ export function readCsrfSecret(source: Record<string, string | undefined> = proc
     readNodeEnv(source) === 'production'
       ? source
       : { CSRF_SECRET: DEVELOPMENT_CSRF_SECRET, ...stripEmpty(source) };
-  return z.object({ CSRF_SECRET: z.string().min(32) }).parse(withDefault).CSRF_SECRET;
+  return z
+    .object({ CSRF_SECRET: secretOutside(DEVELOPMENT_CSRF_SECRET, source) })
+    .parse(withDefault).CSRF_SECRET;
 }
 
 /**

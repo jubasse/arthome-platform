@@ -1,7 +1,8 @@
 /**
  * The storefront BFF's signing key OUTSIDE production, so a fresh clone runs the BFF and the
- * services against each other with nothing to provision. It protects nothing: it is published here,
- * production refuses its `kid`, and the production JWKS document never carries it.
+ * services against each other with nothing to provision. It protects nothing, being published here,
+ * so production refuses it by its key material, whatever `kid` it is given, and a verifier drops it
+ * from any JWKS document it fetches (`isDevelopmentTokenKey`).
  */
 export const DEVELOPMENT_TOKEN_KEY_ID = 'bff-sf-development';
 
@@ -15,3 +16,11 @@ export const DEVELOPMENT_TOKEN_PRIVATE_JWK: Readonly<
   d: 'HubC9T--WhiChZoNmCD_bZqQ3gF1GrS1RWJ07PDhHFI',
   kid: DEVELOPMENT_TOKEN_KEY_ID,
 };
+
+/** True for the published key, by its public coordinates: a renamed `kid` changes nothing. */
+export function isDevelopmentTokenKey(jwk: {
+  readonly x?: unknown;
+  readonly y?: unknown;
+}): boolean {
+  return jwk.x === DEVELOPMENT_TOKEN_PRIVATE_JWK.x && jwk.y === DEVELOPMENT_TOKEN_PRIVATE_JWK.y;
+}

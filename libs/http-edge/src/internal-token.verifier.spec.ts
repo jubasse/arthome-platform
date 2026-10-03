@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+import { readInternalTokenSigningKey } from '@arthome-platform/config';
 import { SignJWT, exportJWK, generateKeyPair, importJWK, type JWK } from 'jose';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -268,6 +269,25 @@ describe('the JWKS document served over HTTP, through a rotation', () => {
     );
     await expect(verifier.verify(await tokenFrom(next))).resolves.toBeDefined();
     const refusal = await refusalOf(verifier.verify(await tokenFrom(storefront)));
+    expect(refusal.refusal.code).toBe(ApiErrorCode.UNAUTHENTICATED);
+  });
+
+  it('drops the published development key from the document, under any kid', async () => {
+    const development = readInternalTokenSigningKey({ NODE_ENV: 'test' }).privateJwk;
+    const { d: _private, ...publicHalf } = development;
+    const renamed: Signer = {
+      kid: 'bff-sf-2026-10-31',
+      privateJwk: development,
+      publicJwk: { ...publicHalf, kid: 'bff-sf-2026-10-31' },
+    };
+    published = [storefront.publicJwk, renamed.publicJwk];
+    const verifier = new InternalTokenVerifier(
+      Service.TICKETING,
+      { kind: 'remote', url },
+      new FixedClock(NOW_MS),
+    );
+    await expect(verifier.verify(await tokenFrom(storefront))).resolves.toBeDefined();
+    const refusal = await refusalOf(verifier.verify(await tokenFrom(renamed)));
     expect(refusal.refusal.code).toBe(ApiErrorCode.UNAUTHENTICATED);
   });
 

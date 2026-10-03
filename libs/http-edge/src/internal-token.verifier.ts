@@ -1,10 +1,12 @@
-import type { JwksSource } from '@arthome-platform/config';
+import { isDevelopmentTokenKey, type JwksSource } from '@arthome-platform/config';
 import { HttpStatus, Logger } from '@nestjs/common';
 import {
   createLocalJWKSet,
   createRemoteJWKSet,
+  customFetch,
   errors,
   jwtVerify,
+  type FetchImplementation,
   type JWTVerifyGetKey,
 } from 'jose';
 
@@ -54,6 +56,22 @@ const TOKEN_FAULTS = [
 ];
 
 /**
+ * The published development key is dropped from a fetched document, so a CDN document that carries
+ * it by mistake, under any `kid`, still verifies nothing signed with it.
+ */
+const withoutDevelopmentKey: FetchImplementation = async (url, options) => {
+  const response = await fetch(url, options);
+  if (!response.ok) return response;
+  const document = (await response.json()) as { readonly keys?: unknown };
+  const keys = Array.isArray(document.keys)
+    ? document.keys.filter(
+        (key: { readonly x?: unknown; readonly y?: unknown }) => !isDevelopmentTokenKey(key),
+      )
+    : document.keys;
+  return Response.json({ ...document, keys }, { status: response.status });
+};
+
+/**
  * Verifies the internal token locally (critical rule 4): the algorithm, the two BFFs as issuers,
  * this service as audience and the `kid` prefix bound to the issuer, all pinned, and the instant
  * read from the service's clock. The key set is built once: `createRemoteJWKSet` caches the
@@ -70,7 +88,7 @@ export class InternalTokenVerifier {
   ) {
     this.keys =
       source.kind === 'remote'
-        ? createRemoteJWKSet(new URL(source.url))
+        ? createRemoteJWKSet(new URL(source.url), { [customFetch]: withoutDevelopmentKey })
         : createLocalJWKSet({ keys: [...source.keys] });
   }
 

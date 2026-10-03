@@ -1,3 +1,4 @@
+export { isDevelopmentTokenKey } from './development-token-key.js';
 export {
   isProductionEnvironment,
   readBetterAuthSecret,
