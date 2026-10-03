@@ -8,8 +8,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.mjs",
     "build": "tsc -p tsconfig.build.json",
     "migration:run": "pnpm run build && typeorm migration:run -d dist/data-source.js",
+    "migration:auth": "pnpm run build && node dist/migrate-auth.js",
     "migration:revert": "pnpm run build && typeorm migration:revert -d dist/data-source.js"
   },
   "dependencies": {
@@ -17,6 +19,7 @@
     "@arthome-platform/events": "workspace:*",
     "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
+    "@arthome-platform/transactions": "workspace:*",
     "@arthome/core": "file:../../vendor/arthome-core-c53bda271676.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "@nestjs/common": "12.0.3",
@@ -26,10 +29,17 @@
     "argon2": "0.45.1",
     "better-auth": "1.7.5",
     "kafkajs": "2.2.4",
+    "kysely": "0.29.6",
     "pg": "8.23.0",
     "reflect-metadata": "0.2.2",
     "typeorm": "1.1.1",
     "uuid": "14.0.2",
     "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@arthome-platform/testing": "workspace:*",
+    "@nestjs/cqrs": "12.0.0",
+    "@nestjs/testing": "12.0.3",
+    "@types/pg": "8.23.1"
   }
 }
