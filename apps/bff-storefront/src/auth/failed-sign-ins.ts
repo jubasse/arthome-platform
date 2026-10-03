@@ -23,9 +23,10 @@ function keyOf(email: string): string {
 }
 
 /**
- * The per-email defence against password guessing (`adr-auth.md` §6.2, no lockout per email): an
- *   email's recent failures, from any network, hold its next attempt for a bounded pause and never
- *   refuse it, so a stranger can slow an owner by four seconds at most, never sign them out.
+ * An email's recent failures, from any network, hold its next attempt for a bounded pause and never
+ *   refuse it (`adr-auth.md` §6.2, no lockout per email): a stranger can slow an owner by four
+ *   seconds at most, never sign them out. It does not slow a spray across networks, whose attempts
+ *   wait in parallel: the bound on guessing is `SIGN_IN_PER_EMAIL`'s, per (email, address).
  */
 @Injectable()
 export class FailedSignIns {

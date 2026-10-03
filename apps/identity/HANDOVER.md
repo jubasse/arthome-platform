@@ -27,6 +27,13 @@ enumeration (D-099). `@thallesp/nestjs-better-auth` is not installed, and `bodyP
 therefore applies nowhere. Approved by the lead on 2026-10-03 and recorded as an amendment to
 `adr-auth.md` §3.1, not as a decision.
 
+**What bounds password guessing** is the BFF's cap per (email, address or /64): ten wrong passwords
+per fifteen minutes, times the networks an attacker holds (the re-review's F5b, accepted for slice
+A). There is no lockout per email, so nobody can sign an owner out, and the BFF's slow-down only
+delays a sequential guesser. **Slice C** tightens the bound with OWASP's device cookies: a device
+that once signed the owner in is recognised and keeps its own allowance, so strangers' attempts can
+then be held to far less.
+
 | Route (BFF only) | What it does |
 | --- | --- |
 | `POST /v1/auth/sign-up` | the account, its two events and the first link, then the credential; `Idempotency-Key` required |

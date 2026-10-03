@@ -92,7 +92,10 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   address, hold its next sign-in for a doubling pause bounded at four seconds (`FailedSignIns`,
   core's `SignInSlowdown`), and never refuse it; a success clears the count. A stranger who knows an
   address can slow its owner by four seconds, never sign them out (`auth.e2e.itest.ts`, "never
-  locks the owner out"). The pause holds a connection: the per-address caps bound how many.
+  locks the owner out"). The pause holds a connection: the per-address caps bound how many. It
+  costs a sequential guesser latency and does not slow a spray: the bound on guessing is ten per
+  (email, address or /64) per fifteen minutes, times the attacker's networks (the re-review's F5b,
+  accepted for slice A). Slice C tightens it with OWASP's device cookies.
 - **The country at sign-up** is the gateway's geolocation header, named by `VIEWER_COUNTRY_HEADER`,
   or `ZZ`, CLDR's unknown region, when the header is missing or holds no country: the surface is
   never asked, and no other header is trusted. The variable is required in production (the lead's
