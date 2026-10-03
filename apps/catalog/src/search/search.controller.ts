@@ -3,13 +3,15 @@ import type { ServerResponse } from 'node:http';
 import {
   AllowInProduction,
   DEADLINE_HEADER,
+  Endpoint,
   remainingBeforeDeadline,
   whenCallerLeaves,
   type CollectionResponse,
 } from '@arthome-platform/http-edge';
-import { Controller, Get, Header, Headers, Inject, Query, Res } from '@nestjs/common';
+import { Controller, Header, Headers, Inject, Query, Res } from '@nestjs/common';
 import { QueryBus } from '@nestjs/cqrs';
 
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import type { Clock } from '@arthome/core';
 
 import { SearchCatalog } from './search-catalog.query.js';
@@ -17,16 +19,18 @@ import type { SearchPage } from './search-page.js';
 import { SearchQuerySchema, type SearchQuery } from './search-query.schema.js';
 import { CLOCK } from '../clock.js';
 
+const { search } = storefrontApi.routes;
+
 /** Behind the storefront BFF, which sets the public cache headers; nothing here is cached. */
 @AllowInProduction()
-@Controller('v1/search')
+@Controller()
 export class SearchController {
   public constructor(
     private readonly queries: QueryBus,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  @Get()
+  @Endpoint(search)
   @Header('cache-control', 'no-store')
   public search(
     @Query({ schema: SearchQuerySchema }) query: SearchQuery,

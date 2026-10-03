@@ -1,12 +1,14 @@
 import {
   AllowInProduction,
   DEADLINE_HEADER,
+  Endpoint,
   remainingBeforeDeadline,
   type PerishableResponse,
 } from '@arthome-platform/http-edge';
-import { Controller, Get, Header, Headers, Inject, Param, Query } from '@nestjs/common';
+import { Controller, Header, Headers, Inject, Param, Query } from '@nestjs/common';
 import { QueryBus } from '@nestjs/cqrs';
 
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import type { Clock } from '@arthome/core';
 import { ArtistIdSchema, DateIdSchema } from '@arthome/core/schema';
 
@@ -18,16 +20,18 @@ import { ResolvePublicLink, type ResolvedLink } from './resolve-public-link.quer
 import { ResolveQuerySchema, type ResolveQuery } from './resolve-query.schema.js';
 import { CLOCK } from '../clock.js';
 
+const { getDateDetail, getArtistDetail, resolvePublicLink } = storefrontApi.routes;
+
 /** The storefront's public reads, behind its BFF, which sets the cache headers. */
 @AllowInProduction()
-@Controller('v1')
+@Controller()
 export class PublicDatesController {
   public constructor(
     private readonly queries: QueryBus,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  @Get('dates/:dateId')
+  @Endpoint(getDateDetail)
   @Header('cache-control', 'no-store')
   public detail(
     @Param('dateId', { schema: DateIdSchema }) dateId: string,
@@ -37,7 +41,7 @@ export class PublicDatesController {
     return this.queries.execute(new GetDateDetail(dateId));
   }
 
-  @Get('artists/:artistId')
+  @Endpoint(getArtistDetail)
   @Header('cache-control', 'no-store')
   public artist(
     @Param('artistId', { schema: ArtistIdSchema }) artistId: string,
@@ -47,7 +51,7 @@ export class PublicDatesController {
     return this.queries.execute(new GetArtistDetail(artistId));
   }
 
-  @Get('resolve')
+  @Endpoint(resolvePublicLink)
   @Header('cache-control', 'no-store')
   public resolve(
     @Query({ schema: ResolveQuerySchema }) query: ResolveQuery,
