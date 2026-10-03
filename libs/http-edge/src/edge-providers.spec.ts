@@ -1,9 +1,17 @@
-import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE, HttpAdapterHost } from '@nestjs/core';
+import {
+  APP_FILTER,
+  APP_GUARD,
+  APP_INTERCEPTOR,
+  APP_PIPE,
+  HttpAdapterHost,
+  Reflector,
+} from '@nestjs/core';
 import { describe, expect, it } from 'vitest';
 
-import { SystemClock } from '@arthome/core';
+import { Service, SystemClock } from '@arthome/core';
 
 import { edgeProviders } from './edge-providers.js';
+import { InternalTokenVerifier } from './internal-token.verifier.js';
 
 const CLOCK = Symbol('Clock');
 
@@ -13,7 +21,7 @@ interface BoundProvider {
   readonly useValue?: unknown;
 }
 
-const bound = edgeProviders({ clock: CLOCK }) as BoundProvider[];
+const bound = edgeProviders({ service: Service.CATALOG, clock: CLOCK }) as BoundProvider[];
 const providerOf = (token: unknown): BoundProvider | undefined =>
   bound.find(({ provide }) => provide === token);
 
@@ -23,6 +31,8 @@ describe('edgeProviders', () => {
       APP_PIPE,
       APP_FILTER,
       APP_INTERCEPTOR,
+      InternalTokenVerifier,
+      APP_GUARD,
       APP_GUARD,
       CLOCK,
     ]);
@@ -32,5 +42,14 @@ describe('edgeProviders', () => {
   it('hands both envelopes the clock the service’s modules inject, which a suite overrides', () => {
     expect(providerOf(APP_FILTER)?.inject).toEqual([HttpAdapterHost, CLOCK]);
     expect(providerOf(APP_INTERCEPTOR)?.inject).toEqual([CLOCK]);
+  });
+
+  it('verifies the internal token before refusing what no slice authorises yet', () => {
+    const guards = bound.filter(({ provide }) => provide === APP_GUARD);
+    expect(guards.map(({ inject }) => inject)).toEqual([
+      [InternalTokenVerifier, Reflector],
+      [Reflector],
+    ]);
+    expect(providerOf(InternalTokenVerifier)?.inject).toEqual([CLOCK]);
   });
 });

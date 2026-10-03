@@ -20,8 +20,11 @@
     "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
+    "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
+    "@arthome/core": "file:../../vendor/arthome-core-c53bda271676.tgz",
     "ioredis": "6.0.0",
+    "jose": "6.2.12",
     "kafkajs": "2.2.4",
     "pg": "8.23.0",
     "testcontainers": "12.1.0",

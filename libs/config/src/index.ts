@@ -1,6 +1,13 @@
 export {
   isProductionEnvironment,
+  readBetterAuthSecret,
   readBffEnv,
+  readCsrfSecret,
+  readIdentityUrl,
+  readInternalTokenSigningKey,
+  readJwksSource,
+  readTrustedProxies,
+  readViewerCountryHeader,
   readKafkaBrokers,
   readOpenSearchUrl,
   readPaymentWebhookSecret,
@@ -10,4 +17,12 @@ export {
   readHttpServiceEnv,
   readSearchIndexerEnv,
 } from './env.js';
-export type { BffEnv, ConsumerEnv, HttpServiceEnv, NodeEnv, SearchIndexerEnv } from './env.js';
+export type {
+  BffEnv,
+  ConsumerEnv,
+  HttpServiceEnv,
+  JwksSource,
+  NodeEnv,
+  SearchIndexerEnv,
+  SigningKey,
+} from './env.js';

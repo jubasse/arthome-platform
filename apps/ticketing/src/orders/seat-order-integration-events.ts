@@ -70,7 +70,7 @@ function wireMoney({ amountMinor, currencyCode }: Money): {
 /**
  * `vat` stays empty and the location carries the buyer's declaration alone, unresolved: the tax
  *   model awaits counsel (adr-payments.md §5.5) and `payouts` computes the VAT (adr-ticketing.md).
- *   An account is unknown until tokens are verified, so `account_id` is empty.
+ *   An order placed before tokens were verified has no account, and `account_id` is then empty.
  */
 function orderPaid(event: SeatOrderPaid, context: SeatOrderWireContext): TicketingEvent {
   const occurredAt = timestampFromDate(new Date(event.occurredAt));

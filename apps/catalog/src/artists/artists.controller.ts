@@ -1,7 +1,9 @@
 import {
+  CurrentPrincipal,
   idempotentRequestOf,
   parseTraceparent,
   type MemorisedResponse,
+  type Principal,
 } from '@arthome-platform/http-edge';
 import { Body, Controller, Header, Headers, HttpCode, Param, Patch } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
@@ -20,6 +22,7 @@ export class ArtistsController {
   public updateIdentity(
     @Param('channelId', { schema: ChannelIdParam }) channelId: string,
     @Body({ schema: UpdateIdentitySchema }) body: UpdateIdentityBody,
+    @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<ChannelIdentity>> {
@@ -35,6 +38,7 @@ export class ArtistsController {
           body,
           200,
           idempotencyKey,
+          principal.accountId,
         ),
       ),
     );

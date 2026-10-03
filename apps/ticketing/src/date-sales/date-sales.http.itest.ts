@@ -19,6 +19,7 @@ import {
   FailureNature,
   FixedClock,
   PriceTier,
+  Service,
 } from '@arthome/core';
 
 import { applyCatalogDateMessage } from './catalog-date-messages.js';
@@ -104,6 +105,7 @@ beforeAll(async () => {
   app = await httpApp({
     imports: [DateSalesModule, AvailabilityModule, CatalogFactsModule],
     providers: EDGE_PROVIDERS,
+    caller: { service: Service.TICKETING, clock: new FixedClock(NOW) },
     dataSource,
     overrides: [[CLOCK, new FixedClock(NOW)]],
   });

@@ -1,11 +1,15 @@
 import {
+  AllowInProduction,
+  CurrentPrincipal,
   DEADLINE_HEADER,
+  accountOf,
   idempotentRequestOf,
   parseTraceparent,
   remainingBeforeDeadline,
   schemaInvalidException,
   type MemorisedResponse,
   type PerishableResponse,
+  type Principal,
 } from '@arthome-platform/http-edge';
 import {
   Body,
@@ -52,7 +56,11 @@ interface StatusWriter {
   status(statusCode: number): unknown;
 }
 
-/** The storefront's commerce operations on seats (openapi/storefront.yaml, tag `commerce`). */
+/**
+ * The storefront's commerce operations on seats (openapi/storefront.yaml, tag `commerce`), each for
+ *   the account the internal token names: no guest purchase, and an order is its buyer's alone.
+ */
+@AllowInProduction()
 @Controller('v1')
 export class OrdersController {
   public constructor(
@@ -68,7 +76,9 @@ export class OrdersController {
     @Param('dateId', { schema: DateIdSchema }) dateId: string,
     @Body({ schema: QuoteSeatSchema }) body: QuoteSeatBody,
     @Headers(DEADLINE_HEADER) deadline: string | undefined,
+    @CurrentPrincipal() principal: Principal,
   ): Promise<PerishableResponse<SeatQuoteView>> {
+    accountOf(principal);
     remainingBeforeDeadline(deadline, this.clock);
     return this.queries.execute(new QuoteSeat(dateId, body));
   }
@@ -82,6 +92,7 @@ export class OrdersController {
   public async purchase(
     @Body({ schema: PurchaseSeatSchema }) body: PurchaseSeatBody,
     @Res({ passthrough: true }) reply: StatusWriter,
+    @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
     @Headers(LATE_ENTRY_ACKNOWLEDGED_HEADER) lateEntryAcknowledged?: string,
@@ -90,7 +101,14 @@ export class OrdersController {
       new PurchaseSeat(
         body,
         parseTraceparent(traceparent)?.traceparent ?? null,
-        idempotentRequestOf('POST', PURCHASE_PATH, body, PurchaseStatus.PAID, idempotencyKey),
+        idempotentRequestOf(
+          'POST',
+          PURCHASE_PATH,
+          body,
+          PurchaseStatus.PAID,
+          idempotencyKey,
+          accountOf(principal),
+        ),
         lateEntryAcknowledgedOf(lateEntryAcknowledged),
       ),
     );
@@ -103,8 +121,10 @@ export class OrdersController {
   public order(
     @Param('orderId', { schema: OrderIdSchema }) orderId: string,
     @Headers(DEADLINE_HEADER) deadline: string | undefined,
+    @CurrentPrincipal() principal: Principal,
   ): Promise<OrderDetail> {
+    const accountId = accountOf(principal);
     remainingBeforeDeadline(deadline, this.clock);
-    return this.queries.execute(new GetOrder(orderId));
+    return this.queries.execute(new GetOrder(orderId, accountId));
   }
 }

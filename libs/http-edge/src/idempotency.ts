@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 import { HttpStatus } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
@@ -24,7 +24,7 @@ const SCOPE_CONSTRAINT = 'idempotency_record_scope';
 /**
  * transport.md §5.4's store, for a new service's migration. Its primary key is
  *   `(account_id, key)`; here a unique constraint with NULLS NOT DISTINCT, because `account_id`
- *   stays null until tokens are verified. `response_body` is `json`, not `jsonb`: a replay answers
+ *   is null for an anonymous visitor's request. `response_body` is `json`, not `jsonb`: a replay answers
  *   the first response byte for byte, and `jsonb` reorders an object's keys.
  */
 export function idempotencyRecordTableDdl(): string {
@@ -47,8 +47,9 @@ export function idempotencyRecordTableDdl(): string {
 export interface IdempotentRequest {
   readonly key: string;
   /**
-   * Null until tokens are verified (adr-auth.md defers it): unauthenticated callers then share
-   * one scope, which only a non-production deployment can reach.
+   * The internal token's account, so one account's key never answers another's request. Null for
+   * an anonymous visitor (a sign-up), whose keys share one scope: a replay there still needs the
+   * same fingerprint.
    */
   readonly accountId: string | null;
   readonly fingerprint: string;
@@ -75,6 +76,21 @@ export function fingerprintOf(method: string, path: string, body: unknown): stri
     .digest('hex');
 }
 
+/**
+ * The fingerprint of a body that carries a secret, a password: keyed, so the stored record is no
+ *   unsalted hash of it for a day.
+ */
+export function keyedFingerprintOf(
+  secret: string,
+  method: string,
+  path: string,
+  body: unknown,
+): string {
+  return createHmac('sha256', secret)
+    .update(JSON.stringify([method, path, body]))
+    .digest('hex');
+}
+
 /** `statusCode` is the one the route answers, which a replay answers again. */
 export function idempotentRequestOf(
   method: string,
@@ -82,10 +98,11 @@ export function idempotentRequestOf(
   body: unknown,
   statusCode: number,
   idempotencyKey: string | undefined,
+  accountId: string | null,
 ): IdempotentRequest {
   return {
     key: idempotencyKeyOf(idempotencyKey),
-    accountId: null,
+    accountId,
     fingerprint: fingerprintOf(method, path, body),
     statusCode,
   };

@@ -39,7 +39,7 @@ import { CLOCK } from '../clock.js';
 import { ApplyCatalogDateFactHandler } from '../date-sales/apply-catalog-date-fact.handler.js';
 import { OpenCapacityTierHandler } from '../date-sales/open-capacity-tier.handler.js';
 import { SetDatePricesHandler } from '../date-sales/set-date-prices.handler.js';
-import { nextKey, purchaseOf, putOnSale } from '../itest/sales.js';
+import { nextKey, purchaseOf, putOnSale, ITEST_BUYER_ACCOUNT_ID } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import {
   FakePaymentProvider,
@@ -439,7 +439,7 @@ describe('a purchase that waits for the buyer', () => {
       const replay = await purchase(dateId, 2, key);
       expect(replay.response).toMatchObject({ replayed: true, envelope: answer.response.envelope });
 
-      const detail = await queries.execute(new GetOrder(handoff.orderId));
+      const detail = await queries.execute(new GetOrder(handoff.orderId, ITEST_BUYER_ACCOUNT_ID));
       expect(detail).toMatchObject({
         order: { id: handoff.orderId, state: OrderState.AWAITING_ACTION },
         tickets: [],
@@ -633,9 +633,14 @@ describe('quoteSeat and getOrder', () => {
       const dateId = await dateOnSale();
       const { tickets, order } = seatsOf(await purchase(dateId, 2));
 
-      expect(await queries.execute(new GetOrder(order.id))).toEqual({ order, tickets });
+      expect(await queries.execute(new GetOrder(order.id, ITEST_BUYER_ACCOUNT_ID))).toEqual({
+        order,
+        tickets,
+      });
       await expect(
-        queries.execute(new GetOrder('01a0fbee-0000-7000-8000-0000000000aa')),
+        queries.execute(
+          new GetOrder('01a0fbee-0000-7000-8000-0000000000aa', ITEST_BUYER_ACCOUNT_ID),
+        ),
       ).rejects.toMatchObject({ refusal: { code: ApiErrorCode.NOT_FOUND } });
     },
     CASE_MS,

@@ -14,9 +14,10 @@ import {
   FixedClock,
   MINUTE_MS,
   OrderErrorCode,
-  PriceTier,
   OrderState,
   PaymentEventKind,
+  PriceTier,
+  Service,
 } from '@arthome/core';
 
 import { CLOCK } from '../clock.js';
@@ -28,7 +29,7 @@ import { SalesClosingSweeper } from '../date-sales/sales-closing-sweeper.js';
 import { SalesClosingModule } from '../date-sales/sales-closing.module.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { OrdersModule } from './orders.module.js';
-import { FULL_PRICE_MINOR, nextKey, putOnSale } from '../itest/sales.js';
+import { FULL_PRICE_MINOR, nextKey, putOnSale, ITEST_BUYER_ACCOUNT_ID } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { ApplyPaymentEvents } from '../payments/apply-payment-events.command.js';
 import {
@@ -114,6 +115,7 @@ beforeAll(async () => {
       CatalogFactsModule,
     ],
     providers: EDGE_PROVIDERS,
+    caller: { service: Service.TICKETING, clock, accountId: ITEST_BUYER_ACCOUNT_ID },
     dataSource,
     rawBody: true,
     overrides: [

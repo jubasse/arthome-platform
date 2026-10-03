@@ -31,6 +31,7 @@ import {
   PublicationPromise,
   PublicationState,
   ReplayPolicy,
+  Service,
 } from '@arthome/core';
 
 import { applyChecklistMessage } from './checklist-consumer.js';
@@ -136,6 +137,7 @@ beforeAll(async () => {
   app = await httpApp({
     imports: [DatesModule, ChecklistConsumerModule],
     providers: EDGE_PROVIDERS,
+    caller: { service: Service.CATALOG, clock: new FixedClock(NOW) },
     dataSource,
     overrides: [
       [CLOCK, new FixedClock(NOW)],

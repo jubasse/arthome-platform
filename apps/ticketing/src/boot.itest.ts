@@ -3,6 +3,7 @@ import { retryTopic } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
+  mintInternalToken,
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
@@ -25,6 +26,7 @@ import {
   ApiErrorCode,
   PriceTier,
   Service,
+  SystemClock,
   OrderState,
   SeatHoldOrigin,
   SeatHoldState,
@@ -82,6 +84,12 @@ describe('the API process', () => {
         const missing = await app.inject({
           method: 'GET',
           url: `/v1/dates/${DATE_ID}/panes/tickets`,
+          headers: {
+            authorization: `Bearer ${await mintInternalToken({
+              service: Service.TICKETING,
+              clock: new SystemClock(),
+            })}`,
+          },
         });
         expect(missing.statusCode).toBe(404);
         expect(missing.json()).toMatchObject({ error: { code: ApiErrorCode.NOT_FOUND } });

@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+import {
+  DEVELOPMENT_TOKEN_KEY_ID,
+  DEVELOPMENT_TOKEN_PRIVATE_JWK,
+} from './development-token-key.js';
+
 export type NodeEnv = 'development' | 'test' | 'production';
 
 export interface HttpServiceEnv {
@@ -72,6 +77,8 @@ const DEVELOPMENT_OPENSEARCH_URL = 'http://localhost:19200';
 const DEVELOPMENT_REDIS_URL = 'redis://localhost:56379';
 /** `apps/catalog/.env.example`'s port. */
 const DEVELOPMENT_CATALOG_URL = 'http://localhost:3002';
+/** `apps/identity/.env.example`'s port. */
+const DEVELOPMENT_IDENTITY_URL = 'http://localhost:3001';
 
 function developmentDefaults(databaseName: string): {
   DATABASE_URL: string;
@@ -196,6 +203,15 @@ export function readBffEnv(source: Record<string, string | undefined> = process.
   return z.object({ NODE_ENV: nodeEnv, PORT: port, CATALOG_URL: httpUrl }).parse(withDefault);
 }
 
+/** Where a BFF reaches identity, for the authentication relay and the session's validation. */
+export function readIdentityUrl(source: Record<string, string | undefined> = process.env): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { IDENTITY_URL: DEVELOPMENT_IDENTITY_URL, ...stripEmpty(source) };
+  return z.object({ IDENTITY_URL: httpUrl }).parse(withDefault).IDENTITY_URL;
+}
+
 /** The storefront's own port in development, where Next.js listens by default. */
 const DEVELOPMENT_PUBLIC_WEB_ORIGIN = 'http://localhost:3000';
 
@@ -230,4 +246,129 @@ export function readPaymentWebhookSecret(
       : { PAYMENT_WEBHOOK_SECRET: DEVELOPMENT_PAYMENT_WEBHOOK_SECRET, ...stripEmpty(source) };
   return z.object({ PAYMENT_WEBHOOK_SECRET: z.string().min(32) }).parse(withDefault)
     .PAYMENT_WEBHOOK_SECRET;
+}
+
+/** A P-256 private key as a JWK, with the `kid` the JWKS document publishes its public half under. */
+export interface SigningKey {
+  readonly keyId: string;
+  readonly privateJwk: Readonly<Record<string, string>>;
+}
+
+const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/);
+
+const privateEcJwk = z.object({
+  kty: z.literal('EC'),
+  crv: z.literal('P-256'),
+  x: base64Url,
+  y: base64Url,
+  d: base64Url,
+  kid: z.string().min(1),
+});
+
+/**
+ * The key a BFF signs internal tokens with (`adr-auth.md` §8): `INTERNAL_TOKEN_SIGNING_KEY`, a JSON
+ * JWK. Outside production the published development key; in production that key is refused, so a
+ * copied `.env` cannot sign for real.
+ */
+export function readInternalTokenSigningKey(
+  source: Record<string, string | undefined> = process.env,
+): SigningKey {
+  const production = readNodeEnv(source) === 'production';
+  const raw = stripEmpty(source).INTERNAL_TOKEN_SIGNING_KEY;
+  const jwk = privateEcJwk.parse(
+    raw === undefined && !production
+      ? DEVELOPMENT_TOKEN_PRIVATE_JWK
+      : parseJson(raw, 'INTERNAL_TOKEN_SIGNING_KEY'),
+  );
+  if (production && jwk.kid === DEVELOPMENT_TOKEN_KEY_ID) {
+    throw new Error('INTERNAL_TOKEN_SIGNING_KEY: the development key cannot sign in production');
+  }
+  return { keyId: jwk.kid, privateJwk: jwk };
+}
+
+/** Where a service reads the public keys of the internal token's issuers. */
+export type JwksSource =
+  | { readonly kind: 'remote'; readonly url: string }
+  | { readonly kind: 'local'; readonly keys: readonly Readonly<Record<string, string>>[] };
+
+/**
+ * `JWKS_URL`: the static document the CDN serves (`adr-auth.md` §8.1), `https` in production. Outside
+ * production and unset, the development key's public half, so no document has to be served locally.
+ */
+export function readJwksSource(
+  source: Record<string, string | undefined> = process.env,
+): JwksSource {
+  const production = readNodeEnv(source) === 'production';
+  const url = stripEmpty(source).JWKS_URL;
+  if (url === undefined && !production) {
+    const { kty, crv, x, y, kid } = DEVELOPMENT_TOKEN_PRIVATE_JWK;
+    return { kind: 'local', keys: [{ kty, crv, x, y, kid }] };
+  }
+  const jwksUrl = production ? z.url({ protocol: /^https$/ }) : httpUrl;
+  return { kind: 'remote', url: z.object({ JWKS_URL: jwksUrl }).parse({ JWKS_URL: url }).JWKS_URL };
+}
+
+const DEVELOPMENT_BETTER_AUTH_SECRET = 'development-better-auth-secret-not-for-production';
+
+/** better-auth's secret, which signs the session tokens identity hands out. */
+export function readBetterAuthSecret(
+  source: Record<string, string | undefined> = process.env,
+): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { BETTER_AUTH_SECRET: DEVELOPMENT_BETTER_AUTH_SECRET, ...stripEmpty(source) };
+  return z.object({ BETTER_AUTH_SECRET: z.string().min(32) }).parse(withDefault).BETTER_AUTH_SECRET;
+}
+
+const DEVELOPMENT_CSRF_SECRET = 'development-csrf-secret-not-for-production';
+
+/** The key a BFF binds a cookie session's CSRF token to that session with. */
+export function readCsrfSecret(source: Record<string, string | undefined> = process.env): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { CSRF_SECRET: DEVELOPMENT_CSRF_SECRET, ...stripEmpty(source) };
+  return z.object({ CSRF_SECRET: z.string().min(32) }).parse(withDefault).CSRF_SECRET;
+}
+
+/**
+ * `TRUSTED_PROXIES`: the addresses or subnets whose `X-Forwarded-For` a BFF believes, comma
+ * separated. Unset, none: every client then shares the proxy's address, which is wrong behind one
+ * but never forgeable (`nestjs-web-security` rule 7).
+ */
+export function readTrustedProxies(
+  source: Record<string, string | undefined> = process.env,
+): readonly string[] {
+  const raw = stripEmpty(source).TRUSTED_PROXIES;
+  if (raw === undefined) return [];
+  return z
+    .array(z.union([z.ipv4(), z.ipv6(), z.cidrv4(), z.cidrv6()]))
+    .min(1)
+    .parse(raw.split(',').map((entry) => entry.trim()));
+}
+
+/**
+ * `VIEWER_COUNTRY_HEADER`: the header the infrastructure gateway writes the visitor's country into,
+ * from its geolocation. Unset, no header is read and every country is unknown.
+ */
+export function readViewerCountryHeader(
+  source: Record<string, string | undefined> = process.env,
+): string | null {
+  const raw = stripEmpty(source).VIEWER_COUNTRY_HEADER;
+  return raw === undefined
+    ? null
+    : z
+        .string()
+        .regex(/^[a-z0-9-]+$/)
+        .parse(raw.toLowerCase());
+}
+
+function parseJson(raw: string | undefined, name: string): unknown {
+  if (raw === undefined) throw new Error(`${name} is required`);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`${name} is not JSON`);
+  }
 }

@@ -9,7 +9,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Client } from '@opensearch-project/opensearch';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, DisplayState, FixedClock, ReplayPolicy } from '@arthome/core';
+import { ApiErrorCode, DisplayState, FixedClock, ReplayPolicy, Service } from '@arthome/core';
 
 import { OPENSEARCH } from './search-catalog.handler.js';
 import { dateDocument } from './search-fixtures.js';
@@ -147,6 +147,7 @@ beforeAll(async () => {
   app = await httpApp({
     imports: [SearchModule],
     providers: EDGE_PROVIDERS,
+    caller: { service: Service.CATALOG, clock: new FixedClock(NOW) },
     overrides: [
       [CLOCK, new FixedClock(NOW)],
       [OPENSEARCH, client],

@@ -3,6 +3,7 @@ import { deadLetterTopic } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
+  mintInternalToken,
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
@@ -21,7 +22,7 @@ import {
 import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, Service } from '@arthome/core';
+import { ApiErrorCode, Service, SystemClock } from '@arthome/core';
 
 /**
  * The two processes' root modules, booted as `main.ts` and `consumer.ts` boot them, against a real
@@ -64,11 +65,15 @@ describe('the API process', () => {
       await app.getHttpAdapter().getInstance().ready();
       try {
         expect((await app.inject({ method: 'GET', url: '/health/liveness' })).statusCode).toBe(200);
+        const authorization = `Bearer ${await mintInternalToken({
+          service: Service.CATALOG,
+          clock: new SystemClock(),
+        })}`;
 
         const venue = await app.inject({
           method: 'POST',
           url: '/venues',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', authorization },
           payload: { name: 'Salle', city: 'Lyon', country: 'FR', timeZone: 'Europe/Paris' },
         });
         expect(venue.statusCode).toBe(201);
@@ -77,6 +82,7 @@ describe('the API process', () => {
         const missing = await app.inject({
           method: 'GET',
           url: '/dates/01a0e700-0000-7000-8000-0000000009ff',
+          headers: { authorization },
         });
         expect(missing.statusCode).toBe(404);
         expect(missing.json()).toMatchObject({ error: { code: ApiErrorCode.NOT_FOUND } });

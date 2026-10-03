@@ -1,6 +1,7 @@
 import type { ServerResponse } from 'node:http';
 
 import {
+  AllowInProduction,
   DEADLINE_HEADER,
   remainingBeforeDeadline,
   whenCallerLeaves,
@@ -17,6 +18,7 @@ import { SearchQuerySchema, type SearchQuery } from './search-query.schema.js';
 import { CLOCK } from '../clock.js';
 
 /** Behind the storefront BFF, which sets the public cache headers; nothing here is cached. */
+@AllowInProduction()
 @Controller('v1/search')
 export class SearchController {
   public constructor(

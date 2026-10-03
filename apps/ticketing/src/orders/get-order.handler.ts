@@ -16,7 +16,7 @@ import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 /**
  * The order's two tables in one snapshot, so the tickets served are the paid order's. The handoff
  *   rides along while strong authentication is awaited, which is what lets an abandoned one resume.
- *   Nothing checks whose order it is before tokens are verified (HANDOVER §3).
+ *   Someone else's order is a 404, as one that does not exist: a 403 would say it does.
  */
 @QueryHandler(GetOrder)
 export class GetOrderHandler implements IQueryHandler<GetOrder> {
@@ -25,9 +25,9 @@ export class GetOrderHandler implements IQueryHandler<GetOrder> {
     @Inject(PUBLIC_WEB_ORIGIN) private readonly publicWebOrigin: string,
   ) {}
 
-  public async execute({ orderId }: GetOrder): Promise<OrderDetail> {
+  public async execute({ orderId, accountId }: GetOrder): Promise<OrderDetail> {
     const snapshot = await this.dataSource.transaction('REPEATABLE READ', async (manager) => {
-      const row = await manager.findOneBy(SeatOrderRow, { id: orderId });
+      const row = await manager.findOneBy(SeatOrderRow, { id: orderId, account_id: accountId });
       if (row === null) return null;
       const seats = await manager.find(SeatRow, {
         where: { order_id: orderId },

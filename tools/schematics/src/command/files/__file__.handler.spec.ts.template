@@ -114,7 +114,14 @@ function <%= command.camel %>(expectedVersion: number): <%= command.pascal %> {
     <%= aggregate.id %>,
     body,
     TRACEPARENT,
-    idempotentRequestOf('<%= route.method %>', `<%= route.requestPath %>`, body, 200, IDEMPOTENCY_KEY),
+    idempotentRequestOf(
+      '<%= route.method %>',
+      `<%= route.requestPath %>`,
+      body,
+      200,
+      IDEMPOTENCY_KEY,
+      null,
+    ),
   );
 }
 

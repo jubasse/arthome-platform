@@ -22,7 +22,7 @@ import { CLOCK } from '../clock.js';
 import { ApplyCatalogDateFactHandler } from '../date-sales/apply-catalog-date-fact.handler.js';
 import { OpenCapacityTierHandler } from '../date-sales/open-capacity-tier.handler.js';
 import { SetDatePricesHandler } from '../date-sales/set-date-prices.handler.js';
-import { purchaseOf, putOnSale } from '../itest/sales.js';
+import { purchaseOf, putOnSale, ITEST_BUYER_ACCOUNT_ID } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { FakePaymentProvider, FakePaymentScenario } from '../payments/fake-payment-provider.js';
 import { OwedRefunds } from '../payments/owed-refunds.js';
@@ -152,7 +152,9 @@ describe('a pass of the hold expiry', () => {
       });
       expect(await orderRow(younger)).toMatchObject({ hold_state: SeatHoldState.ACTIVE });
       expect(await seatsAvailable(dateId)).toBe(6);
-      const detail = await cqrs.get(QueryBus).execute(new GetOrder(expiring));
+      const detail = await cqrs
+        .get(QueryBus)
+        .execute(new GetOrder(expiring, ITEST_BUYER_ACCOUNT_ID));
       expect(detail).toMatchObject({ order: { state: OrderState.FAILED }, tickets: [] });
       expect(detail).not.toHaveProperty('handoff');
       expect(await expire()).toBe(0);
