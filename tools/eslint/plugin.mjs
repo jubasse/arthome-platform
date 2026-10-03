@@ -1,7 +1,13 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
 import { noWallClock } from './no-wall-clock.mjs';
 
-/** Bump `version` with any rule change: `eslint --cache` keys its results on it. */
+const ruleSourceHash = createHash('sha256')
+  .update(readFileSync(new URL('./no-wall-clock.mjs', import.meta.url)))
+  .digest('hex');
+
 export const arthomePlatform = {
-  meta: { name: 'arthome-platform', version: '1.0.0' },
+  meta: { name: 'arthome-platform', version: ruleSourceHash },
   rules: { 'no-wall-clock': noWallClock },
 };

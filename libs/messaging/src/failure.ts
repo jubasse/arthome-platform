@@ -29,7 +29,7 @@ export type FailureRoute =
 
 /**
  * From `firstMs`, doubled up to `capMs`, until they add up to `totalMs`: the schedule of a call that
- *   must outlast an incident, such as a refund owed (ticketing's `REFUND_RETRY_DELAYS_MS`).
+ *   must outlast an incident.
  */
 export function doublingDelays(firstMs: number, capMs: number, totalMs: number): number[] {
   const delays: number[] = [];

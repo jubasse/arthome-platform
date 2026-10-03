@@ -561,6 +561,9 @@ importers:
       '@arthome-platform/config':
         specifier: workspace:*
         version: link:../config
+      '@arthome-platform/transactions':
+        specifier: workspace:*
+        version: link:../transactions
       '@arthome/core':
         specifier: file:../../vendor/arthome-core-9fb19108c720.tgz
         version: file:vendor/arthome-core-9fb19108c720.tgz(zod@4.6.5)
