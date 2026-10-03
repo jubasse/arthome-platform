@@ -2,7 +2,9 @@ import { RefusalException } from '@arthome-platform/http-edge';
 import { HttpStatus, Injectable, type ExecutionContext } from '@nestjs/common';
 import { Reflector, type ReflectableDecorator } from '@nestjs/core';
 import {
+  DEFAULT_IPV6_SUBNET_PREFIX,
   ThrottlerGuard,
+  normalizeIp,
   seconds,
   type ThrottlerLimitDetail,
   type ThrottlerOptions,
@@ -31,17 +33,27 @@ function emailOf(request: TrackedRequest): string {
 }
 
 /**
+ * The caller's network address, an IPv6 one as its /64: a residential line or a cloud machine holds
+ *   a whole /64 and picks a new source address for each request, which the throttler's own tracker
+ *   masks and a custom one must mask too.
+ */
+export function addressOf(request: TrackedRequest): string {
+  return normalizeIp(request.ip, DEFAULT_IPV6_SUBNET_PREFIX);
+}
+
+/**
  * Who a cap counts: the network address until a device carries a verified identity (core's
  *   `AuthRateLimit` says why), the typed address for password guessing, the account for a resend.
  */
 const TRACKERS: Record<AuthRateLimitName, (request: TrackedRequest) => string> = {
-  SIGN_UP_PER_ADDRESS: (request) => request.ip,
-  SIGN_IN_PER_ADDRESS: (request) => request.ip,
+  SIGN_UP_PER_ADDRESS: addressOf,
+  SIGN_IN_PER_ADDRESS: addressOf,
   SIGN_IN_PER_EMAIL: emailOf,
-  EMAIL_VERIFICATION_CONFIRM_PER_ADDRESS: (request) => request.ip,
-  EMAIL_VERIFICATION_RESEND_PER_ACCOUNT: (request) => viewerOf(request)?.accountId ?? request.ip,
+  EMAIL_VERIFICATION_CONFIRM_PER_ADDRESS: addressOf,
+  EMAIL_VERIFICATION_RESEND_PER_ACCOUNT: (request) =>
+    viewerOf(request)?.accountId ?? addressOf(request),
   EMAIL_VERIFICATION_RESEND_PER_ACCOUNT_DAILY: (request) =>
-    viewerOf(request)?.accountId ?? request.ip,
+    viewerOf(request)?.accountId ?? addressOf(request),
 };
 
 /** One named throttler per cap, each skipped on every route that does not name it. */

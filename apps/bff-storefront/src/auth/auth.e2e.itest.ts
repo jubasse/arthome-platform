@@ -359,6 +359,26 @@ describe('the caps', () => {
   );
 
   it(
+    'counts an IPv6 address as its /64, so a client cannot rotate past the cap inside it',
+    async () => {
+      const { limit } = AuthRateLimit.SIGN_UP_PER_ADDRESS;
+      const statuses: number[] = [];
+      for (let attempt = 0; attempt <= limit; attempt += 1) {
+        const signedUp = await post(
+          '/v1/auth/sign-up',
+          signUpBody(nextEmail(), SessionMode.BEARER),
+          { 'idempotency-key': randomUUID() },
+          `2001:db8:77:1:${(attempt + 1).toString(16)}::1`,
+        );
+        statuses.push(signedUp.statusCode);
+      }
+      expect(statuses.slice(0, limit).every((status) => status === 201)).toBe(true);
+      expect(statuses.at(-1)).toBe(429);
+    },
+    CASE_MS,
+  );
+
+  it(
     'caps password guessing against one address whatever network it comes from',
     async () => {
       const email = nextEmail();
