@@ -1,0 +1,42 @@
+<%= imports([
+  { name: 'EntityManager', from: 'typeorm', typeOnly: true },
+  { name: event, from: `./${kebab}.events.js`, typeOnly: true },
+  { name: 'assertNever', from: '../assert-never.js' },
+  { name: app.eventWriter, from: `../${app.app}-events.js` },
+  { name: app.eventType, from: `../${app.app}-events.js`, typeOnly: true },
+]) %>
+
+/**
+ * Every consequence of a <%= camel %>'s events inside its command's transaction: one outbox row per
+ *   event with a wire form, keyed by the <%= camel %>, in the order applied. A command calls this
+ *   once, after its save; the traceparent is the command's or the consumed message's.
+ */
+export async function <%= recorder %>(
+  manager: EntityManager,
+  events: readonly <%= event %>[],
+  traceparent: string | null,
+): Promise<void> {
+  for (const event of events) {
+    const wire = wireFormOf(event);
+    if (wire !== null) {
+      await <%= app.eventWriter %>(
+        manager,
+        { ...wire, key: event.<%= id %>, traceparent },
+        new Date(event.occurredAt),
+      );
+    }
+  }
+}
+
+/**
+ * The event's type and Protobuf payload, built here from arthome-core's proto, or null for an
+ *   event that stays inside the service: a domain event is never the wire format.
+ */
+function wireFormOf(event: <%= event %>): Pick<<%= app.eventType %>, 'type' | 'payload'> | null {
+  switch (event.kind) {
+    case '<%= pascal %>Created':
+      return null;
+    default:
+      return assertNever(event);
+  }
+}

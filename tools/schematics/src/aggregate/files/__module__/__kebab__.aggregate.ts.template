@@ -1,0 +1,41 @@
+<%= imports([
+  { name: 'frozen', from: '@arthome-platform/transactions' },
+  { name: 'AggregateRoot', from: '@nestjs/cqrs' },
+  { name: 'Instant', from: '@arthome/core', typeOnly: true },
+  { name: `${pascal}Created`, from: `./${kebab}.events.js` },
+  { name: event, from: `./${kebab}.events.js`, typeOnly: true },
+]) %>
+
+export interface <%= snapshot %> {
+  readonly <%= id %>: string;
+  readonly version: number;
+}
+
+/**
+ * Its state is `snapshot`, immutable and replaced only by its methods; `restore()` builds it from
+ *   the row, so TypeORM never calls the constructor (`nestjs-ddd` rule 13). A method checks the
+ *   version the command read, changes the snapshot, then applies one event per fact, stated at
+ *   `now`. A method never awaits: what a rule needs beyond the aggregate is an argument.
+ */
+export class <%= pascal %> extends AggregateRoot<<%= event %>> {
+  private current: <%= snapshot %>;
+
+  private constructor(current: <%= snapshot %>) {
+    super();
+    this.current = frozen(current);
+  }
+
+  public static restore(snapshot: <%= snapshot %>): <%= pascal %> {
+    return new <%= pascal %>(snapshot);
+  }
+
+  public static create(<%= id %>: string, now: Instant): <%= pascal %> {
+    const <%= camel %> = new <%= pascal %>({ <%= id %>, version: 1 });
+    <%= camel %>.apply(new <%= pascal %>Created(<%= id %>, now));
+    return <%= camel %>;
+  }
+
+  public get snapshot(): <%= snapshot %> {
+    return this.current;
+  }
+}

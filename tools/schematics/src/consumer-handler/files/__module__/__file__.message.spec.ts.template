@@ -1,0 +1,70 @@
+<%= imports([
+  { name: schema, from: '@arthome-platform/events' },
+  { name: 'Outcome', from: '@arthome-platform/messaging' },
+  { name: 'PermanentError', from: '@arthome-platform/messaging' },
+  { name: 'create', from: '@bufbuild/protobuf' },
+  { name: 'toBinary', from: '@bufbuild/protobuf' },
+  { name: 'timestampFromDate', from: '@bufbuild/protobuf/wkt' },
+  { name: 'CommandBus', from: '@nestjs/cqrs', typeOnly: true },
+  { name: 'EachMessagePayload', from: 'kafkajs', typeOnly: true },
+  { name: 'describe', from: 'vitest' },
+  { name: 'expect', from: 'vitest' },
+  { name: 'it', from: 'vitest' },
+  { name: command.pascal, from: `./${file}.command.js` },
+  { name: applyMessage, from: '../consumed-messages.js' },
+]) %>
+
+const TOPIC = '<%= topic %>';
+const TYPE = '<%= type %>';
+const MESSAGE_ID = '01a0f1ee-0000-7000-8000-000000000001';
+const KEY = '01a0f100-0000-7000-8000-000000000001';
+const OCCURRED_AT = new Date('2026-09-29T10:00:00.000Z');
+
+function delivered(value: Uint8Array): EachMessagePayload {
+  return {
+    topic: TOPIC,
+    partition: 0,
+    message: {
+      key: Buffer.from(KEY),
+      value: Buffer.from(value),
+      headers: { 'message-id': Buffer.from(MESSAGE_ID), type: Buffer.from(TYPE) },
+    },
+  } as unknown as EachMessagePayload;
+}
+
+function recordingBus(executed: unknown[]): CommandBus {
+  return {
+    execute: (dispatched: unknown) => {
+      executed.push(dispatched);
+      return Promise.resolve(Outcome.APPLIED);
+    },
+  } as unknown as CommandBus;
+}
+
+describe(TYPE, () => {
+  it('becomes <%= command.pascal %>, stated at its occurred_at', async () => {
+    const executed: unknown[] = [];
+    const value = toBinary(
+      <%= schema %>,
+      create(<%= schema %>, { <%= key %>: KEY, <%= occurredAt %>: timestampFromDate(OCCURRED_AT) }),
+    );
+
+    expect(await <%= applyMessage %>(recordingBus(executed), delivered(value))).toBe(Outcome.APPLIED);
+    expect(executed).toEqual([
+      new <%= command.pascal %>(
+        { messageId: MESSAGE_ID, topic: TOPIC, traceparent: null },
+        { <%= key %>: KEY, occurredAt: OCCURRED_AT },
+      ),
+    ]);
+  });
+
+  it('is dead-lettered at once without an occurred_at, dispatching nothing', async () => {
+    const executed: unknown[] = [];
+    const value = toBinary(<%= schema %>, create(<%= schema %>, { <%= key %>: KEY }));
+
+    await expect(<%= applyMessage %>(recordingBus(executed), delivered(value))).rejects.toBeInstanceOf(
+      PermanentError,
+    );
+    expect(executed).toEqual([]);
+  });
+});

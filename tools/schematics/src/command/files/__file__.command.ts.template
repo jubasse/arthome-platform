@@ -1,0 +1,39 @@
+<% if (route) { %><%= imports([
+  { name: 'IdempotentRequest', from: '@arthome-platform/http-edge', typeOnly: true },
+  { name: 'MemorisedResponse', from: '@arthome-platform/http-edge', typeOnly: true },
+  { name: 'Command', from: '@nestjs/cqrs' },
+  { name: `${command.pascal}Body`, from: `./${command.kebab}.schema.js`, typeOnly: true },
+]) %>
+
+export interface <%= command.pascal %>Answer {
+  readonly <%= aggregate.id %>: string;
+}
+
+/** The version its answer carries goes at the envelope's root. */
+export class <%= command.pascal %> extends Command<MemorisedResponse<<%= command.pascal %>Answer>> {
+  public constructor(
+    public readonly <%= aggregate.id %>: string,
+    public readonly body: <%= command.pascal %>Body,
+    public readonly traceparent: string | null,
+    public readonly idempotency: IdempotentRequest,
+  ) {
+    super();
+  }
+}
+<% } else { %><%= imports([{ name: 'Command', from: '@nestjs/cqrs' }]) %>
+
+export interface <%= command.pascal %>Answer {
+  readonly <%= aggregate.id %>: string;
+  readonly version: number;
+}
+
+export class <%= command.pascal %> extends Command<<%= command.pascal %>Answer> {
+  public constructor(
+    public readonly <%= aggregate.id %>: string,
+    public readonly expectedVersion: number,
+    public readonly traceparent: string | null,
+  ) {
+    super();
+  }
+}
+<% } %>

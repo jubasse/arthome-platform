@@ -1,0 +1,62 @@
+<%= imports([
+  { name: 'AggregateTracker', from: '@arthome-platform/transactions' },
+  { name: 'saveVersioned', from: '@arthome-platform/transactions' },
+  { name: 'Track', from: '@arthome-platform/transactions', typeOnly: true },
+  { name: 'EntityManager', from: 'typeorm', typeOnly: true },
+  { name: pascal, from: `./${kebab}.aggregate.js` },
+  { name: snapshot, from: `./${kebab}.aggregate.js`, typeOnly: true },
+  { name: row, from: `./${kebab}.entity.js` },
+  { name: repository, from: `./${kebab}.repository.js` },
+]) %>
+
+type StateColumns = Omit<<%= row %>, '<%= idColumn %>' | 'created_at' | 'updated_at'>;
+
+export class <%= typeOrmRepository %> extends <%= repository %> {
+  private readonly tracker: AggregateTracker<<%= pascal %>>;
+
+  public constructor(
+    private readonly manager: EntityManager,
+    track: Track,
+  ) {
+    super();
+    this.tracker = new AggregateTracker(track);
+  }
+
+  public async findById(<%= id %>: string): Promise<<%= pascal %> | null> {
+    const row = await this.manager.findOne(<%= row %>, {
+      where: { <%= idColumn %>: <%= id %> },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (row === null) return null;
+    return this.tracker.loaded(<%= pascal %>.restore(<%= camel %>SnapshotOf(row)), row.version);
+  }
+
+  public async save(<%= camel %>: <%= pascal %>): Promise<void> {
+    const current = <%= camel %>.snapshot;
+    const loadedVersion = this.tracker.versionOf(<%= camel %>);
+    if (loadedVersion === undefined) {
+      await this.manager.insert(<%= row %>, {
+        <%= idColumn %>: current.<%= id %>,
+        ...stateColumnsOf(current),
+      });
+    } else {
+      await saveVersioned(
+        this.manager,
+        <%= row %>,
+        { <%= idColumn %>: current.<%= id %> },
+        loadedVersion,
+        stateColumnsOf(current),
+        ({ version }) => ({ version }),
+      );
+    }
+    this.tracker.written(<%= camel %>, current.version);
+  }
+}
+
+export function <%= camel %>SnapshotOf(row: <%= row %>): <%= snapshot %> {
+  return { <%= id %>: row.<%= idColumn %>, version: row.version };
+}
+
+function stateColumnsOf(<%= camel %>: <%= snapshot %>): StateColumns {
+  return { version: <%= camel %>.version };
+}

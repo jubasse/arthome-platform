@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/@angular-devkit/schematics/collection-schema.json",
+  "schematics": {
+    "service": {
+      "description": "A new service under apps/, shaped like ticketing, and the infra and tool files a service needs.",
+      "factory": "./src/service/index.ts#service",
+      "schema": "./src/service/schema.json"
+    },
+    "aggregate": {
+      "description": "An aggregate in an app's feature directory: its row, repository port and TypeORM adapter with saveVersioned, its events and their outbox mapping, a migration and a spec.",
+      "factory": "./src/aggregate/index.ts#aggregate",
+      "schema": "./src/aggregate/schema.json"
+    },
+    "command": {
+      "description": "A CQRS command deciding through an aggregate: its handler in the app's transaction runner, events to outbox rows inside it, a unit spec, the aggregate's method, and an optional idempotent route with its HTTP suite.",
+      "factory": "./src/command/index.ts#command",
+      "schema": "./src/command/schema.json"
+    },
+    "consumer-handler": {
+      "description": "One event type handled by an app's consumer: its reader, a command claiming the message with claimMessage, an occurred_at-guarded upsert, its table, a spec and an integration suite.",
+      "factory": "./src/consumer-handler/index.ts#consumerHandler",
+      "schema": "./src/consumer-handler/schema.json"
+    }
+  }
+}

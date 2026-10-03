@@ -1,0 +1,10 @@
+<% if (serviceMember) { %>import { Service } from '@arthome/core';
+
+/** Its database, its Kafka client and groups, its topics' prefix and its outbox slot. */
+export const SERVICE = Service.<%= serviceMember %>;
+<% } else { %>/**
+ * Its database, its Kafka client and groups, its topics' prefix and its outbox slot. Not a member of
+ *   `@arthome/core`'s `Service` vocabulary: add it there, then read it from there.
+ */
+export const SERVICE = '<%= name %>';
+<% } %>

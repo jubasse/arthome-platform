@@ -44,6 +44,7 @@
     "republish:outbox": "node tools/republish-outbox.mjs"
   },
   "devDependencies": {
+    "@angular-devkit/schematics-cli": "22.1.8",
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome/tooling": "file:./vendor/arthome-tooling-79f3cf27f932.tgz",

@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ArthomeConsumerHandler",
+  "title": "One event type handled by an app's consumer: its reader, command, handler and table",
+  "type": "object",
+  "properties": {
+    "app": {
+      "type": "string",
+      "description": "The service under apps/, generated with --consumer."
+    },
+    "module": {
+      "type": "string",
+      "description": "The feature directory under src/; its consumer module is created when absent."
+    },
+    "name": {
+      "type": "string",
+      "description": "The command the message becomes, a verb phrase: record-date-drafted.",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "topic": {
+      "type": "string",
+      "description": "The topic it arrives on: arthome.catalog.date."
+    },
+    "type": {
+      "type": "string",
+      "description": "The type header it handles: catalog.date.drafted.v1."
+    },
+    "schema": {
+      "type": "string",
+      "description": "Its Protobuf schema exported by @arthome-platform/events: DateDraftedSchema."
+    },
+    "key": {
+      "type": "string",
+      "description": "The event's string field naming what the fact is about: dateId."
+    },
+    "occurredAt": {
+      "type": "string",
+      "description": "The event's Timestamp field the order guard compares.",
+      "default": "occurredAt"
+    },
+    "table": {
+      "type": "string",
+      "description": "The table keeping the last fact per key; <schema without Schema>_fact by default."
+    }
+  },
+  "required": ["app", "module", "name", "topic", "type", "schema", "key"],
+  "additionalProperties": false
+}

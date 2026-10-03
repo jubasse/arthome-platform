@@ -1,0 +1,37 @@
+<%= imports([
+  { name: 'Outcome', from: '@arthome-platform/messaging' },
+  { name: 'claimMessage', from: '@arthome-platform/messaging' },
+  { name: 'CommandHandler', from: '@nestjs/cqrs' },
+  { name: 'ICommandHandler', from: '@nestjs/cqrs', typeOnly: true },
+  { name: command.pascal, from: `./${file}.command.js` },
+  { name: app.transactionsClass, from: `../${app.app}-transactions.js` },
+]) %>
+
+/**
+ * The message claimed and its fact kept in one transaction: a message-id seen before is a
+ *   duplicate, and a fact older than the one kept is superseded, since a retry topic can bring it
+ *   after a newer one. Reached from Kafka alone, so a refusal is core's `DomainError`, which the
+ *   consumer maps (`nestjs-request-pipeline` rule 1).
+ */
+@CommandHandler(<%= command.pascal %>)
+export class <%= command.pascal %>Handler implements ICommandHandler<<%= command.pascal %>> {
+  public constructor(private readonly transactions: <%= app.transactionsClass %>) {}
+
+  public execute({ delivery, fact }: <%= command.pascal %>): Promise<Outcome> {
+    return this.transactions.run(async ({ manager }) => {
+      if (!(await claimMessage(manager, delivery.messageId, delivery.topic))) {
+        return Outcome.DUPLICATE;
+      }
+      const kept = await manager.query<unknown[]>(
+        `INSERT INTO <%= table %> (<%= keyColumn %>, occurred_at)
+              VALUES ($1, $2)
+         ON CONFLICT (<%= keyColumn %>) DO UPDATE
+                 SET occurred_at = excluded.occurred_at, updated_at = now()
+               WHERE excluded.occurred_at >= <%= table %>.occurred_at
+         RETURNING <%= keyColumn %>`,
+        [fact.<%= key %>, fact.occurredAt],
+      );
+      return kept.length === 1 ? Outcome.APPLIED : Outcome.SUPERSEDED;
+    });
+  }
+}
