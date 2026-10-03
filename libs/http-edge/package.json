@@ -22,7 +22,7 @@
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/core": "file:../../vendor/arthome-core-9fb19108c720.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-ac7a49a1ddc0.tgz",
     "rxjs": "7.8.2",
     "zod": "4.6.5"
   },
