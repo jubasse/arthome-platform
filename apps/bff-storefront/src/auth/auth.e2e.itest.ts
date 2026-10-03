@@ -20,6 +20,7 @@ import {
   IdentityErrorCode,
   Locale,
   PREVIEW_BUDGET_SECONDS,
+  limitForAddress,
   SignInSlowdown,
   Surface,
 } from '@arthome/core';
@@ -392,9 +393,9 @@ describe('the refusals a surface is told', () => {
 
 describe('the caps', () => {
   it(
-    'slows enumeration through sign-up: one address past its cap is refused, another is not',
+    'slows enumeration through sign-up: one IPv4 address past its ceiling is refused, another is not',
     async () => {
-      const { limit } = AuthRateLimit.SIGN_UP_PER_ADDRESS;
+      const limit = limitForAddress(AuthRateLimit.SIGN_UP_PER_ADDRESS, true);
       for (let attempt = 0; attempt < limit; attempt += 1) {
         expect((await signUp(nextEmail(), SessionMode.BEARER)).statusCode).toBe(201);
       }

@@ -1,3 +1,5 @@
+import { isIPv4 } from 'node:net';
+
 import { RefusalException } from '@arthome-platform/http-edge';
 import { HttpStatus, Injectable, type ExecutionContext } from '@nestjs/common';
 import { Reflector, type ReflectableDecorator } from '@nestjs/core';
@@ -10,7 +12,7 @@ import {
   type ThrottlerOptions,
 } from '@nestjs/throttler';
 
-import { ApiErrorCode, AuthRateLimit, FailureNature } from '@arthome/core';
+import { ApiErrorCode, AuthRateLimit, FailureNature, limitForAddress } from '@arthome/core';
 
 import { viewerOf } from '../session/viewer.js';
 
@@ -62,11 +64,19 @@ const TRACKERS: Record<AuthRateLimitName, (request: TrackedRequest) => string> =
     viewerOf(request)?.accountId ?? addressOf(request),
 };
 
-/** One named throttler per cap, each skipped on every route that does not name it. */
+/**
+ * One named throttler per cap, each skipped on every route that does not name it. Its limit is the
+ *   caller's family's: core's high ceiling for an IPv4 address, which carriers share (CGNAT), the
+ *   tight one for an IPv6 /64.
+ */
 export function authThrottlers(reflector: Reflector): ThrottlerOptions[] {
   return (Object.keys(AuthRateLimit) as AuthRateLimitName[]).map((name) => ({
     name,
-    limit: AuthRateLimit[name].limit,
+    limit: (context: ExecutionContext) =>
+      limitForAddress(
+        AuthRateLimit[name],
+        isIPv4(addressOf(context.switchToHttp().getRequest<TrackedRequest>())),
+      ),
     ttl: seconds(AuthRateLimit[name].windowSeconds),
     skipIf: (context: ExecutionContext) =>
       !(

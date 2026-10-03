@@ -82,8 +82,12 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   from the BFF's origin. A cross-origin surface needs an explicit allow-list per environment, never
   `origin: true` with credentials (`nestjs-web-security` rule 3). No helmet either: the BFF serves
   JSON alone.
-- **The caps** (`adr-auth.md` §6.2) count per address, an IPv6 one as its /64, until devices carry a
-  verified identity; per typed email and address for password guessing; per account for a resend.
+- **The caps** (`adr-auth.md` §6.2) count per address until devices carry a verified identity: the
+  product owner's direction is to limit by device, which slice C brings. Until then an IPv6 /64
+  keeps tight caps, and an IPv4 address gets core's high anti-abuse ceiling (300 sign-ins per 15
+  minutes, 60 sign-ups per hour), since carriers share one IPv4 address across hundreds of
+  subscribers (CGNAT) and D-079's openings would refuse real viewers. Password guessing is capped
+  per typed email and address, a resend per account.
   In Redis, so every replica shares them. `TRUSTED_PROXIES` names the proxies whose
   `X-Forwarded-For` is believed. It is required in production, `none` when no proxy fronts the
   BFF: trusting none behind a proxy would make every client the proxy's address and the caps
@@ -134,9 +138,6 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
 - **Session validation at scale**: one identity call per signed-in request, no cache. At an
   opening's scale a slow identity turns every signed-in call into a 504; `adr-auth.md` §8's Redis
   cache of sessions is the follow-up, measured by T6's load test.
-- **The caps' numbers are not sized.** An IPv4 address behind a carrier NAT is shared by hundreds
-  of subscribers: at D-079's 10,000 buyers a minute, 20 sign-ins per 15 minutes per address refuses
-  real buyers at an opening. The product owner sizes `AuthRateLimit` before the first on-sale.
 - **`resendEmailVerification` answers `queued`, not `sent`** (the lead's addendum): the link is
   recorded for `notifications`, which owns the sending and has no consumer of the verification
   topic nor mail adapter yet. Sending it is a launch prerequisite.
@@ -181,6 +182,9 @@ The architecture review's P2 to P5, in order:
    the throttler wiring, before `bff-studio` exists. Two copies of token minting, CSRF and the error
    allowlist would drift. The routes, the caps used and CORS stay per BFF; the studio's CORS allows
    the literal Capacitor origins (`adr-auth.md` §6.6).
+
+B's own caps: the studio's limits count per authenticated member, not per address, and are set
+high, since a moderator or a stage manager may work several dates at once.
 
 Also open for B: the claims `chn` and `rol` (and `scope`) in `InternalTokenClaimsSchema`, loose so
 A's services keep working; studio.yaml's `bearerToken`, which describes a device-bound refresh token
