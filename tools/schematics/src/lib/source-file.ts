@@ -285,6 +285,10 @@ export function addToArrayProperty(
   return appendedElement(text, arrayOf(assignment.initializer, property), element);
 }
 
+export function hasProperty(text: string, locator: ObjectLocator, key: string): boolean {
+  return propertyNamed(objectAt(parse(text), locator), key) !== undefined;
+}
+
 /** Adds `key: value` to an object literal, or leaves it when the key is there already. */
 export function addProperty(
   text: string,

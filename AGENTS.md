@@ -184,7 +184,8 @@ its first `consumer-handler`, and KafkaJS refuses an empty list; a sweeper has n
 aggregate holds its id and `version` alone, a command's body `expectedVersion` alone, and a
 route's one parameter is the aggregate's id. A consumer handler's table is a placeholder for the
 real effect, a refusal it raises is dead-lettered (a fact that waits for an earlier one, as
-ticketing's do for `drafted`, is made transient by hand), and its key must be a string field. An
+ticketing's do for `drafted`, is made transient by hand), and its key must be a string field. A
+type `READERS` reads already is refused: one type has one handler, which is the one to extend. An
 anchor the service cannot find in the README, this file or a tool is a warning to act on, not a
 failure. Nothing is ever deleted or renamed, and a name that exists is refused.
 

@@ -20,12 +20,14 @@ import {
   addToArrayProperty,
   addToCollection,
   hasDeclaration,
+  hasProperty,
   renderImports,
 } from '#schematics/source-file';
 import {
   editText,
   existingApp,
   nextMigrationTimestamp,
+  readText,
   type AppNames,
 } from '#schematics/workspace';
 
@@ -131,6 +133,7 @@ function registerMigration(names: AppNames, migration: string, migrationFile: st
 export function consumerHandler(options: ConsumerHandlerOptions): Rule {
   return (tree) => {
     const names = existingApp(tree, options.app);
+    const consumedMessages = `${names.src}/consumed-messages.ts`;
     for (const required of ['consumer.module.ts', 'consumed-messages.ts', 'delivery.ts']) {
       if (!tree.exists(`${names.src}/${required}`)) {
         throw new SchematicsException(
@@ -149,6 +152,12 @@ export function consumerHandler(options: ConsumerHandlerOptions): Rule {
     if (!/^[A-Z][A-Za-z0-9]*Schema$/.test(options.schema)) {
       throw new SchematicsException(
         `--schema "${options.schema}": a Protobuf schema, such as DateDraftedSchema`,
+      );
+    }
+    // One reader per type: a second handler would be registered and never dispatched to.
+    if (hasProperty(readText(tree, consumedMessages), { variable: 'READERS' }, options.type)) {
+      throw new SchematicsException(
+        `${consumedMessages}: READERS reads '${options.type}' already; extend its handler instead`,
       );
     }
     const module = kebab(options.module);

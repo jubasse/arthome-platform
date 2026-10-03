@@ -96,4 +96,22 @@ describe('consumer-handler', () => {
     },
     RUN_MS,
   );
+
+  it(
+    'refuses a type another handler reads already, before writing anything',
+    async () => {
+      const refused = await testRunner()
+        .runSchematic(
+          'consumer-handler',
+          { ...DRAFTED, name: 'record-date-drafted-again' },
+          tree.branch(),
+        )
+        .then(
+          () => '',
+          (error: unknown) => String(error),
+        );
+      expect(refused).toContain("READERS reads 'catalog.date.drafted.v1' already");
+    },
+    RUN_MS,
+  );
 });
