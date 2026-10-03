@@ -235,6 +235,17 @@ describe('service, refused', () => {
       );
       expect(lighting).toContain('connector infra/debezium/legacy-outbox.json (slot.name)');
       expect(lighting).toContain('consumer group lighting in apps/legacy/src/main.ts');
+
+      const generated = await testRunner().runSchematic('service', LIGHTING, repositoryTree());
+      const again = String(
+        await testRunner()
+          .runSchematic('service', { ...LIGHTING, port: 3998 }, generated)
+          .then(
+            () => undefined,
+            (error: unknown) => error,
+          ),
+      );
+      expect(again).toContain('consumer group lighting in apps/lighting/src/consumer.module.ts');
     },
     RUN_MS,
   );

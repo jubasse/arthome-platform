@@ -1,3 +1,5 @@
+import { posix } from 'node:path';
+
 import {
   SchematicsException,
   apply,
@@ -15,7 +17,13 @@ import { NodePackageInstallTask } from '@angular-devkit/schematics/tasks/index.j
 
 import { formatTouchedFiles } from '#schematics/format';
 import { spellings } from '#schematics/names';
-import { addToCollection, addToSortedStringArray, propertyPassedTo } from '#schematics/source-file';
+import {
+  addToCollection,
+  addToSortedStringArray,
+  constantExpression,
+  importSourceOf,
+  propertyPassedTo,
+} from '#schematics/source-file';
 import {
   editText,
   nextMigrationTimestamp,
@@ -171,23 +179,47 @@ function connectorUses(tree: Tree, name: string): string[] {
 }
 
 /**
- * A topic `arthome.<name>.*` declared for this service before it was built, as
- *   `arthome.streaming.run` is for catalog to consume, is its own when `--topics` claims it at
- *   its partitions. Any other is another service's.
+ * When nothing else bears the name, its topics were declared before the service was built, as
+ *   `arthome.streaming.run` is for catalog to consume: each is its own when `--topics` claims it
+ *   at its partitions. Otherwise they are a running service's.
  */
-function topicUses(tree: Tree, name: string, topics: readonly Topic[]): string[] {
+function topicUses(
+  tree: Tree,
+  name: string,
+  topics: readonly Topic[],
+  declaredAhead: boolean,
+): string[] {
   const prefix = `arthome.${name}.`;
   return readJson<DeclaredTopics>(tree, TOPICS)
     .topics.filter((topic) => topic.name.startsWith(prefix))
     .flatMap(({ name: declared, partitions }) => {
-      const claimed = topics.find(({ aggregate }) => `${prefix}${aggregate}` === declared);
-      if (claimed?.partitions === partitions) return [];
       const aggregate = declared.slice(prefix.length);
-      const claim = FAILURE_TOPICS.includes(aggregate)
-        ? ''
-        : ` (--topics ${aggregate}:${partitions} owns it)`;
+      const claimable = declaredAhead && !FAILURE_TOPICS.includes(aggregate);
+      const claimed = topics.find((topic) => topic.aggregate === aggregate);
+      if (claimable && claimed?.partitions === partitions) return [];
+      const claim = claimable ? ` (--topics ${aggregate}:${partitions} owns it)` : '';
       return [`topic ${declared} in infra/kafka/topics.json${claim}`];
     });
+}
+
+/** A string, `Service.X`, or a `const` the file declares or imports from a sibling, as its value. */
+function valueOf(
+  tree: Tree,
+  path: string,
+  expression: string,
+  members: ReadonlyMap<string, string>,
+): string {
+  const literal = /^(['"`])(.*)\1$/.exec(expression)?.[2];
+  if (literal !== undefined) return literal;
+  const member = members.get(expression);
+  if (member !== undefined) return member;
+  const text = tree.readText(path);
+  const bound = constantExpression(text, expression);
+  if (bound !== null) return valueOf(tree, path, bound, members);
+  const from = importSourceOf(text, expression);
+  if (from?.startsWith('.') !== true) return expression;
+  const imported = posix.join(posix.dirname(path), from.replace(/\.js$/, '.ts'));
+  return tree.exists(imported) ? valueOf(tree, imported, expression, members) : expression;
 }
 
 function consumerGroupUses(tree: Tree, name: string, vocabulary: ServiceVocabulary): string[] {
@@ -200,7 +232,9 @@ function consumerGroupUses(tree: Tree, name: string, vocabulary: ServiceVocabula
       if (!path.endsWith('.ts') || /\.(spec|itest)\.ts$/.test(path)) return;
       const text = tree.readText(path);
       const groups = CONSUMER_HOSTS.filter((callee) => text.includes(callee)).flatMap((callee) =>
-        propertyPassedTo(text, callee, 'service').map((value) => members.get(value) ?? value),
+        propertyPassedTo(text, callee, 'service').map((value) =>
+          valueOf(tree, path, value, members),
+        ),
       );
       if (groups.includes(name)) uses.push(`consumer group ${name} in ${path.slice(1)}`);
     });
@@ -215,16 +249,23 @@ function refuseUsedName(
   topics: readonly Topic[],
   vocabulary: ServiceVocabulary,
 ): void {
+  const app = tree.getDir('/apps').subdirs.some((directory) => directory === name)
+    ? [`apps/${name} exists already`]
+    : [];
+  const database = new RegExp(`^(CREATE|ALTER) DATABASE ${name}\\s`, 'm').test(
+    readText(tree, DATABASES),
+  )
+    ? [`database ${name} in infra/postgres/init-databases.sql`]
+    : [];
+  const connectors = connectorUses(tree, name);
+  const groups = consumerGroupUses(tree, name, vocabulary);
+  const declaredAhead = [...app, ...database, ...connectors, ...groups].length === 0;
   const uses = [
-    ...(tree.getDir('/apps').subdirs.some((app) => app === name)
-      ? [`apps/${name} exists already`]
-      : []),
-    ...(new RegExp(`^(CREATE|ALTER) DATABASE ${name}\\s`, 'm').test(readText(tree, DATABASES))
-      ? [`database ${name} in infra/postgres/init-databases.sql`]
-      : []),
-    ...topicUses(tree, name, topics),
-    ...connectorUses(tree, name),
-    ...consumerGroupUses(tree, name, vocabulary),
+    ...app,
+    ...database,
+    ...topicUses(tree, name, topics, declaredAhead),
+    ...connectors,
+    ...groups,
   ];
   if (uses.length > 0) {
     throw new SchematicsException(`--name ${name} is taken: ${uses.join('; ')}`);

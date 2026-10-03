@@ -285,22 +285,9 @@ export function addToArrayProperty(
   return appendedElement(text, arrayOf(assignment.initializer, property), element);
 }
 
-/**
- * The `property` of the object passed to each `callee(…)`: a string, or a `const` of the file bound
- *   to one, as its value; any other expression as its text (`Service.TICKETING`).
- */
+/** The text of the `property` passed in the object literal of each `callee(…)`. */
 export function propertyPassedTo(text: string, callee: string, property: string): string[] {
-  const nodes = descendants(parse(text));
-  const constants = new Map(
-    nodes
-      .filter(ts.isVariableDeclaration)
-      .flatMap((declaration) =>
-        declaration.initializer !== undefined && ts.isStringLiteralLike(declaration.initializer)
-          ? [[declaration.name.getText(), declaration.initializer.text] as const]
-          : [],
-      ),
-  );
-  return nodes
+  return descendants(parse(text))
     .filter(
       (node): node is ts.CallExpression =>
         ts.isCallExpression(node) && node.expression.getText() === callee,
@@ -312,11 +299,27 @@ export function propertyPassedTo(text: string, callee: string, property: string)
         (candidate) => candidate.name?.getText() === property,
       );
       if (passed === undefined) return [];
-      const value = ts.isPropertyAssignment(passed) ? passed.initializer : passed.name;
-      if (value === undefined) return [];
-      if (ts.isStringLiteralLike(value)) return [value.text];
-      return [constants.get(value.getText()) ?? value.getText()];
+      return [(ts.isPropertyAssignment(passed) ? passed.initializer : passed).getText()];
     });
+}
+
+/** The text of the expression a top-level `const name` is bound to, or null when none is. */
+export function constantExpression(text: string, name: string): string | null {
+  const declaration = parse(text)
+    .statements.filter(ts.isVariableStatement)
+    .flatMap((statement) => [...statement.declarationList.declarations])
+    .find((candidate) => candidate.name.getText() === name);
+  return declaration?.initializer?.getText() ?? null;
+}
+
+/** The module a file imports `name` from, or null when it imports no such name. */
+export function importSourceOf(text: string, name: string): string | null {
+  const declaration = parse(text)
+    .statements.filter(ts.isImportDeclaration)
+    .find((candidate) =>
+      namedBindingsOf(candidate)?.elements.some((element) => element.name.text === name),
+    );
+  return declaration === undefined ? null : moduleOf(declaration);
 }
 
 export function hasProperty(text: string, locator: ObjectLocator, key: string): boolean {
