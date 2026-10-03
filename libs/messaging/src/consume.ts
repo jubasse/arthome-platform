@@ -26,6 +26,9 @@ const HEARTBEAT_INTERVAL_MS = 3_000;
  */
 const DEFAULT_CONCURRENCY = 3;
 
+// eslint-disable-next-line arthome-platform/no-wall-clock -- a retry's not-before is written by one consumer process and waited for by another: the machine's time is the clock they share
+const machineNow = (): Date => new Date();
+
 export interface ConsumerSetup {
   readonly kafka: Kafka;
   readonly producer: Producer;
@@ -108,8 +111,7 @@ export async function runConsumers(setup: ConsumerSetup): Promise<() => Promise<
       eachMessage: async (payload) => {
         if (honourDelay) {
           const notBefore = header(payload, NOT_BEFORE_HEADER);
-          // eslint-disable-next-line arthome-platform/no-wall-clock -- another process's instant, waited for in real time
-          const waitMs = notBefore === null ? 0 : Date.parse(notBefore) - Date.now();
+          const waitMs = notBefore === null ? 0 : Date.parse(notBefore) - machineNow().getTime();
           if (waitMs > 0)
             await waitUntilDue(
               waitMs,
@@ -127,7 +129,7 @@ export async function runConsumers(setup: ConsumerSetup): Promise<() => Promise<
           return;
         }
 
-        const disposition = await dispatch(handler, producer, service, payload);
+        const disposition = await dispatch(handler, producer, service, payload, machineNow());
         onDisposition?.(payload.topic, disposition);
       },
     });

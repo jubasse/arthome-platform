@@ -86,6 +86,7 @@ describe('applyChecklistMessage, before any write', () => {
       producer,
       Service.CATALOG,
       message('chat.date_chat_policy.changed.v1', policy, 'm-1'),
+      new Date(),
     );
 
     expect(disposition).toBe('dead-lettered');
@@ -148,6 +149,7 @@ describe('applyChecklistMessage, before any write', () => {
       producer,
       Service.CATALOG,
       message('chat.date_chat_policy.changed.v1', policy),
+      new Date(),
     );
 
     expect(disposition).toBe('retried');
