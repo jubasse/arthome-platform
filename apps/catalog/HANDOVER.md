@@ -925,3 +925,13 @@ exist.
   `DateRightsChanged`, a reschedule without an outcome, the two transitions `streaming` causes
   (`technical -> live`, `live -> ended`), `Taxonomy` and `SavedSearch`. `Artist` since 2026-09-27
   (§0d).
+
+## Contract binding (2026-10-03)
+
+`GET /v1/search`, `/v1/dates/:dateId`, `/v1/artists/:artistId` and `/v1/resolve` are bound to their
+`storefrontApi` operations by `@Endpoint(route)`; the narrower inputs (`SearchQuerySchema`, which
+refuses the tabs and sorts this service cannot answer, and `ResolveQuerySchema`, which has no
+`category` kind) stay beside it as native `@Query({ schema })`. The studio routes (`channels/:channelId/dates`,
+the publication transition, the outcome, the identity patch) are not bound: their answers lack the studio
+envelope's `rightsVersion`, which the studio BFF adds, and the first two paths carry no `/v1`.
+The development Swagger UI is at `http://localhost:3002/docs`.

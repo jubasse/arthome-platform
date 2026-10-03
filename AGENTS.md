@@ -213,6 +213,63 @@ on 22.x**, where type stripping is on by default; the `engines` floor, 22.22.3, 
 Run on 24.19 and, in a container, on 22.23.3. Its specs run in `pnpm run test`, through
 `SchematicTestRunner` on a tree of the committed files.
 
+## Binding a route to its contract operation
+
+A route that implements an operation of `@arthome/contracts/storefront-api` or `/studio-api` is
+declared once, in core, and bound here by `@Endpoint(route)` from `@arthome-platform/http-edge`.
+The decorator is `applyDecorators` over real decorators only, filled from the declaration: the
+method and path (`@Get`, `@Post`... with the `{id}` template written `:id`), `@HttpCode` of the
+lowest declared 2xx, `@ApiOperation` (operation id, summary, description), `@ApiTags`,
+`@ApiResponse({ status, standardSchema })` for every declared status, `@ApiSecurity` for every
+requirement and `@ApiHeader` for every header parameter. A requirement written `{}` (a call with
+no credential) is `ApiSecurity({})`.
+
+```ts
+const { getDateDetail } = storefrontApi.routes;
+
+@Controller() // the contract's path already holds `/v1`
+export class DatesController {
+  @Endpoint(getDateDetail)
+  public async detail(
+    @EndpointParams(getDateDetail) { dateId }: RouteParams<typeof getDateDetail>,
+    @EndpointHeaders(getDateDetail) _headers: RouteHeaders<typeof getDateDetail>,
+  ): Promise<PerishableResponse<DateDetail>> { /* ... */ }
+}
+```
+
+- **Inputs** are bound by `EndpointParams`, `EndpointQuery`, `EndpointBody` (real `@Param`,
+  `@Query`, `@Body` with `{ schema }`, run by the global `StandardSchemaValidationPipe`) and
+  `EndpointHeaders` (a custom parameter decorator with its own pipe: `@Headers()` takes no
+  schema). A refusal is `api.schema_invalid` with `fields`, as everywhere else.
+- **The compiler checks the answer.** The handler must be `async` and what it returns, once
+  enveloped by `SuccessEnvelopeInterceptor`, must be the route's success body; a body that is not
+  fails at the decorator, naming `the handler answers outside its route`. `successSchemaOf(route)`
+  is the success body's schema, for a relay that validates an upstream answer.
+- **A service that narrows the contract** (catalog's search refuses the tabs it cannot answer,
+  ticketing's purchase takes a null contribution only) keeps its own `@Query({ schema })` or
+  `@Body({ schema })` beside `@Endpoint(route)`: the route, the status and the documented answer
+  are the contract's, the narrower input is what the service accepts. A service whose answer is
+  not the contract's body (the ticket's `date` card is composed by the BFF; the studio's
+  `rightsVersion` by the studio BFF) does not bind that route: the compiler refuses it.
+- **Guards are unchanged**: routes register through Nest controllers, so `InternalTokenGuard` and
+  `DenyInProductionGuard` apply, and `@AllowInProduction()` stays where it was.
+- **Swagger UI, in development only**: `mountDevDocs(app, api, { title, path: 'docs' })` in
+  `main.ts` mounts the page and its raw document (`/docs-json`) when `NODE_ENV` is `development`
+  or `test`, and mounts nothing otherwise. The document is built from the controllers of the
+  process, so each lists only the operations it serves, under the api's servers and security
+  schemes, with the api's named schemas as shared `$ref` components.
+
+| Process | Development port | Swagger UI | Operations |
+| --- | --- | --- | --- |
+| `bff-storefront` | 3003 | `http://localhost:3003/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink, signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification, getViewerContext |
+| `catalog` | 3002 | `http://localhost:3002/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink |
+| `ticketing` | 3004 | `http://localhost:3004/docs` | quoteSeat, refreshDateAvailability |
+
+`@nestjs/swagger` is a peer of `libs/http-edge`; `@fastify/static` serves the UI on Fastify, and
+`@scarf/scarf` (swagger-ui-dist's telemetry install script) is denied in `pnpm-workspace.yaml`.
+The `command` schematic generates a route of its own, for a command no contract declares; bind it
+with `@Endpoint` only when a contract operation is later declared for it.
+
 ## Gates: three levels
 
 Three different amounts of checking, for three different moments, so that the checking that must

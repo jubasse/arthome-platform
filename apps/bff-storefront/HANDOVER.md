@@ -11,26 +11,30 @@ Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10
 
 | File | What it is |
 | --- | --- |
-| `src/search/search.controller.ts` | the route: surface check, deadline, the call, the public cache headers |
-| `src/search/search-query.schema.ts` | the contract's query parameters, query-string values coerced |
-| `src/search/search-response.schema.ts` | the 200 body, composed from `@arthome/contracts` |
+| `src/search/search.controller.ts` | the route, bound to `storefrontApi.routes.search` with `@Endpoint`: deadline, the call, the public cache headers |
 | `src/upstream/service-client.ts` | the one way this BFF calls a service: a fresh internal token, the deadline, the trace, the answer validated, the refusal relayed or mapped |
 | `src/internal-token.minter.ts` | the token each call carries: ES256, this BFF as issuer, the service as audience, 60 s |
 | `src/catalog/catalog.client.ts` | catalog's adapter on `ServiceClient`, always anonymous: the public reads serve every caller one body |
 | `src/identity/identity.client.ts` | identity's adapter: the relayed authentication calls and the session's resolution |
-| `src/auth/auth.controller.ts`, `auth-requests.schema.ts` | `/v1/auth/*`, the contract's bodies, the delivery mode |
+| `src/auth/auth.controller.ts` | `/v1/auth/*`, bound to the contract's routes: its bodies and headers, the delivery mode |
 | `src/auth/auth-rate-limits.ts`, `throttler-storage.ts` | the caps of core's `AuthRateLimit`, counted in Redis, refused as `api.rate_limited` |
 | `src/session/` | the session's two carriers, the viewer, `ViewerGuard`, `CsrfGuard` and the plugins they rely on |
 | `src/viewer-context/` | `getViewerContext` and the composition `SessionEstablished` reuses |
 | `src/dates/dates.controller.ts` | `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`, relayed from catalog |
 | `src/conditional-get.ts` | the `ETag` and the `onSend` hook that answers a matching `If-None-Match` with 304 |
-| `src/storefront-surface.ts` | the `X-Arthome-Surface` check and the contract's `Vary`, for every route |
+| `src/storefront-surface.ts` | the contract's `Vary`, for every route (the surface header itself is refused by `EndpointHeaders`) |
 | `src/traceparent.middleware.ts` | a `traceparent` on every request that arrives without a valid one |
 
 Proven by `src/catalog/catalog.client.spec.ts` (a stand-in catalog over HTTP), the two
 `*.e2e.spec.ts` (the whole app through Fastify), `src/conditional-get.spec.ts`,
 `src/auth/auth.e2e.itest.ts` (this BFF against the real identity, Postgres and Redis), and on the
 running stack (`AGENTS.md`, "Search, the date page and link resolution, from the storefront BFF").
+
+Every route here is bound by `@Endpoint(route)` to its `storefrontApi` declaration (`AGENTS.md`,
+"Binding a route to its contract operation"): there is no hand copy of a query, a body or a
+response left, and the upstream answers are validated against `successSchemaOf(route)`. The
+development Swagger UI is at `http://localhost:3003/docs`, mounted by `main.ts` and absent in
+production.
 
 ## 2. Decisions, and why
 

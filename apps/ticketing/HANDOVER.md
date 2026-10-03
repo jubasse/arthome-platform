@@ -649,3 +649,11 @@ Known and left, each judged:
   availability on the date's, and a forged, a genuine and a duplicate webhook. A 202, the expiry and
   a late payment were not played there: the running fake confirms every intent, and the suites play
   them (§1).
+
+## Contract binding (2026-10-03)
+
+`POST /v1/dates/:dateId/seat-quote` and `GET /v1/dates/:dateId/availability` are bound to
+`storefrontApi` by `@Endpoint(route)`. Not bound, because the compiler refuses their answers:
+`purchaseSeat` and `getOrder` (a ticket in the contract carries the date's card, which the BFF will
+compose from catalog) and the four studio routes (the studio envelope's `rightsVersion`, added by the
+studio BFF). The development Swagger UI is at `http://localhost:3004/docs`.
