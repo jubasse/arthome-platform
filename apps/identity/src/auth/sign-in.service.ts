@@ -6,6 +6,7 @@ import { DataSource } from 'typeorm';
 import { Account } from './account.entity.js';
 import { BETTER_AUTH } from './auth.tokens.js';
 import type { Auth } from './better-auth.js';
+import { hashPassword, isOutdated } from './password-hashing.js';
 import { invalidCredentials } from './refusals.js';
 import { SessionsService } from './sessions.service.js';
 import type { SignInBody } from './sign-up.schema.js';
@@ -13,7 +14,8 @@ import type { SignedUp } from './sign-up.service.js';
 
 /**
  * better-auth checks the password (and hashes one for an unknown address too, so the two take the
- *   same time); identity then checks the account may sign in. Every refusal is the same 401.
+ *   same time); identity then checks the account may sign in. Every refusal is the same 401. A
+ *   digest made with older parameters is hashed again while the password is at hand (rule 8).
  */
 @Injectable()
 export class SignInService {
@@ -44,6 +46,7 @@ export class SignInService {
       await this.sessions.revoke(token);
       throw invalidCredentials();
     }
+    await this.rehashIfOutdated(account.id, body.password);
     return {
       session: await this.sessions.established(token),
       account: {
@@ -51,5 +54,13 @@ export class SignInService {
         emailVerified: account.email_verified_at !== null,
       },
     };
+  }
+
+  private async rehashIfOutdated(accountId: string, password: string): Promise<void> {
+    const context = await this.auth.$context;
+    const credential = await context.internalAdapter.findCredentialAccount(accountId);
+    if (credential?.password && isOutdated(credential.password)) {
+      await context.internalAdapter.updatePassword(accountId, await hashPassword(password));
+    }
   }
 }

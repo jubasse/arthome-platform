@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { mintInternalToken } from '@arthome-platform/testing';
+import { argon2id, hash } from 'argon2';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -16,7 +17,9 @@ import {
 } from '@arthome/core';
 import { PublicHandleSchema } from '@arthome/core/schema';
 
-import { AUTH_SCHEMA, createAuth } from './better-auth.js';
+import { BETTER_AUTH } from './auth.tokens.js';
+import { AUTH_SCHEMA, createAuth, type Auth } from './better-auth.js';
+import { isOutdated } from './password-hashing.js';
 import { asAccount, startIdentity, type IdentityHarness } from '../itest/identity-app.js';
 import { newestLinkTokenTo } from '../itest/verification-links.js';
 
@@ -320,6 +323,29 @@ describe('sign-up', () => {
 });
 
 describe('sign-in', () => {
+  it(
+    'hashes a password stored with older parameters again, at today’s',
+    async () => {
+      const email = nextEmail();
+      const { session } = await signedUp(email);
+      const { internalAdapter } = await identity.app.get<Auth>(BETTER_AUTH).$context;
+      const older = await hash('a-long-password', {
+        type: argon2id,
+        memoryCost: 19_456,
+        timeCost: 1,
+        parallelism: 1,
+      });
+      await internalAdapter.updatePassword(session.accountId, older);
+
+      const signedIn = await post('/v1/auth/sign-in', { email, password: 'a-long-password' });
+      expect(signedIn.statusCode).toBe(200);
+      const credential = await internalAdapter.findCredentialAccount(session.accountId);
+      expect(credential?.password).not.toBe(older);
+      expect(isOutdated(credential?.password ?? older)).toBe(false);
+    },
+    CASE_MS,
+  );
+
   it(
     'opens a second session with the right password',
     async () => {

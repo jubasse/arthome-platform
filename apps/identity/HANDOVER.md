@@ -54,7 +54,8 @@ between the two commits leaves a credential with no account, which the next sign
 finds (better-auth says the address is taken while the account row was free) and replaces.
 
 **Passwords** are argon2id at OWASP's floor (`password-hashing.ts`), between 12 and 128
-characters. **Sessions** live 7 days and slide once a day (`@arthome/core`'s lifetimes, owned by
+characters, NFKC-normalised before hashing and verifying; a sign-in hashes again a digest made with
+older parameters, so raising them reaches every account that signs in. **Sessions** live 7 days and slide once a day (`@arthome/core`'s lifetimes, owned by
 `adr-auth.md` §6.1); the token handed out is the signed one, and `bearer({ requireSignature: true
 })` refuses an unsigned one. **The idempotency fingerprint of a sign-up is keyed**
 (`keyedFingerprintOf`, the key derived from `BETTER_AUTH_SECRET`): the body carries a password, and
