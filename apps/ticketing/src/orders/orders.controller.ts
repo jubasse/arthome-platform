@@ -29,7 +29,8 @@ import { DateIdSchema, OrderIdSchema } from '@arthome/core/schema';
 
 import { GetOrder } from './get-order.query.js';
 import type { OrderDetail, PaymentHandoffView, PurchasedSeats } from './order-views.js';
-import { PurchaseSeat, PurchaseStatus } from './purchase-seat.command.js';
+import { notTheCallersProfile } from './purchase-refusals.js';
+import { PurchaseSeat, PurchaseStatus, type Buyer } from './purchase-seat.command.js';
 import { PurchaseSeatSchema, type PurchaseSeatBody } from './purchase-seat.schema.js';
 import { QuoteSeat } from './quote-seat.query.js';
 import { QuoteSeatSchema, type QuoteSeatBody } from './quote-seat.schema.js';
@@ -49,6 +50,17 @@ function lateEntryAcknowledgedOf(header: string | undefined): boolean {
   if (header === undefined) return false;
   if (header === 'true') return true;
   throw schemaInvalidException([{ path: [LATE_ENTRY_ACKNOWLEDGED_HEADER] }]);
+}
+
+/**
+ * The token's account and profile. The contract lets the body name a profile, which is accepted
+ *   only when it is the token's: until profiles land no token names one, so any profile is refused.
+ */
+function buyerOf(principal: Principal, body: PurchaseSeatBody): Buyer {
+  const accountId = accountOf(principal);
+  const named = body.profileId ?? null;
+  if (named !== null && named !== principal.profileId) throw notTheCallersProfile();
+  return { accountId, profileId: principal.profileId };
 }
 
 interface StatusWriter {
@@ -96,9 +108,11 @@ export class OrdersController {
     @Headers('traceparent') traceparent?: string,
     @Headers(LATE_ENTRY_ACKNOWLEDGED_HEADER) lateEntryAcknowledged?: string,
   ): Promise<MemorisedResponse<PurchasedSeats | PaymentHandoffView>> {
+    const buyer = buyerOf(principal, body);
     const { status, response } = await this.commands.execute(
       new PurchaseSeat(
         body,
+        buyer,
         parseTraceparent(traceparent)?.traceparent ?? null,
         idempotentRequestOf(
           'POST',
@@ -106,7 +120,7 @@ export class OrdersController {
           body,
           PurchaseStatus.PAID,
           idempotencyKey,
-          accountOf(principal),
+          buyer.accountId,
         ),
         lateEntryAcknowledgedOf(lateEntryAcknowledged),
       ),

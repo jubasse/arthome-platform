@@ -105,6 +105,7 @@ export function purchaseOf(
   };
   return new PurchaseSeat(
     body,
+    { accountId: ITEST_BUYER_ACCOUNT_ID, profileId: null },
     traceparent,
     idempotentRequestOf('POST', '/v1/orders/seats', body, 201, key, ITEST_BUYER_ACCOUNT_ID),
     lateEntryAcknowledged,

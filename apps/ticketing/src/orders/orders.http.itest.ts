@@ -233,6 +233,27 @@ describe('POST /v1/orders/seats', () => {
   );
 
   it(
+    'refuses a profile the internal token does not name: the buyer is the token’s',
+    async () => {
+      const dateId = await dateOnSale();
+      const refused = await postPurchase(
+        purchaseBody(dateId, { profileId: '01a0fc00-0000-7000-8000-0000000f11e5' }),
+      );
+
+      expect(refused.statusCode).toBe(403);
+      expect(refused.json()).toMatchObject({
+        error: { code: ApiErrorCode.FORBIDDEN, nature: FailureNature.REFUSED },
+      });
+      const [held] = await dataSource.query<{ count: string }[]>(
+        'SELECT count(*) FROM seat_hold WHERE date_id = $1',
+        [dateId],
+      );
+      expect(held?.count).toBe('0');
+    },
+    CASE_MS,
+  );
+
+  it(
     'answers 503 when the provider does not answer',
     async () => {
       const dateId = await dateOnSale();

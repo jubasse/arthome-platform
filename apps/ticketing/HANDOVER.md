@@ -600,7 +600,8 @@ payment return path, D-089's `SEAT_SALES_CUTOFF_MINUTES_AFTER_START`, `seatSales
   refused in production until a real payment adapter: `quoteSeat`, `purchaseSeat` and `getOrder`
   need a token naming an account (401 otherwise, no guest purchase); a purchase binds
   its hold, order and seats to it, its idempotency key is scoped by it, and `order.paid` and
-  `seat.activated` carry it. `getOrder` serves the buyer alone: someone else's order is a 404, as one
+  `seat.activated` carry it. The profile is the token's too (`PurchaseSeat.buyer`): a body naming
+  another one is a 403, and until profiles land no token names any. `getOrder` serves the buyer alone: someone else's order is a 404, as one
   that does not exist. An order placed before slice A has no account and is served to nobody. The
   studio's routes (prices, capacity, provision, the pane) stay refused in production until slice B
   authorises them on the loaded date.
