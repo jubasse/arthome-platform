@@ -10,7 +10,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { SessionMode } from '@arthome/contracts/identity';
+import { SessionMode, ViewerContextSchema } from '@arthome/contracts/identity';
 import {
   ApiErrorCode,
   AuthRateLimit,
@@ -19,6 +19,7 @@ import {
   FixedClock,
   IdentityErrorCode,
   Locale,
+  PREVIEW_BUDGET_SECONDS,
   SignInSlowdown,
   Surface,
 } from '@arthome/core';
@@ -229,6 +230,53 @@ describe('signing up in cookie mode', () => {
         },
       });
       expect(data.viewerContext).not.toHaveProperty('plan');
+    },
+    CASE_MS,
+  );
+});
+
+describe('the viewer context', () => {
+  it(
+    'is the contract’s, its unpublished artifacts null and its undecided quota absent',
+    async () => {
+      const token = await bearerSession();
+      const answer = await viewerContext({ authorization: `Bearer ${token}` });
+      expect(answer.statusCode).toBe(200);
+      const { data } = answer.json<{ data: Record<string, unknown> }>();
+
+      expect(ViewerContextSchema.safeParse(data).success).toBe(true);
+      expect(data).toMatchObject({
+        labelCatalog: null,
+        taxonomyArtifact: null,
+        constants: { previewSecondsTotal: PREVIEW_BUDGET_SECONDS },
+      });
+      expect(data.constants).not.toHaveProperty('reactionQuotaPerDate');
+    },
+    CASE_MS,
+  );
+
+  it(
+    'never carries the internal account id, in any answer that opens or reads a session',
+    async () => {
+      const email = nextEmail();
+      const signedUp = await signUp(email, SessionMode.BEARER);
+      const token = signedUp.json<{ data: { accessToken: string } }>().data.accessToken;
+      const signedIn = await post('/v1/auth/sign-in', {
+        email,
+        password: 'a-long-password',
+        mode: SessionMode.COOKIE,
+      });
+      const context = await viewerContext({ authorization: `Bearer ${token}` });
+      const [account] = await identity.dataSource.query<{ id: string }[]>(
+        'SELECT id FROM account WHERE email = $1',
+        [email],
+      );
+
+      expect(account?.id).toBeDefined();
+      for (const answer of [signedUp, signedIn, context]) {
+        expect(answer.statusCode).toBeLessThan(300);
+        expect(answer.body).not.toContain(account?.id ?? 'no account');
+      }
     },
     CASE_MS,
   );

@@ -11,6 +11,13 @@ export interface Viewer {
   readonly emailVerified: boolean;
 }
 
+export function viewerOf(account: Account): Viewer {
+  return {
+    publicHandle: account.public_handle,
+    emailVerified: account.email_verified_at !== null,
+  };
+}
+
 @Injectable()
 export class ViewerService {
   public constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
@@ -18,9 +25,6 @@ export class ViewerService {
   public async viewer(accountId: string): Promise<Viewer> {
     const account = await this.dataSource.manager.findOneBy(Account, { id: accountId });
     if (account === null) throw unauthenticated();
-    return {
-      publicHandle: account.public_handle,
-      emailVerified: account.email_verified_at !== null,
-    };
+    return viewerOf(account);
   }
 }

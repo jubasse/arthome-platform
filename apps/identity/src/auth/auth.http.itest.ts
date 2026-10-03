@@ -383,6 +383,18 @@ describe('sign-in', () => {
 
 describe('a session', () => {
   it(
+    'resolves with what the viewer context shows of its account, so the BFF needs one call',
+    async () => {
+      const { session, account } = await signedUp();
+      const resolved = await post('/v1/sessions/resolve', { token: session.token });
+      expect(resolved.json()).toMatchObject({
+        data: { session: { accountId: session.accountId, account } },
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
     'resolves to its account while open, and to a 401 once revoked; revoking twice succeeds',
     async () => {
       const { session } = await signedUp();

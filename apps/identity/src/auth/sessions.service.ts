@@ -10,6 +10,7 @@ import { Account } from './account.entity.js';
 import { BETTER_AUTH } from './auth.tokens.js';
 import type { Auth } from './better-auth.js';
 import { invalidCredentials } from './refusals.js';
+import { viewerOf, type Viewer } from './viewer.service.js';
 
 /** The statuses whose credential still opens a session: a deletion request is undone by signing in. */
 const SIGNING_IN_STATUSES: readonly AccountStatus[] = [
@@ -26,6 +27,11 @@ export interface ResolvedSession {
    */
   readonly deviceId: string;
   readonly expiresAt: string;
+}
+
+/** A session in use, with what the viewer context shows of its account: one hop for the BFF. */
+export interface ResolvedViewer extends ResolvedSession {
+  readonly account: Viewer;
 }
 
 export interface EstablishedSession extends ResolvedSession {
@@ -77,12 +83,13 @@ export class SessionsService {
    * A session whose account may still sign in, else null: an answer, not a 401, so a 401 from
    *   identity always means the BFF's own token was refused.
    */
-  public async resolve(token: string): Promise<ResolvedSession | null> {
+  public async resolve(token: string): Promise<ResolvedViewer | null> {
     if (token === '') return null;
     const found = await this.find(token);
     if (found === null) return null;
     const account = await this.dataSource.manager.findOneBy(Account, { id: found.user.id });
-    return this.isAllowedToSignIn(account) ? describe(found) : null;
+    if (account === null || !this.isAllowedToSignIn(account)) return null;
+    return { ...describe(found), account: viewerOf(account) };
   }
 
   /** A session just opened: its account is the caller's to check, in its own transaction. */

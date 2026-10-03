@@ -32,11 +32,14 @@ export const SessionOpenedSchema = z.looseObject({
 
 export type SessionOpened = z.output<typeof SessionOpenedSchema>['data'];
 
-export const SessionResolvedSchema = z.looseObject({
-  data: z.looseObject({ session: SessionSchema.nullable() }),
-});
+/** A session in use, with what the viewer context shows of its account: one call to identity. */
+const ResolvedViewerSchema = SessionSchema.extend({ account: ViewerSchema });
 
-export const ViewerAnswerSchema = z.looseObject({ data: ViewerSchema });
+export type ResolvedViewer = z.output<typeof ResolvedViewerSchema>;
+
+export const SessionResolvedSchema = z.looseObject({
+  data: z.looseObject({ session: ResolvedViewerSchema.nullable() }),
+});
 
 export const SignedOutSchema = z.looseObject({ data: z.looseObject({ signedOut: z.boolean() }) });
 

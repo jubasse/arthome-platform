@@ -5,6 +5,7 @@ import type { ViewerContextSchema } from '@arthome/contracts/identity';
 import {
   CHAT_ALLOWANCE_BY_SURFACE,
   DomainConstant,
+  PREVIEW_BUDGET_SECONDS,
   REMINDER_LEAD_MINUTES,
   REPLAY_EXPIRY_WARNING_HOURS,
   SCARCITY_THRESHOLD_BPS,
@@ -15,23 +16,14 @@ import {
 import type { ResolvedSession, ViewerAccount } from '../identity/identity-answers.schema.js';
 
 type DomainConstants = z.input<typeof DomainConstantsSchema>;
-type ContractViewerContext = z.input<typeof ViewerContextSchema>;
+
+export type ServedViewerContext = z.input<typeof ViewerContextSchema>;
 
 /**
- * What no document owns yet, so this BFF does not serve it: the reaction quota per date has no
- *   decided number, and the label catalogue and taxonomy artifacts have no publication pipeline to
- *   name a version. Each is required by the contract; the gap is the type, so filling one is a
- *   compile error away from being noticed.
+ * The constants a storefront surface is served, each read from its owner in core (rule 2). The
+ *   reaction quota per date has no decided number, so it is omitted, as the contract allows.
  */
-type Unsourced = 'reactionQuotaPerDate';
-type UnsourcedArtifacts = 'labelCatalog' | 'taxonomyArtifact';
-
-export type ServedViewerContext = Omit<ContractViewerContext, UnsourcedArtifacts | 'constants'> & {
-  readonly constants: Omit<DomainConstants, Unsourced>;
-};
-
-/** The constants a storefront surface is served, each read from its owner in core (rule 2). */
-export function domainConstantsFor(surface: StorefrontSurface): Omit<DomainConstants, Unsourced> {
+export function domainConstantsFor(surface: StorefrontSurface): DomainConstants {
   const chat = CHAT_ALLOWANCE_BY_SURFACE[surface];
   return {
     roomOpensMinutesBefore: DomainConstant.ROOM_OPENS_MINUTES_BEFORE,
@@ -43,6 +35,7 @@ export function domainConstantsFor(surface: StorefrontSurface): Omit<DomainConst
     chatCatchUpMessages: chat.catchUpMessages,
     reminderLeadMinutes: REMINDER_LEAD_MINUTES,
     replayExpiryWarningHours: REPLAY_EXPIRY_WARNING_HOURS,
+    previewSecondsTotal: PREVIEW_BUDGET_SECONDS,
     searchExactTotalLimit: DomainConstant.SEARCH_EXACT_TOTAL_LIMIT,
   };
 }
@@ -50,7 +43,9 @@ export function domainConstantsFor(surface: StorefrontSurface): Omit<DomainConst
 /**
  * The bootstrap a signed-in viewer receives (`getViewerContext`, and `SessionEstablished`'s
  *   `viewerContext`). Profiles come with the slice that creates them: none is current yet. The
- *   displayed plan comes with subscriptions, so it is absent, not null.
+ *   displayed plan comes with subscriptions, so it is absent, not null. No label catalogue or
+ *   taxonomy is published yet, so both are null: the surface uses its embedded snapshot
+ *   (context-map §1.8).
  */
 export function viewerContextOf(
   session: Pick<ResolvedSession, 'deviceId'>,
@@ -64,5 +59,7 @@ export function viewerContextOf(
     profiles: [],
     account: { publicHandle: account.publicHandle, emailVerified: account.emailVerified },
     constants: domainConstantsFor(surface),
+    labelCatalog: null,
+    taxonomyArtifact: null,
   };
 }

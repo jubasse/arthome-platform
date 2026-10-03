@@ -3,11 +3,11 @@ import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import { Reflector, type ReflectableDecorator } from '@nestjs/core';
 
 import type { PresentedSession } from './session-carriers.js';
-import type { ResolvedSession } from '../identity/identity-answers.schema.js';
+import type { ResolvedViewer } from '../identity/identity-answers.schema.js';
 import type { Caller } from '../internal-token.minter.js';
 
 /** The signed-in viewer a request carries, as identity resolved its session. */
-export interface Viewer extends ResolvedSession, PresentedSession {}
+export interface Viewer extends ResolvedViewer, PresentedSession {}
 
 const viewers = new WeakMap<object, Viewer>();
 

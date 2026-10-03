@@ -8,10 +8,8 @@ import {
   SessionResolvedSchema,
   SignedOutSchema,
   VerificationSentSchema,
-  ViewerAnswerSchema,
-  type ResolvedSession,
+  type ResolvedViewer,
   type SessionOpened,
-  type ViewerAccount,
 } from './identity-answers.schema.js';
 import { InternalTokenMinter } from '../internal-token.minter.js';
 import { ServiceClient, type ServiceAnswer, type ServiceCall } from '../upstream/service-client.js';
@@ -69,7 +67,7 @@ export class IdentityClient {
   }
 
   /** Null for a token that opens nothing: expired, revoked, forged, or its account suspended. */
-  public async resolve(token: string, call: ServiceCall): Promise<ResolvedSession | null> {
+  public async resolve(token: string, call: ServiceCall): Promise<ResolvedViewer | null> {
     const answer = await this.client.request(
       { method: 'POST', path: '/v1/sessions/resolve', body: { token } },
       call,
@@ -84,15 +82,6 @@ export class IdentityClient {
       call,
       SignedOutSchema,
     );
-  }
-
-  public async viewer(call: ServiceCall): Promise<ViewerAccount> {
-    const answer = await this.client.request(
-      { method: 'GET', path: '/v1/accounts/me' },
-      call,
-      ViewerAnswerSchema,
-    );
-    return answer.body.data;
   }
 
   public async resendVerification(

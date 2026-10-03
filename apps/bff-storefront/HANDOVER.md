@@ -95,9 +95,13 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   never asked, and no other header is trusted. The variable is required in production (the lead's
   ruling, 2026-10-03), so a deployment cannot record every country as unknown in silence; outside
   production it is unset and every country is `ZZ`.
-- **The viewer context serves what has an owner**: the auth half and core's constants. The reaction
-  quota per date, the label catalogue and the taxonomy artifact have no owner yet, and
-  `ServedViewerContext` says so; the contract requires all three.
+- **The viewer context is the contract's type** (`ServedViewerContext`), served from the session
+  `ViewerGuard` resolved: identity answers the account with it, so `getViewerContext` makes one
+  identity call, within §5.9's session validation. The label catalogue and the taxonomy artifact
+  are `null` until a publication pipeline exists (core's CI, context-map §1.8): the surface uses its
+  embedded snapshot. The reaction quota per date is omitted until the product owner gives the
+  number; `sendReaction` returns the remaining quota (realtime.md §2.3). Every other constant comes
+  from its owner in core, `previewSecondsTotal` included.
 - **The date page answers 304 from a Fastify hook, not from its handler**: Nest 12.0.3's
   `FastifyAdapter.reply` sets the route's status back to 200 after the handler returns. The
   `ETag` is weak and hashes `data` and `validUntil`, never `servedAt`, which always moves. The

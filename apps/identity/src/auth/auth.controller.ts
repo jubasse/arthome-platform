@@ -13,7 +13,7 @@ import { Body, Controller, Get, Header, Headers, HttpCode, Inject, Post } from '
 
 import { FINGERPRINT_KEY } from './auth.tokens.js';
 import { EmailVerificationsService } from './email-verifications.service.js';
-import { SessionsService, type ResolvedSession } from './sessions.service.js';
+import { SessionsService, type ResolvedViewer } from './sessions.service.js';
 import { SignInService } from './sign-in.service.js';
 import {
   SessionTokenSchema,
@@ -81,7 +81,7 @@ export class AuthController {
   @Header('cache-control', 'no-store')
   public async resolve(
     @Body({ schema: SessionTokenSchema }) body: SessionTokenBody,
-  ): Promise<{ readonly session: ResolvedSession | null }> {
+  ): Promise<{ readonly session: ResolvedViewer | null }> {
     return { session: await this.sessions.resolve(body.token) };
   }
 
