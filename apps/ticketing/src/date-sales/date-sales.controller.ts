@@ -1,7 +1,9 @@
 import {
+  CurrentPrincipal,
   idempotentRequestOf,
   parseTraceparent,
   type MemorisedResponse,
+  type Principal,
 } from '@arthome-platform/http-edge';
 import { Body, Controller, Get, Header, HttpCode, Headers, Param, Post, Put } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
@@ -34,6 +36,7 @@ export class DateSalesController {
   public setPrices(
     @Param('dateId', { schema: DateIdSchema }) dateId: string,
     @Body({ schema: SetDatePricesSchema }) body: SetDatePricesBody,
+    @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<DateSalesPane>> {
@@ -42,7 +45,14 @@ export class DateSalesController {
         dateId,
         body,
         parseTraceparent(traceparent)?.traceparent ?? null,
-        idempotentRequestOf('PUT', `/v1/dates/${dateId}/prices`, body, 200, idempotencyKey),
+        idempotentRequestOf(
+          'PUT',
+          `/v1/dates/${dateId}/prices`,
+          body,
+          200,
+          idempotencyKey,
+          principal.accountId,
+        ),
       ),
     );
   }
@@ -53,6 +63,7 @@ export class DateSalesController {
   public setTechnicalProvision(
     @Param('dateId', { schema: DateIdSchema }) dateId: string,
     @Body({ schema: SetTechnicalProvisionSchema }) body: SetTechnicalProvisionBody,
+    @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<DateSalesPane>> {
@@ -67,6 +78,7 @@ export class DateSalesController {
           body,
           200,
           idempotencyKey,
+          principal.accountId,
         ),
       ),
     );
@@ -78,6 +90,7 @@ export class DateSalesController {
   public openCapacityTier(
     @Param('dateId', { schema: DateIdSchema }) dateId: string,
     @Body({ schema: OpenCapacityTierSchema }) body: OpenCapacityTierBody,
+    @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<OpenedCapacityTier>> {
@@ -92,6 +105,7 @@ export class DateSalesController {
           body,
           200,
           idempotencyKey,
+          principal.accountId,
         ),
       ),
     );

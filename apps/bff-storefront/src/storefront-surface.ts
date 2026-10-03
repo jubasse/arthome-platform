@@ -2,7 +2,7 @@ import { RefusalException, schemaInvalidRefusal } from '@arthome-platform/http-e
 import { HttpStatus } from '@nestjs/common';
 import { z } from 'zod';
 
-import { Surface } from '@arthome/core';
+import { Surface, type StorefrontSurface } from '@arthome/core';
 
 /**
  * The narrowing `storefront.yaml` declares on `X-Arthome-Surface`: a studio surface here is a
@@ -16,13 +16,15 @@ const StorefrontSurfaceSchema = z.enum([
 
 export const SURFACE_HEADER = 'x-arthome-surface';
 
-export function assertStorefrontSurface(header: string | undefined): void {
-  if (!StorefrontSurfaceSchema.safeParse(header).success) {
+export function assertStorefrontSurface(header: string | undefined): StorefrontSurface {
+  const surface = StorefrontSurfaceSchema.safeParse(header);
+  if (!surface.success) {
     throw new RefusalException(
       HttpStatus.BAD_REQUEST,
       schemaInvalidRefusal([{ path: [SURFACE_HEADER] }]),
     );
   }
+  return surface.data;
 }
 
 /** The contract's `VaryAuth`: public and identified bodies, and each surface's slice, kept apart. */

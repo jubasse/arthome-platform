@@ -11,7 +11,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { FixedClock, plusMinutes } from '@arthome/core';
+import { FixedClock, Service, plusMinutes } from '@arthome/core';
 
 import { CLOCK } from '../clock.js';
 import { applyCatalogDateMessage } from './catalog-date-messages.js';
@@ -22,7 +22,7 @@ import { SalesClosingSweeper } from './sales-closing-sweeper.js';
 import { SalesClosingModule } from './sales-closing.module.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { delivered, rescheduled } from '../itest/catalog-messages.js';
-import { purchaseOf, putOnSale } from '../itest/sales.js';
+import { purchaseOf, putOnSale, ITEST_BUYER_ACCOUNT_ID } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { HoldExpirySweeper } from '../orders/hold-expiry-sweeper.js';
 import { HoldExpiryModule } from '../orders/hold-expiry.module.js';
@@ -74,6 +74,7 @@ beforeAll(async () => {
       CatalogFactsModule,
     ],
     providers: EDGE_PROVIDERS,
+    caller: { service: Service.TICKETING, clock, accountId: ITEST_BUYER_ACCOUNT_ID },
     dataSource,
     rawBody: true,
     overrides: [

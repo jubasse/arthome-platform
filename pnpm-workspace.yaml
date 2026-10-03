@@ -73,6 +73,11 @@ allowBuilds:
   # that serves no path we use is the easiest kind to say no to.
   ssh2: false
 
+  # argon2 — DENIED. Its install script compiles the binding only when no prebuilt one fits;
+  # the package ships prebuilds for linux-x64 (glibc and musl), linux-arm64 and darwin-arm64,
+  # which `node-gyp-build` loads at runtime. identity hashes passwords with it (argon2id).
+  argon2: false
+
   # cpu-features — DENIED. ssh2's optional companion, compiled to detect CPU
   # crypto extensions for the native binding we just declined. Nothing uses it.
   cpu-features: false
@@ -83,6 +88,14 @@ allowBuilds:
   # transitive dependency, and a transitive install script is precisely the one
   # worth refusing by default.
   protobufjs: false
+
+# ------------------------------------------------------------------ peer rules
+# @nest-lab/throttler-storage-redis 1.2.0 declares Nest peers up to 11, and runs on 12.0.3
+#   (`nestjs-web-security`, rate-limiting reference). Remove when a release widens them.
+peerDependencyRules:
+  allowedVersions:
+    "@nest-lab/throttler-storage-redis>@nestjs/common": "12"
+    "@nest-lab/throttler-storage-redis>@nestjs/core": "12"
 
 # `libs/messaging` and `libs/testing` import each other, so pnpm refuses to order
 #   their builds. The cycle is test-only — messaging reaches testing from

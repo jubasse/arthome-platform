@@ -26,7 +26,10 @@ debugging NestJS code, load `nestjs-how-to` and the skills it routes to.** Alway
 - `nestjs-typeorm` (typeorm, @nestjs/typeorm) · `nestjs-kafka` (kafkajs) · `nestjs-event-driven`
   (the outbox and the idempotent consumers) · `nestjs-performance` (@nestjs/platform-fastify) ·
   `nestjs-monorepo` (pnpm workspace) · `nestjs-search` (@opensearch-project/opensearch) ·
-  `nestjs-bff-gateway` (`apps/bff-storefront`) · `nestjs-cqrs` (@nestjs/cqrs, `apps/catalog`,
+  `nestjs-bff-gateway` (`apps/bff-storefront`) · `nestjs-auth` (better-auth in `apps/identity`,
+  jose in `libs/http-edge` and the BFF's minter) · `nestjs-web-security` (@nestjs/throttler,
+  @fastify/cookie and @fastify/csrf-protection in `apps/bff-storefront`) ·
+  `nestjs-cqrs` (@nestjs/cqrs, `apps/catalog`,
   `apps/ticketing`, `libs/transactions`, `libs/testing`'s `httpApp` and
   `@arthome-platform/messaging/nest`'s `ConsumerHostModule`, whose conventions are
   `apps/catalog/HANDOVER.md` §0f) ·
@@ -274,9 +277,9 @@ condition, i.e. `dist/` — absent in a fresh worktree, which used to fail lint 
 ## Running the event path
 
 The event path is three containers: Postgres 18 with `wal_level=logical`, Kafka in KRaft mode, and
-Kafka Connect carrying Debezium. OpenSearch serves the search, and Redis 8.8 waits for ticketing's
-queues and waiting room, with no eviction and an append-only file (`nestjs-queues` rule 6); nothing
-reads it yet. **Postgres publishes on 55432, not 5432, and Redis on 56379, not 6379** — the
+Kafka Connect carrying Debezium. OpenSearch serves the search, and Redis 8.8 holds the storefront
+BFF's authentication caps and waits for ticketing's queues and waiting room, with no eviction and an
+append-only file (`nestjs-queues` rule 6). **Postgres publishes on 55432, not 5432, and Redis on 56379, not 6379** — the
 conventional port was taken by another project, and a development stack that fights for well-known
 ports is one you cannot run beside anything else.
 
@@ -284,6 +287,7 @@ ports is one you cannot run beside anything else.
 docker compose up -d
 export NODE_ENV=development       # required, and never defaulted — see below
 pnpm --filter @arthome-platform/identity      run migration:run
+pnpm --filter @arthome-platform/identity      run migration:auth   # better-auth's schema, `auth`
 pnpm --filter @arthome-platform/notifications run migration:run
 pnpm --filter @arthome-platform/catalog       run migration:run
 pnpm --filter @arthome-platform/search-indexer run migration:run
@@ -297,7 +301,9 @@ done
 
 **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
 anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`, `PUBLIC_WEB_ORIGIN`,
-`OPENSEARCH_URL`, `REDIS_URL`, `PAYMENT_WEBHOOK_SECRET` — is filled from a local default **only outside production**, and `NODE_ENV` is
+`OPENSEARCH_URL`, `REDIS_URL`, `PAYMENT_WEBHOOK_SECRET`, `IDENTITY_URL`, `JWKS_URL`,
+`INTERNAL_TOKEN_SIGNING_KEY`, `BETTER_AUTH_SECRET`, `CSRF_SECRET` — is filled from a local default
+**only outside production**, and `NODE_ENV` is
 what selects that. Defaulting it to `development` would make an unset variable open the
 production-guarded write routes and point a migration at localhost; both fail loudly instead, naming
 the variable. `PORT` is the single exception and defaults to 3000: the migration CLI never listens,
@@ -314,7 +320,19 @@ every replica at once. Readiness answers 503 only when the database is unreachab
 slot, the publication's scope and the outbox retention answer `degraded` — a 200 with the detail in
 the body — because a stopped connector must delay publishing, not take the API out of rotation.
 Proven on the running stack: with `connect` stopped, readiness stays 200 and a registration still
-answers 201. Both routes are exempt from `DenyInProductionGuard`; nothing else is.
+answers 201. Both routes are exempt from the internal token's guard and from
+`DenyInProductionGuard`. Ticketing's payment webhook is exempt from the token alone, since its
+signature authenticates it.
+
+**Every other route needs a BFF's internal token** (`libs/http-edge`'s
+`InternalTokenGuard`, critical rule 4): ES256, verified locally against `JWKS_URL`, or outside
+production against the development key `libs/config` publishes. A `curl` straight to a service
+answers 401: go through the BFF, or mint one with `@arthome-platform/testing`'s
+`mintInternalToken`. `DenyInProductionGuard` still runs behind it, refusing in production the
+routes no slice has authorised yet: catalog's and ticketing's studio routes until auth slice B,
+and ticketing's commerce routes and payment webhook until a real payment adapter is bound. Until
+then ticketing's API does not boot in production at all: `PaymentsModule` refuses to bind the fake
+provider there, which confirms every intent without taking any money.
 
 The two consumers serve no HTTP, so their checks — dead-letter depth and `processed_message`
 retention — run through `pnpm run ops:check`, as does the publishers' `unpublished_outbox`, which
@@ -392,23 +410,26 @@ auto-created `arthome.identity.account` with 1 partition, and the gate refused t
 "fix" it. It is also what a consumer needs to start at all — KafkaJS will not subscribe to a topic
 that does not exist (`This server does not host this topic-partition`).
 
-Then start `identity` (port 3001) and `notifications`, and register an account:
+Then start `identity` (port 3001), `notifications` and the storefront BFF (port 3003), and sign up
+through the BFF, in bearer mode so the session comes back in the body:
 
 ```bash
-curl -X POST http://localhost:3001/accounts \
+curl -X POST http://localhost:3003/v1/auth/sign-up \
   -H 'content-type: application/json' \
+  -H 'x-arthome-surface: storefront_web' \
+  -H "idempotency-key: $(uuidgen)" \
   -H 'traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01' \
-  -d '{"publicHandle":"@marie.j","email":"marie@example.test","locale":"fr","country":"FR"}'
+  -d '{"email":"marie@example.test","password":"a-long-password","mode":"bearer","acceptedTermsVersion":1,"locale":"fr"}'
 ```
 
 What should then be true, and what is worth checking because each step can fail quietly:
 
 | Where | What you should see |
 | --- | --- |
-| `identity.outbox_event` | one row, `aggregatetype = identity.account`, `aggregateid` = the account id |
-| topic `arthome.identity.account` | one message, **key = the account id**, so one account stays ordered |
+| `identity.outbox_event` | two rows, `aggregateid` = the account id: `identity.account.registered.v1` (`aggregatetype = identity.account`) and `identity.email_verification.requested.v1` (`identity.email_verification`, a topic of its own: it carries the link's token, which `notifications` alone may read) |
+| topic `arthome.identity.account` | one message, **key = the account id**, so one account stays ordered; the token's message is on `arthome.identity.email_verification`, whose production ACLs `infra/kafka/README.md` requires |
 | its headers | all five: `message-id`, `type`, `traceparent`, `actor-id`, `occurred-at` — the traceparent being the one the request carried. Debezium renders a NULL column as the four characters `null`, not as an absent header |
-| `notifications.welcome_email` | one row, holding that same traceparent |
+| `notifications.welcome_email` | one row, holding that same traceparent; nothing reads the verification topic yet |
 | replaying the message | the consumer says `duplicate` and the row count does **not** move |
 
 ### The catalog date path

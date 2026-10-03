@@ -5,6 +5,8 @@ import { Test } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 
+import { mintInternalToken, type InternalCaller } from './internal-token.js';
+
 export interface HttpAppOptions {
   readonly imports: NonNullable<ModuleMetadata['imports']>;
   /** The service's global providers, the very list its root module binds. */
@@ -15,6 +17,11 @@ export interface HttpAppOptions {
   readonly overrides?: readonly (readonly [token: unknown, value: unknown])[];
   /** As the service's `main.ts` bootstraps it, for a route that verifies a signature. */
   readonly rawBody?: boolean;
+  /**
+   * Who the requests come from: each one without an `authorization` header gets this caller's
+   *   internal token, minted on the suite's clock. Absent, a request carries only what it sends.
+   */
+  readonly caller?: InternalCaller;
 }
 
 /**
@@ -27,6 +34,7 @@ export async function httpApp({
   dataSource,
   overrides = [],
   rawBody = false,
+  caller,
 }: HttpAppOptions): Promise<NestFastifyApplication> {
   let builder = Test.createTestingModule({
     imports: [
@@ -49,6 +57,15 @@ export async function httpApp({
     new FastifyAdapter(),
     { logger: false, rawBody },
   );
+  if (caller !== undefined) {
+    app
+      .getHttpAdapter()
+      .getInstance()
+      .addHook('onRequest', async (request) => {
+        // eslint-disable-next-line no-param-reassign -- the request is the token's carrier, as from a BFF.
+        request.headers.authorization ??= `Bearer ${await mintInternalToken(caller)}`;
+      });
+  }
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   return app;

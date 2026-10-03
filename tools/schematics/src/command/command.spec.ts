@@ -104,7 +104,9 @@ describe('command', () => {
     expect(module).toContain('controllers: [RigsController]');
     const controller = tree.readText(`${RIGS}/rigs.controller.ts`);
     expect(controller).toContain("@Post('v1/rigs/:rigId/focus')");
-    expect(controller).toContain("idempotentRequestOf('POST', `/v1/rigs/${rigId}/focus`");
+    expect(controller).toMatch(
+      /idempotentRequestOf\(\s*'POST',\s*`\/v1\/rigs\/\$\{rigId\}\/focus`,[^)]*principal\.accountId,?\s*\)/,
+    );
     expect(controller.indexOf('public constructor(')).toBeLessThan(
       controller.indexOf('public focusRig('),
     );

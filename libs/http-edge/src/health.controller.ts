@@ -3,6 +3,7 @@ import { Controller, Get, HttpStatus, Inject } from '@nestjs/common';
 
 import { ApiErrorCode, FailureNature } from '@arthome/core';
 
+import { AllowAnonymous } from './allow-anonymous.js';
 import { AllowInProduction } from './allow-in-production.js';
 import { RefusalException } from './refusal.js';
 
@@ -15,6 +16,7 @@ export interface ReadinessReport {
   readonly checks: readonly CheckResult[];
 }
 
+@AllowAnonymous()
 @AllowInProduction()
 @Controller('health')
 export class HealthController {

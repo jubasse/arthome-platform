@@ -1,6 +1,10 @@
 import type { IncomingHttpHeaders } from 'node:http';
 
-import { parseTraceparent, schemaInvalidException } from '@arthome-platform/http-edge';
+import {
+  AllowAnonymous,
+  parseTraceparent,
+  schemaInvalidException,
+} from '@arthome-platform/http-edge';
 import { Controller, HttpCode, Inject, Post, Req } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 
@@ -23,8 +27,10 @@ function headerOf(headers: IncomingHttpHeaders, name: string): string | undefine
 /**
  * The payment provider's webhooks. The raw bytes, never the parsed body: a reformatted body no
  *   longer matches its signature (adr-payments.md §7.1). No body schema, since the signature is
- *   checked before anything is read.
+ *   checked before anything is read. The provider holds no internal token: its signature is what
+ *   authenticates it. Refused in production until a real adapter's signature is the one checked.
  */
+@AllowAnonymous()
 @Controller('v1/payments')
 export class PaymentWebhooksController {
   public constructor(

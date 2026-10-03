@@ -13,9 +13,16 @@ export interface PurchaseAnswer {
   readonly response: MemorisedResponse<PurchasedSeats | PaymentHandoffView>;
 }
 
+/** Who buys, as the internal token names them: never read from the body. */
+export interface Buyer {
+  readonly accountId: string;
+  readonly profileId: string | null;
+}
+
 export class PurchaseSeat extends Command<PurchaseAnswer> {
   public constructor(
     public readonly body: PurchaseSeatBody,
+    public readonly buyer: Buyer,
     public readonly traceparent: string | null,
     public readonly idempotency: IdempotentRequest,
     /** `X-Arthome-Late-Entry-Acknowledged: true`, which D-089 requires once the live started. */

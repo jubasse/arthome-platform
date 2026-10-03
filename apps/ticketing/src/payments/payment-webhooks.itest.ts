@@ -19,10 +19,11 @@ import {
   FixedClock,
   MINUTE_MS,
   OrderErrorCode,
-  PriceTier,
-  RefundReason,
   OrderState,
   PaymentEventKind,
+  PriceTier,
+  RefundReason,
+  Service,
 } from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
@@ -43,7 +44,13 @@ import { CLOCK } from '../clock.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
 import { DateSalesModule } from '../date-sales/date-sales.module.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
-import { FULL_PRICE_MINOR, nextKey, purchaseOf, putOnSale } from '../itest/sales.js';
+import {
+  FULL_PRICE_MINOR,
+  nextKey,
+  purchaseOf,
+  putOnSale,
+  ITEST_BUYER_ACCOUNT_ID,
+} from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { ExpireDueHolds } from '../orders/expire-due-holds.command.js';
 import { HoldExpirySweeper } from '../orders/hold-expiry-sweeper.js';
@@ -162,6 +169,7 @@ beforeAll(async () => {
       CatalogFactsModule,
     ],
     providers: EDGE_PROVIDERS,
+    caller: { service: Service.TICKETING, clock, accountId: ITEST_BUYER_ACCOUNT_ID },
     dataSource,
     rawBody: true,
     overrides: [

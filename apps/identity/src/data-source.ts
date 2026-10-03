@@ -3,16 +3,18 @@ import { DataSource } from 'typeorm';
 
 import { Service } from '@arthome/core';
 
+import { Account } from './auth/account.entity.js';
+import { EmailVerification } from './auth/email-verification.entity.js';
 import { env } from './env.js';
-import { Account } from './identity/account.entity.js';
 import { Initial1758700000000 } from './migrations/1758700000000-initial.js';
 import { OutboxGuards1758700200000 } from './migrations/1758700200000-outbox-guards.js';
+import { StorefrontSession1790500000000 } from './migrations/1790500000000-storefront-session.js';
 
 export const dataSource: DataSource = new DataSource({
   type: 'postgres',
   url: env.DATABASE_URL,
-  entities: [Account, OutboxEvent],
-  migrations: [Initial1758700000000, OutboxGuards1758700200000],
+  entities: [Account, EmailVerification, OutboxEvent],
+  migrations: [Initial1758700000000, OutboxGuards1758700200000, StorefrontSession1790500000000],
   applicationName: Service.IDENTITY,
 
   // `poolSize` × replicas, plus one replication connection per connector, must stay under Postgres's `max_connections` (100).

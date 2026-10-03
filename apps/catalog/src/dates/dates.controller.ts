@@ -1,7 +1,9 @@
 import {
+  CurrentPrincipal,
   idempotentRequestOf,
   parseTraceparent,
   type MemorisedResponse,
+  type Principal,
 } from '@arthome-platform/http-edge';
 import { Body, Controller, Get, Header, HttpCode, Headers, Param, Post } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
@@ -34,6 +36,7 @@ export class DatesController {
   public draft(
     @Param('channelId', { schema: ChannelIdParam }) channelId: string,
     @Body({ schema: DraftDateSchema }) body: DraftDateBody,
+    @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<DateSheet>> {
@@ -43,7 +46,14 @@ export class DatesController {
         channelId,
         body,
         trace === null ? null : trace.traceparent,
-        idempotentRequestOf('POST', `/channels/${channelId}/dates`, body, 201, idempotencyKey),
+        idempotentRequestOf(
+          'POST',
+          `/channels/${channelId}/dates`,
+          body,
+          201,
+          idempotencyKey,
+          principal.accountId,
+        ),
       ),
     );
   }
@@ -54,6 +64,7 @@ export class DatesController {
   public transition(
     @Param('dateId', { schema: DateIdSchema }) dateId: string,
     @Body({ schema: TransitionPublicationSchema }) body: TransitionPublicationBody,
+    @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<PublicationView>> {
@@ -69,6 +80,7 @@ export class DatesController {
           body,
           200,
           idempotencyKey,
+          principal.accountId,
         ),
       ),
     );
@@ -80,6 +92,7 @@ export class DatesController {
   public declareOutcome(
     @Param('dateId', { schema: DateIdSchema }) dateId: string,
     @Body({ schema: DeclareOutcomeSchema }) body: DeclareOutcomeBody,
+    @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<DeclaredOutcome>> {
@@ -89,7 +102,14 @@ export class DatesController {
         dateId,
         body,
         trace === null ? null : trace.traceparent,
-        idempotentRequestOf('POST', `/v1/dates/${dateId}/outcome`, body, 200, idempotencyKey),
+        idempotentRequestOf(
+          'POST',
+          `/v1/dates/${dateId}/outcome`,
+          body,
+          200,
+          idempotencyKey,
+          principal.accountId,
+        ),
       ),
     );
   }

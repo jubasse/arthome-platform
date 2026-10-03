@@ -13,10 +13,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   FixedClock,
   MINUTE_MS,
-  PriceTier,
   OrderState,
+  PriceTier,
   SeatHoldOrigin,
   SeatHoldState,
+  Service,
 } from '@arthome/core';
 
 import { CLOCK } from '../clock.js';
@@ -28,7 +29,7 @@ import { DateSalesModule } from '../date-sales/date-sales.module.js';
 import { SalesClosingSweeper } from '../date-sales/sales-closing-sweeper.js';
 import { SalesClosingModule } from '../date-sales/sales-closing.module.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
-import { FULL_PRICE_MINOR, nextKey, putOnSale } from '../itest/sales.js';
+import { FULL_PRICE_MINOR, nextKey, putOnSale, ITEST_BUYER_ACCOUNT_ID } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { FakePaymentProvider, FakePaymentScenario } from '../payments/fake-payment-provider.js';
 import { PaymentWebhooksModule } from '../payments/payment-webhooks.module.js';
@@ -102,6 +103,7 @@ beforeAll(async () => {
       CatalogFactsModule,
     ],
     providers: EDGE_PROVIDERS,
+    caller: { service: Service.TICKETING, clock, accountId: ITEST_BUYER_ACCOUNT_ID },
     dataSource,
     rawBody: true,
     overrides: [

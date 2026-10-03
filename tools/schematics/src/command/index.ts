@@ -191,6 +191,7 @@ function controllerMethod(command: Spellings, aggregate: Aggregate, route: Route
   public ${command.camel}(
     @Param('${aggregate.id}', { schema: z.uuid() }) ${aggregate.id}: string,
     @Body({ schema: ${command.pascal}Schema }) body: ${command.pascal}Body,
+    @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<${command.pascal}Answer>> {
@@ -199,7 +200,14 @@ function controllerMethod(command: Spellings, aggregate: Aggregate, route: Route
         ${aggregate.id},
         body,
         parseTraceparent(traceparent)?.traceparent ?? null,
-        idempotentRequestOf('${route.method}', \`${route.requestPath}\`, body, 200, idempotencyKey),
+        idempotentRequestOf(
+          '${route.method}',
+          \`${route.requestPath}\`,
+          body,
+          200,
+          idempotencyKey,
+          principal.accountId,
+        ),
       ),
     );
   }`;
@@ -240,9 +248,11 @@ export class ${className} {
       return addImports(
         addClassMember(text, className, controllerMethod(command, aggregate, route)),
         [
+          { name: 'CurrentPrincipal', from: '@arthome-platform/http-edge' },
           { name: 'idempotentRequestOf', from: '@arthome-platform/http-edge' },
           { name: 'parseTraceparent', from: '@arthome-platform/http-edge' },
           { name: 'MemorisedResponse', from: '@arthome-platform/http-edge', typeOnly: true },
+          { name: 'Principal', from: '@arthome-platform/http-edge', typeOnly: true },
           { name: 'Body', from: '@nestjs/common' },
           { name: 'Header', from: '@nestjs/common' },
           { name: 'Headers', from: '@nestjs/common' },

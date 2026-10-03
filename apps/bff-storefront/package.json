@@ -8,20 +8,33 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/http-edge": "workspace:*",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-e6d290079954.tgz",
-    "@arthome/core": "file:../../vendor/arthome-core-ac7a49a1ddc0.tgz",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-fdb81944cf38.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-f3136e57e73c.tgz",
+    "@fastify/cookie": "11.1.2",
+    "@fastify/csrf-protection": "8.0.1",
+    "@nest-lab/throttler-storage-redis": "1.2.0",
     "@nestjs/common": "12.0.3",
     "@nestjs/core": "12.0.3",
     "@nestjs/platform-fastify": "12.0.3",
+    "@nestjs/throttler": "6.7.1",
+    "ioredis": "6.0.0",
+    "jose": "6.2.12",
     "reflect-metadata": "0.2.2",
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@nestjs/testing": "12.0.3"
+    "@arthome-platform/identity": "workspace:*",
+    "@arthome-platform/testing": "workspace:*",
+    "@nestjs/cqrs": "12.0.0",
+    "@nestjs/testing": "12.0.3",
+    "@nestjs/typeorm": "12.0.1",
+    "pg": "8.23.0",
+    "typeorm": "1.1.1"
   }
 }

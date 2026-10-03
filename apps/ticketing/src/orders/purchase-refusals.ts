@@ -21,6 +21,15 @@ function refused(code: string, params: MessageParams = {}): RefusalException {
   return new RefusalException(HttpStatus.CONFLICT, { code, params, nature: FailureNature.REFUSED });
 }
 
+/** A body naming a profile the internal token does not: the buyer is the token's (review m6). */
+export function notTheCallersProfile(): RefusalException {
+  return new RefusalException(HttpStatus.FORBIDDEN, {
+    code: ApiErrorCode.FORBIDDEN,
+    params: {},
+    nature: FailureNature.REFUSED,
+  });
+}
+
 export function soldOut(): RefusalException {
   return refused(OrderErrorCode.SOLD_OUT);
 }

@@ -13,6 +13,11 @@
   "allow": [
     {
       "file": "libs/config/src/env.ts",
+      "value": "none",
+      "reason": "TRUSTED_PROXIES' explicit word for 'no proxy fronts this BFF', a deployment setting. REPLAY_POLICIES, LANGUAGE_DEPENDENCIES, WATCH_SCOPES, WATCH_FALLBACK_ACTIONS and AUDIENCE_SANCTIONS each have a `none` member about a show, a viewer or a sanction; importing any of them to read an environment variable would name the wrong concept."
+    },
+    {
+      "file": "libs/config/src/env.ts",
       "value": "production",
       "reason": "NODE_ENV's deployment mode, not a role on a show. MEMBER_ROLES has a `production` member because somebody works IN production — the crew sense — and the two share the English word without sharing anything else. Importing MEMBER_ROLES.PRODUCTION to describe how a process was started would carve the confusion in rather than correct it. This is the exact shape the gate has produced a bad fix for before: an agent once reached for NavigationEntry.JOURNAL to name an accounting export format, the same string and the wrong concept."
     },

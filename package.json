@@ -46,8 +46,9 @@
   "devDependencies": {
     "@angular-devkit/schematics-cli": "22.1.8",
     "@arthome-platform/config": "workspace:*",
+    "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/tooling": "file:./vendor/arthome-tooling-a808bdde49dc.tgz",
+    "@arthome/tooling": "file:./vendor/arthome-tooling-33b1e24a172b.tgz",
     "@bufbuild/buf": "1.73.0",
     "@bufbuild/protoc-gen-es": "2.15.0",
     "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",

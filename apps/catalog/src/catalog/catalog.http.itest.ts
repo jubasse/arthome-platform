@@ -19,6 +19,7 @@ import {
   FixedClock,
   LanguageDependency,
   Locale,
+  Service,
 } from '@arthome/core';
 
 import { CatalogModule } from './catalog.module.js';
@@ -67,6 +68,7 @@ beforeAll(async () => {
   app = await httpApp({
     imports: [CatalogModule, VenuesModule, ArtistsModule],
     providers: EDGE_PROVIDERS,
+    caller: { service: Service.CATALOG, clock: new FixedClock(NOW) },
     dataSource,
     overrides: [[CLOCK, new FixedClock(NOW)]],
   });

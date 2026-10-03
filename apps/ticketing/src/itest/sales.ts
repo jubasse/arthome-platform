@@ -84,6 +84,9 @@ export async function putOnSale(
   await applied(engaged(dateId, now));
 }
 
+/** The account the suites buy as, as the storefront BFF's token names it. */
+export const ITEST_BUYER_ACCOUNT_ID = '019a0000-0000-7000-8000-00000000b0b0';
+
 /** `quantity` full-price seats of the date, at the price it quotes, under `key`. */
 export function purchaseOf(
   dateId: string,
@@ -102,8 +105,9 @@ export function purchaseOf(
   };
   return new PurchaseSeat(
     body,
+    { accountId: ITEST_BUYER_ACCOUNT_ID, profileId: null },
     traceparent,
-    idempotentRequestOf('POST', '/v1/orders/seats', body, 201, key),
+    idempotentRequestOf('POST', '/v1/orders/seats', body, 201, key, ITEST_BUYER_ACCOUNT_ID),
     lateEntryAcknowledged,
   );
 }

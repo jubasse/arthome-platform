@@ -1,4 +1,5 @@
 import {
+  AllowInProduction,
   DEADLINE_HEADER,
   remainingBeforeDeadline,
   type PerishableResponse,
@@ -17,6 +18,7 @@ import { CLOCK } from '../clock.js';
  * The storefront's public read, behind its BFF, which sets the cache headers: `public, max-age=15`
  *   for an anonymous caller (the operation's `x-arthome-freshness`, transport.md §5.9).
  */
+@AllowInProduction()
 @Controller('v1')
 export class AvailabilityController {
   public constructor(

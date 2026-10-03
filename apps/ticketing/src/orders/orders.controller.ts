@@ -1,11 +1,14 @@
 import {
+  CurrentPrincipal,
   DEADLINE_HEADER,
+  accountOf,
   idempotentRequestOf,
   parseTraceparent,
   remainingBeforeDeadline,
   schemaInvalidException,
   type MemorisedResponse,
   type PerishableResponse,
+  type Principal,
 } from '@arthome-platform/http-edge';
 import {
   Body,
@@ -26,7 +29,8 @@ import { DateIdSchema, OrderIdSchema } from '@arthome/core/schema';
 
 import { GetOrder } from './get-order.query.js';
 import type { OrderDetail, PaymentHandoffView, PurchasedSeats } from './order-views.js';
-import { PurchaseSeat, PurchaseStatus } from './purchase-seat.command.js';
+import { notTheCallersProfile } from './purchase-refusals.js';
+import { PurchaseSeat, PurchaseStatus, type Buyer } from './purchase-seat.command.js';
 import { PurchaseSeatSchema, type PurchaseSeatBody } from './purchase-seat.schema.js';
 import { QuoteSeat } from './quote-seat.query.js';
 import { QuoteSeatSchema, type QuoteSeatBody } from './quote-seat.schema.js';
@@ -48,11 +52,26 @@ function lateEntryAcknowledgedOf(header: string | undefined): boolean {
   throw schemaInvalidException([{ path: [LATE_ENTRY_ACKNOWLEDGED_HEADER] }]);
 }
 
+/**
+ * The token's account and profile. The contract lets the body name a profile, which is accepted
+ *   only when it is the token's: until profiles land no token names one, so any profile is refused.
+ */
+function buyerOf(principal: Principal, body: PurchaseSeatBody): Buyer {
+  const accountId = accountOf(principal);
+  const named = body.profileId ?? null;
+  if (named !== null && named !== principal.profileId) throw notTheCallersProfile();
+  return { accountId, profileId: principal.profileId };
+}
+
 interface StatusWriter {
   status(statusCode: number): unknown;
 }
 
-/** The storefront's commerce operations on seats (openapi/storefront.yaml, tag `commerce`). */
+/**
+ * The storefront's commerce operations on seats (openapi/storefront.yaml, tag `commerce`), each for
+ *   the account the internal token names: no guest purchase, and an order is its buyer's alone.
+ *   Refused in production until a real payment adapter is bound (`payments.module.ts`).
+ */
 @Controller('v1')
 export class OrdersController {
   public constructor(
@@ -68,7 +87,9 @@ export class OrdersController {
     @Param('dateId', { schema: DateIdSchema }) dateId: string,
     @Body({ schema: QuoteSeatSchema }) body: QuoteSeatBody,
     @Headers(DEADLINE_HEADER) deadline: string | undefined,
+    @CurrentPrincipal() principal: Principal,
   ): Promise<PerishableResponse<SeatQuoteView>> {
+    accountOf(principal);
     remainingBeforeDeadline(deadline, this.clock);
     return this.queries.execute(new QuoteSeat(dateId, body));
   }
@@ -82,15 +103,25 @@ export class OrdersController {
   public async purchase(
     @Body({ schema: PurchaseSeatSchema }) body: PurchaseSeatBody,
     @Res({ passthrough: true }) reply: StatusWriter,
+    @CurrentPrincipal() principal: Principal,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
     @Headers(LATE_ENTRY_ACKNOWLEDGED_HEADER) lateEntryAcknowledged?: string,
   ): Promise<MemorisedResponse<PurchasedSeats | PaymentHandoffView>> {
+    const buyer = buyerOf(principal, body);
     const { status, response } = await this.commands.execute(
       new PurchaseSeat(
         body,
+        buyer,
         parseTraceparent(traceparent)?.traceparent ?? null,
-        idempotentRequestOf('POST', PURCHASE_PATH, body, PurchaseStatus.PAID, idempotencyKey),
+        idempotentRequestOf(
+          'POST',
+          PURCHASE_PATH,
+          body,
+          PurchaseStatus.PAID,
+          idempotencyKey,
+          buyer.accountId,
+        ),
         lateEntryAcknowledgedOf(lateEntryAcknowledged),
       ),
     );
@@ -103,8 +134,10 @@ export class OrdersController {
   public order(
     @Param('orderId', { schema: OrderIdSchema }) orderId: string,
     @Headers(DEADLINE_HEADER) deadline: string | undefined,
+    @CurrentPrincipal() principal: Principal,
   ): Promise<OrderDetail> {
+    const accountId = accountOf(principal);
     remainingBeforeDeadline(deadline, this.clock);
-    return this.queries.execute(new GetOrder(orderId));
+    return this.queries.execute(new GetOrder(orderId, accountId));
   }
 }

@@ -16,6 +16,7 @@ import {
   Locale,
   PublicationState,
   ReplayPolicy,
+  Service,
   worldwideRights,
 } from '@arthome/core';
 
@@ -145,6 +146,7 @@ beforeAll(async () => {
   app = await httpApp({
     imports: [PublicModule],
     providers: EDGE_PROVIDERS,
+    caller: { service: Service.CATALOG, clock: new FixedClock(NOW) },
     dataSource,
     overrides: [
       [CLOCK, new FixedClock(NOW)],

@@ -1,13 +1,15 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import { RefusalException } from '@arthome-platform/http-edge';
+import { readInternalTokenSigningKey } from '@arthome-platform/config';
+import { InternalTokenVerifier, RefusalException } from '@arthome-platform/http-edge';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { ApiErrorCode, FailureNature } from '@arthome/core';
+import { ApiErrorCode, FailureNature, Service, SystemClock } from '@arthome/core';
 
 import { CatalogClient, type CatalogCall } from './catalog.client.js';
+import { InternalTokenMinter } from '../internal-token.minter.js';
 
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 
@@ -15,6 +17,10 @@ const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 let received: IncomingHttpHeaders = {};
 let server: Server;
 let client: CatalogClient;
+const minter = new InternalTokenMinter(
+  readInternalTokenSigningKey({ NODE_ENV: 'test' }),
+  new SystemClock(),
+);
 
 function errorEnvelope(code: string, params: object = {}): string {
   return JSON.stringify({
@@ -66,7 +72,7 @@ beforeAll(async () => {
     }, answer?.delayMs ?? 0);
   });
   await new Promise<void>((resolve) => server.listen(0, resolve));
-  client = new CatalogClient(`http://localhost:${(server.address() as AddressInfo).port}`);
+  client = new CatalogClient(`http://localhost:${(server.address() as AddressInfo).port}`, minter);
 });
 
 afterAll(async () => {
@@ -82,6 +88,18 @@ describe('CatalogClient', () => {
     expect(body).toMatchObject({ n: 1 });
     expect(received.traceparent).toBe(TRACEPARENT);
     expect(received['x-arthome-deadline']).toBe(budget.deadline.toISOString());
+  });
+
+  it('sends a token catalog verifies, naming no account', async () => {
+    await client.get('/ok', new URLSearchParams(), call(), Served);
+    const [scheme, token] = String(received.authorization).split(' ');
+    expect(scheme).toBe('Bearer');
+    const verifier = new InternalTokenVerifier(
+      Service.CATALOG,
+      { kind: 'local', keys: [publicHalfOf(readInternalTokenSigningKey({ NODE_ENV: 'test' }))] },
+      new SystemClock(),
+    );
+    await expect(verifier.verify(token ?? '')).resolves.toMatchObject({ accountId: null });
   });
 
   it('relays an allowlisted refusal with its status and params', async () => {
@@ -120,9 +138,16 @@ describe('CatalogClient', () => {
     const { port } = closed.address() as AddressInfo;
     await new Promise((resolve) => closed.close(resolve));
 
-    const refused = new CatalogClient(`http://localhost:${port}`);
+    const refused = new CatalogClient(`http://localhost:${port}`, minter);
     await expect(refused.get('/ok', new URLSearchParams(), call(), Served)).rejects.toMatchObject({
       refusal: { code: ApiErrorCode.UPSTREAM_UNAVAILABLE },
     });
   });
 });
+
+function publicHalfOf({
+  privateJwk,
+}: ReturnType<typeof readInternalTokenSigningKey>): Record<string, string> {
+  const { d: _private, ...publicHalf } = privateJwk;
+  return publicHalf;
+}

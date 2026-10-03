@@ -19,6 +19,18 @@ export { asConflict } from './conflict.js';
 
 export { DenyInProductionGuard } from './deny-in-production.guard.js';
 
+export { AllowAnonymous } from './allow-anonymous.js';
+export { InternalTokenGuard } from './internal-token.guard.js';
+export { InternalTokenVerifier } from './internal-token.verifier.js';
+export {
+  CurrentPrincipal,
+  accountOf,
+  attachPrincipal,
+  principalOf,
+  unauthenticated,
+} from './principal.js';
+export type { Principal } from './principal.js';
+
 export { edgeProviders } from './edge-providers.js';
 export type { EdgeOptions } from './edge-providers.js';
 
@@ -50,6 +62,8 @@ export {
   idempotencyKeyOf,
   idempotencyRecordTableDdl,
   idempotentRequestOf,
+  keyedFingerprintOf,
+  purgeIdempotencyRecords,
   runIdempotently,
   runIdempotentlyVersioned,
 } from './idempotency.js';

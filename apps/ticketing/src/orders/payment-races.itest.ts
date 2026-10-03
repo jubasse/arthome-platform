@@ -10,7 +10,14 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { FixedClock, MINUTE_MS, PriceTier, OrderState, SeatHoldState } from '@arthome/core';
+import {
+  FixedClock,
+  MINUTE_MS,
+  OrderState,
+  PriceTier,
+  SeatHoldState,
+  Service,
+} from '@arthome/core';
 
 import { CLOCK } from '../clock.js';
 import { ExpireDueHolds } from './expire-due-holds.command.js';
@@ -22,7 +29,13 @@ import { DateSalesModule } from '../date-sales/date-sales.module.js';
 import { SalesClosingSweeper } from '../date-sales/sales-closing-sweeper.js';
 import { SalesClosingModule } from '../date-sales/sales-closing.module.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
-import { FULL_PRICE_MINOR, nextKey, purchaseOf, putOnSale } from '../itest/sales.js';
+import {
+  FULL_PRICE_MINOR,
+  nextKey,
+  purchaseOf,
+  putOnSale,
+  ITEST_BUYER_ACCOUNT_ID,
+} from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { ApplyPaymentEvents } from '../payments/apply-payment-events.command.js';
 import {
@@ -116,6 +129,7 @@ beforeAll(async () => {
       CatalogFactsModule,
     ],
     providers: EDGE_PROVIDERS,
+    caller: { service: Service.TICKETING, clock, accountId: ITEST_BUYER_ACCOUNT_ID },
     dataSource,
     rawBody: true,
     overrides: [

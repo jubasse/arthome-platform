@@ -130,7 +130,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
 
   private async placeIn(
     { manager, orders, holds, dateSales }: TicketingTransaction,
-    { body, idempotency, traceparent, lateEntryAcknowledged }: PurchaseSeat,
+    { body, buyer, idempotency, traceparent, lateEntryAcknowledged }: PurchaseSeat,
   ): Promise<Placement> {
     const bound = await orders.findBound(idempotency.accountId, idempotency.key);
     if (bound !== null) {
@@ -157,7 +157,6 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     const orderId = uuidv7();
     const holdId = uuidv7();
     const expiresAt = checkoutIntentExpiry(now);
-    const buyer = { accountId: idempotency.accountId, profileId: body.profileId ?? null };
     const hold = SeatHold.place(
       {
         id: holdId,

@@ -20,14 +20,16 @@ would fail their reads, and the consumer could dead-letter facts it can no longe
 
 All three read `DATABASE_URL` through `libs/config` (`NODE_ENV` required, never defaulted), close
 their pool on SIGTERM, and are booted as their entry points boot them by `src/boot.itest.ts`. The API
-binds `DenyInProductionGuard`, the envelopes and the validation pipe through
-`@arthome-platform/http-edge`'s `edgeProviders` (`src/edge-providers.ts`), as catalog does. Its readiness fails only on the database; the slot, the publication and the outbox
+binds the internal token's guard, `DenyInProductionGuard` behind it, the envelopes and the validation
+pipe through `@arthome-platform/http-edge`'s `edgeProviders` (`src/edge-providers.ts`), as catalog
+does. Its readiness fails only on the database; the slot, the publication and the outbox
 retention answer `degraded`.
 
 **From T3 the API needs two more variables in production**, where neither has a default and the
 API refuses to boot without them: `PAYMENT_WEBHOOK_SECRET` (32 characters at least, §0g) and
 `PUBLIC_WEB_ORIGIN` (the payment return URL, §0h). Every route using them is refused in production
-today, but the boot reads them.
+today, but the boot reads them. And the API does not boot in production at all while the fake
+payment adapter is the only one (§2, the architecture review's P1).
 
 **Deployment order: ticketing's consumer runs before the first date is drafted in production**
 (both reviews, 2026-09-27). A sale opens only from `catalog.date.drafted`, and the consumer group
@@ -381,9 +383,9 @@ adr-payments.md §7.
   (`orders/record-waiting-intent.ts`, correctness re-review N2): the instant first owed is kept,
   set only when none was owed, and the attempts start over, whether the last cancellation was made
   or given up on.
-- **The webhook route is refused in production**, as every write here is, by
-  `DenyInProductionGuard`; its signature is its authentication, and a real provider's adapter will
-  want it exempted with the Stripe adapter, not before.
+- **The webhook route is anonymous** (`AllowAnonymous`: its signature is its authentication, and a
+  provider holds no internal token), and refused in production with the commerce routes until a
+  real adapter is bound.
 
 ## 0k. A payment confirmed after its hold expired (T3, D-082)
 
@@ -557,8 +559,11 @@ first.
     the next pass, and asked twice;
   - the webhook route, refused in production like every write, is exempted once its signature is
     Stripe's.
-- **Lifting `DenyInProductionGuard` needs a real adapter bound first**: `payments.module.ts` binds
-  the fake in every environment, and the fake confirms every intent without taking any money.
+- **Lifting `DenyInProductionGuard` needs a real adapter bound first**: the fake confirms every
+  intent without taking any money, so `payments.module.ts` refuses to bind it in production and the
+  API fails at boot there (`payments.module.spec.ts`, the architecture review's P1). The consumer and
+  the sweeper import no payment port and boot. The real adapter lifts both locks: the boot refusal,
+  and `DenyInProductionGuard` on `OrdersController` and `PaymentWebhooksController`.
 - **A postponement moves the seats' cancel deadline** (adr-ticketing.md §8): each seat carries the
   deadline computed at payment, and `seat.activated` published it; nothing recomputes it or tells
   streaming and notifications that it moved.
@@ -591,13 +596,15 @@ payment return path, D-089's `SEAT_SALES_CUTOFF_MINUTES_AFTER_START`, `seatSales
 
 **Known and left in T3, each judged:**
 
-- **No account.** Tokens are not verified (`adr-auth.md` defers it): holds, orders and seats carry a
-  null `account_id`, every purchase shares the one null idempotency scope, `order.paid` and
-  `seat.activated` carry an empty `account_id`, and `getOrder` checks nobody's ownership. The routes
-  are refused in production by `DenyInProductionGuard`, as every write here is. Accepted by the lead
-  as an interim on 2026-09-29. **Until auth lands, `seat.activated` gives streaming's
-  `entitlement_projection` no account to key the right to watch on**: a seat sold here opens nothing
-  there.
+- **The account is the internal token's** (auth slice A, 2026-10-03), and the commerce routes stay
+  refused in production until a real payment adapter: `quoteSeat`, `purchaseSeat` and `getOrder`
+  need a token naming an account (401 otherwise, no guest purchase); a purchase binds
+  its hold, order and seats to it, its idempotency key is scoped by it, and `order.paid` and
+  `seat.activated` carry it. The profile is the token's too (`PurchaseSeat.buyer`): a body naming
+  another one is a 403, and until profiles land no token names any. `getOrder` serves the buyer alone: someone else's order is a 404, as one
+  that does not exist. An order placed before slice A has no account and is served to nobody. The
+  studio's routes (prices, capacity, provision, the pane) stay refused in production until slice B
+  authorises them on the loaded date.
 - **No tax computed.** `order.paid` carries an empty `vat` and the buyer's declared location alone,
   as unresolved evidence: the tax model awaits counsel (`adr-payments.md` §5.5).
 - **A free seat** (a total of zero) would ask the provider for an intent of zero: no rule gives a
