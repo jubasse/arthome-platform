@@ -249,6 +249,13 @@ what changed (the agent's own loop).
    since every commit that reaches `develop` goes through a pushed branch and a PR. After a merge,
    the full `verify` and `test:integration` run again on a clean checkout.
 
+   **A push that only deletes refs skips it.** `pre-push` reads `<local ref> <local sha> <remote ref>
+   <remote sha>` per line on stdin; a deletion's local sha is all zeros and the push carries no
+   commit, so when every line is one the hook exits 0 at once. A push that creates or updates any ref
+   alongside a deletion still runs `verify:full`. Proven against a local bare remote, never origin:
+   a branch creation ran `verify:full` (67 s), a deletion alone took under a second, and a push of
+   one new branch with another's deletion ran it again (75 s).
+
 Measured 2026-09-29, develop at 89c8a25, on a shared machine whose load varied with other agents
 running at the same time: `verify:full` about 109 s; `verify` cold (empty caches, right after
 `bootstrap`) about 110–140 s; `verify` warm, nothing changed, about 25–55 s; `verify` warm after a
