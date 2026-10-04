@@ -1,7 +1,6 @@
 import {
   CurrentPrincipal,
   DEADLINE_HEADER,
-  Endpoint,
   accountOf,
   idempotentRequestOf,
   parseTraceparent,
@@ -11,10 +10,20 @@ import {
   type PerishableResponse,
   type Principal,
 } from '@arthome-platform/http-edge';
-import { Body, Controller, Get, Header, Headers, Inject, Param, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Headers,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+  Res,
+} from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 
-import { storefrontApi } from '@arthome/contracts/storefront-api';
 import type { Clock } from '@arthome/core';
 import { DateIdSchema, OrderIdSchema } from '@arthome/core/schema';
 
@@ -27,8 +36,6 @@ import { QuoteSeat } from './quote-seat.query.js';
 import { QuoteSeatSchema, type QuoteSeatBody } from './quote-seat.schema.js';
 import type { SeatQuoteView } from './seat-quote-view.js';
 import { CLOCK } from '../clock.js';
-
-const { quoteSeat } = storefrontApi.routes;
 
 const PURCHASE_PATH = '/v1/orders/seats';
 
@@ -65,7 +72,7 @@ interface StatusWriter {
  *   the account the internal token names: no guest purchase, and an order is its buyer's alone.
  *   Refused in production until a real payment adapter is bound (`payments.module.ts`).
  */
-@Controller()
+@Controller('v1')
 export class OrdersController {
   public constructor(
     private readonly commands: CommandBus,
@@ -73,7 +80,8 @@ export class OrdersController {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  @Endpoint(quoteSeat)
+  @Post('dates/:dateId/seat-quote')
+  @HttpCode(200)
   @Header('cache-control', 'no-store')
   public quote(
     @Param('dateId', { schema: DateIdSchema }) dateId: string,
@@ -90,7 +98,7 @@ export class OrdersController {
    * 201 or 202, which the route cannot declare: `passthrough` keeps the envelope and the replay
    *   header of the interceptor while the status is the command's.
    */
-  @Post('v1/orders/seats')
+  @Post('orders/seats')
   @Header('cache-control', 'no-store')
   public async purchase(
     @Body({ schema: PurchaseSeatSchema }) body: PurchaseSeatBody,
@@ -121,7 +129,7 @@ export class OrdersController {
     return response;
   }
 
-  @Get('v1/orders/:orderId')
+  @Get('orders/:orderId')
   @Header('cache-control', 'no-store')
   public order(
     @Param('orderId', { schema: OrderIdSchema }) orderId: string,
