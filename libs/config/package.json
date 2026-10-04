@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@arthome/core": "file:../../vendor/arthome-core-a9edd7f5a6b7.tgz",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-358826d770d8.tgz",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-2e78922c964f.tgz",
     "zod": "4.6.5"
   }
 }

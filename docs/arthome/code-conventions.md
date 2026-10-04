@@ -2926,8 +2926,10 @@ A route carries its API `version` as a field and its `path` without the `/v{n}` 
 emitter composes (URI strategy, `versionedPath`). Version 1 keeps the bare `operationId`; a second
 declaration of the same operation with `version: 2` is named `{operationId}V2` and is served beside
 v1. Routes are declared through the immutable group builder (`packages/contracts/README.md`), which
-holds what a group shares. The order of an operation's `parameters` has no meaning, so the semantic
-comparison used to review a change to the generated documents treats the list as a set.
+holds what a group shares. The order of an operation's `parameters` has no meaning (OpenAPI identifies a parameter by name
+and location, the typed client takes named parameters, no positional-SDK generator consumes the
+documents, no client has shipped), so the semantic comparison used to review a change to the
+generated documents treats the list as a set; the product owner accepted this on 2026-10-03.
 
 Gate 18 is five checks, and **three of them need no annotation**, which is why it was worth
 building before the 120-block migration rather than after it:
