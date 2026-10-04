@@ -1,3 +1,6 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+
 import { enableUriVersioning } from '@arthome-platform/http-edge';
 import { guardDeclaredResponses } from '@arthome-platform/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -9,19 +12,34 @@ import { storefrontApi } from '@arthome/contracts/storefront-api';
 import { ApiErrorCode, FailureNature, Surface } from '@arthome/core';
 
 import { AppModule } from './app.module.js';
+import { IDENTITY_URL } from './identity/identity.client.js';
 
 /** What Fastify refuses before a handler runs still leaves in the contract's error envelope. */
 
 const SIGN_IN = '/v1/auth/sign-in';
 const HEADERS = { 'x-arthome-surface': Surface.STOREFRONT_WEB };
 const ONE_MIB = 1024 * 1024;
+const FORM_SIGN_IN = 'email=marie%40example.test&password=a-long-password&mode=bearer';
 
+let identity: Server;
+let identityUrl: string;
+let identityCalls = 0;
 let app: NestFastifyApplication;
 
 const responses = guardDeclaredResponses(storefrontApi);
 
 beforeAll(async () => {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  identity = createServer((_request, response) => {
+    identityCalls += 1;
+    response.writeHead(503).end();
+  });
+  await new Promise<void>((resolve) => identity.listen(0, resolve));
+  identityUrl = `http://localhost:${String((identity.address() as AddressInfo).port)}`;
+
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(IDENTITY_URL)
+    .useValue(identityUrl)
+    .compile();
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
   });
@@ -33,6 +51,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
+  identity.closeAllConnections();
+  await new Promise((resolve) => identity.close(resolve));
 });
 
 function postSignIn(contentType: string, payload: string) {
@@ -67,12 +87,23 @@ describe('the refusals Fastify answers before the storefront BFF’s handlers', 
   it.each(['application/xml', 'text/plain', 'application/x-www-form-urlencoded'])(
     'answers a %s body with 415, since the contract speaks JSON alone',
     async (contentType) => {
-      const response = await postSignIn(contentType, 'email=a%40b.test&password=x&mode=bearer');
+      const response = await postSignIn(contentType, FORM_SIGN_IN);
 
       expectEnvelope(response, 415);
+      expect(response.json()).toMatchObject({
+        error: { code: ApiErrorCode.UNSUPPORTED_MEDIA_TYPE, nature: FailureNature.REFUSED },
+      });
       expect(response.body).not.toContain('Unsupported');
     },
   );
+
+  it('never relays a form-encoded sign-in to identity, which it once did', async () => {
+    const response = await postSignIn('application/x-www-form-urlencoded', FORM_SIGN_IN);
+
+    expectEnvelope(response, 415);
+    expect(app.get(IDENTITY_URL)).toBe(identityUrl);
+    expect(identityCalls).toBe(0);
+  });
 
   it('answers a body over 1 MiB with 413', async () => {
     const response = await postSignIn(
@@ -81,6 +112,9 @@ describe('the refusals Fastify answers before the storefront BFF’s handlers', 
     );
 
     expectEnvelope(response, 413);
+    expect(response.json()).toMatchObject({
+      error: { code: ApiErrorCode.PAYLOAD_TOO_LARGE, nature: FailureNature.REFUSED },
+    });
     expect(response.body).not.toContain('too large');
   });
 

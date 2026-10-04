@@ -85,6 +85,9 @@ describe('the refusals Fastify answers before catalog’s handlers', () => {
       const response = await postVenue(contentType, 'name=Port&city=Marseille&country=FR');
 
       expectEnvelope(response, 415);
+      expect(response.json()).toMatchObject({
+        error: { code: ApiErrorCode.UNSUPPORTED_MEDIA_TYPE, nature: FailureNature.REFUSED },
+      });
       expect(response.body).not.toContain('Unsupported');
     },
     CASE_MS,
@@ -99,6 +102,9 @@ describe('the refusals Fastify answers before catalog’s handlers', () => {
       );
 
       expectEnvelope(response, 413);
+      expect(response.json()).toMatchObject({
+        error: { code: ApiErrorCode.PAYLOAD_TOO_LARGE, nature: FailureNature.REFUSED },
+      });
       expect(response.body).not.toContain('too large');
     },
     CASE_MS,

@@ -255,9 +255,11 @@ export class DatesController {
 - **Guards are unchanged**: routes register through Nest controllers, so `InternalTokenGuard` and
   `DenyInProductionGuard` apply, and `@AllowInProduction()` stays where it was.
 - **What Fastify refuses before the handler leaves in the envelope too**: a malformed JSON body
-  400, a body over 1 MiB 413, an unknown route 404, and any body that is not JSON 415.
+  400 `api.schema_invalid`, a body over 1 MiB 413 `api.payload_too_large`, an unknown route 404
+  `api.not_found`, and any body that is not JSON 415 `api.unsupported_media_type`.
   `JsonBodiesOnly` (http-edge, bound by `edgeProviders` and the BFF's `AppModule`) removes the
-  `text/plain` and form parsers Fastify and Nest add by default (transport.md §5.7).
+  `text/plain` and form parsers Fastify and Nest add by default (transport.md §5.7); a route that
+  needs another body, auth slice B's `form_post` callback, will add its parser in its own scope.
 - **Every response a suite provokes is checked against its route** (ADR contract model §7.3):
   `const responses = guardDeclaredResponses(storefrontApi)` at the top of the file, and
   `responses.watch(app)` before `app.init()`. A status the route does not declare, or a code its

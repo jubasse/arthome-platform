@@ -46,8 +46,8 @@ export interface UniqueViolationCode {
 }
 
 /**
- * So a refusal NestJS raised on its own — an unmatched route, an oversized payload — still
- * leaves in §5.5's shape.
+ * So a refusal NestJS or Fastify raised on its own — an unmatched route, an oversized payload, a
+ * body that is not JSON — still leaves in §5.5's shape.
  *
  * 409 is absent on purpose: a conflict arrives either as a mapped unique violation or as a
  *   `ConflictException` whose thrower set `errorCode`. A bare one falling to the gap below is
@@ -58,6 +58,14 @@ const REFUSAL_BY_STATUS = {
   [HttpStatus.UNAUTHORIZED]: { code: ApiErrorCode.UNAUTHENTICATED, nature: FailureNature.REFUSED },
   [HttpStatus.FORBIDDEN]: { code: ApiErrorCode.FORBIDDEN, nature: FailureNature.REFUSED },
   [HttpStatus.NOT_FOUND]: { code: ApiErrorCode.NOT_FOUND, nature: FailureNature.REFUSED },
+  [HttpStatus.PAYLOAD_TOO_LARGE]: {
+    code: ApiErrorCode.PAYLOAD_TOO_LARGE,
+    nature: FailureNature.REFUSED,
+  },
+  [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: {
+    code: ApiErrorCode.UNSUPPORTED_MEDIA_TYPE,
+    nature: FailureNature.REFUSED,
+  },
   [HttpStatus.TOO_MANY_REQUESTS]: {
     code: ApiErrorCode.RATE_LIMITED,
     nature: FailureNature.UNAVAILABLE,

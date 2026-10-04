@@ -299,6 +299,22 @@ describe('ErrorEnvelopeFilter', () => {
     expect(JSON.stringify(sent.body)).not.toContain('JSON');
   });
 
+  it('answers an oversized or non-JSON body as a refusal with its code, never as unavailable', () => {
+    // As Nest's adapter hands over a Fastify refusal: the status, and Fastify's English message.
+    for (const [status, code] of [
+      [HttpStatus.PAYLOAD_TOO_LARGE, ApiErrorCode.PAYLOAD_TOO_LARGE],
+      [HttpStatus.UNSUPPORTED_MEDIA_TYPE, ApiErrorCode.UNSUPPORTED_MEDIA_TYPE],
+    ] as const) {
+      const { run, sent } = filterFor();
+      run(new HttpException('Request body is too large', status));
+
+      expect(sent.status).toBe(status);
+      expect(sent.body).toMatchObject({ error: { code, nature: FailureNature.REFUSED } });
+      expect(JSON.stringify(sent.body)).not.toContain('too large');
+    }
+    expect(logged).toEqual([]);
+  });
+
   it('answers a Fastify failure of its own as any unknown error', () => {
     const { run, sent } = filterFor();
     run(fastifyError('FST_ERR_REP_ALREADY_SENT', 500, 'Reply was already sent'));
