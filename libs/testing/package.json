@@ -22,7 +22,7 @@
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-309b348b95a1.tgz",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-d4ec11b2d34b.tgz",
     "@arthome/core": "file:../../vendor/arthome-core-80e8e2716d44.tgz",
     "ioredis": "6.0.0",
     "jose": "6.2.12",

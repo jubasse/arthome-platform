@@ -14,7 +14,7 @@
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/http-edge": "workspace:*",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-309b348b95a1.tgz",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-d4ec11b2d34b.tgz",
     "@arthome/core": "file:../../vendor/arthome-core-80e8e2716d44.tgz",
     "@fastify/cookie": "11.1.2",
     "@fastify/csrf-protection": "8.0.1",

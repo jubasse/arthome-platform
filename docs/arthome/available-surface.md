@@ -57,13 +57,13 @@ The shared response envelope and its meta instants (subpath @arthome/contracts/e
 
 Routes as TypeScript: an operation mirrors OpenAPI with zod in place of JSON Schema, typed for a server handler and a client, with the request decoders a server validates against.
 
-`AccessorOf` · `ActionOptions` · `ActionRoute` · `Api` · `ApiComponents` · `ApiDefinition` · `BuiltRoute` · `BuiltRouteDefinition` · `CodesOf` · `CreateRoute` · `CrudMember` · `CrudOptions` · `CrudRoutes` · `DeleteRoute` · `ErrorBody` · `ErrorModel` · `ErrorResponse` · `ErrorStatus` · `ErrorsInput` · `Extensions` · `FindAllRoute` · `FindRoute` · `Header` · `HeaderParameter` · `HttpMethod` · `JsonRequestBody` · `JsonResponse` · `MediaType` · `MemberDocs` · `MergedErrors` · `Parameter` · `ParameterLocation` · `PathParameter` · `QueryParameter` · `ReplaceRoute` · `RequestBody` · `Resource` · `ResourceContext` · `ResourceConventions` · `ResourceOf` · `ResourceOptions` · `Response` · `Route` · `RouteBody` · `RouteBuilder` · `RouteDefinition` · `RouteHeaders` · `RouteInput` · `RouteParams` · `RouteQuery` · `RouteResponseBody` · `RouteShape` · `RouteStatus` · `RouteSuccessStatus` · `SecurityRequirement` · `SubresourceReplaceRoute` · `UpdateRoute` · `UpsertRoute` · `VersionedPath` · `accessorOf` · `bodySchemaOf` · `defineApi` · `defineErrorModel` · `defineRoute` · `errorResponseFor` · `headersSchemaOf` · `makeResource` · `paramsSchemaOf` · `querySchemaOf` · `routeBuilder` · `successStatusOf` · `versionedPath`
+`AcceptedOptions` · `Access` · `AccessorOf` · `ActionOptions` · `ActionRoute` · `Api` · `ApiComponents` · `ApiDefinition` · `BATCH_BODY_LIMIT` · `BatchRoute` · `BuiltRoute` · `BuiltRouteDefinition` · `CACHE_CONTROL_HEADER` · `CacheOptions` · `CachePolicy` · `ChildContext` · `CodesByStatus` · `CodesOf` · `CodesOfIdentity` · `CodesOfRequirement` · `Collected` · `CreateRoute` · `CrudMember` · `CrudOptions` · `CrudRoutes` · `DEFAULT_BODY_LIMIT` · `DeleteRoute` · `Endpoints` · `ErrorBody` · `ErrorModel` · `ErrorResponse` · `ErrorStatus` · `ErrorsInput` · `Extensions` · `FindAllRoute` · `FindRoute` · `Freshness` · `HandlerInput` · `HandlerOutput` · `Header` · `HeaderParameter` · `HttpMethod` · `IDEMPOTENCY_REPLAYED_HEADER` · `IdentifiedAccess` · `Identity` · `IdentityOptions` · `JsonRequestBody` · `JsonResponse` · `MediaType` · `MemberDocs` · `MergedErrors` · `Paging` · `PagingConvention` · `PagingConventions` · `PagingKind` · `Parameter` · `ParameterLocation` · `PathParameter` · `PrincipalOf` · `PublicAccess` · `QueryParameter` · `RESTRICTED_KEY` · `ReplaceRoute` · `RequestBody` · `Requirement` · `Resource` · `ResourceContext` · `ResourceConventions` · `ResourceOf` · `ResourceOptions` · `Response` · `RestrictedField` · `RolesRequirement` · `RootScope` · `Route` · `RouteBody` · `RouteBuilder` · `RouteDefinition` · `RouteHeaders` · `RouteInput` · `RouteParams` · `RoutePrincipal` · `RouteQuery` · `RouteResponseBody` · `RouteShape` · `RouteStatus` · `RouteSuccessStatus` · `RouteTree` · `SENSITIVE_KEY` · `Scope` · `SecurityRequirement` · `SingleOptions` · `SortDirection` · `SortKey` · `SubresourceReplaceRoute` · `TolerantParse` · `UpdateRoute` · `UpsertRoute` · `VARY_HEADER` · `VersionedPath` · `accepted` · `accessorOf` · `bodySchemaOf` · `cache` · `cacheControlOf` · `changesSince` · `collect` · `cursor` · `defineApi` · `defineErrorModel` · `defineRoute` · `errorResponseFor` · `headersSchemaOf` · `identity` · `makeResource` · `pages` · `paramsSchemaOf` · `parseTolerant` · `querySchemaOf` · `recentAuth` · `requirement` · `restricted` · `restrictedFieldsOf` · `roles` · `routeBuilder` · `sensitive` · `sensitivePathsOf` · `sortDirectionSchema` · `sortKeyName` · `successStatusOf` · `tagged` · `throttle` · `versionedPath`
 
 ### `@arthome/contracts/http-client`
 
 The typed client: one method per operation id, over any `fetch` (browser, React Native, Node).
 
-`Client` · `ClientInput` · `ClientMethod` · `ClientOptions` · `ClientResponse` · `FetchInit` · `FetchLike` · `FetchResponseLike` · `UndeclaredStatusError` · `createClient`
+`Client` · `ClientInput` · `ClientMethod` · `ClientOptions` · `ClientResponse` · `FetchInit` · `FetchLike` · `FetchResponseLike` · `IncludeNames` · `NarrowIncluded` · `UndeclaredStatusError` · `createClient`
 
 ### `@arthome/contracts/identity`
 
@@ -157,6 +157,6 @@ The boundary schemas (`@arthome/core/schema`); the only part of the package that
 
 ---
 
-720 exported names across 21 subpaths.
+783 exported names across 21 subpaths.
 A name is listed here only if it is reachable through a package’s `exports` map — if it is
 not in this file, a consumer cannot import it, whatever the source says.
