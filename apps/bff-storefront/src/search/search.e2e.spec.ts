@@ -1,7 +1,7 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import { enableUriVersioning } from '@arthome-platform/http-edge';
+import { serveEndpoints } from '@arthome-platform/http-edge';
 import { guardDeclaredResponses } from '@arthome-platform/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
@@ -68,7 +68,7 @@ beforeAll(async () => {
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
   });
-  enableUriVersioning(app);
+  serveEndpoints(app);
   responses.watch(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();

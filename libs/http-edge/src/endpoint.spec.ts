@@ -22,6 +22,7 @@ import {
   EndpointHeaders,
   EndpointParams,
   EndpointQuery,
+  serveEndpoints,
 } from './endpoint.js';
 
 const renameDate = defineRoute({
@@ -103,7 +104,7 @@ beforeAll(async () => {
   app = await httpApp({
     imports: [DatesModule],
     providers: [],
-    uriVersioning: true,
+    configure: serveEndpoints,
     caller: { service: Service.CATALOG, clock: new FixedClock(Date.now()) },
   });
 });

@@ -23,6 +23,7 @@ import {
   routePrincipalOf,
   type EndpointGuards,
 } from './endpoint-access.js';
+import { withoutPath } from './schema-paths.js';
 
 /** The right every identified caller holds, so an `optionalAuth` route can restrict a field to it (ADR §6.3). */
 export const SIGNED_IN_RIGHT = 'signedIn';
@@ -68,33 +69,6 @@ function rightsOf(principal: unknown): ReadonlySet<string> {
   return new Set([SIGNED_IN_RIGHT, ...held]);
 }
 
-/** `data.items[].revenue` as `['data', 'items', '[]', 'revenue']`; `*` is each value of a record. */
-function segmentsOf(path: string): string[] {
-  return path
-    .split('.')
-    .flatMap((part) => (part.endsWith('[]') ? [part.slice(0, -2), '[]'] : [part]))
-    .filter((segment) => segment !== '');
-}
-
-function without(value: unknown, segments: readonly string[]): unknown {
-  const [head, ...rest] = segments;
-  if (head === undefined) return value;
-  if (head === '[]') return Array.isArray(value) ? value.map((item) => without(item, rest)) : value;
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
-  const record = value as Readonly<Record<string, unknown>>;
-  if (head === '*') {
-    return Object.fromEntries(
-      Object.entries(record).map(([key, item]) => [key, without(item, rest)]),
-    );
-  }
-  if (!Object.hasOwn(record, head)) return value;
-  if (rest.length === 0) {
-    const { [head]: _removed, ...kept } = record;
-    return kept;
-  }
-  return { ...record, [head]: without(record[head], rest) };
-}
-
 /**
  * After the handler and the success envelope, so its paths are the declared body's: removes each
  *   restricted field the caller lacks the right for, absent rather than null (critical rule 11),
@@ -121,8 +95,8 @@ export class EndpointResponseInterceptor implements NestInterceptor {
         this.writeHeaders(route, principal, http.getResponse<HeaderWriter>());
         const rights = rightsOf(principal);
         return marksOf(route)
-          .restricted.filter(({ right }) => !rights.has(right))
-          .reduce((projected, { path }) => without(projected, segmentsOf(path)), body);
+          .restricted.filter(({ path, right }) => path !== '' && !rights.has(right))
+          .reduce((projected, { path }) => withoutPath(projected, path), body);
       }),
     );
   }

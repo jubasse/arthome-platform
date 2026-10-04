@@ -237,10 +237,12 @@ export class DatesController {
 }
 ```
 
-- **Versioning is Nest's.** `Endpoint` routes `route.path` (without `/v1`) and adds
-  `Version(String(route.version))`; the app calls `enableUriVersioning(app)` (http-edge) before
-  `mountDevDocs`, and a suite passes `uriVersioning: true` to `httpApp` or calls it itself. Never route
-  `versionedPath(route)`: with versioning on it answers on `/v1/v1/...`.
+- **Versioning is Nest's, and the body ceiling the route's.** `Endpoint` routes `route.path`
+  (without `/v1`) and adds `Version(String(route.version))`; the app calls `serveEndpoints(app)`
+  (http-edge) before `init()` and `mountDevDocs`, and a suite passes `configure: serveEndpoints` to
+  `httpApp` or calls it itself. It turns URI versioning on, and sets each route's `bodyLimit` as
+  its Fastify body limit (1 MiB by default, 2 MiB on a batch), which only an `onRoute` hook can do.
+  Never route `versionedPath(route)`: with versioning on it answers on `/v1/v1/...`.
 - **Inputs** are bound by `EndpointParams`, `EndpointQuery`, `EndpointBody` (real `@Param`,
   `@Query`, `@Body` with `{ schema }`, run by the global `StandardSchemaValidationPipe`) and
   `EndpointHeaders` (a custom parameter decorator with its own pipe: `@Headers()` takes no
@@ -273,6 +275,13 @@ export class DatesController {
   the rights are the principal's `rights` and `signedIn` for any identified caller), `Cache-Control`
   and `Vary` come from the route's `cache`, `no-store` from a sensitive field in the answer, and an
   identity's own headers from its guard (the studio's rights version).
+- **A body is logged only through `redactSensitive(schema, body)`** (http-edge): every field the
+  schema marks `sensitive`, a password, a token, a stream key, becomes `[redacted]`.
+- **Budgets are the routes'** (transport.md §5.9). A BFF handler gives its calls the deadline of
+  its own route's budget, `serviceCallFor(..., budgetOf(route), ...)`, and a call to a route that
+  declares a budget of its own is given up at its end when that comes first,
+  `withinBudget(call, calledRoute.budgetMs, clock)`. The `*_BUDGET_MS` constants go as routes
+  declare theirs.
 - **What Fastify refuses before the handler leaves in the envelope too**: a malformed JSON body
   400 `api.schema_invalid`, a body over 1 MiB 413 `api.payload_too_large`, an unknown route 404
   `api.not_found`, and any body that is not JSON 415 `api.unsupported_media_type`.

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { enableUriVersioning } from '@arthome-platform/http-edge';
+import { serveEndpoints } from '@arthome-platform/http-edge';
 import {
   startIdentity,
   type IdentityHarness,
@@ -90,7 +90,7 @@ beforeAll(async () => {
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
   });
-  enableUriVersioning(app);
+  serveEndpoints(app);
   responses.watch(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();

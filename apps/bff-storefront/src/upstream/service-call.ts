@@ -2,6 +2,7 @@ import type { ServerResponse } from 'node:http';
 
 import { whenCallerLeaves } from '@arthome-platform/http-edge';
 
+import type { Route } from '@arthome/contracts/http';
 import type { Clock } from '@arthome/core';
 
 import type { Caller } from '../internal-token.minter.js';
@@ -34,4 +35,27 @@ export function serviceCallFor(
     callerLeft: whenCallerLeaves(response),
     caller,
   };
+}
+
+/** The latency budget a BFF route declares (transport.md §5.9): the deadline of the calls it makes. */
+export function budgetOf(route: Route): number {
+  if (route.budgetMs === undefined) {
+    throw new Error(`${route.operationId} calls a service and declares no budget.`);
+  }
+  return route.budgetMs;
+}
+
+/**
+ * A call to a route that declares its own budget: given up at the end of that budget, or at the
+ *   caller's deadline if it comes first. The deadline is the call's, so the service gives up at the
+ *   same instant (transport.md §5.3).
+ */
+export function withinBudget(
+  call: ServiceCall,
+  budgetMs: number | undefined,
+  clock: Clock,
+): ServiceCall {
+  if (budgetMs === undefined) return call;
+  const budgetEnds = clock.nowMs() + budgetMs;
+  return budgetEnds < call.deadline.getTime() ? { ...call, deadline: new Date(budgetEnds) } : call;
 }

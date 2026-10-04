@@ -1,4 +1,4 @@
-import { VersioningType, type ModuleMetadata, type Provider } from '@nestjs/common';
+import type { ModuleMetadata, Provider } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
@@ -17,8 +17,8 @@ export interface HttpAppOptions {
   readonly overrides?: readonly (readonly [token: unknown, value: unknown])[];
   /** As the service's `main.ts` bootstraps it, for a route that verifies a signature. */
   readonly rawBody?: boolean;
-  /** As the service's `main.ts` bootstraps it, for a route bound with `Endpoint`, which carries its version. */
-  readonly uriVersioning?: boolean;
+  /** What the service's `main.ts` does to the app before `init()`: `serveEndpoints` for `Endpoint` routes. */
+  readonly configure?: (app: NestFastifyApplication) => void;
   /**
    * Who the requests come from: each one without an `authorization` header gets this caller's
    *   internal token, minted on the suite's clock. Absent, a request carries only what it sends.
@@ -36,7 +36,7 @@ export async function httpApp({
   dataSource,
   overrides = [],
   rawBody = false,
-  uriVersioning = false,
+  configure,
   caller,
 }: HttpAppOptions): Promise<NestFastifyApplication> {
   let builder = Test.createTestingModule({
@@ -60,7 +60,7 @@ export async function httpApp({
     new FastifyAdapter(),
     { logger: false, rawBody },
   );
-  if (uriVersioning) app.enableVersioning({ type: VersioningType.URI });
+  configure?.(app);
   if (caller !== undefined) {
     app
       .getHttpAdapter()

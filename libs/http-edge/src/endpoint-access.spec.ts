@@ -12,6 +12,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { z } from 'zod';
 
 import {
+  BATCH_BODY_LIMIT,
+  DEFAULT_BODY_LIMIT,
   Freshness,
   cache,
   defineErrorModel,
@@ -29,7 +31,7 @@ import { ApiErrorCode, FailureNature, FixedClock } from '@arthome/core';
 import type { EndpointGuards, IdentityGuard, RuleGuard } from './endpoint-access.js';
 import { EndpointInput, EndpointPrincipal } from './endpoint-input.js';
 import { endpointProviders } from './endpoint-providers.js';
-import { Endpoint } from './endpoint.js';
+import { Endpoint, serveEndpoints } from './endpoint.js';
 import { ErrorEnvelopeFilter } from './error-envelope.filter.js';
 import { unauthenticated } from './principal.js';
 import { RefusalException, schemaInvalidException } from './refusal.js';
@@ -138,6 +140,40 @@ const revealKey = members.defineRoute({
   },
 });
 
+const smallBody = { content: { 'application/json': { schema: z.object({ text: z.string() }) } } };
+
+const postNote = base
+  .public()
+  .bodyLimit(64)
+  .defineRoute({
+    method: 'post',
+    path: '/notes',
+    operationId: 'postNote',
+    requestBody: smallBody,
+    responses: {
+      200: {
+        description: 'Noted.',
+        content: { 'application/json': { schema: envelope(z.object({ length: z.number() })) } },
+      },
+    },
+  });
+
+const postBatch = base
+  .public()
+  .bodyLimit(BATCH_BODY_LIMIT)
+  .defineRoute({
+    method: 'post',
+    path: '/notes/batch',
+    operationId: 'postBatch',
+    requestBody: smallBody,
+    responses: {
+      200: {
+        description: 'Noted.',
+        content: { 'application/json': { schema: envelope(z.object({ length: z.number() })) } },
+      },
+    },
+  });
+
 const ping = base.public().defineRoute({
   method: 'get',
   path: '/ping',
@@ -196,6 +232,20 @@ class ThingsController {
   @Endpoint(revealKey)
   public async revealKey(): Promise<{ key: string }> {
     return Promise.resolve({ key: 'sk_live' });
+  }
+
+  @Endpoint(postNote)
+  public async postNote(
+    @EndpointInput(postNote) { body }: HandlerInput<typeof postNote>,
+  ): Promise<{ length: number }> {
+    return Promise.resolve({ length: body.text.length });
+  }
+
+  @Endpoint(postBatch)
+  public async postBatch(
+    @EndpointInput(postBatch) { body }: HandlerInput<typeof postBatch>,
+  ): Promise<{ length: number }> {
+    return Promise.resolve({ length: body.text.length });
   }
 
   @Endpoint(ping)
@@ -277,7 +327,7 @@ beforeAll(async () => {
       identities: { member: memberGuard },
       rules: { tier: tierGuard },
     }),
-    uriVersioning: true,
+    configure: serveEndpoints,
   });
   bootWarnings = warn.mock.calls.map(([message]): unknown => message);
 });
@@ -412,6 +462,26 @@ describe('the answer, projected and headed from the declaration', () => {
   });
 });
 
+describe('the body ceiling, the route’s', () => {
+  const post = (url: string, text: string) =>
+    app.inject({ method: 'POST', url, payload: { text } });
+
+  it('refuses a body over the route’s own ceiling, below the default one', async () => {
+    expect((await post('/v1/notes', 'a'.repeat(20))).statusCode).toBe(200);
+    const refused = await post('/v1/notes', 'a'.repeat(100));
+
+    expect(refused.statusCode).toBe(413);
+    expect(refused.json()).toMatchObject({ error: { code: ApiErrorCode.PAYLOAD_TOO_LARGE } });
+  });
+
+  it('accepts a body over the default ceiling where the route raises it, as a batch does', async () => {
+    const response = await post('/v1/notes/batch', 'a'.repeat(DEFAULT_BODY_LIMIT));
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ data: { length: DEFAULT_BODY_LIMIT } });
+  });
+});
+
 describe('the boot', () => {
   it('lists the bound routes still without access', () => {
     expect(bootWarnings).toEqual(['Bound without access, under the legacy guards: legacy.']);
@@ -422,14 +492,14 @@ describe('the boot', () => {
       httpApp({
         imports: [ThingsModule],
         providers: providersWith({ identities: {}, rules: { tier: tierGuard } }),
-        uriVersioning: true,
+        configure: serveEndpoints,
       }),
     ).rejects.toThrow(/readThing \(identity member\)/);
     await expect(
       httpApp({
         imports: [ThingsModule],
         providers: providersWith({ identities: { member: memberGuard }, rules: {} }),
-        uriVersioning: true,
+        configure: serveEndpoints,
       }),
     ).rejects.toThrow(/promoteThing \(rule tier\)/);
   });
@@ -441,7 +511,7 @@ describe('the boot', () => {
       httpApp({
         imports: [ThingsModule],
         providers: providersWith({ identities: { member: memberGuard }, rules: { tier: strict } }),
-        uriVersioning: true,
+        configure: serveEndpoints,
       }),
     ).rejects.toThrow(/promoteThing \(rule tier: no tier named gold\)/);
   });

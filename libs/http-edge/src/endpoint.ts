@@ -16,8 +16,8 @@ import {
   createParamDecorator,
   VersioningType,
   type ExecutionContext,
-  type INestApplication,
 } from '@nestjs/common';
+import { RouteConfig, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { ApiHeader, ApiOperation, ApiResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 
@@ -104,9 +104,27 @@ export type EndpointDecorator<R extends RouteShape> = <
   descriptor: TypedPropertyDescriptor<Handler> & AnswerCheck<R, NoInfer<Handler>>,
 ) => void;
 
-/** Binds `Version` on every `Endpoint`: call before `mountDevDocs`, whose document is built after it. */
-export function enableUriVersioning(app: INestApplication): void {
+/** The Fastify route config key `Endpoint` writes a route's body ceiling under. */
+const BODY_LIMIT_CONFIG = 'arthomeBodyLimit';
+
+/**
+ * What an app serving `Endpoint` routes needs before `init()`: URI versioning, which `Endpoint`'s
+ *   `Version` needs, and each route's body ceiling as its Fastify `bodyLimit`, which only an
+ *   `onRoute` hook can set, as Nest registers the route. Call before `mountDevDocs`, whose
+ *   document is built after it.
+ */
+export function serveEndpoints(app: NestFastifyApplication): void {
   app.enableVersioning({ type: VersioningType.URI });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onRoute', (options) => {
+      const limit: unknown = (options.config as Readonly<Record<string, unknown>> | undefined)?.[
+        BODY_LIMIT_CONFIG
+      ];
+      // eslint-disable-next-line no-param-reassign -- an onRoute hook configures the route by mutating its options.
+      if (typeof limit === 'number') options.bodyLimit = limit;
+    });
 }
 
 /** `{}` is a call with no credential at all, which a decorator spells as an empty requirement. */
@@ -155,6 +173,9 @@ export function Endpoint<R extends Route>(route: R): EndpointDecorator<R> {
   const decorators = applyDecorators(
     EndpointRoute(route),
     ROUTE_METHOD[route.method](routerPathOf(route.path)),
+    ...(route.bodyLimit === undefined
+      ? []
+      : [RouteConfig({ [BODY_LIMIT_CONFIG]: route.bodyLimit })]),
     Version(String(route.version)),
     HttpCode(successStatusOf(route)),
     ApiOperation({

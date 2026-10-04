@@ -59,7 +59,7 @@ export {
   EndpointHeaders,
   EndpointParams,
   EndpointQuery,
-  enableUriVersioning,
+  serveEndpoints,
   successSchemaOf,
 } from './endpoint.js';
 export type { EndpointDecorator } from './endpoint.js';
@@ -77,6 +77,7 @@ export { EndpointInput, EndpointPrincipal } from './endpoint-input.js';
 export { endpointProviders } from './endpoint-providers.js';
 export type { EndpointGuardsBinding } from './endpoint-providers.js';
 export { EndpointResponseInterceptor, SIGNED_IN_RIGHT } from './endpoint-response.interceptor.js';
+export { REDACTED, redactSensitive } from './schema-paths.js';
 
 export { contractSchemaConverter, mountDevDocs } from './dev-docs.js';
 export type { DevDocsOptions } from './dev-docs.js';
