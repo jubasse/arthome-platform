@@ -42,6 +42,7 @@ function csrfRefused(): RefusalException {
  *   A guard rather than the plugin's own hook: the plugin answers a refusal with Fastify's error
  *   body, and this one leaves through the error envelope (critical rule 8). A request without the
  *   cookie carries no ambient credential, so it has nothing to forge.
+ * @deprecated The `viewer` identity checks the token of a cookie write, from its write schemes.
  */
 @Injectable()
 export class CsrfGuard implements CanActivate {

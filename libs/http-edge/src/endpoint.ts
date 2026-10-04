@@ -207,15 +207,20 @@ export function successSchemaOf<R extends RouteShape>(
   return schema as z.ZodType<RouteResponseBody<R, RouteSuccessStatus<R>>, unknown>;
 }
 
-/** Validated by the app's global `StandardSchemaValidationPipe`, as `@Query({ schema })` is. */
+/**
+ * Validated by the app's global `StandardSchemaValidationPipe`, as `@Query({ schema })` is.
+ * @deprecated `EndpointInput(route)` hands every part of the input, validated at once.
+ */
 export function EndpointQuery(route: RouteShape): ParameterDecorator {
   return Query({ schema: querySchemaOf(route) });
 }
 
+/** @deprecated `EndpointInput(route)` hands every part of the input, validated at once. */
 export function EndpointParams(route: RouteShape): ParameterDecorator {
   return Param({ schema: paramsSchemaOf(route) });
 }
 
+/** @deprecated `EndpointInput(route)` hands every part of the input, validated at once. */
 export function EndpointBody(route: RouteShape): ParameterDecorator {
   const schema = bodySchemaOf(route);
   return schema === undefined ? Body() : Body({ schema });
@@ -236,6 +241,7 @@ const VALIDATED_HEADERS = new StandardSchemaValidationPipe({
   exceptionFactory: schemaInvalidException,
 });
 
+/** @deprecated `EndpointInput(route)` hands every part of the input, validated at once. */
 export function EndpointHeaders(route: RouteShape): ParameterDecorator {
   return requestHeaders({ schema: headersSchemaOf(route), pipes: [VALIDATED_HEADERS] });
 }

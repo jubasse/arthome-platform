@@ -231,8 +231,7 @@ const { getDateDetail } = storefrontApi.routes;
 export class DatesController {
   @Endpoint(getDateDetail)
   public async detail(
-    @EndpointParams(getDateDetail) { dateId }: RouteParams<typeof getDateDetail>,
-    @EndpointHeaders(getDateDetail) _headers: RouteHeaders<typeof getDateDetail>,
+    @EndpointInput(getDateDetail) { params, headers }: HandlerInput<typeof getDateDetail>,
   ): Promise<PerishableResponse<DateDetail>> { /* ... */ }
 }
 ```
@@ -243,13 +242,11 @@ export class DatesController {
   `httpApp` or calls it itself. It turns URI versioning on, and sets each route's `bodyLimit` as
   its Fastify body limit (1 MiB by default, 2 MiB on a batch), which only an `onRoute` hook can do.
   Never route `versionedPath(route)`: with versioning on it answers on `/v1/v1/...`.
-- **Inputs** are bound by `EndpointParams`, `EndpointQuery`, `EndpointBody` (real `@Param`,
-  `@Query`, `@Body` with `{ schema }`, run by the global `StandardSchemaValidationPipe`) and
-  `EndpointHeaders` (a custom parameter decorator with its own pipe: `@Headers()` takes no
-  schema). A refusal is `api.schema_invalid` with `fields`, as everywhere else. A route declared
-  with an access takes them in one decorator instead, `@EndpointInput(route)` typed
-  `HandlerInput<typeof route>`: `{ params, query, body, headers, principal }`, every failing field
-  named at once; `@EndpointPrincipal(route)` gives the principal alone.
+- **Inputs** come in one decorator, `@EndpointInput(route)`, typed `HandlerInput<typeof route>`:
+  `{ params, query, body, headers, principal }`, each part validated against the route's schema
+  and every failing field named at once in `api.schema_invalid`'s `fields`; `@EndpointPrincipal(route)`
+  gives the principal alone. The four separate decorators the bound routes still use,
+  `EndpointParams`, `EndpointQuery`, `EndpointBody` and `EndpointHeaders`, are deprecated.
 - **The compiler checks the answer.** The handler must be `async` and what it returns, once
   enveloped by `SuccessEnvelopeInterceptor`, must be the route's success body; a body that is not
   fails at the decorator, naming `the handler answers outside its route`. `successSchemaOf(route)`

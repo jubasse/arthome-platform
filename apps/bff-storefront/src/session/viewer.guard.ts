@@ -16,6 +16,7 @@ import { SESSION_VALIDATION_BUDGET_MS, serviceCallFor } from '../upstream/servic
  * "The BFF, and it alone, validates the session" (`adr-auth.md` §8): on a route marked
  *   `RequiresViewer`, identity resolves the presented session before anything else runs. Elsewhere
  *   nothing is resolved, so a public read never waits on identity.
+ * @deprecated Replaced by `EndpointAccessGuard` and `ViewerIdentity` as routes declare an access.
  */
 @Injectable()
 export class ViewerGuard implements CanActivate {

@@ -19,7 +19,10 @@ import { viewerOf } from '../session/viewer.js';
 
 export type AuthRateLimitName = keyof typeof AuthRateLimit;
 
-/** The caps a route counts against, by their name in core's `AuthRateLimit`. */
+/**
+ * The caps a route counts against, by their name in core's `AuthRateLimit`.
+ * @deprecated A route declares `requires(throttle(cap))`, which `ThrottleRule` counts.
+ */
 export const RateLimitedBy: ReflectableDecorator<
   readonly AuthRateLimitName[],
   readonly AuthRateLimitName[]
