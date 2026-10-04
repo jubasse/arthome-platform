@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { defineApi, defineRoute } from '@arthome/contracts/http';
 
 import { mountDevDocs } from './dev-docs.js';
-import { Endpoint } from './endpoint.js';
+import { Endpoint, enableUriVersioning } from './endpoint.js';
 
 const Order = z.object({ id: z.string(), total: z.number() });
 
@@ -56,6 +56,7 @@ async function started(environment: Record<string, string>): Promise<NestFastify
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
   });
+  enableUriVersioning(app);
   mountDevDocs(app, api, { title: 'Orders service', path: 'docs', environment });
   await app.init();
   await app.getHttpAdapter().getInstance().ready();

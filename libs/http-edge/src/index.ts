@@ -58,6 +58,7 @@ export {
   EndpointHeaders,
   EndpointParams,
   EndpointQuery,
+  enableUriVersioning,
   successSchemaOf,
 } from './endpoint.js';
 export type { EndpointDecorator } from './endpoint.js';

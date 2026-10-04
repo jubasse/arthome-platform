@@ -11,9 +11,12 @@ import {
   Put,
   Query,
   StandardSchemaValidationPipe,
+  Version,
   applyDecorators,
   createParamDecorator,
+  VersioningType,
   type ExecutionContext,
+  type INestApplication,
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
@@ -51,7 +54,7 @@ const ROUTE_METHOD: Record<HttpMethod, (path: string) => MethodDecorator> = {
   patch: Patch,
 };
 
-/** `/v1/dates/{dateId}` as the router reads it, `/v1/dates/:dateId`. */
+/** `/dates/{dateId}` as the router reads it, `/dates/:dateId`: the version is Nest's, not the path's. */
 function routerPathOf(path: string): string {
   return path.replace(/\{([^}]+)\}/g, ':$1');
 }
@@ -100,6 +103,11 @@ export type EndpointDecorator<R extends RouteShape> = <
   descriptor: TypedPropertyDescriptor<Handler> & AnswerCheck<R, NoInfer<Handler>>,
 ) => void;
 
+/** Binds `Version` on every `Endpoint`: call before `mountDevDocs`, whose document is built after it. */
+export function enableUriVersioning(app: INestApplication): void {
+  app.enableVersioning({ type: VersioningType.URI });
+}
+
 /** `{}` is a call with no credential at all, which a decorator spells as an empty requirement. */
 function securityOf(requirements: readonly SecurityRequirement[]): MethodDecorator[] {
   if (requirements.length === 0) return [ApiSecurity({})];
@@ -144,7 +152,8 @@ function responseDocumentationOf(route: RouteShape): MethodDecorator[] {
  */
 export function Endpoint<R extends Route>(route: R): EndpointDecorator<R> {
   const decorators = applyDecorators(
-    ROUTE_METHOD[route.method](routerPathOf(versionedPath(route))),
+    ROUTE_METHOD[route.method](routerPathOf(route.path)),
+    Version(String(route.version)),
     HttpCode(successStatusOf(route)),
     ApiOperation({
       operationId: route.operationId,

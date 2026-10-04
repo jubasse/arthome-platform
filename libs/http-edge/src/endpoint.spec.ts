@@ -103,6 +103,7 @@ beforeAll(async () => {
   app = await httpApp({
     imports: [DatesModule],
     providers: [],
+    uriVersioning: true,
     caller: { service: Service.CATALOG, clock: new FixedClock(Date.now()) },
   });
 });
@@ -126,6 +127,20 @@ function rename(
 }
 
 describe('a handler bound to its route', () => {
+  it('answers on /v1 and nowhere else: the version is Nest’s, so /v1/v1 is not a route', async () => {
+    const send = (url: string): ReturnType<typeof app.inject> =>
+      app.inject({
+        method: 'POST',
+        url,
+        headers: { 'x-arthome-surface': 'tv' },
+        payload: { title: 'Nuit' },
+      });
+
+    expect((await send('/v1/dates/d1/title')).statusCode).toBe(201);
+    expect((await send('/v1/v1/dates/d1/title')).statusCode).toBe(404);
+    expect((await send('/dates/d1/title')).statusCode).toBe(404);
+  });
+
   it('answers on the route’s path and status, with its inputs decoded from the wire', async () => {
     const response = await rename({ notify: 'true' }, { title: 'Nuit' });
 

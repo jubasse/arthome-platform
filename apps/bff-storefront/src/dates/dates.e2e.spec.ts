@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+import { enableUriVersioning } from '@arthome-platform/http-edge';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -68,6 +69,7 @@ beforeAll(async () => {
     logger: false,
   });
   answerNotModified(app);
+  enableUriVersioning(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
 });

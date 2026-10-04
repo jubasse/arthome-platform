@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 
-import { mountDevDocs } from '@arthome-platform/http-edge';
+import { enableUriVersioning, mountDevDocs } from '@arthome-platform/http-edge';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 
@@ -20,6 +20,7 @@ async function bootstrap(): Promise<void> {
   answerNotModified(app);
   // Same limits as the services: no drain window yet, so a rollout still cuts in-flight requests.
   app.enableShutdownHooks();
+  enableUriVersioning(app);
   mountDevDocs(app, storefrontApi, {
     title: String(storefrontApi.info.title),
     description: String(storefrontApi.info.description),

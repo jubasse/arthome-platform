@@ -227,7 +227,7 @@ no credential) is `ApiSecurity({})`.
 ```ts
 const { getDateDetail } = storefrontApi.routes;
 
-@Controller() // the contract's path already holds `/v1`
+@Controller() // the route's path is unversioned: `Endpoint` adds Nest's `@Version`
 export class DatesController {
   @Endpoint(getDateDetail)
   public async detail(
@@ -237,6 +237,10 @@ export class DatesController {
 }
 ```
 
+- **Versioning is Nest's.** `Endpoint` routes `route.path` (without `/v1`) and adds
+  `Version(String(route.version))`; the app calls `enableUriVersioning(app)` (http-edge) before
+  `mountDevDocs`, and a suite passes `uriVersioning: true` to `httpApp` or calls it itself. Never route
+  `versionedPath(route)`: with versioning on it answers on `/v1/v1/...`.
 - **Inputs** are bound by `EndpointParams`, `EndpointQuery`, `EndpointBody` (real `@Param`,
   `@Query`, `@Body` with `{ schema }`, run by the global `StandardSchemaValidationPipe`) and
   `EndpointHeaders` (a custom parameter decorator with its own pipe: `@Headers()` takes no
@@ -245,12 +249,9 @@ export class DatesController {
   enveloped by `SuccessEnvelopeInterceptor`, must be the route's success body; a body that is not
   fails at the decorator, naming `the handler answers outside its route`. `successSchemaOf(route)`
   is the success body's schema, for a relay that validates an upstream answer.
-- **A service that narrows the contract** (catalog's search refuses the tabs it cannot answer,
-  ticketing's purchase takes a null contribution only) keeps its own `@Query({ schema })` or
-  `@Body({ schema })` beside `@Endpoint(route)`: the route, the status and the documented answer
-  are the contract's, the narrower input is what the service accepts. A service whose answer is
-  not the contract's body (the ticket's `date` card is composed by the BFF; the studio's
-  `rightsVersion` by the studio BFF) does not bind that route: the compiler refuses it.
+- **Only the storefront BFF binds the public contract.** Catalog and ticketing keep their own
+  routes until their INTERNAL contracts exist (their paths and headers differ); they are not bound
+  here and serve no Swagger UI.
 - **Guards are unchanged**: routes register through Nest controllers, so `InternalTokenGuard` and
   `DenyInProductionGuard` apply, and `@AllowInProduction()` stays where it was.
 - **Swagger UI, in development only**: `mountDevDocs(app, api, { title, path: 'docs' })` in
@@ -262,8 +263,6 @@ export class DatesController {
 | Process | Development port | Swagger UI | Operations |
 | --- | --- | --- | --- |
 | `bff-storefront` | 3003 | `http://localhost:3003/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink, signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification, getViewerContext |
-| `catalog` | 3002 | `http://localhost:3002/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink |
-| `ticketing` | 3004 | `http://localhost:3004/docs` | quoteSeat, refreshDateAvailability |
 
 `@nestjs/swagger` is a peer of `libs/http-edge`; `@fastify/static` serves the UI on Fastify, and
 `@scarf/scarf` (swagger-ui-dist's telemetry install script) is denied in `pnpm-workspace.yaml`.

@@ -1,6 +1,7 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+import { enableUriVersioning } from '@arthome-platform/http-edge';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -63,6 +64,7 @@ beforeAll(async () => {
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
   });
+  enableUriVersioning(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
 });
@@ -87,6 +89,15 @@ describe('GET /v1/search on the storefront BFF', () => {
     expect(response.headers.vary).toContain('X-Arthome-Surface');
     expect(response.json()).toMatchObject({ validUntil: '2026-09-26T20:30:00.000Z', ...PAGE });
     expect(catalogSaw?.url).toBe('/v1/search?q=nuit&genreIds=dance');
+  });
+
+  it('is served under /v1 once, and /v1/v1 is not a route', async () => {
+    const headers = { 'x-arthome-surface': Surface.STOREFRONT_TV };
+
+    expect((await app.inject({ method: 'GET', url: '/v1/search', headers })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/v1/v1/search', headers })).statusCode).toBe(
+      404,
+    );
   });
 
   it('gives catalog a deadline 200 ms out, and a trace when the surface sent none', async () => {
