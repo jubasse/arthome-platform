@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 
-import { sensitivePathsOf } from '@arthome/contracts/http';
+import { sensitivePathsOf, type Route } from '@arthome/contracts/http';
 
 const REMOVED: unique symbol = Symbol('field to remove');
 
@@ -41,19 +41,38 @@ export function withoutPath(value: unknown, path: string): unknown {
 
 export const REDACTED = '[redacted]';
 
-const sensitivePathsBySchema = new WeakMap<z.ZodType, readonly string[]>();
+const sensitivePathsBySource = new WeakMap<object, readonly string[]>();
+
+function schemasOf(route: Route): z.ZodType[] {
+  const bodies = [
+    route.requestBody?.content['application/json']?.schema,
+    ...Object.values(route.responses).map(
+      (response) => response.content?.['application/json']?.schema,
+    ),
+  ];
+  return bodies.filter((schema): schema is z.ZodType => schema !== undefined);
+}
+
+function isSchema(source: Route | z.ZodType): source is z.ZodType {
+  return '_zod' in source;
+}
+
+function sensitivePathsFrom(source: Route | z.ZodType): readonly string[] {
+  const known = sensitivePathsBySource.get(source);
+  if (known !== undefined) return known;
+  const schemas = isSchema(source) ? [source] : schemasOf(source);
+  const paths = [...new Set(schemas.flatMap((schema) => sensitivePathsOf(schema)))];
+  sensitivePathsBySource.set(source, paths);
+  return paths;
+}
 
 /**
- * A copy of a body fit for a log line: every field the schema marks `sensitive` (a password, a
- *   token, a stream key) replaced by `[redacted]` (ADR contract model §9.7).
+ * A copy of a body fit for a log line or a trace attribute: every field marked `sensitive` (a
+ *   password, a token, a stream key) replaced by `[redacted]` (ADR contract model §9.7). Given a
+ *   route, the marks of its request body and of every response it declares.
  */
-export function redactSensitive(schema: z.ZodType, value: unknown): unknown {
-  let paths = sensitivePathsBySchema.get(schema);
-  if (paths === undefined) {
-    paths = sensitivePathsOf(schema);
-    sensitivePathsBySchema.set(schema, paths);
-  }
-  return paths.reduce<unknown>(
+export function redactSensitive(source: Route | z.ZodType, value: unknown): unknown {
+  return sensitivePathsFrom(source).reduce<unknown>(
     (redacted, path) => edited(redacted, segmentsOf(path), () => REDACTED),
     value,
   );

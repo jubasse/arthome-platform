@@ -20,7 +20,7 @@ export { asConflict } from './conflict.js';
 export { DenyInProductionGuard } from './deny-in-production.guard.js';
 
 export { AllowAnonymous } from './allow-anonymous.js';
-export { InternalTokenGuard } from './internal-token.guard.js';
+export { InternalTokenGuard, ServiceIdentity } from './internal-token.guard.js';
 export { InternalTokenVerifier } from './internal-token.verifier.js';
 export {
   CurrentPrincipal,

@@ -260,7 +260,8 @@ export class DatesController {
   rule's guard in its declared order. The table is the process's, given to `endpointProviders`
   (listed before every other global enhancer): the BFF binds `viewer` (the session, and the CSRF
   token of a cookie write, from the identity's write schemes) and `throttle` (a bucket is a cap of
-  core's `AuthRateLimit`); the services bind none yet. A name with no guard, or a rule its guard
+  core's `AuthRateLimit`); every service binds `service` (`ServiceIdentity`: the internal token,
+  verified as `InternalTokenGuard` does, which leaves a route declaring an access to it). A name with no guard, or a rule its guard
   cannot enforce, fails the boot. The handler receives the identity's principal, stripped to its
   schema: `null` only on an `optionalAuth` route, `undefined` on a public one.
 - **Routes bound without an access keep the legacy guards** until their module opts in, and the boot
@@ -272,8 +273,9 @@ export class DatesController {
   the rights are the principal's `rights` and `signedIn` for any identified caller), `Cache-Control`
   and `Vary` come from the route's `cache`, `no-store` from a sensitive field in the answer, and an
   identity's own headers from its guard (the studio's rights version).
-- **A body is logged only through `redactSensitive(schema, body)`** (http-edge): every field the
-  schema marks `sensitive`, a password, a token, a stream key, becomes `[redacted]`.
+- **A body, or a trace attribute holding one, is logged only through `redactSensitive(route, body)`**
+  (http-edge; a schema works too): every field the route marks `sensitive`, a password, a token, a
+  stream key, becomes `[redacted]`.
 - **Budgets are the routes'** (transport.md §5.9). A BFF handler gives its calls the deadline of
   its own route's budget, `serviceCallFor(..., budgetOf(route), ...)`, and a call to a route that
   declares a budget of its own is given up at its end when that comes first,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { sensitive } from '@arthome/contracts/http';
+import { defineRoute, sensitive } from '@arthome/contracts/http';
 
 import { REDACTED, redactSensitive, withoutPath } from './schema-paths.js';
 
@@ -55,6 +55,35 @@ describe('redactSensitive', () => {
   it('adds no field a body did not carry', () => {
     expect(redactSensitive(schema, { email: 'marie@example.test' })).toEqual({
       email: 'marie@example.test',
+    });
+  });
+});
+
+describe('redactSensitive, given a route', () => {
+  const rotateKey = defineRoute({
+    method: 'post',
+    version: 1,
+    path: '/channels/{channelId}/stream-key',
+    operationId: 'rotateKey',
+    requestBody: {
+      content: { 'application/json': { schema: z.object({ reauthToken: sensitive(z.string()) }) } },
+    },
+    responses: {
+      200: {
+        description: 'The new key.',
+        content: {
+          'application/json': {
+            schema: z.object({ data: z.object({ streamKey: sensitive(z.string()) }) }),
+          },
+        },
+      },
+    },
+  });
+
+  it('redacts what its request body and its responses mark sensitive', () => {
+    expect(redactSensitive(rotateKey, { reauthToken: 'rt_1' })).toEqual({ reauthToken: REDACTED });
+    expect(redactSensitive(rotateKey, { data: { streamKey: 'sk_1' } })).toEqual({
+      data: { streamKey: REDACTED },
     });
   });
 });

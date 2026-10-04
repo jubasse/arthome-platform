@@ -14,6 +14,7 @@ import { Service, SystemClock } from '@arthome/core';
 
 import { edgeProviders } from './edge-providers.js';
 import { ENDPOINT_GUARDS, EndpointGuardsCheck } from './endpoint-access.js';
+import { ServiceIdentity } from './internal-token.guard.js';
 import { InternalTokenVerifier } from './internal-token.verifier.js';
 import { JsonBodiesOnly } from './json-bodies-only.js';
 
@@ -40,6 +41,7 @@ describe('edgeProviders', () => {
       DiscoveryService,
       MetadataScanner,
       EndpointGuardsCheck,
+      ServiceIdentity,
       APP_PIPE,
       APP_FILTER,
       APP_INTERCEPTOR,
