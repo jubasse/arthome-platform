@@ -108,21 +108,12 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
     }
 
     if (exception instanceof HttpException) {
-      const status = exception.getStatus();
-      if (exception.errorCode === undefined && !isMappedStatus(status)) {
-        // A status nobody designed a code for. The response is honest rather than invented,
-        // and the log is what gets the mapping written.
-        this.logger.error(
-          `No error code declared for status ${String(status)}; answered it anyway.`,
-        );
-      }
-      const fallback = refusalForStatus(status);
-      return {
-        status,
-        // `getResponse()` is NOT spread in: for a built-in exception it holds an English
-        // `message`, which §5.5 forbids.
-        refusal: { ...fallback, code: exception.errorCode ?? fallback.code },
-      };
+      return this.resolveStatus(exception.getStatus(), exception.errorCode);
+    }
+
+    const refusedByFastify = fastifyRefusalStatusOf(exception);
+    if (refusedByFastify !== null) {
+      return this.resolveStatus(refusedByFastify, undefined);
     }
 
     // An unknown error's message carries SQL, connection strings and stack frames, so it
@@ -132,6 +123,23 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
       status: HttpStatus.INTERNAL_SERVER_ERROR,
       refusal: refusalForStatus(HttpStatus.INTERNAL_SERVER_ERROR),
     };
+  }
+
+  /**
+   * `getResponse()` is NOT spread in: for a built-in exception it holds an English `message`, which
+   *   §5.5 forbids.
+   */
+  private resolveStatus(
+    status: number,
+    errorCode: string | undefined,
+  ): { status: number; refusal: Refusal } {
+    if (errorCode === undefined && !isMappedStatus(status)) {
+      // A status nobody designed a code for. The response is honest rather than invented, and the
+      // log is what gets the mapping written.
+      this.logger.error(`No error code declared for status ${String(status)}; answered it anyway.`);
+    }
+    const fallback = refusalForStatus(status);
+    return { status, refusal: { ...fallback, code: errorCode ?? fallback.code } };
   }
 
   /**
@@ -198,6 +206,20 @@ function postgresErrorCodeOf(error: unknown): string | null {
     }
   }
   return 'code' in error && typeof error.code === 'string' ? error.code : null;
+}
+
+/**
+ * A refusal Fastify raised inside a handler, where Nest's adapter does not map it: only what its
+ *   error handler catches goes through `mapException`. Read as Nest's `isHttpFastifyError` does.
+ */
+function fastifyRefusalStatusOf(error: unknown): number | null {
+  if (!(error instanceof Error) || error.name !== 'FastifyError' || !('statusCode' in error)) {
+    return null;
+  }
+  const { statusCode } = error;
+  return typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500
+    ? statusCode
+    : null;
 }
 
 function constraintNameOf(error: unknown): string | null {

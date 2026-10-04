@@ -32,6 +32,7 @@ export {
 export type { Principal } from './principal.js';
 
 export { edgeProviders } from './edge-providers.js';
+export { JsonBodiesOnly } from './json-bodies-only.js';
 export type { EdgeOptions } from './edge-providers.js';
 
 export {

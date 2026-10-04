@@ -15,6 +15,7 @@ import { DenyInProductionGuard } from './deny-in-production.guard.js';
 import { ErrorEnvelopeFilter } from './error-envelope.filter.js';
 import { InternalTokenGuard } from './internal-token.guard.js';
 import { InternalTokenVerifier } from './internal-token.verifier.js';
+import { JsonBodiesOnly } from './json-bodies-only.js';
 import { schemaInvalidException, type UniqueViolationCode } from './refusal.js';
 import { SuccessEnvelopeInterceptor } from './success-envelope.interceptor.js';
 
@@ -73,5 +74,6 @@ export function edgeProviders({ service, clock, uniqueViolations = [] }: EdgeOpt
         new DenyInProductionGuard(isProductionEnvironment(), reflector),
     },
     { provide: clock, useValue: new SystemClock() },
+    { provide: JsonBodiesOnly, useClass: JsonBodiesOnly },
   ];
 }

@@ -106,6 +106,11 @@ function uniqueViolation(constraint: string, column: string, value: string): Err
   return Object.assign(new Error(driverError.message), { ...driverError, driverError });
 }
 
+/** Shaped as `@fastify/error` builds one: the name every Fastify error shares, its code, its status. */
+function fastifyError(code: string, statusCode: number, message: string): Error {
+  return Object.assign(new Error(message), { name: 'FastifyError', code, statusCode });
+}
+
 const emailCollision = (): Error =>
   uniqueViolation('account_email_key', 'email', 'marie@example.test');
 const handleCollision = (): Error =>
@@ -279,6 +284,28 @@ describe('ErrorEnvelopeFilter', () => {
     const { run, sent } = filterFor();
     run(new NotFoundException('gone', { errorCode: ApiErrorCode.CURSOR_TOO_OLD }));
     expect(sent.body).toMatchObject({ error: { code: ApiErrorCode.CURSOR_TOO_OLD } });
+  });
+
+  it('answers a Fastify refusal raised inside a handler with its status, never its message', () => {
+    // Nest maps a Fastify error to its status only in Fastify's own error handler; one thrown from
+    // inside a handler reaches this filter as it is.
+    const { run, sent } = filterFor();
+    run(fastifyError('FST_ERR_CTP_INVALID_JSON_BODY', 400, 'Body is not valid JSON'));
+
+    expect(sent.status).toBe(HttpStatus.BAD_REQUEST);
+    expect(sent.body).toMatchObject({
+      error: { code: ApiErrorCode.SCHEMA_INVALID, nature: FailureNature.REFUSED, params: {} },
+    });
+    expect(JSON.stringify(sent.body)).not.toContain('JSON');
+  });
+
+  it('answers a Fastify failure of its own as any unknown error', () => {
+    const { run, sent } = filterFor();
+    run(fastifyError('FST_ERR_REP_ALREADY_SENT', 500, 'Reply was already sent'));
+
+    expect(sent.status).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+    expect(sent.body).toMatchObject({ error: { code: ApiErrorCode.INTERNAL } });
+    expect(logged).toEqual([{ level: 'error', message: 'Unhandled error; answered 500.' }]);
   });
 
   it('distinguishes 503 from 500, which one substitute code used to collapse', () => {

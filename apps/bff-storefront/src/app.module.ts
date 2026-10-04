@@ -3,6 +3,7 @@ import {
   DenyInProductionGuard,
   ErrorEnvelopeFilter,
   HealthController,
+  JsonBodiesOnly,
   READINESS_CHECKS,
   SuccessEnvelopeInterceptor,
   schemaInvalidException,
@@ -91,6 +92,7 @@ import { TraceparentMiddleware } from './traceparent.middleware.js';
     { provide: CLOCK, useValue: new SystemClock() },
     { provide: CSRF_SECRET, useValue: authEnv.csrfSecret },
     EdgePlugins,
+    JsonBodiesOnly,
     // Nothing downstream: a catalog outage fails the searches, not the BFF's place in rotation.
     { provide: READINESS_CHECKS, useValue: [] satisfies ReadinessCheck[] },
   ],

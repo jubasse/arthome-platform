@@ -12,6 +12,7 @@ import { Service, SystemClock } from '@arthome/core';
 
 import { edgeProviders } from './edge-providers.js';
 import { InternalTokenVerifier } from './internal-token.verifier.js';
+import { JsonBodiesOnly } from './json-bodies-only.js';
 
 const CLOCK = Symbol('Clock');
 
@@ -35,6 +36,7 @@ describe('edgeProviders', () => {
       APP_GUARD,
       APP_GUARD,
       CLOCK,
+      JsonBodiesOnly,
     ]);
     expect(providerOf(CLOCK)?.useValue).toBeInstanceOf(SystemClock);
   });
