@@ -71,7 +71,10 @@ export class Publication {
   public advancedFrom(expectedVersion: number): Publication {
     const { state, version } = this.snapshot;
     if (version !== expectedVersion) {
-      throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { state, version } });
+      throw new DomainError({
+        code: DomainErrorCode.STATE_CONFLICT,
+        params: { currentVersion: version, state },
+      });
     }
     return new Publication({ ...this.snapshot, version: version + 1 });
   }

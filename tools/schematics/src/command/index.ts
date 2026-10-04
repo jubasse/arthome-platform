@@ -82,7 +82,7 @@ const ADVANCED_FROM = `
   private advancedFrom(expectedVersion: number): number {
     const { version } = this.current;
     if (version !== expectedVersion) {
-      throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { version } });
+      throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { currentVersion: version } });
     }
     return version + 1;
   }`;
@@ -169,7 +169,7 @@ function decideThroughAggregate(
   it('${method} refuses a version it was not given, naming the current one', () => {
     const ${aggregate.camel} = ${aggregate.pascal}.restore({ ${aggregate.id}: ${constant}, version: 2 });
     const refusal = refusalOf(() => ${aggregate.camel}.${method}(1, NOW));
-    expect([refusal.code, refusal.params]).toEqual([DomainErrorCode.STATE_CONFLICT, { version: 2 }]);
+    expect([refusal.code, refusal.params]).toEqual([DomainErrorCode.STATE_CONFLICT, { currentVersion: 2 }]);
     expect(${aggregate.camel}.getUncommittedEvents()).toEqual([]);
   });`,
       );

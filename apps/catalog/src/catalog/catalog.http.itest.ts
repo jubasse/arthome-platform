@@ -249,7 +249,7 @@ describe('the show, venue and artist routes over HTTP', () => {
         error: {
           code: DomainErrorCode.STATE_CONFLICT,
           nature: FailureNature.REFUSED,
-          params: { version: 1 },
+          params: { currentVersion: 1 },
         },
       });
     },

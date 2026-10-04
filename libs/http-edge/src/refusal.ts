@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
-import { ApiErrorCode, DomainErrorCode, FailureNature, type MessageParams } from '@arthome/core';
+import { ApiErrorCode, DomainErrorCode, FailureNature } from '@arthome/core';
 
 /**
  * The one error shape this project has (transport.md §5.5, critical-rules #8): a code, its
@@ -150,11 +150,11 @@ export function notFound(): RefusalException {
   });
 }
 
-/** A command sent against a version that has moved, naming what the caller must read again. */
-export function stateConflict(params: MessageParams): RefusalException {
+/** A command sent against a version that has moved, naming the version the caller must read again. */
+export function stateConflict(currentVersion: number): RefusalException {
   return new RefusalException(HttpStatus.CONFLICT, {
     code: DomainErrorCode.STATE_CONFLICT,
-    params,
+    params: { currentVersion },
     nature: FailureNature.REFUSED,
   });
 }

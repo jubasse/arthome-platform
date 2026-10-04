@@ -296,7 +296,7 @@ describe('setDatePrices', () => {
       expect(refusal.getStatus()).toBe(409);
       expect(refusal.refusal).toMatchObject({
         code: DomainErrorCode.STATE_CONFLICT,
-        params: { version: 2 },
+        params: { currentVersion: 2 },
       });
       expect(await outboxRowsFor(dateId)).toHaveLength(1);
     },
@@ -317,7 +317,7 @@ describe('setDatePrices', () => {
       expect(rejected?.reason).toBeInstanceOf(RefusalException);
       expect((rejected?.reason as RefusalException).refusal).toMatchObject({
         code: DomainErrorCode.STATE_CONFLICT,
-        params: { version: 2 },
+        params: { currentVersion: 2 },
       });
       expect((await rowOf(dateId)).version).toBe(2);
     },
@@ -588,8 +588,8 @@ describe('a sale an outcome closed', () => {
 
       expect(refusal.getStatus()).toBe(409);
       expect(refusal.refusal).toMatchObject({
-        code: DomainErrorCode.STATE_CONFLICT,
-        params: { version: 4, outcome: DateOutcome.CANCELLED },
+        code: CatalogErrorCode.OUTCOME_FINAL,
+        params: { outcome: DateOutcome.CANCELLED },
       });
       expect((await rowOf(dateId)).capacity_total).toBe(50);
     },

@@ -59,7 +59,7 @@ export class UpdateChannelIdentityHandler implements ICommandHandler<UpdateChann
       lock: { mode: 'pessimistic_write' },
     });
     const version = current?.version ?? 0;
-    if (body.expectedVersion !== version) throw stateConflict({ version });
+    if (body.expectedVersion !== version) throw stateConflict(version);
 
     const id = current?.id ?? uuidv7();
     const publicName = body.publicName ?? current?.public_name;

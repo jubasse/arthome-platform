@@ -190,7 +190,7 @@ describe('PUT /v1/dates/:dateId/prices', () => {
       expect(stale.json()).toMatchObject({
         error: {
           code: DomainErrorCode.STATE_CONFLICT,
-          params: { version: 2 },
+          params: { currentVersion: 2 },
           nature: FailureNature.REFUSED,
         },
       });

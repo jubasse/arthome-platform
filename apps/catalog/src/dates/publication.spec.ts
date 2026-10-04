@@ -56,7 +56,7 @@ describe('Publication', () => {
 
     expect(isDomainError(refusal) && [refusal.code, refusal.params]).toEqual([
       DomainErrorCode.STATE_CONFLICT,
-      { state: PublicationState.SCHEDULED, version: 3 },
+      { currentVersion: 3, state: PublicationState.SCHEDULED },
     ]);
     expect(publication.snapshot.version).toBe(3);
   });

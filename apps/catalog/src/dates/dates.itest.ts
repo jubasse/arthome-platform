@@ -400,7 +400,7 @@ describe('a publication transition', () => {
       expect(refusal.getStatus()).toBe(409);
       expect(refusal.refusal).toMatchObject({
         code: DomainErrorCode.STATE_CONFLICT,
-        params: { state: PublicationState.RESERVE, version: 2 },
+        params: { currentVersion: 2, state: PublicationState.RESERVE },
       });
     },
     CASE_MS,
@@ -988,7 +988,7 @@ describe('a date outcome', () => {
       const stale = await refusalOf(declare(dateId, DateOutcome.CANCELLED, 2));
       expect(stale.refusal).toMatchObject({
         code: DomainErrorCode.STATE_CONFLICT,
-        params: { state: PublicationState.SCHEDULED, version: 3 },
+        params: { currentVersion: 3, state: PublicationState.SCHEDULED },
       });
       await declare(dateId, DateOutcome.POSTPONED, 3, '2026-11-19T19:30:00.000Z');
       await declare(dateId, DateOutcome.POSTPONED, 4, '2026-11-26T19:30:00.000Z');
@@ -1064,7 +1064,7 @@ describe('a date outcome', () => {
 
       const early = await refusalOf(declare(dateId, DateOutcome.INTERRUPTED, 2));
       expect(early.refusal).toMatchObject({
-        code: DomainErrorCode.STATE_CONFLICT,
+        code: CatalogErrorCode.DATE_NOT_STARTED,
         params: { startsAt: '2026-11-04T19:30:00.000Z' },
       });
 

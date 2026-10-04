@@ -2456,6 +2456,28 @@ document (a constraint is neither added nor dropped), which is the ground they w
 tenth-and-later equivalence is a ruling and goes through `DECISIONS.md`, never into a comparator
 alone. Everything outside a schema node was compared exactly, except number 10.
 
+### 5.12 Declaring a contract route
+
+`@arthome/contracts` is the one place a route is declared (D-120, D-121, D-122); `packages/contracts/README.md`
+holds the model, and these are the rules a reviewer holds it to:
+
+- **Every exported route has an explicit annotation** (`isolatedDeclarations`), and the annotation
+  is checked against what the declaration builds. `node tools/sync-route-annotations.mjs <module.ts>`
+  writes the four members a conversion changes (`method`, `path`, `parameters`, `access`); `--check`
+  reports an annotation out of line. The annotation lists the route's own statuses, never the derived
+  ones.
+- **A convention is declared through a resource, not copied.** A route spells its own parameters,
+  body and responses only where it differs from the convention, and says so in the member's options.
+- **No `security` beside an identity**, and no hand-written `403` for a CSRF refusal: the identity
+  writes both.
+- **A path segment that shares its spelling with an enumeration** (`'chat'`, `'crew'`, `'duplicate'`)
+  is an `enum-literals.allow.json` entry with its reason, never an import of the vocabulary.
+- **`check-openapi` R10** accepts the shared `ErrorEnvelope`, or a `oneOf` of one envelope per code
+  where a route adds a domain code.
+- **The generated documents may move** with a conversion (derived errors, derived security, the
+  parameters a convention adds) until the first client ships (`transport.md` §5.11); the commit that
+  moves them lists each kind of change.
+
 ## 6. What legitimately stays specific to each stack
 
 **The principle.** Unify what travels from one repository to another — names, errors, imports, tests,

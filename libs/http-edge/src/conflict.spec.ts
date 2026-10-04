@@ -31,14 +31,17 @@ describe('asConflict', () => {
   it('answers a domain refusal 409, its code, params and nature kept', async () => {
     const refusal = await refusalOf(
       asConflict(() => {
-        throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { version: 3 } });
+        throw new DomainError({
+          code: DomainErrorCode.STATE_CONFLICT,
+          params: { currentVersion: 3 },
+        });
       }),
     );
 
     expect(refusal.getStatus()).toBe(HttpStatus.CONFLICT);
     expect(refusal.refusal).toEqual({
       code: DomainErrorCode.STATE_CONFLICT,
-      params: { version: 3 },
+      params: { currentVersion: 3 },
       nature: FailureNature.REFUSED,
     });
   });

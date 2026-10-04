@@ -65,7 +65,7 @@ export class TypeOrmPerformanceDateRepository extends PerformanceDateRepository 
         { date_id: id },
         loadedVersion,
         publicationColumnsOf(date.publication),
-        ({ state, version }) => ({ state, version }),
+        ({ state, version }) => ({ currentVersion: version, state }),
       );
       if (date.snapshot !== this.storedSnapshots.get(date)) {
         await this.manager.update(PerformanceDateRow, { id }, dateColumnsOf(date.snapshot));

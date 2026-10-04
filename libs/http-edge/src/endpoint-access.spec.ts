@@ -52,7 +52,7 @@ const member = identity('member', {
 
 const gold = requirement('tier', {
   params: { level: 'gold' },
-  errors: { 403: [ApiErrorCode.FORBIDDEN] },
+  errors: [ApiErrorCode.FORBIDDEN],
 });
 
 const envelope = <S extends z.ZodType>(data: S) => z.looseObject({ servedAt: z.string(), data });

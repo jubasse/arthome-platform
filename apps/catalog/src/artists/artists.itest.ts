@@ -129,7 +129,7 @@ describe('a channel’s public face', () => {
       const stale = await refusalOf(edit('channel-a', { expectedVersion: 0, publicName: 'Autre' }));
       expect(stale.refusal).toMatchObject({
         code: DomainErrorCode.STATE_CONFLICT,
-        params: { version: 1 },
+        params: { currentVersion: 1 },
       });
 
       const nameless = await refusalOf(edit('channel-b', { expectedVersion: 0 }));

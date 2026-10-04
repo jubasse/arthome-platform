@@ -106,7 +106,7 @@ export class TypeOrmSeatOrderRepository extends SeatOrderRepository {
       { id: current.id },
       loadedVersion,
       orderStateColumnsOf(current),
-      ({ version }) => ({ version }),
+      ({ version }) => ({ currentVersion: version }),
     );
     const stored = this.storedSeats.get(order) ?? new Set<string>();
     const added = current.seats.filter(({ id }) => !stored.has(id));
