@@ -17,7 +17,7 @@ import { Endpoint, serveEndpoints } from './endpoint.js';
 
 /**
  * The `service` identity bound by every service, on fixture routes: core declares it with the
- *   internal contracts (D-121), under this name.
+ *   internal contracts (D-121), under this name. A public route needs the service's allow-list.
  */
 
 const ACCOUNT = '01a0e700-0000-7000-8000-0000000000c1';
@@ -68,7 +68,10 @@ class OverlayController {
   ): Promise<{ caller: string }> {
     return Promise.resolve({ caller: JSON.stringify(principal) });
   }
+}
 
+@Controller()
+class WebhookController {
   @Endpoint(takeWebhook)
   public async takeWebhook(): Promise<{ caller: string }> {
     return Promise.resolve({ caller: 'nobody' });
@@ -82,6 +85,22 @@ const CLOCK = Symbol('Clock');
   providers: edgeProviders({ service: Service.CATALOG, clock: CLOCK }),
 })
 class OverlayModule {}
+
+@Module({
+  controllers: [WebhookController],
+  providers: edgeProviders({ service: Service.CATALOG, clock: CLOCK }),
+})
+class StrayPublicModule {}
+
+@Module({
+  controllers: [WebhookController],
+  providers: edgeProviders({
+    service: Service.CATALOG,
+    clock: CLOCK,
+    publicRoutes: ['takeWebhook'],
+  }),
+})
+class AllowedPublicModule {}
 
 const clock = new FixedClock(Date.now());
 let app: Awaited<ReturnType<typeof httpApp>>;
@@ -125,9 +144,23 @@ describe('the service identity', () => {
     expect(without.json()).toMatchObject({ error: { code: ApiErrorCode.UNAUTHENTICATED } });
     expect(malformed.statusCode).toBe(401);
   });
+});
 
-  it('lets a route the contract declares public through without a token', async () => {
-    const response = await anonymous.inject({ method: 'POST', url: '/v1/webhook' });
+describe('a public route on a service', () => {
+  it('fails the boot, since the internal token is a service’s only authorisation', async () => {
+    await expect(
+      httpApp({ imports: [StrayPublicModule], providers: [], configure: serveEndpoints }),
+    ).rejects.toThrow(/takeWebhook \(public on a service\)/);
+  });
+
+  it('answers without a token when the service names it in its allow-list', async () => {
+    const allowed = await httpApp({
+      imports: [AllowedPublicModule],
+      providers: [],
+      configure: serveEndpoints,
+    });
+    const response = await allowed.inject({ method: 'POST', url: '/v1/webhook' });
+    await allowed.close();
 
     expect(response.statusCode).toBe(200);
   });

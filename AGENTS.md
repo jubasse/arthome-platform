@@ -263,7 +263,10 @@ export class DatesController {
   (listed before every other global enhancer): the BFF binds `viewer` (the session, and the CSRF
   token of a cookie write, from the identity's write schemes) and `throttle` (a bucket is a cap of
   core's `AuthRateLimit`); every service binds `service` (`ServiceIdentity`: the internal token,
-  verified as `InternalTokenGuard` does, which leaves a route declaring an access to it). A name with no guard, or a rule its guard
+  verified as `InternalTokenGuard` does, which leaves a route declaring an access to it). On a
+  service, a route the contract declares public fails the boot unless `edgeProviders`'
+  `publicRoutes` names it (empty today): reached in the cluster without TLS, a service has the
+  token as its only authorisation (transport.md §5.1). A name with no guard, or a rule its guard
   cannot enforce, fails the boot. The handler receives the identity's principal, stripped to its
   schema: `null` only on an `optionalAuth` route, `undefined` on a public one.
 - **Routes bound without an access keep the legacy guards** until their module opts in, and the boot

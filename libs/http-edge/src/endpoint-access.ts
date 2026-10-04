@@ -43,6 +43,11 @@ export interface RuleGuard {
 export interface EndpointGuards {
   readonly identities: Readonly<Record<string, IdentityGuard>>;
   readonly rules: Readonly<Record<string, RuleGuard>>;
+  /**
+   * On a service, the operation ids that may be public: any other public route fails the boot.
+   *   Absent on a BFF, whose public routes are its contract's to declare.
+   */
+  readonly publicAllowed?: readonly string[];
 }
 
 export const ENDPOINT_GUARDS: unique symbol = Symbol('EndpointGuards');
@@ -109,9 +114,9 @@ export class EndpointAccessGuard implements CanActivate {
 }
 
 /**
- * Fails the boot on a route whose identity or rule has no guard, or a rule its guard cannot
- *   enforce, so nothing passes by omission (ADR contract model §4.3), and lists the bound routes
- *   still without `access`.
+ * Fails the boot on a route whose identity or rule has no guard, a rule its guard cannot enforce,
+ *   or a public route on a service outside its allow-list, so nothing passes by omission (ADR
+ *   contract model §4.3), and lists the bound routes still without `access`.
  */
 @Injectable()
 export class EndpointGuardsCheck implements OnModuleInit {
@@ -153,6 +158,13 @@ export class EndpointGuardsCheck implements OnModuleInit {
   }
 
   private unguardedNamesOf(route: Route): string[] {
+    const { publicAllowed } = this.guards;
+    const exposed =
+      route.access?.kind === 'anyone' &&
+      publicAllowed !== undefined &&
+      !publicAllowed.includes(route.operationId)
+        ? [`${route.operationId} (public on a service)`]
+        : [];
     const identity =
       route.access?.kind === 'identified' &&
       this.guards.identities[route.access.identity.name] === undefined
@@ -164,6 +176,6 @@ export class EndpointGuardsCheck implements OnModuleInit {
       const problem = guard.problemWith?.(rule);
       return problem === undefined ? [] : [`${route.operationId} (rule ${rule.name}: ${problem})`];
     });
-    return [...identity, ...rules];
+    return [...exposed, ...identity, ...rules];
   }
 }

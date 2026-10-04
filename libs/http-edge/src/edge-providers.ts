@@ -27,17 +27,33 @@ export interface EdgeOptions {
   readonly clock: InjectionToken;
   /** Every unique constraint a request can collide on: one left out answers 500. */
   readonly uniqueViolations?: readonly UniqueViolationCode[];
+  /**
+   * The operation ids this service serves without the internal token. A service is reached inside
+   *   the cluster without TLS, so the token is its only authorisation (transport.md §5.1): any
+   *   other route the contract declares public fails the boot. Empty today, health being outside
+   *   the contracts.
+   */
+  readonly publicRoutes?: readonly string[];
 }
 
 /**
  * A service's global enhancers and its system clock, bound by its root module and by its HTTP
  *   suites (`httpApp` in `@arthome-platform/testing`), so a suite answers what the service answers.
  */
-export function edgeProviders({ service, clock, uniqueViolations = [] }: EdgeOptions): Provider[] {
+export function edgeProviders({
+  service,
+  clock,
+  uniqueViolations = [],
+  publicRoutes = [],
+}: EdgeOptions): Provider[] {
   return [
     ...endpointProviders({
       inject: [ServiceIdentity],
-      useFactory: (service: ServiceIdentity) => ({ identities: { service }, rules: {} }),
+      useFactory: (identity: ServiceIdentity) => ({
+        identities: { service: identity },
+        rules: {},
+        publicAllowed: publicRoutes,
+      }),
     }),
     ServiceIdentity,
     // Global rather than `@UsePipes` on a method, where the schema would run on every parameter
