@@ -1,6 +1,6 @@
 import { isIPv4 } from 'node:net';
 
-import { RefusalException } from '@arthome-platform/http-edge';
+import { RefusalException, type RuleGuard } from '@arthome-platform/http-edge';
 import { HttpStatus, Injectable, type ExecutionContext } from '@nestjs/common';
 import { Reflector, type ReflectableDecorator } from '@nestjs/core';
 import {
@@ -12,6 +12,7 @@ import {
   type ThrottlerOptions,
 } from '@nestjs/throttler';
 
+import type { Requirement } from '@arthome/contracts/http';
 import { ApiErrorCode, AuthRateLimit, FailureNature, limitForAddress } from '@arthome/core';
 
 import { viewerOf } from '../session/viewer.js';
@@ -95,6 +96,26 @@ export function authThrottlers(reflector: Reflector): ThrottlerOptions[] {
  */
 @Injectable()
 export class AuthThrottlerGuard extends ThrottlerGuard {
+  /** One cap counted for a route that declares it as a rule, past the `skipIf` legacy routes go through. */
+  public async countAgainst(context: ExecutionContext, name: AuthRateLimitName): Promise<void> {
+    const throttler = this.throttlers.find((candidate) => candidate.name === name);
+    const { getTracker, generateKey } = this.commonOptions;
+    if (throttler === undefined || getTracker === undefined || generateKey === undefined) {
+      throw new Error(`No cap named ${name} is bound.`);
+    }
+    const ttl = typeof throttler.ttl === 'function' ? await throttler.ttl(context) : throttler.ttl;
+    await this.handleRequest({
+      context,
+      limit:
+        typeof throttler.limit === 'function' ? await throttler.limit(context) : throttler.limit,
+      ttl,
+      blockDuration: ttl,
+      throttler,
+      getTracker: throttler.getTracker ?? getTracker,
+      generateKey: throttler.generateKey ?? generateKey,
+    });
+  }
+
   protected override throwThrottlingException(
     context: ExecutionContext,
     detail: ThrottlerLimitDetail,
@@ -109,5 +130,26 @@ export class AuthThrottlerGuard extends ThrottlerGuard {
       params: { retryAfterMs },
       nature: FailureNature.UNAVAILABLE,
     });
+  }
+}
+
+function isCapName(bucket: unknown): bucket is AuthRateLimitName {
+  return typeof bucket === 'string' && Object.hasOwn(AuthRateLimit, bucket);
+}
+
+/** `throttle(bucket)`, a bucket being one of core's `AuthRateLimit` caps: `SIGN_IN_PER_EMAIL`. */
+@Injectable()
+export class ThrottleRule implements RuleGuard {
+  public constructor(private readonly throttler: AuthThrottlerGuard) {}
+
+  public check(context: ExecutionContext, rule: Requirement): Promise<void> {
+    const { bucket } = rule.params as { readonly bucket?: unknown };
+    if (!isCapName(bucket)) throw new Error(`No cap named ${String(bucket)}.`);
+    return this.throttler.countAgainst(context, bucket);
+  }
+
+  public problemWith(rule: Requirement): string | undefined {
+    const { bucket } = rule.params as { readonly bucket?: unknown };
+    return isCapName(bucket) ? undefined : `no cap named ${String(bucket)}`;
   }
 }

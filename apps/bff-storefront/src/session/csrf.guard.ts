@@ -1,4 +1,4 @@
-import { RefusalException } from '@arthome-platform/http-edge';
+import { RefusalException, routeOf } from '@arthome-platform/http-edge';
 import { HttpStatus, Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
 import { HttpAdapterHost, Reflector, type ReflectableDecorator } from '@nestjs/core';
 
@@ -54,6 +54,8 @@ export class CsrfGuard implements CanActivate {
     const http = context.switchToHttp();
     const request = http.getRequest<CookieCarrier & { readonly method: string }>();
     if (SAFE_METHODS.has(request.method)) return true;
+    // Its identity checks the token, from the schemes it declares.
+    if (routeOf(this.reflector, context)?.access !== undefined) return true;
     const targets = [context.getHandler(), context.getClass()];
     if (
       this.reflector.getAllAndOverride(OpensNoSession, targets) ||
@@ -63,15 +65,24 @@ export class CsrfGuard implements CanActivate {
     }
     if (!request.cookies?.[SESSION_COOKIE]) return true;
 
-    const fastify = this.adapterHost.httpAdapter.getInstance<CsrfProtecting>();
-    const reply = http.getResponse<object>();
-    await new Promise<void>((resolve, reject) => {
-      // The plugin answers a refusal by sending its own error: here it rejects instead.
-      const refusing = Object.create(reply, {
-        send: { value: () => reject(csrfRefused()) },
-      }) as object;
-      fastify.csrfProtection(request, refusing, resolve);
-    });
+    await verifyCsrfToken(this.adapterHost, context);
     return true;
   }
+}
+
+/** The token a cookie write carries, checked by `@fastify/csrf-protection` against its session. */
+export async function verifyCsrfToken(
+  adapterHost: HttpAdapterHost,
+  context: ExecutionContext,
+): Promise<void> {
+  const http = context.switchToHttp();
+  const fastify = adapterHost.httpAdapter.getInstance<CsrfProtecting>();
+  const reply = http.getResponse<object>();
+  await new Promise<void>((resolve, reject) => {
+    // The plugin answers a refusal by sending its own error: here it rejects instead.
+    const refusing = Object.create(reply, {
+      send: { value: () => reject(csrfRefused()) },
+    }) as object;
+    fastify.csrfProtection(http.getRequest<object>(), refusing, resolve);
+  });
 }

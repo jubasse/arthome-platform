@@ -12,6 +12,7 @@ import {
 import { SystemClock, type Clock } from '@arthome/core';
 
 import { DenyInProductionGuard } from './deny-in-production.guard.js';
+import { endpointProviders } from './endpoint-providers.js';
 import { ErrorEnvelopeFilter } from './error-envelope.filter.js';
 import { InternalTokenGuard } from './internal-token.guard.js';
 import { InternalTokenVerifier } from './internal-token.verifier.js';
@@ -34,6 +35,8 @@ export interface EdgeOptions {
  */
 export function edgeProviders({ service, clock, uniqueViolations = [] }: EdgeOptions): Provider[] {
   return [
+    // No identity bound yet: a route declaring one fails the boot until the internal contracts land.
+    ...endpointProviders({ useValue: { identities: {}, rules: {} } }),
     // Global rather than `@UsePipes` on a method, where the schema would run on every parameter
     //   of the handler, `@Param('id')` included.
     {

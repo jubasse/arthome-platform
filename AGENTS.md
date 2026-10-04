@@ -244,7 +244,10 @@ export class DatesController {
 - **Inputs** are bound by `EndpointParams`, `EndpointQuery`, `EndpointBody` (real `@Param`,
   `@Query`, `@Body` with `{ schema }`, run by the global `StandardSchemaValidationPipe`) and
   `EndpointHeaders` (a custom parameter decorator with its own pipe: `@Headers()` takes no
-  schema). A refusal is `api.schema_invalid` with `fields`, as everywhere else.
+  schema). A refusal is `api.schema_invalid` with `fields`, as everywhere else. A route declared
+  with an access takes them in one decorator instead, `@EndpointInput(route)` typed
+  `HandlerInput<typeof route>`: `{ params, query, body, headers, principal }`, every failing field
+  named at once; `@EndpointPrincipal(route)` gives the principal alone.
 - **The compiler checks the answer.** The handler must be `async` and what it returns, once
   enveloped by `SuccessEnvelopeInterceptor`, must be the route's success body; a body that is not
   fails at the decorator, naming `the handler answers outside its route`. `successSchemaOf(route)`
@@ -252,8 +255,24 @@ export class DatesController {
 - **Only the storefront BFF binds the public contract.** Catalog and ticketing keep their own
   routes until their INTERNAL contracts exist (their paths and headers differ); they are not bound
   here and serve no Swagger UI.
-- **Guards are unchanged**: routes register through Nest controllers, so `InternalTokenGuard` and
-  `DenyInProductionGuard` apply, and `@AllowInProduction()` stays where it was.
+- **Access comes from the route** (ADR contract model §4.5). A route declared through the builder
+  with `.identity(...)`, `.public()` or `.optionalAuth()` and its `requires` is guarded by
+  `EndpointAccessGuard`: the identity's guard first, bound under the identity's name, then each
+  rule's guard in its declared order. The table is the process's, given to `endpointProviders`
+  (listed before every other global enhancer): the BFF binds `viewer` (the session, and the CSRF
+  token of a cookie write, from the identity's write schemes) and `throttle` (a bucket is a cap of
+  core's `AuthRateLimit`); the services bind none yet. A name with no guard, or a rule its guard
+  cannot enforce, fails the boot. The handler receives the identity's principal, stripped to its
+  schema: `null` only on an `optionalAuth` route, `undefined` on a public one.
+- **Routes bound without an access keep the legacy guards** until their module opts in, and the boot
+  lists them: `InternalTokenGuard` and `DenyInProductionGuard` on the services, `ViewerGuard` with
+  `RequiresViewer`, `CsrfGuard` and the caps named by `RateLimitedBy` on the BFF.
+  `@AllowInProduction()` stays where it was.
+- **The answer is shaped from the route** by `EndpointResponseInterceptor`, around the success
+  envelope: a `restricted` field the principal lacks the right for is removed (absent, never null;
+  the rights are the principal's `rights` and `signedIn` for any identified caller), `Cache-Control`
+  and `Vary` come from the route's `cache`, `no-store` from a sensitive field in the answer, and an
+  identity's own headers from its guard (the studio's rights version).
 - **What Fastify refuses before the handler leaves in the envelope too**: a malformed JSON body
   400 `api.schema_invalid`, a body over 1 MiB 413 `api.payload_too_large`, an unknown route 404
   `api.not_found`, and any body that is not JSON 415 `api.unsupported_media_type`.

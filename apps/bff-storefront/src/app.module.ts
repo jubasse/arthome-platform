@@ -6,6 +6,7 @@ import {
   JsonBodiesOnly,
   READINESS_CHECKS,
   SuccessEnvelopeInterceptor,
+  endpointProviders,
   schemaInvalidException,
   type ReadinessCheck,
 } from '@arthome-platform/http-edge';
@@ -28,7 +29,7 @@ import type { Redis } from 'ioredis';
 
 import { SystemClock } from '@arthome/core';
 
-import { AuthThrottlerGuard, authThrottlers } from './auth/auth-rate-limits.js';
+import { AuthThrottlerGuard, ThrottleRule, authThrottlers } from './auth/auth-rate-limits.js';
 import { AuthModule } from './auth/auth.module.js';
 import {
   THROTTLER_REDIS,
@@ -43,6 +44,7 @@ import { SearchModule } from './search/search.module.js';
 import { CsrfGuard } from './session/csrf.guard.js';
 import { CSRF_SECRET, EdgePlugins } from './session/edge-plugins.js';
 import { ViewerGuard } from './session/viewer.guard.js';
+import { ViewerIdentity } from './session/viewer.identity.js';
 import { TraceparentMiddleware } from './traceparent.middleware.js';
 
 @Module({
@@ -62,6 +64,16 @@ import { TraceparentMiddleware } from './traceparent.middleware.js';
     }),
   ],
   providers: [
+    ...endpointProviders({
+      inject: [ViewerIdentity, ThrottleRule],
+      useFactory: (viewer: ViewerIdentity, throttle: ThrottleRule) => ({
+        identities: { viewer },
+        rules: { throttle },
+      }),
+    }),
+    ViewerIdentity,
+    ThrottleRule,
+    AuthThrottlerGuard,
     {
       provide: APP_PIPE,
       useValue: new StandardSchemaValidationPipe({ exceptionFactory: schemaInvalidException }),
@@ -82,7 +94,7 @@ import { TraceparentMiddleware } from './traceparent.middleware.js';
     //   has opened.
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: ViewerGuard },
-    { provide: APP_GUARD, useClass: AuthThrottlerGuard },
+    { provide: APP_GUARD, useExisting: AuthThrottlerGuard },
     {
       provide: APP_GUARD,
       inject: [Reflector],

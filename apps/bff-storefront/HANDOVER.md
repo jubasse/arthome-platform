@@ -18,7 +18,7 @@ Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10
 | `src/identity/identity.client.ts` | identity's adapter: the relayed authentication calls and the session's resolution |
 | `src/auth/auth.controller.ts` | `/v1/auth/*`, bound to the contract's routes: its bodies and headers, the delivery mode |
 | `src/auth/auth-rate-limits.ts`, `throttler-storage.ts` | the caps of core's `AuthRateLimit`, counted in Redis, refused as `api.rate_limited` |
-| `src/session/` | the session's two carriers, the viewer, `ViewerGuard`, `CsrfGuard` and the plugins they rely on |
+| `src/session/` | the session's two carriers, the viewer, `ViewerGuard`, `ViewerIdentity`, `CsrfGuard` and the plugins they rely on |
 | `src/viewer-context/` | `getViewerContext` and the composition `SessionEstablished` reuses |
 | `src/dates/dates.controller.ts` | `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`, relayed from catalog |
 | `src/conditional-get.ts` | the `ETag` and the `onSend` hook that answers a matching `If-None-Match` with 304 |
@@ -64,7 +64,10 @@ production.
   nothing it signed (approved by the lead, 2026-10-03). The minter refuses a key whose `kid` is not
   `bff-sf-`.
 - **The session is identity's, validated here** (§8): `ViewerGuard` asks identity on the routes
-  marked `RequiresViewer`, and nowhere else, so a public read never waits on identity. No Redis
+  marked `RequiresViewer`, and nowhere else, so a public read never waits on identity. A route
+  declared with the `viewer` identity (contract pass 1) is resolved by `ViewerIdentity` instead,
+  bound in `AppModule`'s `endpointProviders`, which also checks a cookie write's CSRF token; until
+  the fan-out opts the modules in, every bound route is still on `ViewerGuard`. No Redis
   cache of sessions yet: one identity call per authenticated request, within transport.md §5.9's
   150 ms. Identity answers an unknown session `session: null`, so a 401 from identity means this
   BFF's own token was refused, and becomes `api.upstream_unavailable`.

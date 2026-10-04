@@ -64,6 +64,20 @@ export {
 } from './endpoint.js';
 export type { EndpointDecorator } from './endpoint.js';
 
+export {
+  ENDPOINT_GUARDS,
+  EndpointAccessGuard,
+  EndpointGuardsCheck,
+  EndpointRoute,
+  routeOf,
+  routePrincipalOf,
+} from './endpoint-access.js';
+export type { EndpointGuards, IdentityGuard, RuleGuard } from './endpoint-access.js';
+export { EndpointInput, EndpointPrincipal } from './endpoint-input.js';
+export { endpointProviders } from './endpoint-providers.js';
+export type { EndpointGuardsBinding } from './endpoint-providers.js';
+export { EndpointResponseInterceptor, SIGNED_IN_RIGHT } from './endpoint-response.interceptor.js';
+
 export { contractSchemaConverter, mountDevDocs } from './dev-docs.js';
 export type { DevDocsOptions } from './dev-docs.js';
 

@@ -37,6 +37,7 @@ import {
   type RouteSuccessStatus,
 } from '@arthome/contracts/http';
 
+import { EndpointRoute } from './endpoint-access.js';
 import { schemaInvalidException } from './refusal.js';
 import { requirementObjectOf } from './security-requirement.js';
 import type {
@@ -152,6 +153,7 @@ function responseDocumentationOf(route: RouteShape): MethodDecorator[] {
  */
 export function Endpoint<R extends Route>(route: R): EndpointDecorator<R> {
   const decorators = applyDecorators(
+    EndpointRoute(route),
     ROUTE_METHOD[route.method](routerPathOf(route.path)),
     Version(String(route.version)),
     HttpCode(successStatusOf(route)),
