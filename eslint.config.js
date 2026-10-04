@@ -72,6 +72,34 @@ export default defineConfig([
     },
   },
 
+  {
+    // A new use of a deprecated API fails, so what the contract model replaces cannot spread.
+    files: ['**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-deprecated': 'error',
+    },
+  },
+
+  {
+    // The files that used a deprecated API when the rule was turned on (2026-10-05). A file leaves
+    //   the list with its last deprecated use, and the list must be empty when the fan-out closes.
+    files: [
+      'apps/bff-storefront/src/app.module.ts',
+      'apps/bff-storefront/src/auth/auth-rate-limits.ts',
+      'apps/bff-storefront/src/auth/auth.controller.ts',
+      'apps/bff-storefront/src/dates/dates.controller.ts',
+      'apps/bff-storefront/src/search/search.controller.ts',
+      'apps/bff-storefront/src/session/viewer.guard.ts',
+      'apps/bff-storefront/src/viewer-context/viewer-context.controller.ts',
+      'libs/http-edge/src/endpoint.spec.ts',
+      'libs/http-edge/src/index.ts',
+      'tools/schematics/src/lib/source-file.ts',
+    ],
+    rules: {
+      '@typescript-eslint/no-deprecated': 'off',
+    },
+  },
+
   // 4. LAST
   prettier,
 ]);

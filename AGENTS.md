@@ -117,7 +117,9 @@ NestJS skips them; this block is what makes loading systematic rather than remem
   - **Enforced by `verify`**, through lint: `arthome-platform/no-wall-clock` refuses a time read
     outside the injected `Clock`, and every `eslint-disable` must name its rules and give its reason
     after `--` (`@eslint-community/eslint-comments`'s `no-unlimited-disable` and
-    `require-description`).
+    `require-description`). `@typescript-eslint/no-deprecated` refuses any use of a deprecated API,
+    except in the files `eslint.config.js` lists as using one when it was turned on: a file leaves
+    that list with its last deprecated use, and the list must be empty when the fan-out closes.
   - **Shared helpers, not run by `verify`, which only a reviewer enforces** (a helper prevents its
     defect only where it is used; `updateReturning` is in ticketing's payment inbox and messaging's
     `republishOutboxRow`, and `search-indexer`'s artist consumer still destructures its own):

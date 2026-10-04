@@ -14,10 +14,7 @@ import type { ServiceCall } from './service-client.js';
  */
 export const AUTHENTICATION_WRITE_BUDGET_MS = 2_000;
 
-/**
- * transport.md §5.9's session validation.
- * @deprecated The budget identity's internal route declares, through `withinBudget`, once D-121 lands.
- */
+/** transport.md §5.9's session validation, until identity's internal route declares it (D-121). */
 export const SESSION_VALIDATION_BUDGET_MS = 150;
 
 /** What the BFF knows of the request a call to a service is made for. */
