@@ -32,7 +32,7 @@ POST /v1/auth/sign-up (BFF)  ->  identity: account + outbox_event in ONE transac
 | `libs/http-edge` | the success and error envelopes and the global providers that bind them (`edgeProviders`), the internal token's verification and its guard, validation refusals, the refusals a handler raises (`asConflict`, `notFound`, `stateConflict`), the deadline, idempotent commands and their table, JSON as the only body parsed (`JsonBodiesOnly`), a handler bound to its `@arthome/contracts` route (`Endpoint`) — every HTTP service's edge |
 | `libs/search-index` | the index mappings and document shapes, shared by the indexer and catalog's search |
 | `libs/transactions` | the transaction a CQRS command runs in, its domain events published after the commit, `frozen`, which holds an aggregate's snapshot, and `updateReturning`, which reads an UPDATE's RETURNING rows |
-| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers and boots a service's feature modules over HTTP (`httpApp`) |
+| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers, boots a service's feature modules over HTTP (`httpApp`) and checks each response a suite provokes against its contract route (`guardDeclaredResponses`) |
 
 **What is NOT built, said plainly.** `streaming`, `chat` and `payouts` do not exist, and `ticketing`
 sells through its fake payment adapter only, with no Stripe adapter; refunds for an outcome, the

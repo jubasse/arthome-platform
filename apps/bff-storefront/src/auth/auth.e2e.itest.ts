@@ -6,12 +6,13 @@ import {
   type IdentityHarness,
 } from '@arthome-platform/identity/src/itest/identity-app.js';
 import { newestLinkTokenTo } from '@arthome-platform/identity/src/itest/verification-links.js';
-import { startStack, type StartedStack } from '@arthome-platform/testing';
+import { guardDeclaredResponses, startStack, type StartedStack } from '@arthome-platform/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { SessionMode, ViewerContextSchema } from '@arthome/contracts/identity';
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import {
   ApiErrorCode,
   AuthRateLimit,
@@ -58,6 +59,8 @@ const clock = new FixedClock(Date.now() + 3_600_000);
 let identity: IdentityHarness;
 let redis: StartedStack;
 let app: NestFastifyApplication;
+
+const responses = guardDeclaredResponses(storefrontApi);
 let addresses = 0;
 let emails = 0;
 /** The pauses sign-in asked for, recorded rather than waited out. */
@@ -88,6 +91,7 @@ beforeAll(async () => {
     logger: false,
   });
   enableUriVersioning(app);
+  responses.watch(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
 }, STARTUP_MS);

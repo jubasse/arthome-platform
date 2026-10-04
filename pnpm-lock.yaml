@@ -704,6 +704,9 @@ importers:
       '@arthome-platform/messaging':
         specifier: workspace:*
         version: link:../messaging
+      '@arthome/contracts':
+        specifier: file:../../vendor/arthome-contracts-2e78922c964f.tgz
+        version: file:vendor/arthome-contracts-2e78922c964f.tgz(@arthome/core@file:vendor/arthome-core-a9edd7f5a6b7.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
         specifier: file:../../vendor/arthome-core-a9edd7f5a6b7.tgz
         version: file:vendor/arthome-core-a9edd7f5a6b7.tgz(zod@4.6.5)
@@ -725,6 +728,9 @@ importers:
       typeorm:
         specifier: 1.1.1
         version: 1.1.1(ioredis@6.0.0)(pg@8.23.0)
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@nestjs/common':
         specifier: 12.0.3
@@ -750,6 +756,9 @@ importers:
       rxjs:
         specifier: 7.8.2
         version: 7.8.2
+      vitest:
+        specifier: 5.0.1
+        version: 5.0.1(@types/node@24.13.5)(vite@8.3.0(@types/node@24.13.5)(yaml@2.9.1))
 
   libs/transactions:
     dependencies:

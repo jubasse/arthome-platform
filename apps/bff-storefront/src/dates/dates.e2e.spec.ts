@@ -2,10 +2,12 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import { enableUriVersioning } from '@arthome-platform/http-edge';
+import { guardDeclaredResponses } from '@arthome-platform/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import {
   ApiErrorCode,
   DisplayState,
@@ -50,6 +52,8 @@ let catalogDeadlines: (string | string[] | undefined)[] = [];
 let catalog: Server;
 let app: NestFastifyApplication;
 
+const responses = guardDeclaredResponses(storefrontApi);
+
 beforeAll(async () => {
   catalog = createServer((request, response) => {
     catalogUrl = request.url ?? '';
@@ -70,6 +74,7 @@ beforeAll(async () => {
   });
   answerNotModified(app);
   enableUriVersioning(app);
+  responses.watch(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
 });

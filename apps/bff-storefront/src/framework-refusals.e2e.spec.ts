@@ -1,9 +1,11 @@
 import { enableUriVersioning } from '@arthome-platform/http-edge';
+import { guardDeclaredResponses } from '@arthome-platform/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { StorefrontErrorEnvelopeSchema } from '@arthome/contracts/envelope';
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import { ApiErrorCode, FailureNature, Surface } from '@arthome/core';
 
 import { AppModule } from './app.module.js';
@@ -16,12 +18,15 @@ const ONE_MIB = 1024 * 1024;
 
 let app: NestFastifyApplication;
 
+const responses = guardDeclaredResponses(storefrontApi);
+
 beforeAll(async () => {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
   });
   enableUriVersioning(app);
+  responses.watch(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
 });

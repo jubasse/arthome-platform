@@ -258,6 +258,13 @@ export class DatesController {
   400, a body over 1 MiB 413, an unknown route 404, and any body that is not JSON 415.
   `JsonBodiesOnly` (http-edge, bound by `edgeProviders` and the BFF's `AppModule`) removes the
   `text/plain` and form parsers Fastify and Nest add by default (transport.md §5.7).
+- **Every response a suite provokes is checked against its route** (ADR contract model §7.3):
+  `const responses = guardDeclaredResponses(storefrontApi)` at the top of the file, and
+  `responses.watch(app)` before `app.init()`. A status the route does not declare, or a code its
+  response does not name, is listed at the end of the file; `ARTHOME_UNDECLARED_RESPONSES=fail`
+  fails the test instead, which becomes the default once the routes declare their errors. Run by
+  an agent, Vitest picks its `minimal` reporter, which hides a passing file's output: pass
+  `--reporter=default` to read the list.
 - **Swagger UI, in development only**: `mountDevDocs(app, api, { title, path: 'docs' })` in
   `main.ts` mounts the page and its raw document (`/docs-json`) when `NODE_ENV` is `development`
   or `test`, and mounts nothing otherwise. The document is built from the controllers of the
