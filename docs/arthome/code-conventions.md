@@ -2429,6 +2429,33 @@ line belongs at that line (§5.10) or in the commit body, not restated in the PR
 
 ---
 
+### 5.11 Comparing two documents: what the semantic comparison grants
+
+`check:openapi-generated` is byte equality and grants nothing. The proof that the switch to generated
+documents (D-120) lost nothing was a semantic comparison against the pre-switch documents (kept under
+`.work/semantic-diff/`, the comparator itself retired with `check-emit-diff` in ed781a6). It compared
+operation by operation and component by component, and granted these equivalences on schema nodes.
+**Only the first four trace to a written decision; the rest were granted in gate commits and are
+recorded here so they can be audited.**
+
+| # | Equivalence | Where it comes from |
+|---|---|---|
+| 1 | `$schema` and `$id` are stripped | D-060 section 4; gate commit 0366fe5 (2026-09-24) |
+| 2 | `additionalProperties` absent equals `{}` | D-060, "four equivalences so far"; narrowed to `{}` in f4db034 |
+| 3 | `additionalProperties: true` equals the above on a node with no `properties` (a map, not an open shape) | 775720b (2026-09-24), narrowed to maps in 88b0f94. No DECISIONS entry; D-065 family A is nearby |
+| 4 | `required: []` equals an absent `required` (an all-optional shape) | f4db034, on backend-contracts' handover note. No DECISIONS entry |
+| 5 | `anyOf: [{X}, {type: null}]` equals `type: [X, 'null']` | D-060, "the documents do not move"; 0366fe5 |
+| 6 | key order is not compared, at any depth | D-060 section 4; "at any depth" from f4db034 |
+| 7 | `required` is compared as a set | 88b0f94. No DECISIONS entry |
+| 8 | an empty `properties: {}` equals an absent one | 88b0f94. No DECISIONS entry |
+| 9 | a description's trailing whitespace is not compared | 0366fe5. No DECISIONS entry |
+| 10 | an operation's `parameters` list is compared as a set | accepted by the product owner in the second round (OpenAPI identifies a parameter by name and location; no positional client consumes the documents; no client has shipped) |
+
+Numbers 3, 4, 7, 8 and 9 were granted without a decision. Each is lossless for a reader of the
+document (a constraint is neither added nor dropped), which is the ground they were granted on; a
+tenth-and-later equivalence is a ruling and goes through `DECISIONS.md`, never into a comparator
+alone. Everything outside a schema node was compared exactly, except number 10.
+
 ## 6. What legitimately stays specific to each stack
 
 **The principle.** Unify what travels from one repository to another — names, errors, imports, tests,

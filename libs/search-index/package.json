@@ -18,7 +18,7 @@
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-a9edd7f5a6b7.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-80e8e2716d44.tgz",
     "@opensearch-project/opensearch": "3.6.0"
   }
 }

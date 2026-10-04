@@ -51,13 +51,13 @@ The right to watch, served per date. It sits below `catalog` and `streaming` bec
 
 The shared response envelope and its meta instants (subpath @arthome/contracts/envelope).
 
-`STOREFRONT_RELAYED_CODES` · `StorefrontEnvelopeMetaSchema` · `StorefrontErrorEnvelopeSchema` · `StorefrontErrorSchema` · `StudioEnvelopeMetaSchema` · `StudioErrorEnvelopeSchema` · `StudioErrorSchema`
+`STOREFRONT_RELAYED_CODES` · `StorefrontEnvelopeMetaSchema` · `StorefrontErrorEnvelopeSchema` · `StorefrontErrorSchema` · `StorefrontRelayedCode` · `StudioEnvelopeMetaSchema` · `StudioErrorEnvelopeSchema` · `StudioErrorSchema`
 
 ### `@arthome/contracts/http`
 
 Routes as TypeScript: an operation mirrors OpenAPI with zod in place of JSON Schema, typed for a server handler and a client, with the request decoders a server validates against.
 
-`AccessorOf` · `Api` · `ApiComponents` · `ApiDefinition` · `BuiltRoute` · `BuiltRouteDefinition` · `Extensions` · `Header` · `HeaderParameter` · `HttpMethod` · `JsonRequestBody` · `JsonResponse` · `MediaType` · `Parameter` · `ParameterLocation` · `PathParameter` · `QueryParameter` · `RequestBody` · `Response` · `Route` · `RouteBody` · `RouteBuilder` · `RouteDefinition` · `RouteHeaders` · `RouteInput` · `RouteParams` · `RouteQuery` · `RouteResponseBody` · `RouteShape` · `RouteStatus` · `RouteSuccessStatus` · `SecurityRequirement` · `VersionedPath` · `accessorOf` · `bodySchemaOf` · `defineApi` · `defineRoute` · `headersSchemaOf` · `paramsSchemaOf` · `querySchemaOf` · `routeBuilder` · `successStatusOf` · `versionedPath`
+`AccessorOf` · `ActionOptions` · `ActionRoute` · `Api` · `ApiComponents` · `ApiDefinition` · `BuiltRoute` · `BuiltRouteDefinition` · `CodesOf` · `CreateRoute` · `CrudMember` · `CrudOptions` · `CrudRoutes` · `DeleteRoute` · `ErrorBody` · `ErrorModel` · `ErrorResponse` · `ErrorStatus` · `ErrorsInput` · `Extensions` · `FindAllRoute` · `FindRoute` · `Header` · `HeaderParameter` · `HttpMethod` · `JsonRequestBody` · `JsonResponse` · `MediaType` · `MemberDocs` · `MergedErrors` · `Parameter` · `ParameterLocation` · `PathParameter` · `QueryParameter` · `ReplaceRoute` · `RequestBody` · `Resource` · `ResourceContext` · `ResourceConventions` · `ResourceOf` · `ResourceOptions` · `Response` · `Route` · `RouteBody` · `RouteBuilder` · `RouteDefinition` · `RouteHeaders` · `RouteInput` · `RouteParams` · `RouteQuery` · `RouteResponseBody` · `RouteShape` · `RouteStatus` · `RouteSuccessStatus` · `SecurityRequirement` · `SubresourceReplaceRoute` · `UpdateRoute` · `UpsertRoute` · `VersionedPath` · `accessorOf` · `bodySchemaOf` · `defineApi` · `defineErrorModel` · `defineRoute` · `errorResponseFor` · `headersSchemaOf` · `makeResource` · `paramsSchemaOf` · `querySchemaOf` · `routeBuilder` · `successStatusOf` · `versionedPath`
 
 ### `@arthome/contracts/http-client`
 
@@ -153,10 +153,10 @@ Sources of @arthome/core, one directory per bounded module; index.ts re-exports 
 
 The boundary schemas (`@arthome/core/schema`); the only part of the package that imports zod.
 
-`AccountIdSchema` · `ArtistIdSchema` · `BasisPointsSchema` · `BuyerTaxLocationSchema` · `ChannelIdSchema` · `CountryCodeSchema` · `CurrencyCodeSchema` · `DateIdSchema` · `DeviceIdSchema` · `ErrorSchema` · `FailureNatureOut` · `IanaTimeZoneSchema` · `InstantIn` · `InstantOut` · `InternalTokenClaims` · `InternalTokenClaimsSchema` · `LocaleIn` · `LocaleOut` · `MoneyIn` · `MoneyOut` · `OrderIdSchema` · `PageCursorSchema` · `PersonIdSchema` · `ProfileIdSchema` · `PublicHandleSchema` · `SeatIdSchema` · `ShowIdSchema` · `SlugSchema` · `TaxEvidenceKindIn` · `TaxEvidenceKindOut` · `TaxEvidenceSchema` · `TaxJurisdictionLevelIn` · `TaxJurisdictionLevelOut` · `TaxSupplyKindIn` · `TaxSupplyKindOut` · `VOCABULARY_SOURCE_LOCAL` · `VatLineSchema` · `VenueClockSchema` · `VenueIdSchema` · `VocabularyIn` · `VocabularyOut` · `VocabularyOutNullable` · `dateIn` · `dateTimeIn` · `int64` · `issueToCode` · `sourceNameOf` · `uriIn` · `uuidIn` · `uuidOut` · `vocabularyIn` · `vocabularyOut` · `vocabularyOutLocal` · `vocabularyOutLocalNullable` · `vocabularyOutNullable`
+`AccountIdSchema` · `ArtistIdSchema` · `BasisPointsSchema` · `BuyerTaxLocationSchema` · `ChannelIdSchema` · `CountryCodeSchema` · `CurrencyCodeSchema` · `DateIdSchema` · `DeviceIdSchema` · `ERROR_PARAMS` · `ErrorParamsMap` · `ErrorParamsOf` · `ErrorSchema` · `FailureNatureOut` · `IanaTimeZoneSchema` · `InstantIn` · `InstantOut` · `InternalTokenClaims` · `InternalTokenClaimsSchema` · `LocaleIn` · `LocaleOut` · `MoneyIn` · `MoneyOut` · `OrderIdSchema` · `PageCursorSchema` · `PersonIdSchema` · `ProfileIdSchema` · `PublicHandleSchema` · `SeatIdSchema` · `ShowIdSchema` · `SlugSchema` · `TaxEvidenceKindIn` · `TaxEvidenceKindOut` · `TaxEvidenceSchema` · `TaxJurisdictionLevelIn` · `TaxJurisdictionLevelOut` · `TaxSupplyKindIn` · `TaxSupplyKindOut` · `VOCABULARY_SOURCE_LOCAL` · `VatLineSchema` · `VenueClockSchema` · `VenueIdSchema` · `VocabularyIn` · `VocabularyOut` · `VocabularyOutNullable` · `dateIn` · `dateTimeIn` · `errorParamsSchemaOf` · `int64` · `issueToCode` · `sourceNameOf` · `uriIn` · `uuidIn` · `uuidOut` · `vocabularyIn` · `vocabularyOut` · `vocabularyOutLocal` · `vocabularyOutLocalNullable` · `vocabularyOutNullable`
 
 ---
 
-686 exported names across 21 subpaths.
+720 exported names across 21 subpaths.
 A name is listed here only if it is reachable through a package’s `exports` map — if it is
 not in this file, a consumer cannot import it, whatever the source says.
