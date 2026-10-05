@@ -1,5 +1,8 @@
 import { Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import type { z } from 'zod';
+
+import type { ServicePrincipalSchema } from '@arthome/contracts/http';
 
 import { AllowAnonymous } from './allow-anonymous.js';
 import { routeOf, type IdentityGuard } from './endpoint-access.js';
@@ -53,19 +56,23 @@ function presentedInternalToken(request: TokenCarrier): string | null {
 }
 
 /**
- * The `service` identity (ADR contract model §9.1): the internal token a BFF mints for the end user,
- *   verified as `InternalTokenGuard` does, the principal left where `principalOf` reads it too.
+ * Core's `service` identity (ADR contract model §9.1): the internal token a BFF mints for the end
+ *   user, verified as `InternalTokenGuard` does. Its principal is core's, the calling service from
+ *   the token's issuer and the end user from its subject; the verified claims are left where
+ *   `principalOf` reads them too.
  */
 @Injectable()
 export class ServiceIdentity implements IdentityGuard {
   public constructor(private readonly verifier: InternalTokenVerifier) {}
 
-  public async identify(context: ExecutionContext): Promise<unknown> {
+  public async identify(
+    context: ExecutionContext,
+  ): Promise<z.output<typeof ServicePrincipalSchema> | null> {
     const request = context.switchToHttp().getRequest<TokenCarrier>();
     const token = presentedInternalToken(request);
     if (token === null) return null;
-    const principal = await this.verifier.verify(token);
-    attachPrincipal(request, principal);
-    return principal;
+    const verified = await this.verifier.verify(token);
+    attachPrincipal(request, verified);
+    return { callingService: verified.issuer, userId: verified.accountId };
   }
 }

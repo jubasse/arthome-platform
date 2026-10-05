@@ -5,29 +5,21 @@ import { z } from 'zod';
 
 import {
   defineErrorModel,
-  identity,
   routeBuilder,
+  service,
   type HandlerInput,
   type HandlerOutput,
 } from '@arthome/contracts/http';
-import { ApiErrorCode, FixedClock, Service } from '@arthome/core';
+import { ApiErrorCode, FixedClock, InternalTokenIssuer, Service } from '@arthome/core';
 
+import { DEADLINE_HEADER } from './deadline.js';
 import { edgeProviders } from './edge-providers.js';
 import { EndpointInput } from './endpoint-input.js';
 import { Endpoint, serveEndpoints } from './endpoint.js';
 
-/**
- * The `service` identity bound by every service, on fixture routes: core declares it with the
- *   internal contracts (D-121), under this name. A public route needs the service's allow-list.
- */
+/** Core's `service` identity, bound by every service, on fixture routes. A public route needs the service's allow-list. */
 
 const ACCOUNT = '01a0e700-0000-7000-8000-0000000000c1';
-
-const service = identity('service', {
-  schemes: { read: [{ internalToken: [] }], write: [{ internalToken: [] }] },
-  principal: z.object({ accountId: z.string().nullable(), deviceId: z.string().nullable() }),
-  internal: true,
-});
 
 const builder = routeBuilder(
   defineErrorModel<string>({
@@ -124,12 +116,16 @@ afterAll(async () => {
 
 describe('the service identity', () => {
   it('verifies the internal token and hands over the caller it names', async () => {
-    const response = await app.inject({ method: 'GET', url: '/v1/overlay' });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/overlay',
+      headers: { [DEADLINE_HEADER]: new Date(clock.nowMs() + 60_000).toISOString() },
+    });
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.json<{ data: { caller: string } }>().data.caller)).toEqual({
-      accountId: ACCOUNT,
-      deviceId: null,
+      callingService: InternalTokenIssuer.STOREFRONT_BFF,
+      userId: ACCOUNT,
     });
   });
 

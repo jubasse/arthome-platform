@@ -282,7 +282,8 @@ export class DatesController {
   a cap of core's `AuthRateLimit`, `CAPS_OF_BUCKET` being the one map from bucket to caps; the rule
   counts nothing and fails the boot on a bucket with no cap, the global `AuthThrottlerGuard` counts
   the caps of the buckets the route's contract declares); every service binds `service` (`ServiceIdentity`: the internal token,
-  verified as `InternalTokenGuard` does, which leaves a route declaring an access to it). On a
+  verified as `InternalTokenGuard` does, which leaves a route declaring an access to it; the
+  principal is core's `{ callingService, userId }`, from the token's issuer and subject). On a
   service, a route the contract declares public fails the boot unless `edgeProviders`'
   `publicRoutes` names it (empty today): reached in the cluster without TLS, a service has the
   token as its only authorisation (transport.md §5.1). A name with no guard, or a rule its guard
