@@ -1,9 +1,21 @@
 import { EndpointRoute, HealthController } from '@arthome-platform/http-edge';
-import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { METHOD_METADATA } from '@nestjs/common/constants.js';
+import { Get, Injectable, type OnModuleInit } from '@nestjs/common';
 import { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 
 const OUTSIDE_THE_CONTRACT = new Set<unknown>([HealthController]);
+
+function metadataKeysWrittenBy(decorator: MethodDecorator): readonly unknown[] {
+  const handler = (): undefined => undefined;
+  decorator({}, 'handler', { value: handler });
+  return Reflect.getOwnMetadataKeys(handler);
+}
+
+// Nest exports no name for the metadata its route decorators write (its constants are internal).
+const ROUTE_METADATA_KEYS = metadataKeysWrittenBy(Get());
+
+function servesAPath(method: object): boolean {
+  return ROUTE_METADATA_KEYS.some((key) => Reflect.hasOwnMetadata(key, method));
+}
 
 /** Fails the boot on a controller method that serves a path without being an `@Endpoint` route, so no route escapes the contract. */
 @Injectable()
@@ -23,7 +35,7 @@ export class ContractRoutesOnly implements OnModuleInit {
         .getAllMethodNames(prototype)
         .filter(
           (name) =>
-            Reflect.hasMetadata(METHOD_METADATA, prototype[name] as object) &&
+            servesAPath(prototype[name] as object) &&
             this.reflector.get(EndpointRoute, prototype[name] as () => unknown) === undefined,
         )
         .map((name) => `${controller.name}.${name}`);
