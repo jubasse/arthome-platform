@@ -8,9 +8,10 @@ import {
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 
-import { FailureNature, isDomainError, type Clock, type DomainError } from '@arthome/core';
+import { FailureNature, isDomainError, type Clock } from '@arthome/core';
 
 import {
+  domainRefusal,
   isMappedStatus,
   refusalForStatus,
   RefusalException,
@@ -100,7 +101,7 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
     //   `nature`. The domain throws these rather than `HttpException`s because a rule in
     //   `@arthome/core` is reachable from seven services and must not know its transport.
     if (isDomainError(exception)) {
-      return { status: statusForDomainError(exception), refusal: exception };
+      return { status: domainRefusal(exception).getStatus(), refusal: exception };
     }
 
     if (postgresErrorCodeOf(exception) === UNIQUE_VIOLATION) {
@@ -174,18 +175,6 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
       refusal: { code: matched.code, params: {}, nature: FailureNature.REFUSED },
     };
   }
-}
-
-/**
- * The per-code table §5.5 calls for does not exist and is not invented here: it belongs
- *   "single, in `@arthome/contracts`" and neither service depends on that package. Nature
- *   alone cannot choose — `refused` covers 400, 401, 403, 404, 409 and 410 — and 400 is the
- *   least wrong default for a refusal the caller's own input provoked.
- */
-function statusForDomainError(error: DomainError): number {
-  return error.nature === FailureNature.REFUSED
-    ? HttpStatus.BAD_REQUEST
-    : HttpStatus.SERVICE_UNAVAILABLE;
 }
 
 /**

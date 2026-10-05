@@ -390,7 +390,10 @@ describe('the refusals a surface is told', () => {
       );
       expect(refused.statusCode).toBe(400);
       expect(refused.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['x-arthome-surface'] } },
+        error: {
+          code: ApiErrorCode.SCHEMA_INVALID,
+          params: { issues: [{ path: ['x-arthome-surface'] }] },
+        },
       });
     },
     CASE_MS,

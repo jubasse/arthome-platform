@@ -12,7 +12,7 @@ import {
   type RouteParams,
   type RouteQuery,
 } from '@arthome/contracts/http';
-import { ApiErrorCode, FixedClock, Service } from '@arthome/core';
+import { ApiErrorCode, FixedClock, SchemaIssueRule, Service } from '@arthome/core';
 
 import { contractSchemaConverter } from './dev-docs.js';
 import { edgeProviders } from './edge-providers.js';
@@ -157,7 +157,18 @@ describe('a handler bound to its route', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({
-      error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['x-arthome-surface'] } },
+      error: {
+        code: ApiErrorCode.SCHEMA_INVALID,
+        params: {
+          issues: [
+            {
+              path: ['x-arthome-surface'],
+              rule: SchemaIssueRule.INVALID_VALUE,
+              values: ['web', 'tv'],
+            },
+          ],
+        },
+      },
     });
   });
 
@@ -165,8 +176,19 @@ describe('a handler bound to its route', () => {
     const body = await rename({}, { title: '' });
     const query = await rename({ page: '2' }, { title: 'Nuit' });
 
-    expect(body.json()).toMatchObject({ error: { params: { fields: ['title'] } } });
-    expect(query.json()).toMatchObject({ error: { params: { fields: ['page'] } } });
+    expect(body.json()).toMatchObject({
+      error: {
+        params: {
+          issues: [
+            { path: ['title'], rule: SchemaIssueRule.TOO_SMALL, minimum: 1, inclusive: true },
+          ],
+        },
+      },
+    });
+    // `custom`, not `unrecognized_key`: core's querySchemaOf refuses an undeclared key by a catchall.
+    expect(query.json()).toMatchObject({
+      error: { params: { issues: [{ path: ['page'], rule: SchemaIssueRule.CUSTOM }] } },
+    });
   });
 
   it('documents the operation from the route: id, tag, a response per status, security, header', () => {

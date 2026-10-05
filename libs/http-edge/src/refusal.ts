@@ -1,6 +1,18 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
+import type { z } from 'zod';
 
-import { ApiErrorCode, DomainErrorCode, FailureNature } from '@arthome/core';
+import { statusOf } from '@arthome/contracts/http';
+import {
+  ApiErrorCode,
+  DomainErrorCode,
+  ERROR_CODES,
+  FailureNature,
+  SchemaIssueRule,
+  type DomainError,
+  type ErrorCode,
+  type ErrorParamsOf,
+} from '@arthome/core';
+import { schemaInvalidParams } from '@arthome/core/schema';
 
 /**
  * The one error shape this project has (transport.md §5.5, critical-rules #8): a code, its
@@ -100,61 +112,99 @@ export function isMappedStatus(status: number): boolean {
   return Object.hasOwn(REFUSAL_BY_STATUS, status);
 }
 
+/** transport.md §5.5: a 4xx is a refusal except 429, a 5xx is unavailable. Core's `natureOf` replaces it. */
+export function natureOfStatus(status: number): FailureNature {
+  return status >= 500 || status === Number(HttpStatus.TOO_MANY_REQUESTS)
+    ? FailureNature.UNAVAILABLE
+    : FailureNature.REFUSED;
+}
+
+/** A code of the published vocabulary, which the registry gives a status, rather than a domain guard's. */
+export function isPublishedCode(code: string): code is ErrorCode {
+  return (ERROR_CODES as readonly string[]).includes(code);
+}
+
+type ParamsArgument<C extends ErrorCode> =
+  Record<never, never> extends ErrorParamsOf<C>
+    ? [params?: ErrorParamsOf<C>]
+    : [params: ErrorParamsOf<C>];
+
+/** The refusal of `code`, at the status the error registry gives it, with the params it declares. */
+export function refusalOf<C extends ErrorCode>(
+  code: C,
+  ...[params]: ParamsArgument<C>
+): RefusalException {
+  const status = statusOf(code);
+  return new RefusalException(status, {
+    code,
+    params: params ?? {},
+    nature: natureOfStatus(status),
+  });
+}
+
+/** `refusalOf`, keeping what caused it for the log: a cause is never served. */
+export function refusalCausedBy<C extends ErrorCode>(
+  cause: unknown,
+  code: C,
+  ...[params]: ParamsArgument<C>
+): RefusalException {
+  const status = statusOf(code);
+  return new RefusalException(
+    status,
+    { code, params: params ?? {}, nature: natureOfStatus(status) },
+    { cause },
+  );
+}
+
 /**
- * `message` is deliberately untyped: an issue carries a library's English prose, and not
- *   typing it is how this file cannot forward it to a wire by accident.
- * Declared, not imported: `StandardSchemaV1.Issue` lives in `@standard-schema/spec`,
- *   `@nestjs/common`'s dependency and not this library's. This shape is structurally what the
- *   pipe passes, so `exceptionFactory` still type-checks.
+ * A domain error as the filter answers it: a published code at the status the error registry gives
+ *   it, so no handler picks one. A domain guard's code is not published: a refusal the caller's own
+ *   input provoked is the least wrong reading of it, 400, and an unavailable one 503.
  */
-interface SchemaIssue {
+export function domainRefusal(error: DomainError): RefusalException {
+  const status = isPublishedCode(error.code)
+    ? statusOf(error.code)
+    : error.nature === FailureNature.REFUSED
+      ? HttpStatus.BAD_REQUEST
+      : HttpStatus.SERVICE_UNAVAILABLE;
+  return new RefusalException(status, error);
+}
+
+/** What a schema pipe hands over: a zod issue, under Standard Schema's name. */
+interface StandardIssue {
   readonly path?: readonly (PropertyKey | { readonly key: PropertyKey })[] | undefined;
 }
 
-function dottedFieldPath(issue: SchemaIssue): string {
-  return (issue.path ?? [])
-    .map((segment) =>
-      typeof segment === 'object' && segment !== null ? String(segment.key) : String(segment),
-    )
-    .join('.');
+function isZodIssue(issue: StandardIssue): issue is z.core.$ZodIssue {
+  return 'code' in issue && Array.isArray(issue.path);
 }
 
 /**
- * `issueToCode` is not used: it builds `validation.<code>`, a spelling in no `ERROR_CODES`
- *   family, and it reads a ZOD issue where `exceptionFactory` gets Standard Schema's, which
- *   has no `code`. §5.5 fixes the code anyway, so an issue is read for its path alone.
- * `fields` is plural, which `issueToCode` could not give — the envelope has one `params` and
- *   a form needs every failing field. Sorted and de-duplicated so equal bodies answer alike.
+ * `api.schema_invalid` with each issue's path, rule and limit, never the library's English message.
+ *   An issue that is not zod's, which no schema here produces, reads as a broken custom rule.
  */
-export function schemaInvalidRefusal(issues: readonly SchemaIssue[]): Refusal {
-  const fields = [...new Set(issues.map(dottedFieldPath).filter((path) => path.length > 0))].sort();
-  return {
-    code: ApiErrorCode.SCHEMA_INVALID,
-    // Omitted rather than empty: `fields: []` reads as "no field was at fault", the opposite
-    // of what a root-level failure — a body that is not an object — means.
-    params: fields.length > 0 ? { fields } : {},
-    nature: FailureNature.REFUSED,
-  };
-}
-
-export function schemaInvalidException(issues: readonly SchemaIssue[]): RefusalException {
-  return new RefusalException(HttpStatus.BAD_REQUEST, schemaInvalidRefusal(issues));
+export function schemaInvalidException(issues: readonly StandardIssue[]): RefusalException {
+  const zodIssues = issues.map((issue): z.core.$ZodIssue =>
+    isZodIssue(issue)
+      ? issue
+      : {
+          code: SchemaIssueRule.CUSTOM,
+          path: (issue.path ?? []).map((segment) =>
+            typeof segment === 'object' ? segment.key : segment,
+          ),
+          message: '',
+          input: undefined,
+        },
+  );
+  return refusalOf(ApiErrorCode.SCHEMA_INVALID, schemaInvalidParams(zodIssues));
 }
 
 /** `api.not_found` is a route that does not resolve, which a route naming nothing held here is too. */
 export function notFound(): RefusalException {
-  return new RefusalException(HttpStatus.NOT_FOUND, {
-    code: ApiErrorCode.NOT_FOUND,
-    params: {},
-    nature: FailureNature.REFUSED,
-  });
+  return refusalOf(ApiErrorCode.NOT_FOUND);
 }
 
 /** A command sent against a version that has moved, naming the version the caller must read again. */
 export function stateConflict(currentVersion: number): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, {
-    code: DomainErrorCode.STATE_CONFLICT,
-    params: { currentVersion },
-    nature: FailureNature.REFUSED,
-  });
+  return refusalOf(DomainErrorCode.STATE_CONFLICT, { currentVersion });
 }

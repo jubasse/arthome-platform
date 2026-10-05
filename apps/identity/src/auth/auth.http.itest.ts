@@ -315,7 +315,7 @@ describe('sign-up', () => {
       const refused = await signUp(nextEmail(), randomUUID(), { password: 'short' });
       expect(refused.statusCode).toBe(400);
       expect(refused.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['password'] } },
+        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { issues: [{ path: ['password'] }] } },
       });
     },
     CASE_MS,

@@ -214,13 +214,16 @@ describe('POST /v1/orders/seats', () => {
       const keyless = await postPurchase(purchaseBody(dateId), null);
       expect(keyless.statusCode).toBe(400);
       expect(keyless.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['Idempotency-Key'] } },
+        error: {
+          code: ApiErrorCode.SCHEMA_INVALID,
+          params: { issues: [{ path: ['Idempotency-Key'] }] },
+        },
       });
 
       const contribution = await postPurchase(purchaseBody(dateId, { contributionMinor: 500 }));
       expect(contribution.statusCode).toBe(400);
       expect(contribution.json()).toMatchObject({
-        error: { params: { fields: ['contributionMinor'] } },
+        error: { params: { issues: [{ path: ['contributionMinor'] }] } },
       });
 
       const stale = await postPurchase(

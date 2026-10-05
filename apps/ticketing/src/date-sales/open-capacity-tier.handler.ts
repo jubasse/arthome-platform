@@ -1,5 +1,4 @@
 import {
-  asConflict,
   notFound,
   runIdempotentlyVersioned,
   type MemorisedResponse,
@@ -37,10 +36,8 @@ export class OpenCapacityTierHandler implements ICommandHandler<OpenCapacityTier
     const sales = await dateSales.findById(dateId);
     if (sales === null) throw notFound();
 
-    await asConflict(() =>
-      sales.openCapacityTier(body.expectedVersion, body.additionalCapacity, this.clock.now()),
-    );
-    await asConflict(() => dateSales.save(sales));
+    sales.openCapacityTier(body.expectedVersion, body.additionalCapacity, this.clock.now());
+    await dateSales.save(sales);
     await recordDateSalesEvents(manager, sales.getUncommittedEvents(), { traceparent });
 
     const pane = await readDateSalesPane(manager, dateId);

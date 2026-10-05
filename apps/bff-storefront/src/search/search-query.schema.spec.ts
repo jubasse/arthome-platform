@@ -1,4 +1,4 @@
-import { schemaInvalidRefusal } from '@arthome-platform/http-edge';
+import { schemaInvalidException } from '@arthome-platform/http-edge';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -7,6 +7,13 @@ import { querySchemaOf } from '@arthome/contracts/http';
 import { storefrontApi } from '@arthome/contracts/storefront-api';
 
 import { searchParamsOf } from '../query-string.js';
+
+function pathsOf(issues: Parameters<typeof schemaInvalidException>[0]): string[] {
+  const { issues: refused } = schemaInvalidException(issues).refusal.params as {
+    readonly issues: readonly { readonly path: readonly unknown[] }[];
+  };
+  return refused.map(({ path }) => path.join('.')).sort();
+}
 
 const { search } = storefrontApi.routes;
 const SearchQuerySchema = querySchemaOf(search);
@@ -48,7 +55,7 @@ describe('the storefront search query', () => {
     const result = await SearchQuerySchema['~standard'].validate({ tab: 'concerts', page: '2' });
     const issues = 'issues' in result && result.issues !== undefined ? result.issues : [];
 
-    expect(schemaInvalidRefusal(issues).params).toEqual({ fields: ['page', 'tab'] });
+    expect(pathsOf(issues)).toEqual(['page', 'tab']);
   });
 
   it('writes lists back as repeated keys, and leaves out what was not sent', () => {

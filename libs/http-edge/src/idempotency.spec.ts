@@ -18,7 +18,9 @@ describe('idempotencyKeyOf', () => {
         expect.unreachable();
       } catch (error) {
         expect(error).toBeInstanceOf(RefusalException);
-        expect((error as RefusalException).refusal.params).toEqual({ fields: ['Idempotency-Key'] });
+        expect((error as RefusalException).refusal.params).toMatchObject({
+          issues: [{ path: ['Idempotency-Key'] }],
+        });
       }
     },
   );

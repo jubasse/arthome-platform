@@ -1,12 +1,12 @@
 import { createHash, createHmac } from 'node:crypto';
 
-import { HttpStatus } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { z } from 'zod';
 
+import { statusOf } from '@arthome/contracts/http';
 import { ApiErrorCode, FailureNature, type Clock } from '@arthome/core';
 
-import { RefusalException, schemaInvalidException } from './refusal.js';
+import { RefusalException, refusalOf, schemaInvalidException } from './refusal.js';
 import { MemorisedResponse, type SuccessEnvelope } from './success-envelope.interceptor.js';
 
 /** transport.md §5.4. */
@@ -79,7 +79,11 @@ interface StoredRecord {
 /** Required, and a UUID; a missing or malformed key is a schema fault naming the header. */
 export function idempotencyKeyOf(header: string | undefined): string {
   const parsed = z.uuid().safeParse(header);
-  if (!parsed.success) throw schemaInvalidException([{ path: ['Idempotency-Key'] }]);
+  if (!parsed.success) {
+    throw schemaInvalidException(
+      parsed.error.issues.map((issue) => ({ ...issue, path: ['Idempotency-Key'] })),
+    );
+  }
   return parsed.data;
 }
 
@@ -202,18 +206,16 @@ async function replay<T>(
   // Absent means purged between the conflict and this read; either way, try again shortly.
   if (stored?.state !== 'completed' || stored.response_body === null) throw inFlight();
   if (stored.fingerprint !== request.fingerprint) {
-    throw new RefusalException(HttpStatus.CONFLICT, {
-      code: ApiErrorCode.IDEMPOTENCY_KEY_REUSED,
-      params: {},
-      nature: FailureNature.REFUSED,
-    });
+    throw refusalOf(ApiErrorCode.IDEMPOTENCY_KEY_REUSED);
   }
   return new MemorisedResponse(stored.response_body as SuccessEnvelope<T>, true);
 }
 
+/** Ruled `unavailable`, though a 409: retrying shortly is the point. Core's `natureOf` will carry it. */
 function inFlight(): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, {
-    code: ApiErrorCode.IDEMPOTENCY_IN_FLIGHT,
+  const code = ApiErrorCode.IDEMPOTENCY_IN_FLIGHT;
+  return new RefusalException(statusOf(code), {
+    code,
     params: { retryAfterMs: RETRY_AFTER_MS },
     nature: FailureNature.UNAVAILABLE,
   });

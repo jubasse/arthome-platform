@@ -112,13 +112,13 @@ describe('TransitionPublicationHandler', () => {
     expect(statusOf(refusal)).toBe(409);
   });
 
-  it('leaves any other domain error to the filter, 400, as it always answered', async () => {
+  it('leaves any other domain error to the filter, at the status the registry gives its code', async () => {
     const invalid = new DomainError({ code: DomainErrorCode.CONTENT_EMPTY_IN_BOTH_LANGUAGES });
     const refusal = await handlerReading(() => Promise.reject(invalid))
       .execute(toReserveFrom(1))
       .catch((error: unknown) => error);
 
     expect(refusal).toBe(invalid);
-    expect(statusOf(refusal)).toBe(400);
+    expect(statusOf(refusal)).toBe(500);
   });
 });

@@ -97,7 +97,7 @@ describe('the show, venue and artist routes over HTTP', () => {
       const unknown = await send('POST', '/venues', { ...venue, timeZone: 'Mars/Olympus_Mons' });
       expect(unknown.statusCode).toBe(400);
       expect(unknown.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['timeZone'] } },
+        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { issues: [{ path: ['timeZone'] }] } },
       });
     },
     CASE_MS,

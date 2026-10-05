@@ -4,7 +4,11 @@ import {
   DateSalesPricingChangedSchema,
   PriceTier as WirePriceTier,
 } from '@arthome-platform/events';
-import { RefusalException, type IdempotentRequest } from '@arthome-platform/http-edge';
+import {
+  RefusalException,
+  domainRefusal,
+  type IdempotentRequest,
+} from '@arthome-platform/http-edge';
 import { OutboxEvent, Outcome } from '@arthome-platform/messaging';
 import {
   applyMigrations,
@@ -28,6 +32,7 @@ import {
   FixedClock,
   PriceTier,
   TECHNICAL_PROVISION_THRESHOLD,
+  isDomainError,
   provisionRevisableUntil,
 } from '@arthome/core';
 
@@ -136,6 +141,7 @@ async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
     await attempt;
   } catch (error) {
     if (error instanceof RefusalException) return error;
+    if (isDomainError(error)) return domainRefusal(error);
     throw error;
   }
   throw new Error('expected a refusal');
@@ -314,8 +320,7 @@ describe('setDatePrices', () => {
       const [rejected] = outcomes.filter(
         (outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected',
       );
-      expect(rejected?.reason).toBeInstanceOf(RefusalException);
-      expect((rejected?.reason as RefusalException).refusal).toMatchObject({
+      expect(rejected?.reason).toMatchObject({
         code: DomainErrorCode.STATE_CONFLICT,
         params: { currentVersion: 2 },
       });

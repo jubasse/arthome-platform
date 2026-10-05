@@ -191,7 +191,7 @@ describe('GET /v1/resolve on the storefront BFF', () => {
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.json()).toMatchObject({ error: { params: { fields: ['url'] } } });
+    expect(response.json()).toMatchObject({ error: { params: { issues: [{ path: ['url'] }] } } });
   });
 });
 

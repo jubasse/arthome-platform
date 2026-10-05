@@ -15,7 +15,11 @@ import {
   ShowUpdatedSchema,
   TechnicalCheckPassedSchema,
 } from '@arthome-platform/events';
-import { RefusalException, type IdempotentRequest } from '@arthome-platform/http-edge';
+import {
+  RefusalException,
+  domainRefusal,
+  type IdempotentRequest,
+} from '@arthome-platform/http-edge';
 import {
   ATTEMPT_HEADER,
   DLQ_REASON_HEADER,
@@ -62,6 +66,7 @@ import {
   PublicationState,
   ReplayPolicy,
   Service,
+  isDomainError,
 } from '@arthome/core';
 
 import { applyChecklistMessage } from './checklist-consumer.js';
@@ -165,6 +170,7 @@ async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
     await attempt;
   } catch (error) {
     if (error instanceof RefusalException) return error;
+    if (isDomainError(error)) return domainRefusal(error);
     throw error;
   }
   throw new Error('expected a refusal');
@@ -355,7 +361,7 @@ describe('a date draft', () => {
       );
       expect(refusal.refusal).toMatchObject({
         code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['showId'] },
+        params: { issues: [{ path: ['showId'] }] },
       });
     },
     CASE_MS,
@@ -831,7 +837,12 @@ describe('the public date page', () => {
       );
       expect(both.refusal).toMatchObject({
         code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['kind', 'slug'] },
+        params: {
+          issues: expect.arrayContaining([
+            expect.objectContaining({ path: ['kind'] }),
+            expect.objectContaining({ path: ['slug'] }),
+          ]) as unknown,
+        },
       });
     },
     CASE_MS,

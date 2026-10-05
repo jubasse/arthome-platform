@@ -8,7 +8,7 @@ import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { storefrontApi } from '@arthome/contracts/storefront-api';
-import { ApiErrorCode, FailureNature, FixedClock, Surface } from '@arthome/core';
+import { ApiErrorCode, FailureNature, FixedClock, SchemaIssueRule, Surface } from '@arthome/core';
 
 import { AppModule } from '../app.module.js';
 import { CATALOG_URL } from '../catalog/catalog.client.js';
@@ -120,7 +120,10 @@ describe('GET /v1/search on the storefront BFF', () => {
 
       expect(response.statusCode).toBe(400);
       expect(response.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['x-arthome-surface'] } },
+        error: {
+          code: ApiErrorCode.SCHEMA_INVALID,
+          params: { issues: [{ path: ['x-arthome-surface'] }] },
+        },
       });
     }
     expect(catalogSaw).toBeNull();
@@ -133,7 +136,9 @@ describe('GET /v1/search on the storefront BFF', () => {
         error: {
           code: ApiErrorCode.SCHEMA_INVALID,
           nature: FailureNature.REFUSED,
-          params: { fields: ['priceMaxMinor'] },
+          params: {
+            issues: [{ path: ['priceMaxMinor'], rule: SchemaIssueRule.INVALID_TYPE }],
+          },
           traceId: TRACE_ID,
         },
         servedAt: '2026-09-26T20:00:00.000Z',
@@ -147,7 +152,9 @@ describe('GET /v1/search on the storefront BFF', () => {
     );
 
     expect(refused.statusCode).toBe(400);
-    expect(refused.json()).toMatchObject({ error: { params: { fields: ['priceMaxMinor'] } } });
+    expect(refused.json()).toMatchObject({
+      error: { params: { issues: [{ path: ['priceMaxMinor'] }] } },
+    });
     expect(crashed.statusCode).toBe(502);
     expect(crashed.json()).toMatchObject({
       error: {

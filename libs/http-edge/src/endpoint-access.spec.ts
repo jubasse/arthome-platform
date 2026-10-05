@@ -26,7 +26,7 @@ import {
   type HandlerInput,
   type Requirement,
 } from '@arthome/contracts/http';
-import { ApiErrorCode, FailureNature, FixedClock } from '@arthome/core';
+import { ApiErrorCode, FailureNature, FixedClock, SchemaIssueRule } from '@arthome/core';
 
 import type { EndpointGuards, IdentityGuard, RuleGuard } from './endpoint-access.js';
 import { EndpointInput, EndpointPrincipal } from './endpoint-input.js';
@@ -416,7 +416,15 @@ describe('EndpointInput', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({
-      error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['reason', 'thingId'] } },
+      error: {
+        code: ApiErrorCode.SCHEMA_INVALID,
+        params: {
+          issues: [
+            { path: ['thingId'], rule: SchemaIssueRule.INVALID_FORMAT, format: 'uuid' },
+            { path: ['reason'], rule: SchemaIssueRule.TOO_SMALL, minimum: 1, inclusive: true },
+          ],
+        },
+      },
     });
   });
 

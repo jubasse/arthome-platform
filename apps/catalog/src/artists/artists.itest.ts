@@ -1,5 +1,9 @@
 import { ArtistUpdatedSchema } from '@arthome-platform/events';
-import { RefusalException, type IdempotentRequest } from '@arthome-platform/http-edge';
+import {
+  RefusalException,
+  domainRefusal,
+  type IdempotentRequest,
+} from '@arthome-platform/http-edge';
 import { OutboxEvent } from '@arthome-platform/messaging';
 import {
   applyMigrations,
@@ -22,6 +26,7 @@ import {
   Locale,
   PublicationState,
   ReplayPolicy,
+  isDomainError,
   worldwideRights,
 } from '@arthome/core';
 
@@ -62,6 +67,7 @@ async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
     await attempt;
   } catch (error) {
     if (error instanceof RefusalException) return error;
+    if (isDomainError(error)) return domainRefusal(error);
     throw error;
   }
   throw new Error('expected a refusal');
@@ -135,7 +141,12 @@ describe('a channel’s public face', () => {
       const nameless = await refusalOf(edit('channel-b', { expectedVersion: 0 }));
       expect(nameless.refusal).toMatchObject({
         code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['categoryId', 'publicName'] },
+        params: {
+          issues: expect.arrayContaining([
+            expect.objectContaining({ path: ['categoryId'] }),
+            expect.objectContaining({ path: ['publicName'] }),
+          ]) as unknown,
+        },
       });
     },
     CASE_MS,

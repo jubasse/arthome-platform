@@ -1,4 +1,4 @@
-import { MemorisedResponse, asConflict } from '@arthome-platform/http-edge';
+import { MemorisedResponse } from '@arthome-platform/http-edge';
 import { Inject, Logger } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { v7 as uuidv7 } from 'uuid';
@@ -142,7 +142,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     const sales = await dateSales.findUnlocked(body.dateId);
     if (sales === null) throw soldOut();
     // Its decision first, its statement last: past the end or off sale, refused before the key.
-    await asConflict(() => sales.holdSeats(body.quantity, now));
+    sales.holdSeats(body.quantity, now);
     const lateEntry = sales.lateEntryAt(now);
     if (lateEntry !== null && !lateEntryAcknowledged) throw lateEntryUnacknowledged(lateEntry);
     const quote = sales.quote(body.tier, body.quantity);

@@ -9,7 +9,7 @@ import {
 } from '@arthome/core';
 
 import { PublicationEngaged, PublicationStateChanged } from './performance-date.events.js';
-import { Publication, PublicationChecklistIncomplete } from './publication.js';
+import { Publication } from './publication.js';
 
 const NOW = '2026-09-26T10:00:00.000Z';
 
@@ -102,13 +102,12 @@ describe('Publication', () => {
       ),
     );
 
-    expect(refusal).toBeInstanceOf(PublicationChecklistIncomplete);
     expect(isDomainError(refusal) && refusal.code).toBe(
       DomainErrorCode.PUBLICATION_CHECKLIST_INCOMPLETE,
     );
-    expect((refusal as PublicationChecklistIncomplete).missing).toContain(
-      PublicationChecklistItem.CAPACITY,
-    );
+    expect(isDomainError(refusal) && refusal.params).toMatchObject({
+      missing: expect.arrayContaining([PublicationChecklistItem.CAPACITY]) as unknown,
+    });
     expect(publication.snapshot).toBe(before);
   });
 

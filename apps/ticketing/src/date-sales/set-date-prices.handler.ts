@@ -1,5 +1,4 @@
 import {
-  asConflict,
   notFound,
   runIdempotentlyVersioned,
   type MemorisedResponse,
@@ -47,10 +46,8 @@ export class SetDatePricesHandler implements ICommandHandler<SetDatePrices> {
     const sales = await dateSales.findById(dateId);
     if (sales === null) throw notFound();
 
-    await asConflict(() =>
-      sales.setPrices(body.expectedVersion, sentPricesOf(body.tiers), this.clock.now()),
-    );
-    await asConflict(() => dateSales.save(sales));
+    sales.setPrices(body.expectedVersion, sentPricesOf(body.tiers), this.clock.now());
+    await dateSales.save(sales);
     await recordDateSalesEvents(manager, sales.getUncommittedEvents(), { traceparent });
 
     const pane = await readDateSalesPane(manager, dateId);

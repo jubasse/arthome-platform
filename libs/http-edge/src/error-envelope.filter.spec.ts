@@ -13,9 +13,12 @@ import {
   ApiErrorCode,
   DomainError,
   DomainErrorCode,
+  DomainGuardCode,
   FailureNature,
   FixedClock,
   IdentityErrorCode,
+  OrderErrorCode,
+  SchemaIssueRule,
 } from '@arthome/core';
 
 import { ErrorEnvelopeFilter } from './error-envelope.filter.js';
@@ -220,7 +223,7 @@ describe('ErrorEnvelopeFilter', () => {
     run(
       new RefusalException(HttpStatus.BAD_REQUEST, {
         code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['locale'] },
+        params: { issues: [{ path: ['locale'], rule: SchemaIssueRule.INVALID_VALUE }] },
         nature: FailureNature.REFUSED,
       }),
     );
@@ -229,7 +232,7 @@ describe('ErrorEnvelopeFilter', () => {
     expect(sent.body).toMatchObject({
       error: {
         code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['locale'] },
+        params: { issues: [{ path: ['locale'], rule: SchemaIssueRule.INVALID_VALUE }] },
         nature: FailureNature.REFUSED,
       },
     });
@@ -257,10 +260,34 @@ describe('ErrorEnvelopeFilter', () => {
     });
   });
 
-  it('treats an unavailable domain error as 503, rather than blaming the caller', () => {
+  it('answers a published code at the status the error registry gives it, whoever throws it', () => {
+    for (const [error, status] of [
+      [
+        new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { currentVersion: 3 } }),
+        HttpStatus.CONFLICT,
+      ],
+      [
+        new DomainError({
+          code: OrderErrorCode.PAYMENT_DECLINED,
+          params: { declineCode: 'insufficient_funds' },
+        }),
+        HttpStatus.PAYMENT_REQUIRED,
+      ],
+    ] as const) {
+      const { run, sent } = filterFor();
+      run(error);
+      expect(sent.status).toBe(status);
+    }
+  });
+
+  it('treats an unavailable domain guard as 503, rather than blaming the caller', () => {
     const { run, sent } = filterFor();
     run(
-      new DomainError({ code: DomainErrorCode.MEDIA_URL_EMPTY, nature: FailureNature.UNAVAILABLE }),
+      new DomainError({
+        code: DomainGuardCode.TIMEZONE_NOT_IANA,
+        params: { timeZone: 'Mars/Olympus' },
+        nature: FailureNature.UNAVAILABLE,
+      }),
     );
     expect(sent.status).toBe(HttpStatus.SERVICE_UNAVAILABLE);
   });

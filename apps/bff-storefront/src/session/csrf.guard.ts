@@ -1,8 +1,8 @@
-import { RefusalException, routeOf } from '@arthome-platform/http-edge';
-import { HttpStatus, Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
+import { RefusalException, refusalOf, routeOf } from '@arthome-platform/http-edge';
+import { Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
 import { HttpAdapterHost, Reflector, type ReflectableDecorator } from '@nestjs/core';
 
-import { ApiErrorCode, FailureNature } from '@arthome/core';
+import { ApiErrorCode } from '@arthome/core';
 
 import { SESSION_COOKIE, type CookieCarrier } from './session-carriers.js';
 
@@ -29,11 +29,7 @@ interface CsrfProtecting {
 }
 
 function csrfRefused(): RefusalException {
-  return new RefusalException(HttpStatus.FORBIDDEN, {
-    code: ApiErrorCode.FORBIDDEN,
-    params: {},
-    nature: FailureNature.REFUSED,
-  });
+  return refusalOf(ApiErrorCode.FORBIDDEN);
 }
 
 /**

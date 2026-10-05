@@ -1,5 +1,5 @@
 import { OrderPaidSchema, SeatActivatedSchema } from '@arthome-platform/events';
-import { RefusalException } from '@arthome-platform/http-edge';
+import { RefusalException, domainRefusal } from '@arthome-platform/http-edge';
 import { OutboxEvent } from '@arthome-platform/messaging';
 import {
   applyMigrations,
@@ -19,12 +19,13 @@ import {
   FailureNature,
   FixedClock,
   OrderErrorCode,
+  OrderState,
   PriceTier,
+  SeatHoldState,
+  isDomainError,
   isSeatCode,
   plusMinutes,
   plusSeconds,
-  OrderState,
-  SeatHoldState,
 } from '@arthome/core';
 
 import { GetOrderHandler } from './get-order.handler.js';
@@ -117,6 +118,7 @@ async function refusalOf(attempt: Promise<unknown>): Promise<RefusalException> {
     await attempt;
   } catch (error) {
     if (error instanceof RefusalException) return error;
+    if (isDomainError(error)) return domainRefusal(error);
     throw error;
   }
   throw new Error('expected a refusal');

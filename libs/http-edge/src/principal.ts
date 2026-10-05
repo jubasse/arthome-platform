@@ -1,8 +1,9 @@
-import { HttpStatus, createParamDecorator, type ExecutionContext } from '@nestjs/common';
+import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 
-import { ApiErrorCode, FailureNature, type InternalTokenIssuer } from '@arthome/core';
+import { ApiErrorCode, type InternalTokenIssuer } from '@arthome/core';
 
-import { RefusalException } from './refusal.js';
+import type { RefusalException } from './refusal.js';
+import { refusalOf } from './refusal.js';
 
 /** Who a service is serving, as the BFF's verified internal token says (`adr-auth.md` §8). */
 export interface Principal {
@@ -25,11 +26,7 @@ export function principalOf(request: object): Principal | null {
 }
 
 export function unauthenticated(): RefusalException {
-  return new RefusalException(HttpStatus.UNAUTHORIZED, {
-    code: ApiErrorCode.UNAUTHENTICATED,
-    params: {},
-    nature: FailureNature.REFUSED,
-  });
+  return refusalOf(ApiErrorCode.UNAUTHENTICATED);
 }
 
 /** The account the call is made for, or a 401: the route serves no anonymous visitor. */

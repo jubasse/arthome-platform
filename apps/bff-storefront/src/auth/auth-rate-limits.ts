@@ -1,19 +1,19 @@
 import { isIPv4 } from 'node:net';
 
-import { RefusalException, type RuleGuard } from '@arthome-platform/http-edge';
-import { HttpStatus, Injectable, type ExecutionContext } from '@nestjs/common';
+import { refusalOf, type RuleGuard } from '@arthome-platform/http-edge';
+import { Injectable, type ExecutionContext } from '@nestjs/common';
 import { Reflector, type ReflectableDecorator } from '@nestjs/core';
 import {
   DEFAULT_IPV6_SUBNET_PREFIX,
-  ThrottlerGuard,
   normalizeIp,
   seconds,
+  ThrottlerGuard,
   type ThrottlerLimitDetail,
   type ThrottlerOptions,
 } from '@nestjs/throttler';
 
 import type { Requirement } from '@arthome/contracts/http';
-import { ApiErrorCode, AuthRateLimit, FailureNature, limitForAddress } from '@arthome/core';
+import { ApiErrorCode, AuthRateLimit, limitForAddress } from '@arthome/core';
 
 import { viewerOf } from '../session/viewer.js';
 
@@ -128,11 +128,7 @@ export class AuthThrottlerGuard extends ThrottlerGuard {
       .switchToHttp()
       .getResponse<{ header(name: string, value: string): unknown }>()
       .header('retry-after-ms', String(retryAfterMs));
-    throw new RefusalException(HttpStatus.TOO_MANY_REQUESTS, {
-      code: ApiErrorCode.RATE_LIMITED,
-      params: { retryAfterMs },
-      nature: FailureNature.UNAVAILABLE,
-    });
+    throw refusalOf(ApiErrorCode.RATE_LIMITED, { retryAfterMs });
   }
 }
 

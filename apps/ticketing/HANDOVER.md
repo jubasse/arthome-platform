@@ -181,8 +181,9 @@ Catalog's, `apps/catalog/HANDOVER.md` §0f, through the same libraries: `Ticketi
 `TransactionRunner` over `ticketingTransactionOf`, the repository tracks with `AggregateTracker` and
 saves with `saveVersioned`, commands answer through `runIdempotentlyVersioned`, consumers claim with
 `claimMessage`. Domain events reach the `EventBus` after the commit and nothing subscribes to them.
-Refusals: the aggregate throws core's `DomainError`; the studio handlers wrap it in `asConflict`
-(409), the consumer maps it (retry for an unknown date, dead-letter otherwise).
+Refusals: the aggregate throws core's `DomainError`, which the filter answers at the status core's
+error registry gives its code; the consumer maps it (retry for an unknown date, dead-letter
+otherwise).
 
 T3's `SeatHold` and `SeatOrder` follow them, `TicketingTransaction` carrying `holds` and `orders`
 beside `dateSales`. The departures, each the ADR's or stated where it is built:
@@ -623,7 +624,7 @@ Known and left, each judged:
 
 - `market_id` and the service-fee schedule have no source yet; neither is stored.
 - **Catalog's service glue is shared since M4** (architecture review): `frozen` is
-  `@arthome-platform/transactions`', `notFound`, `asConflict` and `edgeProviders` are
+  `@arthome-platform/transactions`', `notFound`, `refusalOf` and `edgeProviders` are
   `@arthome-platform/http-edge`'s, `httpApp` is `@arthome-platform/testing`'s, and
   `writeTicketingEvent` (`outboxWriter` over ticketing's topics) and the consumer host
   (`ConsumerHostModule`, its `/nest` entry) are `@arthome-platform/messaging`'s. `assert-never.ts` is still one copy

@@ -1,5 +1,4 @@
 import {
-  asConflict,
   notFound,
   runIdempotentlyVersioned,
   type MemorisedResponse,
@@ -38,10 +37,8 @@ export class SetTechnicalProvisionHandler implements ICommandHandler<SetTechnica
     const sales = await dateSales.findById(dateId);
     if (sales === null) throw notFound();
 
-    await asConflict(() =>
-      sales.setTechnicalProvision(body.expectedVersion, body.provisionedCapacity, this.clock.now()),
-    );
-    await asConflict(() => dateSales.save(sales));
+    sales.setTechnicalProvision(body.expectedVersion, body.provisionedCapacity, this.clock.now());
+    await dateSales.save(sales);
     await recordDateSalesEvents(manager, sales.getUncommittedEvents(), { traceparent });
 
     const pane = await readDateSalesPane(manager, dateId);
