@@ -63,6 +63,23 @@ class OverlayController {
   }
 }
 
+const peekOverlay = builder.identity(service).optionalAuth().defineRoute({
+  method: 'get',
+  path: '/overlay/peek',
+  operationId: 'peekOverlay',
+  responses: answered,
+});
+
+@Controller()
+class PeekController {
+  @Endpoint(peekOverlay)
+  public async peekOverlay(
+    @EndpointInput(peekOverlay) { principal }: HandlerInput<typeof peekOverlay>,
+  ): Promise<HandlerOutput<typeof peekOverlay>> {
+    return Promise.resolve({ data: { caller: JSON.stringify(principal) } });
+  }
+}
+
 @Controller()
 class WebhookController {
   @Endpoint(takeWebhook)
@@ -94,6 +111,22 @@ class StrayPublicModule {}
   }),
 })
 class AllowedPublicModule {}
+
+@Module({
+  controllers: [PeekController],
+  providers: edgeProviders({ service: Service.CATALOG, clock: CLOCK }),
+})
+class StrayOptionalModule {}
+
+@Module({
+  controllers: [PeekController],
+  providers: edgeProviders({
+    service: Service.CATALOG,
+    clock: CLOCK,
+    publicRoutes: ['peekOverlay'],
+  }),
+})
+class AllowedOptionalModule {}
 
 const clock = new FixedClock(Date.now());
 let app: Awaited<ReturnType<typeof httpApp>>;
@@ -143,11 +176,31 @@ describe('the service identity', () => {
   });
 });
 
-describe('a public route on a service', () => {
+describe('a route a call without a token reaches, on a service', () => {
   it('fails the boot, since the internal token is a service’s only authorisation', async () => {
     await expect(
       httpApp({ imports: [StrayPublicModule], providers: [], configure: serveEndpoints }),
     ).rejects.toThrow(/takeWebhook \(public on a service\)/);
+  });
+
+  it('fails the boot when optional too, since an optional route lets that call in', async () => {
+    await expect(
+      httpApp({ imports: [StrayOptionalModule], providers: [], configure: serveEndpoints }),
+    ).rejects.toThrow(/peekOverlay \(optional on a service\)/);
+    const allowed = await httpApp({
+      imports: [AllowedOptionalModule],
+      providers: [],
+      configure: serveEndpoints,
+    });
+    const response = await allowed.inject({
+      method: 'GET',
+      url: '/v1/overlay/peek',
+      headers: { [DEADLINE_HEADER]: new Date(clock.nowMs() + 60_000).toISOString() },
+    });
+    await allowed.close();
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ data: { caller: 'null' } });
   });
 
   it('answers without a token when the service names it in its allow-list', async () => {

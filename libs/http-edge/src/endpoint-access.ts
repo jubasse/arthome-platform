@@ -44,7 +44,7 @@ export interface EndpointGuards {
   readonly identities: Readonly<Record<string, IdentityGuard>>;
   readonly rules: Readonly<Record<string, RuleGuard>>;
   /**
-   * On a service, the operation ids that may be public: any other public route fails the boot.
+   * On a service, the operation ids that may be public or optional: any other fails the boot.
    *   Absent on a BFF, whose public routes are its contract's to declare.
    */
   readonly publicAllowed?: readonly string[];
@@ -118,6 +118,15 @@ export class EndpointAccessGuard implements CanActivate {
  *   or a public route on a service outside its allow-list, so nothing passes by omission (ADR
  *   contract model §4.3), and lists the bound routes still without `access`.
  */
+/** An optional route lets a caller without a token in as surely as a public one does. */
+function exposureOnAServiceOf(route: Route): string[] {
+  if (route.access?.kind === 'anyone') return [`${route.operationId} (public on a service)`];
+  if (route.access?.kind === 'identified' && route.access.optional) {
+    return [`${route.operationId} (optional on a service)`];
+  }
+  return [];
+}
+
 @Injectable()
 export class EndpointGuardsCheck implements OnModuleInit {
   private readonly logger = new Logger('Endpoint access');
@@ -160,10 +169,8 @@ export class EndpointGuardsCheck implements OnModuleInit {
   private unguardedNamesOf(route: Route): string[] {
     const { publicAllowed } = this.guards;
     const exposed =
-      route.access?.kind === 'anyone' &&
-      publicAllowed !== undefined &&
-      !publicAllowed.includes(route.operationId)
-        ? [`${route.operationId} (public on a service)`]
+      publicAllowed !== undefined && !publicAllowed.includes(route.operationId)
+        ? exposureOnAServiceOf(route)
         : [];
     const identity =
       route.access?.kind === 'identified' &&

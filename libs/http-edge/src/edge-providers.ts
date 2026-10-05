@@ -30,8 +30,8 @@ export interface EdgeOptions {
   /**
    * The operation ids this service serves without the internal token. A service is reached inside
    *   the cluster without TLS, so the token is its only authorisation (transport.md §5.1): any
-   *   other route the contract declares public fails the boot. Empty today, health being outside
-   *   the contracts.
+   *   other route the contract declares public, or optional, fails the boot. Empty today, health
+   *   being outside the contracts.
    */
   readonly publicRoutes?: readonly string[];
 }
