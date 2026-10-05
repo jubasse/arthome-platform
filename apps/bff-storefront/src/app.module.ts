@@ -43,6 +43,7 @@ import { IdentityModule } from './identity/identity.module.js';
 import { SearchModule } from './search/search.module.js';
 import { CsrfGuard } from './session/csrf.guard.js';
 import { CSRF_SECRET, EdgePlugins } from './session/edge-plugins.js';
+import { NoPairedDevices, PairedDeviceVerifier } from './session/paired-device.verifier.js';
 import { ViewerOrDeviceIdentity } from './session/viewer-or-device.identity.js';
 import { ViewerGuard } from './session/viewer.guard.js';
 import { ViewerIdentity } from './session/viewer.identity.js';
@@ -78,6 +79,7 @@ import { TraceparentMiddleware } from './traceparent.middleware.js';
     }),
     ViewerIdentity,
     ViewerOrDeviceIdentity,
+    { provide: PairedDeviceVerifier, useClass: NoPairedDevices },
     ThrottleRule,
     AuthThrottlerGuard,
     {

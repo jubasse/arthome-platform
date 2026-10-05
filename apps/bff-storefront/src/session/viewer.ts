@@ -16,7 +16,7 @@ export function attachViewer(request: object, viewer: Viewer): void {
 }
 
 /**
- * Marks a route that serves a signed-in viewer alone: `ViewerGuard` resolves the session first.
+ * Marks a route that serves a signed-in viewer alone: `ViewerGuard` resolves the session first; only the auth controller still marks one.
  * @deprecated A route declared with the `viewer` identity is resolved by `ViewerIdentity`.
  */
 export const RequiresViewer: ReflectableDecorator<void, true> = Reflector.createDecorator<

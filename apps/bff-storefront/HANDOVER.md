@@ -70,8 +70,11 @@ contract's docs module (`storefront-docs.ts`) and absent in production.
 - **The session is identity's, validated here** (§8): `ViewerGuard` asks identity on the routes
   marked `RequiresViewer`, and nowhere else, so a public read never waits on identity. A route
   declared with the `viewer` identity (contract pass 1) is resolved by `ViewerIdentity` instead,
-  bound in `AppModule`'s `endpointProviders`, which also checks a cookie write's CSRF token; until
-  the fan-out opts the modules in, every bound route is still on `ViewerGuard`. No Redis
+  bound in `AppModule`'s `endpointProviders`, which also checks a cookie write's CSRF token; the
+  dates, search and viewer-context controllers are on it, the auth controller still on
+  `ViewerGuard`. `viewer_or_device` is `ViewerIdentity` first, then `ViewerOrDeviceIdentity`'s
+  device token, verified by `PairedDeviceVerifier`: `NoPairedDevices` is bound until pairing is
+  built, so a device token alone answers 401. No Redis
   cache of sessions yet: one identity call per authenticated request, within transport.md §5.9's
   150 ms. Identity answers an unknown session `session: null`, so a 401 from identity means this
   BFF's own token was refused, and becomes `api.upstream_unavailable`.
@@ -120,7 +123,7 @@ contract's docs module (`storefront-docs.ts`) and absent in production.
   requirement. The impact is low: the country only feeds `AccountRegistered`, and every read
   evaluates it again.
 - **The viewer context is the contract's type** (`ServedViewerContext`), served from the session
-  `ViewerGuard` resolved: identity answers the account with it, so `getViewerContext` makes one
+  `ViewerIdentity` resolved: identity answers the account with it, so `getViewerContext` makes one
   identity call, within §5.9's session validation. The label catalogue and the taxonomy artifact
   are `null` until a publication pipeline exists (core's CI, context-map §1.8): the surface uses its
   embedded snapshot. The reaction quota per date is omitted until the product owner gives the
