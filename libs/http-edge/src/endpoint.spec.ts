@@ -4,26 +4,13 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import {
-  defineRoute,
-  type Api,
-  type RouteBody,
-  type RouteHeaders,
-  type RouteParams,
-  type RouteQuery,
-} from '@arthome/contracts/http';
+import { defineRoute, type Api, type HandlerInput } from '@arthome/contracts/http';
 import { ApiErrorCode, FixedClock, SchemaIssueRule, Service } from '@arthome/core';
 
 import { contractSchemaConverter } from './dev-docs.js';
 import { edgeProviders } from './edge-providers.js';
-import {
-  Endpoint,
-  EndpointBody,
-  EndpointHeaders,
-  EndpointParams,
-  EndpointQuery,
-  serveEndpoints,
-} from './endpoint.js';
+import { EndpointInput } from './endpoint-input.js';
+import { Endpoint, serveEndpoints } from './endpoint.js';
 
 const renameDate = defineRoute({
   method: 'post',
@@ -68,10 +55,7 @@ interface Renamed {
 class DatesController {
   @Endpoint(renameDate)
   public rename(
-    @EndpointParams(renameDate) params: RouteParams<typeof renameDate>,
-    @EndpointQuery(renameDate) query: RouteQuery<typeof renameDate>,
-    @EndpointHeaders(renameDate) _headers: RouteHeaders<typeof renameDate>,
-    @EndpointBody(renameDate) body: RouteBody<typeof renameDate>,
+    @EndpointInput(renameDate) { params, query, body }: HandlerInput<typeof renameDate>,
   ): Promise<{ readonly data: Renamed }> {
     return Promise.resolve({
       data: { dateId: params.dateId, title: body.title, notified: query.notify ?? false },

@@ -61,15 +61,7 @@ export {
 } from './success-envelope.interceptor.js';
 export type { SuccessEnvelope } from './success-envelope.interceptor.js';
 
-export {
-  Endpoint,
-  EndpointBody,
-  EndpointHeaders,
-  EndpointParams,
-  EndpointQuery,
-  serveEndpoints,
-  successSchemaOf,
-} from './endpoint.js';
+export { Endpoint, serveEndpoints, successSchemaOf } from './endpoint.js';
 export type { EndpointDecorator } from './endpoint.js';
 
 export {

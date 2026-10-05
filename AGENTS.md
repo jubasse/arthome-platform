@@ -118,8 +118,7 @@ NestJS skips them; this block is what makes loading systematic rather than remem
     outside the injected `Clock`, and every `eslint-disable` must name its rules and give its reason
     after `--` (`@eslint-community/eslint-comments`'s `no-unlimited-disable` and
     `require-description`). `@typescript-eslint/no-deprecated` refuses any use of a deprecated API,
-    except in the files `eslint.config.js` lists as using one when it was turned on: a file leaves
-    that list with its last deprecated use, and the list must be empty when the fan-out closes.
+    with no file exempted.
   - **Shared helpers, not run by `verify`, which only a reviewer enforces** (a helper prevents its
     defect only where it is used; `updateReturning` is in ticketing's payment inbox and messaging's
     `republishOutboxRow`, and `search-indexer`'s artist consumer still destructures its own):
@@ -223,8 +222,9 @@ The decorator is `applyDecorators` over real decorators only, filled from the de
 method and path (`@Get`, `@Post`... with the `{id}` template written `:id`), `@HttpCode` of the
 lowest declared 2xx, `@ApiOperation` (operation id, summary, description), `@ApiTags`,
 `@ApiResponse({ status, standardSchema })` for every declared status, `@ApiSecurity` for every
-requirement and `@ApiHeader` for every header parameter. A requirement written `{}` (a call with
-no credential) is `ApiSecurity({})`.
+requirement, `@ApiParam`, `@ApiQuery` and `@ApiHeader` for every declared parameter and `@ApiBody`
+for the body (Swagger reads no input of a custom decorator such as `EndpointInput`). A
+requirement written `{}` (a call with no credential) is `ApiSecurity({})`.
 
 ```ts
 const { getDateDetail } = storefrontApi.routes;
@@ -247,8 +247,7 @@ export class DatesController {
 - **Inputs** come in one decorator, `@EndpointInput(route)`, typed `HandlerInput<typeof route>`:
   `{ params, query, body, headers, principal }`, each part validated against the route's schema
   and every failing field named at once in `api.schema_invalid`'s `fields`; `@EndpointPrincipal(route)`
-  gives the principal alone. The four separate decorators, `EndpointParams`, `EndpointQuery`,
-  `EndpointBody` and `EndpointHeaders`, are deprecated; no BFF controller uses them any more.
+  gives the principal alone.
 - **The handler returns data, the server stamps the envelope.** The handler must be `async` and
   return core's `HandlerOutput<typeof route>`: the route's success body without `servedAt`
   (`{ data }`, `{ data, validUntil }` on a perishable read, `{ items, page }` on a list), which

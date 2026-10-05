@@ -1,21 +1,13 @@
-import type { IncomingHttpHeaders } from 'node:http';
-
 import {
-  Body,
   Delete,
   Get,
   HttpCode,
-  Param,
   Patch,
   Post,
   Put,
-  Query,
-  StandardSchemaValidationPipe,
   Version,
   applyDecorators,
-  createParamDecorator,
   VersioningType,
-  type ExecutionContext,
 } from '@nestjs/common';
 import { RouteConfig, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
@@ -31,10 +23,6 @@ import {
 import { z } from 'zod';
 
 import {
-  bodySchemaOf,
-  headersSchemaOf,
-  paramsSchemaOf,
-  querySchemaOf,
   successStatusOf,
   versionedPath,
   type HandlerOutput,
@@ -48,7 +36,6 @@ import {
 } from '@arthome/contracts/http';
 
 import { EndpointRoute } from './endpoint-access.js';
-import { schemaInvalidException } from './refusal.js';
 import { requirementObjectOf } from './security-requirement.js';
 import type { MemorisedResponse, SuccessEnvelope } from './success-envelope.interceptor.js';
 import { answeredStatusOf } from './success-status.js';
@@ -252,43 +239,4 @@ export function successSchemaOf<R extends RouteShape>(
     throw new Error(`${route.method.toUpperCase()} ${versionedPath(route)} answers no JSON body.`);
   }
   return schema as z.ZodType<RouteResponseBody<R, RouteSuccessStatus<R>>, unknown>;
-}
-
-/**
- * Validated by the app's global `StandardSchemaValidationPipe`, as `@Query({ schema })` is.
- * @deprecated `EndpointInput(route)` hands every part of the input, validated at once.
- */
-export function EndpointQuery(route: RouteShape): ParameterDecorator {
-  return Query({ schema: querySchemaOf(route) });
-}
-
-/** @deprecated `EndpointInput(route)` hands every part of the input, validated at once. */
-export function EndpointParams(route: RouteShape): ParameterDecorator {
-  return Param({ schema: paramsSchemaOf(route) });
-}
-
-/** @deprecated `EndpointInput(route)` hands every part of the input, validated at once. */
-export function EndpointBody(route: RouteShape): ParameterDecorator {
-  const schema = bodySchemaOf(route);
-  return schema === undefined ? Body() : Body({ schema });
-}
-
-const requestHeaders = createParamDecorator(
-  (_data: unknown, context: ExecutionContext): IncomingHttpHeaders =>
-    context.switchToHttp().getRequest<{ readonly headers: IncomingHttpHeaders }>().headers,
-);
-
-/**
- * `@Headers()` takes no schema, and the global pipe skips a custom decorator, so this one carries
- *   its own pipe with the same `exceptionFactory`: a refused header answers
- *   `api.schema_invalid` naming it, like any other field.
- */
-const VALIDATED_HEADERS = new StandardSchemaValidationPipe({
-  validateCustomDecorators: true,
-  exceptionFactory: schemaInvalidException,
-});
-
-/** @deprecated `EndpointInput(route)` hands every part of the input, validated at once. */
-export function EndpointHeaders(route: RouteShape): ParameterDecorator {
-  return requestHeaders({ schema: headersSchemaOf(route), pipes: [VALIDATED_HEADERS] });
 }
