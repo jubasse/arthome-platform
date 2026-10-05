@@ -301,6 +301,31 @@ describe('the viewer identity, applied by Endpoint', () => {
     expect(response.json()).toMatchObject({ data: { principal: 'null' } });
   });
 
+  it('counts a malformed or doubled carrier as none where the route declares it so', async () => {
+    for (const request of [
+      { headers: { ...WEB, authorization: 'Basic a.b' } },
+      {
+        headers: { ...WEB, authorization: `Bearer ${GOOD_TOKEN}` },
+        cookies: { [SESSION_COOKIE]: GOOD_TOKEN },
+      },
+    ]) {
+      const response = await app.inject({ method: 'POST', url: '/v1/fixture/leave', ...request });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ data: { principal: 'null' } });
+    }
+  });
+
+  it('still refuses a malformed carrier where the route does not declare it', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/fixture/me',
+      headers: { ...WEB, authorization: 'Basic a.b' },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
   it('lets an anonymous caller into an optional route, with a null principal', async () => {
     const response = await app.inject({ method: 'GET', url: '/v1/fixture/browse', headers: WEB });
 
