@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/notifications",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The notifications service. In wave 1: the consumer that proves the path.",

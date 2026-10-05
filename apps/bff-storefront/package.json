@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/bff-storefront",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The storefront's BFF: the published storefront contract, served from the services behind it.",

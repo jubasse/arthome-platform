@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/transactions",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The transaction a CQRS command runs in: repositories bound to it, the domain events of what it wrote published once it has committed, and the deep freeze an aggregate holds its snapshot with.",
