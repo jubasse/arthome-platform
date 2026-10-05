@@ -139,6 +139,11 @@ NestJS skips them; this block is what makes loading systematic rather than remem
     `tools/eslint/` re-checks every file. A new rule file goes into the hash in
     `tools/eslint/plugin.mjs`.
 
+**GitHub Actions are pinned by commit SHA**, with the version in a comment (`uses:
+actions/checkout@<sha> # v7.0.1`). A tag can be moved to other code; a commit cannot. To bump an
+action, resolve the new release's commit (`gh api repos/<owner>/<action>/commits/<tag> -q .sha`) and
+update the SHA and the comment together. Python dependencies of the workflows are pinned by version.
+
 ## The commands
 
 | command | what it does |
