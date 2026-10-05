@@ -21,11 +21,8 @@ async function bootstrap(): Promise<void> {
   // Same limits as the services: no drain window yet, so a rollout still cuts in-flight requests.
   app.enableShutdownHooks();
   serveEndpoints(app);
-  mountDevDocs(app, storefrontApi, {
-    title: String(storefrontApi.info.title),
-    description: String(storefrontApi.info.description),
-    path: 'docs',
-  });
+  // The api's introduction is in its docs module, which core does not export to a server yet.
+  mountDevDocs(app, storefrontApi, { title: 'bff-storefront', path: 'docs' });
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 }
 

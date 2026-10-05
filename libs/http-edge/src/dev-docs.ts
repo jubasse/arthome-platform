@@ -70,7 +70,10 @@ export function mountDevDocs(
 ): void {
   if (isProductionEnvironment(environment)) return;
   SwaggerModule.setup(path, app, (): OpenAPIObject => {
-    const builder = new DocumentBuilder().setTitle(title).setVersion(String(api.info.version));
+    const builder = new DocumentBuilder().setTitle(title);
+    // The introduction moved to the api's docs module, which core does not export yet.
+    const version = api.info?.version;
+    if (typeof version === 'string') builder.setVersion(version);
     if (description !== undefined) builder.setDescription(description);
     for (const server of api.servers ?? []) {
       builder.addServer(String(server.url), server.description as string | undefined);

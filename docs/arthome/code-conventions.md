@@ -2470,6 +2470,10 @@ holds the model, and these are the rules a reviewer holds it to:
   body and responses only where it differs from the convention, and says so in the member's options.
 - **No `security` beside an identity**, and no hand-written `403` for a CSRF refusal: the identity
   writes both.
+- **What only the document reads is registered beside the routes**: an operation's description and
+  upstream in its module's `docs.ts`, a maturity only where it differs from its owning service's
+  (`transport.md` §5.11) and with its reason, its schemas' examples in `examples.ts`. Only the api's docs module
+  and the emitter import them (gate 21), and every registered example parses with its schema.
 - **A path segment that shares its spelling with an enumeration** (`'chat'`, `'crew'`, `'duplicate'`)
   is an `enum-literals.allow.json` entry with its reason, never an import of the vocabulary.
 - **`check-openapi` R10** accepts the shared `ErrorEnvelope`, or a `oneOf` of one envelope per code
@@ -2961,6 +2965,7 @@ The account's Actions quota is exhausted. No gate assumes a remote runner.
 | 18 | **Contracts and domain share one vocabulary** | `python3 tools/check-vocabulary.py openapi/*.yaml` | `PASS` | §5.3.1 |
 | 19 | No warning sign, check mark or emoji | `pnpm exec arthome-check-symbols` | `PASS` | §5.10 |
 | 20 | **The documents are what the declarations generate** | `pnpm run check:openapi-generated` | `PASS` for both documents | D-120 |
+| 21 | No surface bundles the contracts' docs or examples | `pnpm run check:contract-docs` | `PASS` twice | §5.12, D-122 |
 
 Gate 20 compares the whole of each committed document with what the route declarations of
 `@arthome/contracts` generate: paths, components and top-level keys, byte for byte. It builds first,
@@ -2999,7 +3004,7 @@ each time the gate had to grow: when a check needs data that does not exist yet,
 formulation that needs none. The three that do need it are the three that genuinely cannot be answered
 without knowing *which* vocabulary a block mirrors.
 
-**Gates 9, 10, 11, 16, 17, 18 and 19 run without `node_modules`** — the first three are pure Node shipped by
+**Gates 9, 10, 11, 16, 17, 18, 19 and 21 run without `node_modules`** — the first three are pure Node shipped by
 `@arthome/tooling`, the fourth is Python with no dependency beyond PyYAML. That is deliberate: a gate
 that needs an install in order to exist does not exist on the day a repository is created, which is
 the day it would help most. Hence the second script in §8.2.
