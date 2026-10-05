@@ -1,30 +1,59 @@
 {
   "name": "@arthome-platform/messaging",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The messaging contract every service shares: the outbox, failure classification, retry and dead-lettering.",
+  "description": "The messaging contract every service shares: the outbox, failure classification, retry and dead-lettering, and the host a consumer process runs its consumers in.",
   "license": "UNLICENSED",
   "exports": {
     ".": {
       "@arthome/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./nest": {
+      "@arthome/source": "./src/nest.ts",
+      "types": "./dist/nest.d.ts",
+      "default": "./dist/nest.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json --incremental --tsBuildInfoFile node_modules/.cache/tsc/typecheck.tsbuildinfo",
+    "typecheck:full": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-b2aac8898fe7.tgz",
+    "@arthome-platform/config": "workspace:*",
+    "@arthome-platform/transactions": "workspace:*",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz",
     "kafkajs": "2.2.4",
     "typeorm": "1.1.1",
     "uuid": "14.0.2"
   },
+  "peerDependencies": {
+    "@nestjs/common": "^12.0.3",
+    "@nestjs/core": "^12.0.3",
+    "@nestjs/cqrs": "^12.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/common": {
+      "optional": true
+    },
+    "@nestjs/core": {
+      "optional": true
+    },
+    "@nestjs/cqrs": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "@arthome-platform/testing": "workspace:*"
+    "@arthome-platform/testing": "workspace:*",
+    "@nestjs/common": "12.0.3",
+    "@nestjs/core": "12.0.3",
+    "@nestjs/cqrs": "12.0.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
   }
 }

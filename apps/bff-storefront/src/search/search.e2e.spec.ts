@@ -1,19 +1,25 @@
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+import { serveEndpoints } from '@arthome-platform/http-edge';
+import { guardDeclaredResponses } from '@arthome-platform/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, FailureNature, Surface } from '@arthome/core';
+import { storefrontApi } from '@arthome/contracts/storefront-api';
+import { ApiErrorCode, FailureNature, FixedClock, SchemaIssueRule, Surface } from '@arthome/core';
 
 import { AppModule } from '../app.module.js';
 import { CATALOG_URL } from '../catalog/catalog.client.js';
+import { CLOCK } from '../clock.js';
+import { IDENTITY_URL } from '../identity/identity.client.js';
 
 /** The BFF as a surface meets it, with a stand-in catalog behind it. */
 
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 const TRACE_ID = '4bf92f3577b34da6a3ce929d0e0e4736';
+const VIEWER_TOKEN = 'sess_viewer';
 
 const PAGE = {
   groups: [],
@@ -28,10 +34,18 @@ function pageAnswer(): { status: number; body: object } {
   };
 }
 
+// An hour ahead, so no deadline falls due while a case runs. Measured: under the full verify's
+// parallel load, calls overran the 200 ms budget and read a 504, through a cold app and, once
+// warmed, a warm one; a warm-up refused by the response schema warmed less.
+const clock = new FixedClock(Date.now() + 3_600_000);
+
 let catalogAnswer = pageAnswer();
 let catalogSaw: { url: string; headers: IncomingHttpHeaders } | null = null;
 let catalog: Server;
+let identity: Server;
 let app: NestFastifyApplication;
+
+const responses = guardDeclaredResponses(storefrontApi);
 
 async function search(
   query: Record<string, string>,
@@ -47,20 +61,41 @@ beforeAll(async () => {
     response.end(JSON.stringify(catalogAnswer.body));
   });
   await new Promise<void>((resolve) => catalog.listen(0, resolve));
+  identity = createServer((request, response) => {
+    let body = '';
+    request.on('data', (chunk: Buffer) => (body += chunk.toString()));
+    request.on('end', () => {
+      const { token } = JSON.parse(body) as { token: string };
+      const session =
+        token === VIEWER_TOKEN
+          ? {
+              accountId: '01a0e700-0000-7000-8000-0000000000c1',
+              deviceId: '01a0e700-0000-7000-8000-0000000000d1',
+              expiresAt: '2026-11-05T10:00:00.000Z',
+              account: { publicHandle: '@marie', emailVerified: true },
+            }
+          : null;
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ servedAt: '2026-10-05T10:00:00.000Z', data: { session } }));
+    });
+  });
+  await new Promise<void>((resolve) => identity.listen(0, resolve));
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(CATALOG_URL)
     .useValue(`http://localhost:${(catalog.address() as AddressInfo).port}`)
+    .overrideProvider(IDENTITY_URL)
+    .useValue(`http://localhost:${(identity.address() as AddressInfo).port}`)
+    .overrideProvider(CLOCK)
+    .useValue(clock)
     .compile();
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
   });
+  serveEndpoints(app);
+  responses.watch(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
-  // Measured: under the full verify's parallel load, the first call through a cold app took
-  // longer than the 200 ms search budget, and the case read a 504 instead of the page. The
-  // warm-up must take the path that succeeds: one refused by the response schema warmed less.
-  await search({ q: 'nuit' });
 });
 
 beforeEach(() => {
@@ -70,12 +105,14 @@ beforeEach(() => {
 
 afterAll(async () => {
   await app?.close();
-  catalog.closeAllConnections();
-  await new Promise((resolve) => catalog.close(resolve));
+  for (const server of [catalog, identity]) {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 describe('GET /v1/search on the storefront BFF', () => {
-  it('serves catalog’s page in its own envelope, cacheable by anyone', async () => {
+  it('serves catalog’s page in its own envelope, cacheable by anyone when the caller is anonymous', async () => {
     const response = await search({ q: 'nuit', genreIds: 'dance' });
 
     expect(response.statusCode).toBe(200);
@@ -85,13 +122,31 @@ describe('GET /v1/search on the storefront BFF', () => {
     expect(catalogSaw?.url).toBe('/v1/search?q=nuit&genreIds=dance');
   });
 
+  it('answers a signed-in viewer private, so no shared cache keeps a page served to them', async () => {
+    const response = await search(
+      { q: 'nuit' },
+      { 'x-arthome-surface': Surface.STOREFRONT_TV, authorization: `Bearer ${VIEWER_TOKEN}` },
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('private, max-age=60');
+  });
+
+  it('is served under /v1 once, and /v1/v1 is not a route', async () => {
+    const headers = { 'x-arthome-surface': Surface.STOREFRONT_TV };
+
+    expect((await app.inject({ method: 'GET', url: '/v1/search', headers })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/v1/v1/search', headers })).statusCode).toBe(
+      404,
+    );
+  });
+
   it('gives catalog a deadline 200 ms out, and a trace when the surface sent none', async () => {
-    const before = Date.now();
     await search({ q: 'nuit' });
 
-    const deadline = Date.parse(String(catalogSaw?.headers['x-arthome-deadline']));
-    expect(deadline - before).toBeGreaterThanOrEqual(200);
-    expect(deadline - before).toBeLessThan(400);
+    expect(catalogSaw?.headers['x-arthome-deadline']).toBe(
+      new Date(clock.nowMs() + 200).toISOString(),
+    );
     expect(catalogSaw?.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
   });
 
@@ -101,7 +156,10 @@ describe('GET /v1/search on the storefront BFF', () => {
 
       expect(response.statusCode).toBe(400);
       expect(response.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['x-arthome-surface'] } },
+        error: {
+          code: ApiErrorCode.SCHEMA_INVALID,
+          params: { issues: [{ path: ['x-arthome-surface'] }] },
+        },
       });
     }
     expect(catalogSaw).toBeNull();
@@ -114,7 +172,9 @@ describe('GET /v1/search on the storefront BFF', () => {
         error: {
           code: ApiErrorCode.SCHEMA_INVALID,
           nature: FailureNature.REFUSED,
-          params: { fields: ['priceMaxMinor'] },
+          params: {
+            issues: [{ path: ['priceMaxMinor'], rule: SchemaIssueRule.INVALID_TYPE }],
+          },
           traceId: TRACE_ID,
         },
         servedAt: '2026-09-26T20:00:00.000Z',
@@ -128,7 +188,9 @@ describe('GET /v1/search on the storefront BFF', () => {
     );
 
     expect(refused.statusCode).toBe(400);
-    expect(refused.json()).toMatchObject({ error: { params: { fields: ['priceMaxMinor'] } } });
+    expect(refused.json()).toMatchObject({
+      error: { params: { issues: [{ path: ['priceMaxMinor'] }] } },
+    });
     expect(crashed.statusCode).toBe(502);
     expect(crashed.json()).toMatchObject({
       error: {

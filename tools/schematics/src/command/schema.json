@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ArthomeCommand",
+  "title": "A CQRS command deciding through an aggregate, its handler and spec, and an optional route",
+  "type": "object",
+  "properties": {
+    "app": {
+      "type": "string",
+      "description": "The service under apps/."
+    },
+    "module": {
+      "type": "string",
+      "description": "The feature directory under src/ holding the aggregate; its module is created when absent."
+    },
+    "name": {
+      "type": "string",
+      "description": "The command, a verb phrase: focus-rig. Also the aggregate's method, focusRig.",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "aggregate": {
+      "type": "string",
+      "description": "The aggregate it decides through, as the aggregate generator named it: rig."
+    },
+    "event": {
+      "type": "string",
+      "description": "The event its decision applies, a new class: RigFocused.",
+      "pattern": "^[A-Z][A-Za-z0-9]*$"
+    },
+    "route": {
+      "type": "string",
+      "description": "An idempotent route, its one parameter the aggregate's id: v1/rigs/:rigId/focus."
+    },
+    "method": {
+      "type": "string",
+      "description": "The route's method.",
+      "enum": ["POST", "PUT", "PATCH"],
+      "default": "POST"
+    }
+  },
+  "required": ["app", "module", "name", "aggregate", "event"],
+  "additionalProperties": false
+}

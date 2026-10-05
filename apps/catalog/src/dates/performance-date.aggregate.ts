@@ -1,3 +1,4 @@
+import { frozen } from '@arthome-platform/transactions';
 import { AggregateRoot } from '@nestjs/cqrs';
 
 import {
@@ -96,15 +97,6 @@ export interface OutcomeContext {
   readonly now: Instant;
 }
 
-/** Deeply, so that a nested array written in place throws as well. */
-function frozen<T>(value: T): T {
-  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const inner of Object.values(value)) frozen(inner);
-  }
-  return value;
-}
-
 /**
  * data-model.md §2.2's `Date`, owning its `Publication` (D-085): two rows, one aggregate, one
  *   version, the publication's, which the studio's sheet serves and every command names.
@@ -177,7 +169,10 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
       this.apply(changed);
       return;
     }
-    const date = this.madePublic(context);
+    const date = this.madePublic(context, {
+      from: this.currentPublication.snapshot.state,
+      to: command.to,
+    });
     this.currentPublication = publication;
     this.current = frozen(date);
     this.apply(changed);
@@ -231,7 +226,7 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
       outcome: declaration.outcome,
       rescheduledTo: movedTo,
       outcomeDeclaredAt: now,
-      outcomeMessage: message,
+      outcomeMessage: structuredClone(message),
       startsAt: movedTo ?? date.startsAt,
       slug,
       postponements: date.postponements + (movedTo === null ? 0 : 1),
@@ -246,11 +241,16 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
     }
   }
 
-  /** Publishing happens once: a date that already holds a slug is refused, naming it. */
-  private madePublic({ freeSlug, showRuntimeMin }: PublicationContext): PublicDateSnapshot {
-    const { slug } = this.current;
-    if (slug !== null) {
-      throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { slug } });
+  /** Publishing happens once: a date that already holds a slug refuses the transition attempted. */
+  private madePublic(
+    { freeSlug, showRuntimeMin }: PublicationContext,
+    transition: { readonly from: string; readonly to: string },
+  ): PublicDateSnapshot {
+    if (this.current.slug !== null) {
+      throw new DomainError({
+        code: DomainErrorCode.PUBLICATION_TRANSITION_FORBIDDEN,
+        params: transition,
+      });
     }
     if (freeSlug === null) throw new Error('publishing a date without its free slug');
     return { ...this.current, slug: freeSlug, runtimeMin: showRuntimeMin };

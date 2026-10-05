@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/search-index",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The search indices' names, mappings and document shapes, shared by the indexer that writes them and catalog that reads them.",
@@ -13,11 +13,12 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json --incremental --tsBuildInfoFile node_modules/.cache/tsc/typecheck.tsbuildinfo",
+    "typecheck:full": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-b2aac8898fe7.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz",
     "@opensearch-project/opensearch": "3.6.0"
   }
 }

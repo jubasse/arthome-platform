@@ -24,7 +24,8 @@ at the envelope's root beside `servedAt` and `validUntil` (`CollectionResponse`)
   `api.cursor_too_old`) and never points past `max_result_window`.
 - **Refused by name, never ignored**: the `artists` tab, the `popularity` and price sorts, and the
   criteria the index cannot answer (`cityIds`, `displayStates`, prices, `almostSoldOut`,
-  `onPromotion`, `accessibility`) answer 400 `api.schema_invalid` with `fields`.
+  `onPromotion`, `accessibility`) answer 400 `api.schema_invalid` with `issues`, each its path and
+  rule.
 - **`x-arthome-deadline` is required** (transport.md §5.3): absent, 400; past, 504
   `api.deadline_exceeded` before the query; the time left bounds the OpenSearch request, and the
   query is aborted when the caller hangs up (`whenCallerLeaves`, from the response's `close`), both
@@ -94,7 +95,8 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
 with the channel (data-model.md §2.4); `GET /v1/artists/:artistId` serves its public page.
 
 - **`expectedVersion: 0` creates the face**, on a channel that has none, and needs `publicName` and
-  `categoryId`; every later edit names the version it read (409 `state.conflict`). The answer
+  `categoryId`; every later edit names the version it read (409 `state.conflict`). Two first edits
+  racing collide on `artist_channel_id`, and the loser is refused 409 `artist.already_exists`. The answer
   carries `version` at the envelope's root (`runIdempotentlyVersioned`).
 - **The slug** is the one sent, or the name's, or the name's with the artist's id when another
   artist holds it. A slug sent and held elsewhere is 409 `artist.slug_taken`; the unique index
@@ -122,8 +124,8 @@ with the channel (data-model.md §2.4); `GET /v1/artists/:artistId` serves its p
   language, two levels at most, on `PUBLIC_WEB_ORIGIN`.
 - **A show's slug** is its title's (the French one when it has any), else the title's with the
   show's id tail; set at publication, in `ShowPublished.slug`, unique (`show_slug`). Two shows of
-  one title published at once both find it free: the second is refused 409 `state.conflict`, and its
-  retry takes the id-tailed slug.
+  one title published at once both find it free: the second is refused 409 `show.slug_taken`,
+  `unavailable` in core's registry, and its retry takes the id-tailed slug.
 - **A date's slug** is its day at the venue (`2026-12-15`), then `2026-12-15-2000` for a second
   performance that day, then the day with the date's id tail; unique within its show
   (`date_show_slug`); set at publication, moved by a postponement, picked under the show's row lock
@@ -166,7 +168,9 @@ Messages carry no suffix (`DeclareOutcome`, `GetDateSheet`); handlers do.
 **An aggregate is not its rows.** Every read path (the sheet, the public pages, the consumer, the
 migrations) reads rows, whose public fields anyone can assign. The aggregate keeps an immutable
 `snapshot` that only its methods replace, speaks core's types (instants as strings), and is built by
-`restore()` from the row, so TypeORM never calls its constructor (`nestjs-ddd` rule 13). Its methods
+`restore()` from the row, so TypeORM never calls its constructor (`nestjs-ddd` rule 13). The snapshot
+is frozen deeply, so a method copies what it keeps of its arguments (the outcome's message) rather
+than freezing the caller's object. Its methods
 call core's pure rules (`assertOutcomeDeclarable`, `assertCommandedTransition`) and never restate
 them; what a rule needs beyond the aggregate is an argument (the checklist facts, a free slug,
 `now`). A method never awaits: an I/O lookup (the free slug of a postponement) is made by the
@@ -227,24 +231,17 @@ channel (`holdChannelFace`), since a face not yet created has no row to lock. Me
   answered 500;
 - of two show updates at once, the second overwrote the first's fields (7 rounds in 8).
 
-**Refusals keep their code and params.** The aggregate and the repository throw core's
-`DomainError`. The transition and outcome handlers wrap exactly two calls in `asConflict` (the draft
-and `RecordChecklistFact` refuse nothing as 409), which rethrows one as a 409 `RefusalException`
-with the same `code`, `params` and `nature`: the aggregate's method (`transitionPublication`,
-`declareOutcome`) and `dates.save`, whose `saveVersioned` refuses a change committed since the load.
-That refusal is the guard of last resort: the load already holds the publication row `FOR UPDATE`,
-so in catalog no change can commit between the load and the save. Those are the refusals the
-contract answers 409 (`moveDatePublicationState`, `decideDateOutcome`): a state or rule said no. Any
-other `DomainError` in the handler (a `media.*` or `content.*` value) is a fault in what the request
-carried, so it stays unwrapped and `ErrorEnvelopeFilter` answers it 400, as on main
-(`transition-publication.handler.spec.ts`). The stale version is a refusal too, checked before any
-rule, as before: core's `assertCommandedTransition` for a transition, `Publication.advancedFrom` for
-an outcome. A 404 or a 400 stays the `RefusalException` it was, built from `src/refusals.ts`
-(`notFound()`, `stateConflict(params)`) or `schemaInvalidException`. Two refusals are still built
-where they are raised, each with one caller: the artist's `slugTaken` and the search's 503.
-`publication.checklist_incomplete` names a list, which core's `MessageParams` cannot carry:
-`PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and `asConflict`
-answers `{ missing }`.
+**Refusals keep their code and params, and take their status from core's error registry.** The
+aggregate and the repository throw core's `DomainError`, its params typed by its code, and
+`ErrorEnvelopeFilter` answers it at the status the registry gives the code: a state or rule that said
+no (`state.conflict`, the publication rules, the outcome refusals) is a 409, a `content.*` value its
+own. No handler wraps a call. `dates.save`'s `saveVersioned` refusal is the guard of last resort: the
+load already holds the publication row `FOR UPDATE`, so in catalog no change can commit between the
+load and the save. The stale version is checked before any rule: core's `assertCommandedTransition`
+for a transition, `Publication.advancedFrom` for an outcome. A refusal built where it is raised goes
+through `@arthome-platform/http-edge`'s `refusalOf(code, params)` (`notFound()`,
+`stateConflict(currentVersion)`, `schemaInvalidException` are its shortcuts), the status again the
+registry's. `publication.checklist_incomplete` carries its list in its params, `{ missing }`.
 
 **What happened becomes rows from the uncommitted events, inside the transaction.** A method changes
 the snapshot, then `apply()`s one event per fact (no `on<Event>` handlers: nothing is replayed).
@@ -289,12 +286,13 @@ listings make two instances. Shows and venues carry no `IdempotentRequest`, sinc
 their routes no key, and the shows controller maps its body to core's types (§2(g)).
 
 **The checklist consumer dispatches too.** `consumer.ts` boots `ConsumerModule`
-(`consumer.module.ts`: TypeORM, `CqrsModule.forRoot()`, `ChecklistConsumerModule`, and the
-`ChecklistConsumer` provider over an injected `Kafka`) as an application context, without HTTP, and
-`applyChecklistMessage` turns each message it reads as a fact into `RecordChecklistFact`, whose
-handler claims `processed_message` in the command's transaction. Its `ChecklistConsumer` provider
-starts Kafka in `onApplicationBootstrap` and stops it in `onApplicationShutdown`, which runs for the
-root module before the global TypeORM module closes the pool; `enableShutdownHooks` on SIGTERM and
+(`consumer.module.ts`: TypeORM, `CqrsModule.forRoot()`, `ChecklistConsumerModule`, and
+`@arthome-platform/messaging/nest`'s `ConsumerHostModule.forRoot({ service, topics, apply })`, whose
+`ConsumerHost` runs the consumers over an injected `Kafka`) as an application context, without HTTP,
+and `applyChecklistMessage` turns each message it reads as a fact into `RecordChecklistFact`, whose
+handler claims `processed_message` in the command's transaction. The host starts Kafka in
+`onApplicationBootstrap` and stops it in `onApplicationShutdown`, which Nest runs for the modules the
+root imports before the global TypeORM module closes the pool; `enableShutdownHooks` on SIGTERM and
 SIGINT with `useProcessExit` exits 0 once closed, as before. The routing of a failure stays
 AGENTS.md's ("When a message cannot be applied"): the handler refuses a date catalog does not hold
 with core's `DomainError`, which the consumer rethrows as `PermanentError`, dead-lettered at once
@@ -329,8 +327,9 @@ suite runs the same command against Postgres), `dates/transition-publication.han
 against 400; it recognises the idempotency INSERT by its text, so rewording that statement breaks
 it) and `dates/performance-date.typeorm-repository.spec.ts` (the order of the row writes). Every
 suite migrates the service's own schema (`itest/schema.ts`, from `dataSource.options`). The wiring:
-`itest/http-app.ts` boots feature modules over HTTP with the service's global providers
-(`EDGE_PROVIDERS`, which `AppModule` binds too), and `dates.http.itest.ts` calls the date routes
+`httpApp` (`@arthome-platform/testing`) boots feature modules over HTTP with the service's global
+providers (`EDGE_PROVIDERS`: `@arthome-platform/http-edge`'s `edgeProviders` given catalog's `CLOCK`
+and unique-violation codes, which `AppModule` binds too) and the suite's overrides, its clock first, and `dates.http.itest.ts` calls the date routes
 through it; a migrated route adds its request there. `boot.itest.ts` boots the two roots themselves,
 `AppModule` with OpenSearch stubbed and `ConsumerModule` with Kafka stubbed. Measured: without
 `CqrsModule.forRoot()` in either, it fails to resolve `EventPublisher`. Measured: with
@@ -351,25 +350,33 @@ would only compare what the handler had already read. Their wiring is proven ove
 `catalog/catalog.http.itest.ts`: without `CreateVenueHandler` in `VenuesModule`, 500.
 
 **What every CQRS service here shares is in `libs/`**, lifted as ticketing's first change
-(arthome-core `adr-ticketing.md` §11), never a catalog concept and never in arthome-core:
+(arthome-core `adr-ticketing.md` §11), then the service glue ticketing had copied (T2's architecture
+review, M4); never a catalog concept and never in arthome-core:
 
 - `@arthome-platform/transactions` (`libs/transactions`): `TransactionRunner`, `AggregateTracker`
   and `saveVersioned`. The factory hands back the transaction's manager itself and its result
   reaches `work` untouched, so a class instance keeps its methods (the spread it replaced dropped
   them, while the type still promised them); a factory handing back another manager is refused.
   `writtenUnversioned` registers a write that leaves the version as loaded, which ticketing's
-  conditional decrement is;
-- `@arthome-platform/http-edge`: `runIdempotently`, `runIdempotentlyVersioned`,
-  `idempotentRequestOf` and `idempotencyRecordTableDdl()`, which a new service's migration runs
-  the way it runs `outboxTableDdl()`. Catalog's own two migrations stay as they are, and
+  conditional decrement is. `frozen` deep-freezes each snapshot an aggregate replaces;
+- `@arthome-platform/http-edge`: `edgeProviders({ clock, uniqueViolations })`, the global pipe,
+  filter, interceptor and guard and the system clock under the service's token; `refusalOf(code,
+  params)`, `notFound()` and `stateConflict(currentVersion)`; and
+  `runIdempotently`, `runIdempotentlyVersioned`, `idempotentRequestOf` and
+  `idempotencyRecordTableDdl()`, which a new service's migration runs the way it runs
+  `outboxTableDdl()`. Catalog's own two migrations stay as they are, and
   `migrations/idempotency-record.itest.ts` fails the day they and the DDL stop making one table;
   the library's scenarios run on the DDL's;
 - `@arthome-platform/messaging`: `claimMessage(manager, messageId, topic)`, the processed-message
-  claim the three consumers each held a copy of, and `messageIdOf(payload)`, which refuses an
-  absent or malformed `message-id` as permanent at the consume edge.
+  claim the three consumers each held a copy of, `messageIdOf(payload)`, which refuses an absent or
+  malformed `message-id` as permanent at the consume edge, `outboxWriter(topics)`, a service's
+  `writeOutboxEvent` over its table of each event type's topic (`writeCatalogEvent` is one), and
+  `ConsumerHostModule.forRoot({ service, topics, apply })`, a consumer process's Kafka client and
+  consumers, each message turned into a command on the `CommandBus`. The host is the package's
+  `/nest` entry, its `@nestjs/*` peers optional, so a consumer without Nest loads none of it.
 
 Nothing else is generic: aggregates extend `@nestjs/cqrs`'s `AggregateRoot` as it is, and the
-events-to-outbox mapping builds catalog's own payloads over `writeOutboxEvent`, already shared.
+events-to-outbox mapping builds catalog's own payloads over `writeCatalogEvent`.
 Ticketing is the second consumer, which shapes the interface rather than a guess
 (`nestjs-monorepo` rule 6).
 
@@ -377,10 +384,10 @@ Decided here, and each could have gone the other way:
 
 - **The entities were renamed `PerformanceDateRow` and `PublicationRow`**, so the aggregate and its
   entity carry the domain names; the tables did not move.
-- **Handlers reached from HTTP alone throw `RefusalException`**, not domain errors mapped at an
-  edge. `RecordChecklistFact`, reached from Kafka alone, throws `DomainError`, mapped by the
-  consumer. The day a consumer dispatches an HTTP one, `asConflict` moves to the HTTP edge
-  (`nestjs-request-pipeline` rule 1).
+- **A domain rule's refusal stays core's `DomainError`** wherever it is thrown: the filter answers it
+  at the registry's status over HTTP, and the checklist consumer maps it from Kafka (dead-lettered
+  under its code). A refusal no domain rule makes, a missing row or a malformed cursor, is built
+  with `refusalOf` (`nestjs-request-pipeline` rule 1).
 - **A lost race on the version answers the version committed since**, re-read, as a transition
   always did; the outcome path used to answer the one it had read. Only two concurrent commands see
   the difference.
@@ -390,7 +397,7 @@ Decided here, and each could have gone the other way:
 - **A command on a date locks its publication's row and its show's row to the commit** (`findById`,
   `loadDate`), and a checklist fact takes the publication's `FOR SHARE`: a second command on the
   date, a fact the publication decides on, a show update and another date of the show picking a slug
-  wait for it. Two shows of one title published at once answer the loser 409 `state.conflict`, where
+  wait for it. Two shows of one title published at once answer the loser 409 `show.slug_taken`, where
   it answered 500.
 
 Known and left as they are:
@@ -398,8 +405,6 @@ Known and left as they are:
 - `satisfiedChecklistItems`, the input of publishing's checklist rule, is computed in
   `date-sheet.ts`, the sheet's shaping module; moving it beside the aggregate would make the read
   model depend on the write side rather than the reverse.
-- `PublicationChecklistIncomplete` carries `missing` beside core's scalar `params`: only
-  `asConflict` serves it, and a path that let it escape unwrapped would answer 400 without the list.
 
 ## 1. What was built
 
@@ -890,6 +895,10 @@ exist.
   is what forces the question to be answered rather than assumed. See §2(l). The date commands are
   in the same position: `canDecide` is true for every caller, where it must come from the operator's
   verified rights.
+
+  Since auth slice A (2026-10-03) every route needs the BFF's internal token, and the public reads
+  and the search are allowed in production; the studio's commands stay refused there until slice B
+  authorises them on the loaded channel or date.
 
 - ~~**No idempotency key.**~~ **DONE for the date commands** (2026-09-26): `idempotency_record`,
   written inside the command's transaction, covers transport.md §5.4's four cases. `POST /shows`

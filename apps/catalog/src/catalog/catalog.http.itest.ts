@@ -3,6 +3,7 @@ import { OutboxEvent } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
+  httpApp,
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
@@ -13,17 +14,20 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
+  CatalogErrorCode,
   DomainErrorCode,
   FailureNature,
   FixedClock,
   LanguageDependency,
   Locale,
+  Service,
 } from '@arthome/core';
 
 import { CatalogModule } from './catalog.module.js';
 import { Show } from './show.entity.js';
 import { ArtistsModule } from '../artists/artists.module.js';
-import { httpApp } from '../itest/http-app.js';
+import { CLOCK } from '../clock.js';
+import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { untilBlockedOrSettled } from '../itest/lock-waits.js';
 import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { Venue } from '../venues/venue.entity.js';
@@ -64,8 +68,10 @@ beforeAll(async () => {
 
   app = await httpApp({
     imports: [CatalogModule, VenuesModule, ArtistsModule],
-    clock: new FixedClock(NOW),
+    providers: EDGE_PROVIDERS,
+    caller: { service: Service.CATALOG, clock: new FixedClock(NOW) },
     dataSource,
+    overrides: [[CLOCK, new FixedClock(NOW)]],
   });
 }, STARTUP_MS);
 
@@ -92,7 +98,7 @@ describe('the show, venue and artist routes over HTTP', () => {
       const unknown = await send('POST', '/venues', { ...venue, timeZone: 'Mars/Olympus_Mons' });
       expect(unknown.statusCode).toBe(400);
       expect(unknown.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['timeZone'] } },
+        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { issues: [{ path: ['timeZone'] }] } },
       });
     },
     CASE_MS,
@@ -201,7 +207,7 @@ describe('the show, venue and artist routes over HTTP', () => {
       const lost = await publishing;
       expect(lost?.statusCode).toBe(409);
       expect(lost?.json()).toMatchObject({
-        error: { code: DomainErrorCode.STATE_CONFLICT, nature: FailureNature.REFUSED },
+        error: { code: CatalogErrorCode.SHOW_SLUG_TAKEN, nature: FailureNature.UNAVAILABLE },
       });
 
       const retried = await send('POST', '/shows', show);
@@ -244,7 +250,7 @@ describe('the show, venue and artist routes over HTTP', () => {
         error: {
           code: DomainErrorCode.STATE_CONFLICT,
           nature: FailureNature.REFUSED,
-          params: { version: 1 },
+          params: { currentVersion: 1 },
         },
       });
     },

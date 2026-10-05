@@ -23,16 +23,6 @@ export interface PublicationSnapshot {
   readonly replayOnlineAt: Instant | null;
 }
 
-/**
- * Core's `DomainError` takes scalar params, and this refusal names a list, as the contract's
- *   `{ missing: [...] }`: the list travels beside it.
- */
-export class PublicationChecklistIncomplete extends DomainError {
-  public constructor(public readonly missing: readonly PublicationChecklistItem[]) {
-    super({ code: DomainErrorCode.PUBLICATION_CHECKLIST_INCOMPLETE });
-  }
-}
-
 export interface PublicationTransitioned {
   readonly publication: Publication;
   readonly changed: PublicationStateChanged;
@@ -71,7 +61,10 @@ export class Publication {
   public advancedFrom(expectedVersion: number): Publication {
     const { state, version } = this.snapshot;
     if (version !== expectedVersion) {
-      throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { state, version } });
+      throw new DomainError({
+        code: DomainErrorCode.STATE_CONFLICT,
+        params: { currentVersion: version, state },
+      });
     }
     return new Publication({ ...this.snapshot, version: version + 1 });
   }
@@ -91,7 +84,12 @@ export class Publication {
     const publishing = transition.irreversiblePromiseCode === PublicationPromise.PRICES_ENGAGED;
     if (publishing) {
       const { ready, missing } = publicationReadiness(satisfied);
-      if (!ready) throw new PublicationChecklistIncomplete(missing);
+      if (!ready) {
+        throw new DomainError({
+          code: DomainErrorCode.PUBLICATION_CHECKLIST_INCOMPLETE,
+          params: { missing: [...missing] },
+        });
+      }
     }
 
     return {

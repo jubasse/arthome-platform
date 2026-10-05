@@ -205,8 +205,10 @@ async function hitIds(alias: string, query: object): Promise<string[]> {
   return body.hits.hits.map((hit) => hit._id);
 }
 
-const applyShow = (payload: EachMessagePayload) => applyShowMessage(dataSource, indices, payload);
-const applyDate = (payload: EachMessagePayload) => applyDateMessage(dataSource, indices, payload);
+const applyShow = (payload: EachMessagePayload) =>
+  applyShowMessage(dataSource, indices, payload, new Date());
+const applyDate = (payload: EachMessagePayload) =>
+  applyDateMessage(dataSource, indices, payload, new Date());
 
 beforeAll(async () => {
   stack = await startStack({ postgres: true, opensearch: true, startupTimeoutMs: STARTUP_MS });
@@ -478,7 +480,7 @@ describe('an artist in the index', () => {
       await applyDate(dateScheduled(dateId, showId));
 
       const applyArtist = (payload: EachMessagePayload) =>
-        applyArtistMessage(dataSource, indices, payload);
+        applyArtistMessage(dataSource, indices, payload, new Date());
       expect(
         await applyArtist(artistUpdated(artistId, 'Verticale', '2026-09-27T10:00:00.000Z')),
       ).toBe('applied');

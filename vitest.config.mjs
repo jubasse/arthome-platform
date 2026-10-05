@@ -7,6 +7,11 @@
 //
 // `*.itest.ts` is excluded so this suite needs no Docker daemon; integration tests
 //   live behind `test:integration` in the packages that own them.
+//
+// The generators read their templates at run time, so no import reaches them: without the
+//   trigger, `test:affected` runs no spec for a template edit.
+import { configDefaults } from 'vitest/config';
+
 export default {
   resolve: {
     conditions: ['@arthome/source'],
@@ -17,7 +22,11 @@ export default {
     },
   },
   test: {
-    include: ['{apps,libs,tools}/**/*.{test,spec}.ts'],
+    include: ['{apps,libs,tools}/**/*.{test,spec}.ts', 'tools/**/*.spec.mjs'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/*.itest.ts'],
+    forceRerunTriggers: [
+      ...configDefaults.forceRerunTriggers,
+      '**/tools/schematics/src/*/files/**',
+    ],
   },
 };

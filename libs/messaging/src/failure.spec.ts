@@ -4,7 +4,10 @@ import {
   JITTER_RATIO,
   PermanentError,
   RETRY_DELAYS_MS,
+  attemptsAllowedBy,
   deadLetterTopic,
+  doublingDelays,
+  nextAttemptAt,
   retryTopic,
   routeFailure,
 } from './failure.js';
@@ -76,5 +79,21 @@ describe('routeFailure', () => {
     expect(retryTopic('notifications')).toBe('arthome.notifications.retry');
     expect(deadLetterTopic('notifications')).toBe('arthome.notifications.dlq');
     expect(retryTopic('catalog')).not.toBe(retryTopic('notifications'));
+  });
+});
+
+describe('the retry schedule', () => {
+  it('doubles from the first delay up to its cap, until the delays add up to the total', () => {
+    expect(doublingDelays(1_000, 4_000, 15_000)).toEqual([1_000, 2_000, 4_000, 4_000, 4_000]);
+  });
+
+  it('spreads each attempt by up to JITTER_RATIO of its delay, and gives up after the last', () => {
+    const delays = [1_000, 2_000];
+    expect(nextAttemptAt(1, 0, delays, () => 0)).toEqual(new Date(1_000));
+    expect(nextAttemptAt(2, 0, delays, () => 0.5)).toEqual(
+      new Date(2_000 * (1 + JITTER_RATIO / 2)),
+    );
+    expect(nextAttemptAt(3, 0, delays)).toBeNull();
+    expect(attemptsAllowedBy(delays)).toBe(3);
   });
 });

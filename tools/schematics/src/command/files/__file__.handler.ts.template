@@ -1,0 +1,98 @@
+<% if (route) { %><%= imports([
+  { name: 'asConflict', from: '@arthome-platform/http-edge' },
+  { name: 'notFound', from: '@arthome-platform/http-edge' },
+  { name: 'runIdempotentlyVersioned', from: '@arthome-platform/http-edge' },
+  { name: 'MemorisedResponse', from: '@arthome-platform/http-edge', typeOnly: true },
+  { name: 'Inject', from: '@nestjs/common' },
+  { name: 'CommandHandler', from: '@nestjs/cqrs' },
+  { name: 'ICommandHandler', from: '@nestjs/cqrs', typeOnly: true },
+  { name: 'Clock', from: '@arthome/core', typeOnly: true },
+  { name: command.pascal, from: `./${command.kebab}.command.js` },
+  { name: `${command.pascal}Answer`, from: `./${command.kebab}.command.js`, typeOnly: true },
+  { name: aggregate.recorder, from: `./record-${aggregate.kebab}-events.js` },
+  { name: 'CLOCK', from: '../clock.js' },
+  { name: app.transactionsClass, from: `../${app.app}-transactions.js` },
+  { name: app.transactionScope, from: `../${app.app}-transactions.js`, typeOnly: true },
+]) %>
+
+/**
+ * One transaction: the idempotency claim, the <%= aggregate.camel %> under its row lock, its decision,
+ *   the save and the outbox rows of its events. The runner publishes those events once the
+ *   transaction has committed, never inside it. Reached from HTTP alone, so its two refusals, the
+ *   decision's and the save's, leave as `asConflict`'s 409.
+ */
+@CommandHandler(<%= command.pascal %>)
+export class <%= command.pascal %>Handler implements ICommandHandler<<%= command.pascal %>> {
+  public constructor(
+    private readonly transactions: <%= app.transactionsClass %>,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
+
+  public execute(
+    command: <%= command.pascal %>,
+  ): Promise<MemorisedResponse<<%= command.pascal %>Answer>> {
+    return this.transactions.run((transaction) =>
+      runIdempotentlyVersioned(transaction.manager, command.idempotency, this.clock, () =>
+        this.decideIn(transaction, command),
+      ),
+    );
+  }
+
+  private async decideIn(
+    { manager, <%= aggregate.collection %> }: <%= app.transactionScope %>,
+    { <%= aggregate.id %>, body, traceparent }: <%= command.pascal %>,
+  ): Promise<{ readonly data: <%= command.pascal %>Answer; readonly version: number }> {
+    const <%= aggregate.camel %> = await <%= aggregate.collection %>.findById(<%= aggregate.id %>);
+    if (<%= aggregate.camel %> === null) throw notFound();
+
+    await asConflict(() => <%= aggregate.camel %>.<%= command.camel %>(body.expectedVersion, this.clock.now()));
+    await asConflict(() => <%= aggregate.collection %>.save(<%= aggregate.camel %>));
+    await <%= aggregate.recorder %>(manager, <%= aggregate.camel %>.getUncommittedEvents(), traceparent);
+    return { data: { <%= aggregate.id %> }, version: <%= aggregate.camel %>.snapshot.version };
+  }
+}
+<% } else { %><%= imports([
+  { name: 'Inject', from: '@nestjs/common' },
+  { name: 'CommandHandler', from: '@nestjs/cqrs' },
+  { name: 'ICommandHandler', from: '@nestjs/cqrs', typeOnly: true },
+  { name: 'ApiErrorCode', from: '@arthome/core' },
+  { name: 'DomainError', from: '@arthome/core' },
+  { name: 'Clock', from: '@arthome/core', typeOnly: true },
+  { name: command.pascal, from: `./${command.kebab}.command.js` },
+  { name: `${command.pascal}Answer`, from: `./${command.kebab}.command.js`, typeOnly: true },
+  { name: aggregate.recorder, from: `./record-${aggregate.kebab}-events.js` },
+  { name: 'CLOCK', from: '../clock.js' },
+  { name: app.transactionsClass, from: `../${app.app}-transactions.js` },
+]) %>
+
+/**
+ * One transaction: the <%= aggregate.camel %> under its row lock, its decision, the save and the
+ *   outbox rows of its events, published once the transaction has committed. Reached from inside
+ *   the service alone, so it refuses with core's `DomainError`, never an HTTP exception: the edge
+ *   that dispatches it maps it (`nestjs-request-pipeline` rule 1).
+ */
+@CommandHandler(<%= command.pascal %>)
+export class <%= command.pascal %>Handler implements ICommandHandler<<%= command.pascal %>> {
+  public constructor(
+    private readonly transactions: <%= app.transactionsClass %>,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
+
+  public execute({
+    <%= aggregate.id %>,
+    expectedVersion,
+    traceparent,
+  }: <%= command.pascal %>): Promise<<%= command.pascal %>Answer> {
+    return this.transactions.run(async ({ manager, <%= aggregate.collection %> }) => {
+      const <%= aggregate.camel %> = await <%= aggregate.collection %>.findById(<%= aggregate.id %>);
+      if (<%= aggregate.camel %> === null) {
+        throw new DomainError({ code: ApiErrorCode.NOT_FOUND, params: { <%= aggregate.id %> } });
+      }
+      <%= aggregate.camel %>.<%= command.camel %>(expectedVersion, this.clock.now());
+      await <%= aggregate.collection %>.save(<%= aggregate.camel %>);
+      await <%= aggregate.recorder %>(manager, <%= aggregate.camel %>.getUncommittedEvents(), traceparent);
+      return { <%= aggregate.id %>, version: <%= aggregate.camel %>.snapshot.version };
+    });
+  }
+}
+<% } %>

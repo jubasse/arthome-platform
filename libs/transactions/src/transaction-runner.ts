@@ -10,7 +10,7 @@ import type {
   QueryDeepPartialEntity,
 } from 'typeorm';
 
-import { DomainError, DomainErrorCode, type MessageParams } from '@arthome/core';
+import { DomainError, DomainErrorCode, type ErrorParamsOf } from '@arthome/core';
 
 /** Registers an aggregate an adapter wrote, for the commit after the transaction's. */
 export type Track = (aggregate: IAggregateRoot) => void;
@@ -107,7 +107,7 @@ export async function saveVersioned<E extends ObjectLiteral & { version: number 
   key: FindOptionsWhere<E>,
   loadedVersion: number,
   columns: QueryDeepPartialEntity<E>,
-  conflictParams: (current: E) => MessageParams,
+  conflictParams: (current: E) => ErrorParamsOf<typeof DomainErrorCode.STATE_CONFLICT>,
 ): Promise<void> {
   const loaded: FindOptionsWhere<E> = { ...key, version: loadedVersion };
   const { affected } = await manager.update(entity, loaded, columns);

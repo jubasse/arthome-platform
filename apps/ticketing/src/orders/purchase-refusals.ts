@@ -1,0 +1,94 @@
+import { refusalCausedBy, refusalOf, type RefusalException } from '@arthome-platform/http-edge';
+
+import {
+  ApiErrorCode,
+  OrderErrorCode,
+  type Instant,
+  type LateEntry,
+  type Money,
+} from '@arthome/core';
+
+import type { SeatOrderSnapshot } from './seat-order.aggregate.js';
+
+/** How long a purchase waits on another one holding its key before being told it is in flight. */
+export const KEY_HOLDER_WAIT_MS = 5_000;
+const RETRY_AFTER_MS = 1_000;
+
+/** A body naming a profile the internal token does not: the buyer is the token's (review m6). */
+export function notTheCallersProfile(): RefusalException {
+  return refusalOf(ApiErrorCode.FORBIDDEN);
+}
+
+export function soldOut(): RefusalException {
+  return refusalOf(OrderErrorCode.SOLD_OUT);
+}
+
+/**
+ * Past the sale's end by time, thirty minutes after the start (D-089): ended, not sold out, which
+ *   is the waiting list's cue.
+ */
+export function salesClosed(salesEndAt: Instant): RefusalException {
+  return refusalOf(OrderErrorCode.SALES_CLOSED, { salesEndAt });
+}
+
+/** The storefront contract's params: what the surface showed, and the price now. */
+export function priceStale(expected: Money, current: Money): RefusalException {
+  return refusalOf(OrderErrorCode.PRICE_STALE, {
+    expectedAmountMinor: expected.amountMinor,
+    currentAmountMinor: current.amountMinor,
+    currencyCode: current.currencyCode,
+  });
+}
+
+/** A tier the date no longer sells: there is no price now to show. */
+export function tierUnavailable(): RefusalException {
+  return refusalOf(OrderErrorCode.TIER_UNAVAILABLE);
+}
+
+/**
+ * After the start, a purchase that did not acknowledge the part of the live already missed, with
+ *   the facts the surface warns with (D-089).
+ */
+export function lateEntryUnacknowledged({
+  startedAt,
+  minutesElapsed,
+  salesEndAt,
+}: LateEntry): RefusalException {
+  return refusalOf(OrderErrorCode.LATE_ENTRY_UNACKNOWLEDGED, {
+    startedAt,
+    minutesElapsed,
+    salesEndAt,
+  });
+}
+
+export function keyReused(): RefusalException {
+  return refusalOf(ApiErrorCode.IDEMPOTENCY_KEY_REUSED);
+}
+
+export function keyInFlight(): RefusalException {
+  return refusalOf(ApiErrorCode.IDEMPOTENCY_IN_FLIGHT, { retryAfterMs: RETRY_AFTER_MS });
+}
+
+/** The provider did not answer: its hold given back, the purchase retried under the same key. */
+export function paymentUnavailable(cause: unknown): RefusalException {
+  return refusalCausedBy(cause, ApiErrorCode.SERVICE_UNAVAILABLE);
+}
+
+/**
+ * What a purchase whose order ended without seats answers, first time or replayed: the decline and
+ *   its code, and otherwise sold out, since the seats it held went back, or its money did (D-082).
+ */
+export function refusalOfUnpaid(
+  order: SeatOrderSnapshot,
+  salesEndAt: Instant | null,
+): RefusalException {
+  const { failure } = order;
+  if (failure?.code === OrderErrorCode.PAYMENT_DECLINED) {
+    return refusalOf(OrderErrorCode.PAYMENT_DECLINED, {
+      ...(failure.declineCode !== null && { declineCode: failure.declineCode }),
+    });
+  }
+  if (failure?.code === OrderErrorCode.SALES_CLOSED && salesEndAt !== null)
+    return salesClosed(salesEndAt);
+  return soldOut();
+}

@@ -22,7 +22,7 @@
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
     "errors.log.enable": "true",
-    "errors.log.include.messages": "true",
+    "errors.log.include.messages": "false",
     "errors.tolerance": "none",
     "publication.autocreate.mode": "filtered"
   }

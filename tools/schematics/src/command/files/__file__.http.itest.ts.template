@@ -1,0 +1,126 @@
+<%= imports([
+  { name: 'applyMigrations', from: '@arthome-platform/testing' },
+  { name: 'createDatabase', from: '@arthome-platform/testing' },
+  { name: 'httpApp', from: '@arthome-platform/testing' },
+  { name: 'startStack', from: '@arthome-platform/testing' },
+  { name: 'StartedStack', from: '@arthome-platform/testing', typeOnly: true },
+  { name: 'NestFastifyApplication', from: '@nestjs/platform-fastify', typeOnly: true },
+  { name: 'afterAll', from: 'vitest' },
+  { name: 'beforeAll', from: 'vitest' },
+  { name: 'describe', from: 'vitest' },
+  { name: 'expect', from: 'vitest' },
+  { name: 'it', from: 'vitest' },
+  { name: 'ApiErrorCode', from: '@arthome/core' },
+  { name: 'DomainErrorCode', from: '@arthome/core' },
+  { name: 'FixedClock', from: '@arthome/core' },
+  { name: aggregate.pascal, from: `./${aggregate.kebab}.aggregate.js` },
+  { name: `${feature.pascal}Module`, from: `./${feature.kebab}.module.js` },
+  { name: 'CLOCK', from: '../clock.js' },
+  { name: 'EDGE_PROVIDERS', from: '../edge-providers.js' },
+  { name: app.schema, from: '../itest/schema.js' },
+  { name: app.transactionsClass, from: `../${app.app}-transactions.js` },
+]) %>
+
+/**
+ * `<%= route.method %> /<%= route.path %>` through the module graph the API boots, against Postgres:
+ *   the handler registered, the body's schema bound, the idempotency record and the version check.
+ *   What the decision itself does is the aggregate's spec.
+ */
+
+const STARTUP_MS = 240_000;
+const CASE_MS = 30_000;
+
+const NOW = '2026-09-29T10:00:00.000Z';
+
+let stack: StartedStack;
+let app: NestFastifyApplication;
+let keys = 0;
+let aggregates = 0;
+
+function nextKey(): string {
+  keys += 1;
+  return `01a0f4ff-0000-7000-8000-${String(keys).padStart(12, '0')}`;
+}
+
+async function created<%= aggregate.pascal %>(): Promise<string> {
+  aggregates += 1;
+  const <%= aggregate.id %> = `01a0f400-0000-7000-8000-${String(aggregates).padStart(12, '0')}`;
+  await app
+    .get(<%= app.transactionsClass %>)
+    .run(({ <%= aggregate.collection %> }) => <%= aggregate.collection %>.save(<%= aggregate.pascal %>.create(<%= aggregate.id %>, NOW)));
+  return <%= aggregate.id %>;
+}
+
+function <%= command.camel %>(<%= aggregate.id %>: string, payload: object, key: string = nextKey()) {
+  return app.inject({
+    method: '<%= route.method %>',
+    url: `<%= route.requestPath %>`,
+    headers: { 'content-type': 'application/json', 'idempotency-key': key },
+    payload,
+  });
+}
+
+beforeAll(async () => {
+  stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
+  const database = await createDatabase(stack.postgres, '<%= database %>');
+  app = await httpApp({
+    imports: [<%= feature.pascal %>Module],
+    providers: EDGE_PROVIDERS,
+    dataSource: await applyMigrations(database, <%= app.schema %>),
+    overrides: [[CLOCK, new FixedClock(NOW)]],
+  });
+}, STARTUP_MS);
+
+afterAll(async () => {
+  await app?.close();
+  await stack?.stop();
+});
+
+describe('<%= route.method %> /<%= route.path %>', () => {
+  it(
+    'answers the next version at the envelope’s root, and replays it under its key',
+    async () => {
+      const <%= aggregate.id %> = await created<%= aggregate.pascal %>();
+      const key = nextKey();
+
+      const first = await <%= command.camel %>(<%= aggregate.id %>, { expectedVersion: 1 }, key);
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toMatchObject({ version: 2, data: { <%= aggregate.id %> } });
+
+      const replay = await <%= command.camel %>(<%= aggregate.id %>, { expectedVersion: 1 }, key);
+      expect(replay.statusCode).toBe(200);
+      expect(replay.headers['idempotency-replayed']).toBe('true');
+      expect(replay.body).toBe(first.body);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'refuses a stale version with 409, naming the current one',
+    async () => {
+      const <%= aggregate.id %> = await created<%= aggregate.pascal %>();
+      expect((await <%= command.camel %>(<%= aggregate.id %>, { expectedVersion: 1 })).statusCode).toBe(200);
+
+      const stale = await <%= command.camel %>(<%= aggregate.id %>, { expectedVersion: 1 });
+      expect(stale.statusCode).toBe(409);
+      expect(stale.json()).toMatchObject({
+        error: { code: DomainErrorCode.STATE_CONFLICT, params: { version: 2 } },
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'answers 404 for a <%= aggregate.camel %> it does not hold, and 400 naming a missing field',
+    async () => {
+      const unknown = await <%= command.camel %>('01a0f4ee-0000-7000-8000-000000000001', { expectedVersion: 1 });
+      expect(unknown.statusCode).toBe(404);
+      expect(unknown.json()).toMatchObject({ error: { code: ApiErrorCode.NOT_FOUND } });
+
+      const invalid = await <%= command.camel %>(await created<%= aggregate.pascal %>(), {});
+      expect(invalid.statusCode).toBe(400);
+      expect(JSON.stringify(invalid.json())).toContain('expectedVersion');
+    },
+    CASE_MS,
+  );
+});

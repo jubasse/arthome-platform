@@ -23,7 +23,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file arthome/identity/v1/events.proto.
  */
 export const file_arthome_identity_v1_events: GenFile = /*@__PURE__*/
-  fileDesc("CiBhcnRob21lL2lkZW50aXR5L3YxL2V2ZW50cy5wcm90bxITYXJ0aG9tZS5pZGVudGl0eS52MSJ5ChFBY2NvdW50UmVnaXN0ZXJlZBISCgphY2NvdW50X2lkGAEgASgJEi8KC29jY3VycmVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgZsb2NhbGUYAyABKAkSDwoHY291bnRyeRgEIAEoCSKRAQoYQWNjb3VudERlbGV0aW9uUmVxdWVzdGVkEhIKCmFjY291bnRfaWQYASABKAkSMAoMcmVxdWVzdGVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtncmFjZV91bnRpbBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiWAoRQWNjb3VudEFub255bWlzZWQSEgoKYWNjb3VudF9pZBgBIAEoCRIvCgtvY2N1cnJlZF9hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAixAEKDURldmljZVJldm9rZWQSEQoJZGV2aWNlX2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSLQoEa2luZBgDIAEoDjIfLmFydGhvbWUuaWRlbnRpdHkudjEuRGV2aWNlS2luZBIvCgtvY2N1cnJlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoKcmV2b2tlZF9ieRgFIAEoCzIYLmFydGhvbWUuY29tbW9uLnYxLkFjdG9yIsYBChNEZXZpY2VTZXNzaW9uQ2xvc2VkEhEKCWRldmljZV9pZBgBIAEoCRISCgphY2NvdW50X2lkGAIgASgJEhIKCnByb2ZpbGVfaWQYAyABKAkSLwoLb2NjdXJyZWRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhYKDnNlbGZfaW5pdGlhdGVkGAUgASgIEisKCWNsb3NlZF9ieRgGIAEoCzIYLmFydGhvbWUuY29tbW9uLnYxLkFjdG9yImgKDkFydGlzdEZvbGxvd2VkEhIKCmFjY291bnRfaWQYASABKAkSEQoJYXJ0aXN0X2lkGAIgASgJEi8KC29jY3VycmVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJqChBBcnRpc3RVbmZvbGxvd2VkEhIKCmFjY291bnRfaWQYASABKAkSEQoJYXJ0aXN0X2lkGAIgASgJEi8KC29jY3VycmVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKIAQoOQ2hhbm5lbENyZWF0ZWQSEgoKY2hhbm5lbF9pZBgBIAEoCRIYChBvd25lcl9hY2NvdW50X2lkGAIgASgJEhcKD293bmVyX3BlcnNvbl9pZBgDIAEoCRIvCgtvY2N1cnJlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAihwIKGENoYW5uZWxNZW1iZXJzaGlwQ2hhbmdlZBISCgpjaGFubmVsX2lkGAEgASgJEhEKCXBlcnNvbl9pZBgCIAEoCRIuCgVyb2xlcxgDIAMoDjIfLmFydGhvbWUuaWRlbnRpdHkudjEuTWVtYmVyUm9sZRI1CgZhY3Rpb24YBCABKA4yJS5hcnRob21lLmlkZW50aXR5LnYxLk1lbWJlcnNoaXBBY3Rpb24SLwoLb2NjdXJyZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCmNoYW5nZWRfYnkYBiABKAsyGC5hcnRob21lLmNvbW1vbi52MS5BY3RvciKQAQobQ2hhbm5lbE93bmVyc2hpcFRyYW5zZmVycmVkEhIKCmNoYW5uZWxfaWQYASABKAkSFgoOZnJvbV9wZXJzb25faWQYAiABKAkSFAoMdG9fcGVyc29uX2lkGAMgASgJEi8KC29jY3VycmVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLtAQoRRGF0ZUFjY2Vzc0dyYW50ZWQSEAoIZ3JhbnRfaWQYASABKAkSEgoKY2hhbm5lbF9pZBgCIAEoCRIPCgdkYXRlX2lkGAMgASgJEhEKCXBlcnNvbl9pZBgEIAEoCRIwCgljcmV3X3JvbGUYBSABKA4yHS5hcnRob21lLmlkZW50aXR5LnYxLkNyZXdSb2xlEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCmdyYW50ZWRfYnkYByABKAsyGC5hcnRob21lLmNvbW1vbi52MS5BY3RvciKfAQoRRGF0ZUFjY2Vzc1Jldm9rZWQSEAoIZ3JhbnRfaWQYASABKAkSEgoKY2hhbm5lbF9pZBgCIAEoCRIPCgdkYXRlX2lkGAMgASgJEhEKCXBlcnNvbl9pZBgEIAEoCRIvCgtvY2N1cnJlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHZXhwaXJlZBgGIAEoCCKHAQoTUmlnaHRzVmVyc2lvbkJ1bXBlZBISCgphY2NvdW50X2lkGAEgASgJEhYKDnJpZ2h0c192ZXJzaW9uGAIgASgEEhMKC2NoYW5uZWxfaWRzGAMgAygJEi8KC29jY3VycmVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCr5AQoKTWVtYmVyUm9sZRIbChdNRU1CRVJfUk9MRV9VTlNQRUNJRklFRBAAEhYKEk1FTUJFUl9ST0xFX0FSVElTVBABEhoKFk1FTUJFUl9ST0xFX1BST0RVQ1RJT04QAhIcChhNRU1CRVJfUk9MRV9DT09SRElOQVRJT04QAxIYChRNRU1CRVJfUk9MRV9ESVJFQ1RPUhAEEhUKEU1FTUJFUl9ST0xFX1ZJREVPEAUSFQoRTUVNQkVSX1JPTEVfU09VTkQQBhIaChZNRU1CRVJfUk9MRV9NT0RFUkFUSU9OEAcSGAoUTUVNQkVSX1JPTEVfVFJFQVNVUlkQCCqBAQoIQ3Jld1JvbGUSGQoVQ1JFV19ST0xFX1VOU1BFQ0lGSUVEEAASFgoSQ1JFV19ST0xFX0RJUkVDVE9SEAESEwoPQ1JFV19ST0xFX1ZJREVPEAISEwoPQ1JFV19ST0xFX1NPVU5EEAMSGAoUQ1JFV19ST0xFX01PREVSQVRJT04QBCqXAQoQTWVtYmVyc2hpcEFjdGlvbhIhCh1NRU1CRVJTSElQX0FDVElPTl9VTlNQRUNJRklFRBAAEhwKGE1FTUJFUlNISVBfQUNUSU9OX0pPSU5FRBABEiMKH01FTUJFUlNISVBfQUNUSU9OX1JPTEVTX0NIQU5HRUQQAhIdChlNRU1CRVJTSElQX0FDVElPTl9SRU1PVkVEEAMqywEKCkRldmljZUtpbmQSGwoXREVWSUNFX0tJTkRfVU5TUEVDSUZJRUQQABISCg5ERVZJQ0VfS0lORF9UVhABEhYKEkRFVklDRV9LSU5EX01PQklMRRACEhYKEkRFVklDRV9LSU5EX1RBQkxFVBADEhcKE0RFVklDRV9LSU5EX0RFU0tUT1AQBBIVChFERVZJQ0VfS0lORF9TVElDSxAFEhcKE0RFVklDRV9LSU5EX0NPTlNPTEUQBhITCg9ERVZJQ0VfS0lORF9CT1gQB2IGcHJvdG8z", [file_arthome_common_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("CiBhcnRob21lL2lkZW50aXR5L3YxL2V2ZW50cy5wcm90bxITYXJ0aG9tZS5pZGVudGl0eS52MSJ5ChFBY2NvdW50UmVnaXN0ZXJlZBISCgphY2NvdW50X2lkGAEgASgJEi8KC29jY3VycmVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgZsb2NhbGUYAyABKAkSDwoHY291bnRyeRgEIAEoCSK/AQoaRW1haWxWZXJpZmljYXRpb25SZXF1ZXN0ZWQSEgoKYWNjb3VudF9pZBgBIAEoCRIvCgtvY2N1cnJlZF9hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDQoFZW1haWwYAyABKAkSDgoGbG9jYWxlGAQgASgJEg0KBXRva2VuGAUgASgJEi4KCmV4cGlyZXNfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIpEBChhBY2NvdW50RGVsZXRpb25SZXF1ZXN0ZWQSEgoKYWNjb3VudF9pZBgBIAEoCRIwCgxyZXF1ZXN0ZWRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2dyYWNlX3VudGlsGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJYChFBY2NvdW50QW5vbnltaXNlZBISCgphY2NvdW50X2lkGAEgASgJEi8KC29jY3VycmVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLEAQoNRGV2aWNlUmV2b2tlZBIRCglkZXZpY2VfaWQYASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRItCgRraW5kGAMgASgOMh8uYXJ0aG9tZS5pZGVudGl0eS52MS5EZXZpY2VLaW5kEi8KC29jY3VycmVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCgpyZXZva2VkX2J5GAUgASgLMhguYXJ0aG9tZS5jb21tb24udjEuQWN0b3IixgEKE0RldmljZVNlc3Npb25DbG9zZWQSEQoJZGV2aWNlX2lkGAEgASgJEhIKCmFjY291bnRfaWQYAiABKAkSEgoKcHJvZmlsZV9pZBgDIAEoCRIvCgtvY2N1cnJlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOc2VsZl9pbml0aWF0ZWQYBSABKAgSKwoJY2xvc2VkX2J5GAYgASgLMhguYXJ0aG9tZS5jb21tb24udjEuQWN0b3IiaAoOQXJ0aXN0Rm9sbG93ZWQSEgoKYWNjb3VudF9pZBgBIAEoCRIRCglhcnRpc3RfaWQYAiABKAkSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wImoKEEFydGlzdFVuZm9sbG93ZWQSEgoKYWNjb3VudF9pZBgBIAEoCRIRCglhcnRpc3RfaWQYAiABKAkSLwoLb2NjdXJyZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIogBCg5DaGFubmVsQ3JlYXRlZBISCgpjaGFubmVsX2lkGAEgASgJEhgKEG93bmVyX2FjY291bnRfaWQYAiABKAkSFwoPb3duZXJfcGVyc29uX2lkGAMgASgJEi8KC29jY3VycmVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKHAgoYQ2hhbm5lbE1lbWJlcnNoaXBDaGFuZ2VkEhIKCmNoYW5uZWxfaWQYASABKAkSEQoJcGVyc29uX2lkGAIgASgJEi4KBXJvbGVzGAMgAygOMh8uYXJ0aG9tZS5pZGVudGl0eS52MS5NZW1iZXJSb2xlEjUKBmFjdGlvbhgEIAEoDjIlLmFydGhvbWUuaWRlbnRpdHkudjEuTWVtYmVyc2hpcEFjdGlvbhIvCgtvY2N1cnJlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoKY2hhbmdlZF9ieRgGIAEoCzIYLmFydGhvbWUuY29tbW9uLnYxLkFjdG9yIpABChtDaGFubmVsT3duZXJzaGlwVHJhbnNmZXJyZWQSEgoKY2hhbm5lbF9pZBgBIAEoCRIWCg5mcm9tX3BlcnNvbl9pZBgCIAEoCRIUCgx0b19wZXJzb25faWQYAyABKAkSLwoLb2NjdXJyZWRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIu0BChFEYXRlQWNjZXNzR3JhbnRlZBIQCghncmFudF9pZBgBIAEoCRISCgpjaGFubmVsX2lkGAIgASgJEg8KB2RhdGVfaWQYAyABKAkSEQoJcGVyc29uX2lkGAQgASgJEjAKCWNyZXdfcm9sZRgFIAEoDjIdLmFydGhvbWUuaWRlbnRpdHkudjEuQ3Jld1JvbGUSLgoKZXhwaXJlc19hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoKZ3JhbnRlZF9ieRgHIAEoCzIYLmFydGhvbWUuY29tbW9uLnYxLkFjdG9yIp8BChFEYXRlQWNjZXNzUmV2b2tlZBIQCghncmFudF9pZBgBIAEoCRISCgpjaGFubmVsX2lkGAIgASgJEg8KB2RhdGVfaWQYAyABKAkSEQoJcGVyc29uX2lkGAQgASgJEi8KC29jY3VycmVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdleHBpcmVkGAYgASgIIocBChNSaWdodHNWZXJzaW9uQnVtcGVkEhIKCmFjY291bnRfaWQYASABKAkSFgoOcmlnaHRzX3ZlcnNpb24YAiABKAQSEwoLY2hhbm5lbF9pZHMYAyADKAkSLwoLb2NjdXJyZWRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wKvkBCgpNZW1iZXJSb2xlEhsKF01FTUJFUl9ST0xFX1VOU1BFQ0lGSUVEEAASFgoSTUVNQkVSX1JPTEVfQVJUSVNUEAESGgoWTUVNQkVSX1JPTEVfUFJPRFVDVElPThACEhwKGE1FTUJFUl9ST0xFX0NPT1JESU5BVElPThADEhgKFE1FTUJFUl9ST0xFX0RJUkVDVE9SEAQSFQoRTUVNQkVSX1JPTEVfVklERU8QBRIVChFNRU1CRVJfUk9MRV9TT1VORBAGEhoKFk1FTUJFUl9ST0xFX01PREVSQVRJT04QBxIYChRNRU1CRVJfUk9MRV9UUkVBU1VSWRAIKoEBCghDcmV3Um9sZRIZChVDUkVXX1JPTEVfVU5TUEVDSUZJRUQQABIWChJDUkVXX1JPTEVfRElSRUNUT1IQARITCg9DUkVXX1JPTEVfVklERU8QAhITCg9DUkVXX1JPTEVfU09VTkQQAxIYChRDUkVXX1JPTEVfTU9ERVJBVElPThAEKpcBChBNZW1iZXJzaGlwQWN0aW9uEiEKHU1FTUJFUlNISVBfQUNUSU9OX1VOU1BFQ0lGSUVEEAASHAoYTUVNQkVSU0hJUF9BQ1RJT05fSk9JTkVEEAESIwofTUVNQkVSU0hJUF9BQ1RJT05fUk9MRVNfQ0hBTkdFRBACEh0KGU1FTUJFUlNISVBfQUNUSU9OX1JFTU9WRUQQAyrLAQoKRGV2aWNlS2luZBIbChdERVZJQ0VfS0lORF9VTlNQRUNJRklFRBAAEhIKDkRFVklDRV9LSU5EX1RWEAESFgoSREVWSUNFX0tJTkRfTU9CSUxFEAISFgoSREVWSUNFX0tJTkRfVEFCTEVUEAMSFwoTREVWSUNFX0tJTkRfREVTS1RPUBAEEhUKEURFVklDRV9LSU5EX1NUSUNLEAUSFwoTREVWSUNFX0tJTkRfQ09OU09MRRAGEhMKD0RFVklDRV9LSU5EX0JPWBAHYgZwcm90bzM", [file_arthome_common_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message arthome.identity.v1.AccountRegistered
@@ -61,6 +61,61 @@ export const AccountRegisteredSchema: GenMessage<AccountRegistered> = /*@__PURE_
   messageDesc(file_arthome_identity_v1_events, 0);
 
 /**
+ * A verification link to send to the account's address: at sign-up, and again on
+ * `resendEmailVerification`, which spends the earlier links (D-100).
+ *
+ * THE TOKEN TRAVELS IN CLEAR, through the outbox and its own topic,
+ * `arthome.identity.email_verification`, which `notifications` alone reads
+ * (events.md §3), and it dies with the link, spent or expired. `notifications` builds
+ * the link, and identity cannot call it (critical rule 1). It is acceptable for THIS
+ * token because a verified address unlocks nothing, so a leaked one can only mark an
+ * address verified, once, within its expiry; identity keeps only its hash, and nobody
+ * logs it. A PASSWORD RESET'S TOKEN MUST NOT TAKE THIS PATH: slice D decides its own.
+ *
+ * @generated from message arthome.identity.v1.EmailVerificationRequested
+ */
+export type EmailVerificationRequested = Message<"arthome.identity.v1.EmailVerificationRequested"> & {
+  /**
+   * @generated from field: string account_id = 1;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp occurred_at = 2;
+   */
+  occurredAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string email = 3;
+   */
+  email: string;
+
+  /**
+   * The language of the email: the account's locale, `fr` or `en`.
+   *
+   * @generated from field: string locale = 4;
+   */
+  locale: string;
+
+  /**
+   * @generated from field: string token = 5;
+   */
+  token: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 6;
+   */
+  expiresAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message arthome.identity.v1.EmailVerificationRequested.
+ * Use `create(EmailVerificationRequestedSchema)` to create a new message.
+ */
+export const EmailVerificationRequestedSchema: GenMessage<EmailVerificationRequested> = /*@__PURE__*/
+  messageDesc(file_arthome_identity_v1_events, 1);
+
+/**
  * Entry point of the erasure saga. Deleting an account is a FINANCIAL command
  * as much as a personal one: "deletion cancels unused seats", which triggers
  * refunds, touches payouts already computed, and runs into the ten-year
@@ -94,7 +149,7 @@ export type AccountDeletionRequested = Message<"arthome.identity.v1.AccountDelet
  * Use `create(AccountDeletionRequestedSchema)` to create a new message.
  */
 export const AccountDeletionRequestedSchema: GenMessage<AccountDeletionRequested> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 1);
+  messageDesc(file_arthome_identity_v1_events, 2);
 
 /**
  * End of the saga. Invoices keep their frozen content (a document is the one
@@ -121,13 +176,15 @@ export type AccountAnonymised = Message<"arthome.identity.v1.AccountAnonymised">
  * Use `create(AccountAnonymisedSchema)` to create a new message.
  */
 export const AccountAnonymisedSchema: GenMessage<AccountAnonymised> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 2);
+  messageDesc(file_arthome_identity_v1_events, 3);
 
 /**
  * Consumed by `streaming`, which invalidates this device's PLAYBACK LEASES.
  * That is what makes "disconnect this device" actually stop playback on the
  * television concerned, and not merely remove a row from a list.
- * Visible at the next token renewal, so within 60 s at most.
+ * The next renewal is refused; playback stops when the token already in hand
+ * expires: at most this event's consumer lag plus the token's 120 s
+ * (adr-stream-entitlement.md §3.3).
  *
  * @generated from message arthome.identity.v1.DeviceRevoked
  */
@@ -163,7 +220,7 @@ export type DeviceRevoked = Message<"arthome.identity.v1.DeviceRevoked"> & {
  * Use `create(DeviceRevokedSchema)` to create a new message.
  */
 export const DeviceRevokedSchema: GenMessage<DeviceRevoked> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 3);
+  messageDesc(file_arthome_identity_v1_events, 4);
 
 /**
  * Disconnecting ONE PROFILE from a shared device. This event WAS MISSING, and
@@ -228,7 +285,7 @@ export type DeviceSessionClosed = Message<"arthome.identity.v1.DeviceSessionClos
  * Use `create(DeviceSessionClosedSchema)` to create a new message.
  */
 export const DeviceSessionClosedSchema: GenMessage<DeviceSessionClosed> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 4);
+  messageDesc(file_arthome_identity_v1_events, 5);
 
 /**
  * Following an artist and being alerted are TWO settings. The first is a
@@ -259,7 +316,7 @@ export type ArtistFollowed = Message<"arthome.identity.v1.ArtistFollowed"> & {
  * Use `create(ArtistFollowedSchema)` to create a new message.
  */
 export const ArtistFollowedSchema: GenMessage<ArtistFollowed> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 5);
+  messageDesc(file_arthome_identity_v1_events, 6);
 
 /**
  * @generated from message arthome.identity.v1.ArtistUnfollowed
@@ -286,7 +343,7 @@ export type ArtistUnfollowed = Message<"arthome.identity.v1.ArtistUnfollowed"> &
  * Use `create(ArtistUnfollowedSchema)` to create a new message.
  */
 export const ArtistUnfollowedSchema: GenMessage<ArtistUnfollowed> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 6);
+  messageDesc(file_arthome_identity_v1_events, 7);
 
 /**
  * The channel as a WORKSPACE. Its public face — name, biography, avatar,
@@ -323,7 +380,7 @@ export type ChannelCreated = Message<"arthome.identity.v1.ChannelCreated"> & {
  * Use `create(ChannelCreatedSchema)` to create a new message.
  */
 export const ChannelCreatedSchema: GenMessage<ChannelCreated> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 7);
+  messageDesc(file_arthome_identity_v1_events, 8);
 
 /**
  * @generated from message arthome.identity.v1.ChannelMembershipChanged
@@ -369,7 +426,7 @@ export type ChannelMembershipChanged = Message<"arthome.identity.v1.ChannelMembe
  * Use `create(ChannelMembershipChangedSchema)` to create a new message.
  */
 export const ChannelMembershipChangedSchema: GenMessage<ChannelMembershipChanged> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 8);
+  messageDesc(file_arthome_identity_v1_events, 9);
 
 /**
  * Requires the recipient to be ALREADY a member and to have two-factor
@@ -405,7 +462,7 @@ export type ChannelOwnershipTransferred = Message<"arthome.identity.v1.ChannelOw
  * Use `create(ChannelOwnershipTransferredSchema)` to create a new message.
  */
 export const ChannelOwnershipTransferredSchema: GenMessage<ChannelOwnershipTransferred> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 9);
+  messageDesc(file_arthome_identity_v1_events, 10);
 
 /**
  * The one-off stand-in: scoped to ONE date, expiry explicit and SERVED.
@@ -456,7 +513,7 @@ export type DateAccessGranted = Message<"arthome.identity.v1.DateAccessGranted">
  * Use `create(DateAccessGrantedSchema)` to create a new message.
  */
 export const DateAccessGrantedSchema: GenMessage<DateAccessGranted> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 10);
+  messageDesc(file_arthome_identity_v1_events, 11);
 
 /**
  * @generated from message arthome.identity.v1.DateAccessRevoked
@@ -501,7 +558,7 @@ export type DateAccessRevoked = Message<"arthome.identity.v1.DateAccessRevoked">
  * Use `create(DateAccessRevokedSchema)` to create a new message.
  */
 export const DateAccessRevokedSchema: GenMessage<DateAccessRevoked> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 11);
+  messageDesc(file_arthome_identity_v1_events, 12);
 
 /**
  * Rights change WHILE the application is open: an accepted invitation adds a
@@ -541,7 +598,7 @@ export type RightsVersionBumped = Message<"arthome.identity.v1.RightsVersionBump
  * Use `create(RightsVersionBumpedSchema)` to create a new message.
  */
 export const RightsVersionBumpedSchema: GenMessage<RightsVersionBumped> = /*@__PURE__*/
-  messageDesc(file_arthome_identity_v1_events, 12);
+  messageDesc(file_arthome_identity_v1_events, 13);
 
 /**
  * The EIGHT canonical roles from `catalogue.json`.

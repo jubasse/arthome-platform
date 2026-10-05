@@ -2,8 +2,10 @@ import type { CallHandler, ExecutionContext } from '@nestjs/common';
 import { lastValueFrom, of } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
+import { defineRoute } from '@arthome/contracts/http';
 import { FixedClock } from '@arthome/core';
 
+import { EndpointRoute } from './endpoint-access.js';
 import {
   CollectionResponse,
   MemorisedResponse,
@@ -13,8 +15,20 @@ import {
 
 const SERVED_AT = '2026-09-25T10:11:12.000Z';
 
-function contextOfType(type: string): ExecutionContext {
-  return { getType: () => type } as unknown as ExecutionContext;
+const readDate = defineRoute({
+  method: 'get',
+  version: 1,
+  path: '/dates/{dateId}',
+  operationId: 'readDate',
+  responses: { 200: { description: 'The date.' } },
+});
+
+const unboundHandler = (): undefined => undefined;
+const boundHandler = (): undefined => undefined;
+EndpointRoute(readDate)(boundHandler);
+
+function contextOfType(type: string, handler = unboundHandler): ExecutionContext {
+  return { getType: () => type, getHandler: () => handler } as unknown as ExecutionContext;
 }
 
 function httpContextRecordingHeaders(): {
@@ -29,6 +43,7 @@ function httpContextRecordingHeaders(): {
   };
   const context = {
     getType: () => 'http',
+    getHandler: () => boundHandler,
     switchToHttp: () => ({ getResponse: () => reply }),
   } as unknown as ExecutionContext;
   return { context, headers };
@@ -89,6 +104,18 @@ describe('the success envelope', () => {
       servedAt: SERVED_AT,
       data: { id: 'd2' },
     });
+  });
+
+  it('stamps servedAt on what a handler bound to its route returns, which is the body without it', async () => {
+    const interceptor = new SuccessEnvelopeInterceptor(new FixedClock(SERVED_AT));
+    const bound = contextOfType('http', boundHandler);
+    const output = { data: { dateId: 'd1' }, validUntil: '2026-09-25T10:30:00.000Z' };
+
+    const sent = await lastValueFrom(interceptor.intercept(bound, handlerReturning(output)));
+    const empty = await lastValueFrom(interceptor.intercept(bound, handlerReturning(undefined)));
+
+    expect(sent).toStrictEqual({ servedAt: SERVED_AT, ...output });
+    expect(empty).toBeUndefined();
   });
 
   /** A global interceptor reaches WS and RPC, and neither carries this envelope. */

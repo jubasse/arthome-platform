@@ -1,12 +1,11 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
-import { HttpStatus } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { z } from 'zod';
 
-import { ApiErrorCode, FailureNature, type Clock } from '@arthome/core';
+import { ApiErrorCode, type Clock } from '@arthome/core';
 
-import { RefusalException, schemaInvalidException } from './refusal.js';
+import { refusalOf, schemaInvalidException, type RefusalException } from './refusal.js';
 import { MemorisedResponse, type SuccessEnvelope } from './success-envelope.interceptor.js';
 
 /** transport.md §5.4. */
@@ -24,7 +23,7 @@ const SCOPE_CONSTRAINT = 'idempotency_record_scope';
 /**
  * transport.md §5.4's store, for a new service's migration. Its primary key is
  *   `(account_id, key)`; here a unique constraint with NULLS NOT DISTINCT, because `account_id`
- *   stays null until tokens are verified. `response_body` is `json`, not `jsonb`: a replay answers
+ *   is null for an anonymous visitor's request. `response_body` is `json`, not `jsonb`: a replay answers
  *   the first response byte for byte, and `jsonb` reorders an object's keys.
  */
 export function idempotencyRecordTableDdl(): string {
@@ -44,11 +43,26 @@ export function idempotencyRecordTableDdl(): string {
   `;
 }
 
+/**
+ * The retention job's half of §5.4: a record past its 24 hours answers nothing any more, and a
+ *   kept one holds a response for as long as it stays. Run by `tools/purge-retention.mjs`.
+ */
+export async function purgeIdempotencyRecords(
+  queryable: Pick<EntityManager, 'query'>,
+): Promise<number> {
+  const result: unknown = await queryable.query(
+    'DELETE FROM idempotency_record WHERE expires_at < now()',
+  );
+  // pg answers [rows, rowCount] for a DELETE.
+  return Array.isArray(result) && typeof result[1] === 'number' ? result[1] : 0;
+}
+
 export interface IdempotentRequest {
   readonly key: string;
   /**
-   * Null until tokens are verified (adr-auth.md defers it): unauthenticated callers then share
-   * one scope, which only a non-production deployment can reach.
+   * The internal token's account, so one account's key never answers another's request. Null for
+   * an anonymous visitor (a sign-up), whose keys share one scope: a replay there still needs the
+   * same fingerprint.
    */
   readonly accountId: string | null;
   readonly fingerprint: string;
@@ -64,13 +78,32 @@ interface StoredRecord {
 /** Required, and a UUID; a missing or malformed key is a schema fault naming the header. */
 export function idempotencyKeyOf(header: string | undefined): string {
   const parsed = z.uuid().safeParse(header);
-  if (!parsed.success) throw schemaInvalidException([{ path: ['Idempotency-Key'] }]);
+  if (!parsed.success) {
+    throw schemaInvalidException(
+      parsed.error.issues.map((issue) => ({ ...issue, path: ['Idempotency-Key'] })),
+    );
+  }
   return parsed.data;
 }
 
 /** Method, path and the validated body: transport.md §5.4's fingerprint. */
 export function fingerprintOf(method: string, path: string, body: unknown): string {
   return createHash('sha256')
+    .update(JSON.stringify([method, path, body]))
+    .digest('hex');
+}
+
+/**
+ * The fingerprint of a body that carries a secret, a password: keyed, so the stored record is no
+ *   unsalted hash of it for a day.
+ */
+export function keyedFingerprintOf(
+  secret: string,
+  method: string,
+  path: string,
+  body: unknown,
+): string {
+  return createHmac('sha256', secret)
     .update(JSON.stringify([method, path, body]))
     .digest('hex');
 }
@@ -82,10 +115,11 @@ export function idempotentRequestOf(
   body: unknown,
   statusCode: number,
   idempotencyKey: string | undefined,
+  accountId: string | null,
 ): IdempotentRequest {
   return {
     key: idempotencyKeyOf(idempotencyKey),
-    accountId: null,
+    accountId,
     fingerprint: fingerprintOf(method, path, body),
     statusCode,
   };
@@ -171,21 +205,13 @@ async function replay<T>(
   // Absent means purged between the conflict and this read; either way, try again shortly.
   if (stored?.state !== 'completed' || stored.response_body === null) throw inFlight();
   if (stored.fingerprint !== request.fingerprint) {
-    throw new RefusalException(HttpStatus.CONFLICT, {
-      code: ApiErrorCode.IDEMPOTENCY_KEY_REUSED,
-      params: {},
-      nature: FailureNature.REFUSED,
-    });
+    throw refusalOf(ApiErrorCode.IDEMPOTENCY_KEY_REUSED);
   }
   return new MemorisedResponse(stored.response_body as SuccessEnvelope<T>, true);
 }
 
 function inFlight(): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, {
-    code: ApiErrorCode.IDEMPOTENCY_IN_FLIGHT,
-    params: { retryAfterMs: RETRY_AFTER_MS },
-    nature: FailureNature.UNAVAILABLE,
-  });
+  return refusalOf(ApiErrorCode.IDEMPOTENCY_IN_FLIGHT, { retryAfterMs: RETRY_AFTER_MS });
 }
 
 function postgresCodeOf(error: unknown): string | undefined {

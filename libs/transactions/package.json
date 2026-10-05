@@ -1,9 +1,9 @@
 {
   "name": "@arthome-platform/transactions",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The transaction a CQRS command runs in: repositories bound to it, and the domain events of what it wrote published once it has committed.",
+  "description": "The transaction a CQRS command runs in: repositories bound to it, the domain events of what it wrote published once it has committed, and the deep freeze an aggregate holds its snapshot with.",
   "license": "UNLICENSED",
   "exports": {
     ".": {
@@ -14,11 +14,12 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json --incremental --tsBuildInfoFile node_modules/.cache/tsc/typecheck.tsbuildinfo",
+    "typecheck:full": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-b2aac8898fe7.tgz"
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz"
   },
   "peerDependencies": {
     "@nestjs/cqrs": "^12.0.0",

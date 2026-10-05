@@ -13,6 +13,8 @@ from reading.
 | `src/redis.ts` | `provideRedisForRun` (a Vitest `globalSetup`: one Redis per run), `workerRedisUrl` (a database index per worker, 1 to 15), `flushRedisDatabase`. |
 | `src/kafka.ts` | `createTopics`, `waitForMessage`, `headersOf`. The waiting an event test cannot do without. |
 | `src/database.ts` | `createDatabase`, `applyMigrations`, `truncateAll`. |
+| `src/http-app.ts` | `httpApp`: a service's feature modules over HTTP on Fastify, with the global providers its root module binds, `CqrsModule.forRoot()`, the suite's migrated `DataSource` if it passes one, and a value per overridden token (its clock, a stubbed client), and `rawBody` for a suite whose route verifies a signature over the exact bytes, as the service's `main.ts` bootstraps it (ticketing's payment webhooks), and `configure`, what `main.ts` does to the app before `init()` (`serveEndpoints` for `Endpoint` routes). Lifted from catalog and ticketing (T2's architecture review, M4). |
+| `src/declared-responses.ts` | `guardDeclaredResponses(api)`: every response of a watched app checked against its `@arthome/contracts` route, its status and, where the declared response names them, its error code; failing the test, or reported once per file under `ARTHOME_UNDECLARED_RESPONSES=report`. `declaredResponses` is the same without the Vitest hooks. |
 | `src/index.ts` | The public surface. The placeholder is gone. |
 | `src/*.spec.ts` | **Fast, no Docker.** They run inside `pnpm run verify`. |
 | `src/*.itest.ts` | **Slow, Docker.** |
@@ -29,7 +31,7 @@ const dataSource = await applyMigrations(target, {
   migrations: [Initial1758700000000, OutboxGuards1758700200000],
 });
 
-await dataSource.transaction((manager) => writeOutboxEvent(manager, fact));
+await dataSource.transaction((manager) => writeOutboxEvent(manager, fact, occurredAt));
 // ... assertions ...
 
 await truncateAll(dataSource);   // between tests
@@ -178,7 +180,7 @@ named out of no bounded context on purpose: database `harness_outbox`, topic
 `arthome.harness.probe`, aggregate type `harness.probe`, event type `harness.probe.happened.v1`.
 
 **If a future integration test needs real service names, `@arthome/core` must be added to this
-package's dependencies** (`file:../../vendor/arthome-core-41a7a1edfeb9.tgz`, as the services
+package's dependencies** (the release tarball URL, as the services
 declare it) and installed. I could not do either.
 
 ### 2.7 `*.itest.ts` is invisible to Vitest's defaults — and to two things it perhaps should not be
@@ -206,7 +208,17 @@ pick it up. It is `.mjs` and not `.ts` on purpose: a `.ts` file at a package roo
 `tsconfig`, and typescript-eslint's `projectService` would fail the repository-wide
 `pnpm run lint` on it.
 
-### 2.8 Two smaller decisions worth a line each
+### 2.8 Smaller decisions worth a line each
+
+- **`@nestjs/*` are peers, pinned in `devDependencies`** (AGENTS.md's one-copy rule, no `injected`),
+  for `httpApp` alone. The index exports it, so every suite importing this package loads them, a
+  suite of a service that runs no Nest included; they resolve from this package's own install.
+  `httpApp` knows no service token: the clock is one of `overrides`, and the providers are the
+  service's list, so this package imports nothing from `http-edge`, which already depends on it.
+
+- **`vitest` is a peer, pinned in `devDependencies`**, for `guardDeclaredResponses`, which registers
+  the suite's `afterEach` and `afterAll`: a module of `src/`, so built into `dist/`, unlike the
+  `*.itest.ts` below.
 
 - **`headersOf` delegates to `header()` from `@arthome-platform/messaging`.** The
   `"null"`-means-absent rule has exactly one implementation, in `dispatch.ts`. A second copy here

@@ -4,7 +4,6 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
 import { DateOutcome, type Clock, type OutcomeDeclaration } from '@arthome/core';
 
-import { asConflict } from './conflict.js';
 import { DeclareOutcome, type DeclaredOutcome } from './declare-outcome.command.js';
 import type { DeclareOutcomeBody } from './declare-outcome.schema.js';
 import { freeDateSlug } from './free-date-slug.js';
@@ -61,11 +60,9 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
             venue.time_zone,
             now,
           );
-    await asConflict(() =>
-      date.declareOutcome(body.expectedVersion, declaration, body.message, { slugAtNewStart, now }),
-    );
+    date.declareOutcome(body.expectedVersion, declaration, body.message, { slugAtNewStart, now });
 
-    await asConflict(() => dates.save(date));
+    await dates.save(date);
     await recordDateEvents(manager, date.getUncommittedEvents(), {
       origin: this.publicWebOrigin,
       show,

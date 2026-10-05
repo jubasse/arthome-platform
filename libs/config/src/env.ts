@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { DEVELOPMENT_TOKEN_PRIVATE_JWK, isDevelopmentTokenKey } from './development-token-key.js';
+
 export type NodeEnv = 'development' | 'test' | 'production';
 
 export interface HttpServiceEnv {
@@ -72,6 +74,8 @@ const DEVELOPMENT_OPENSEARCH_URL = 'http://localhost:19200';
 const DEVELOPMENT_REDIS_URL = 'redis://localhost:56379';
 /** `apps/catalog/.env.example`'s port. */
 const DEVELOPMENT_CATALOG_URL = 'http://localhost:3002';
+/** `apps/identity/.env.example`'s port. */
+const DEVELOPMENT_IDENTITY_URL = 'http://localhost:3001';
 
 function developmentDefaults(databaseName: string): {
   DATABASE_URL: string;
@@ -196,6 +200,15 @@ export function readBffEnv(source: Record<string, string | undefined> = process.
   return z.object({ NODE_ENV: nodeEnv, PORT: port, CATALOG_URL: httpUrl }).parse(withDefault);
 }
 
+/** Where a BFF reaches identity, for the authentication relay and the session's validation. */
+export function readIdentityUrl(source: Record<string, string | undefined> = process.env): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { IDENTITY_URL: DEVELOPMENT_IDENTITY_URL, ...stripEmpty(source) };
+  return z.object({ IDENTITY_URL: httpUrl }).parse(withDefault).IDENTITY_URL;
+}
+
 /** The storefront's own port in development, where Next.js listens by default. */
 const DEVELOPMENT_PUBLIC_WEB_ORIGIN = 'http://localhost:3000';
 
@@ -212,4 +225,179 @@ export function readPublicWebOrigin(
       : { PUBLIC_WEB_ORIGIN: DEVELOPMENT_PUBLIC_WEB_ORIGIN, ...stripEmpty(source) };
   return new URL(z.object({ PUBLIC_WEB_ORIGIN: httpUrl }).parse(withDefault).PUBLIC_WEB_ORIGIN)
     .origin;
+}
+
+/**
+ * Development's, so the fake payment adapter signs and verifies on a fresh clone. Production has
+ *   none: a known secret there would let anyone forge a paid order.
+ */
+const DEVELOPMENT_PAYMENT_WEBHOOK_SECRET = 'development-payment-webhook-secret';
+
+/** The secret a payment provider signs its webhooks with (adr-payments.md §7.1). */
+export function readPaymentWebhookSecret(
+  source: Record<string, string | undefined> = process.env,
+): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { PAYMENT_WEBHOOK_SECRET: DEVELOPMENT_PAYMENT_WEBHOOK_SECRET, ...stripEmpty(source) };
+  return z
+    .object({ PAYMENT_WEBHOOK_SECRET: secretOutside(DEVELOPMENT_PAYMENT_WEBHOOK_SECRET, source) })
+    .parse(withDefault).PAYMENT_WEBHOOK_SECRET;
+}
+
+/** A P-256 private key as a JWK, with the `kid` the JWKS document publishes its public half under. */
+export interface SigningKey {
+  readonly keyId: string;
+  readonly privateJwk: Readonly<Record<string, string>>;
+}
+
+const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/);
+
+const privateEcJwk = z.object({
+  kty: z.literal('EC'),
+  crv: z.literal('P-256'),
+  x: base64Url,
+  y: base64Url,
+  d: base64Url,
+  kid: z.string().min(1),
+});
+
+/**
+ * The key a BFF signs internal tokens with (`adr-auth.md` §8): `INTERNAL_TOKEN_SIGNING_KEY`, a JSON
+ * JWK. Outside production the published development key; in production that key is refused by its
+ * coordinates, whatever `kid` it carries, so a copied `.env` or a relabelled key cannot sign.
+ */
+export function readInternalTokenSigningKey(
+  source: Record<string, string | undefined> = process.env,
+): SigningKey {
+  const production = readNodeEnv(source) === 'production';
+  const raw = stripEmpty(source).INTERNAL_TOKEN_SIGNING_KEY;
+  const jwk = privateEcJwk.parse(
+    raw === undefined && !production
+      ? DEVELOPMENT_TOKEN_PRIVATE_JWK
+      : parseJson(raw, 'INTERNAL_TOKEN_SIGNING_KEY'),
+  );
+  if (production && isDevelopmentTokenKey(jwk)) {
+    throw new Error('INTERNAL_TOKEN_SIGNING_KEY: the development key cannot sign in production');
+  }
+  return { keyId: jwk.kid, privateJwk: jwk };
+}
+
+/** Where a service reads the public keys of the internal token's issuers. */
+export type JwksSource =
+  | { readonly kind: 'remote'; readonly url: string }
+  | { readonly kind: 'local'; readonly keys: readonly Readonly<Record<string, string>>[] };
+
+/**
+ * `JWKS_URL`: the static document the CDN serves (`adr-auth.md` §8.1), `https` in production. Outside
+ * production and unset, the development key's public half, so no document has to be served locally.
+ */
+export function readJwksSource(
+  source: Record<string, string | undefined> = process.env,
+): JwksSource {
+  const production = readNodeEnv(source) === 'production';
+  const url = stripEmpty(source).JWKS_URL;
+  if (url === undefined && !production) {
+    const { kty, crv, x, y, kid } = DEVELOPMENT_TOKEN_PRIVATE_JWK;
+    return { kind: 'local', keys: [{ kty, crv, x, y, kid }] };
+  }
+  const jwksUrl = production ? z.url({ protocol: /^https$/ }) : httpUrl;
+  return { kind: 'remote', url: z.object({ JWKS_URL: jwksUrl }).parse({ JWKS_URL: url }).JWKS_URL };
+}
+
+/** 32 characters at least, and in production never the development value this file publishes. */
+function secretOutside(
+  development: string,
+  source: Record<string, string | undefined>,
+): z.ZodType<string> {
+  const production = readNodeEnv(source) === 'production';
+  return z
+    .string()
+    .min(32)
+    .refine((secret) => !production || secret !== development, {
+      message: 'the development value cannot be used in production',
+    });
+}
+
+const DEVELOPMENT_BETTER_AUTH_SECRET = 'development-better-auth-secret-not-for-production';
+
+/** better-auth's secret, which signs the session tokens identity hands out. */
+export function readBetterAuthSecret(
+  source: Record<string, string | undefined> = process.env,
+): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { BETTER_AUTH_SECRET: DEVELOPMENT_BETTER_AUTH_SECRET, ...stripEmpty(source) };
+  return z
+    .object({ BETTER_AUTH_SECRET: secretOutside(DEVELOPMENT_BETTER_AUTH_SECRET, source) })
+    .parse(withDefault).BETTER_AUTH_SECRET;
+}
+
+const DEVELOPMENT_CSRF_SECRET = 'development-csrf-secret-not-for-production';
+
+/** The key a BFF binds a cookie session's CSRF token to that session with. */
+export function readCsrfSecret(source: Record<string, string | undefined> = process.env): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { CSRF_SECRET: DEVELOPMENT_CSRF_SECRET, ...stripEmpty(source) };
+  return z
+    .object({ CSRF_SECRET: secretOutside(DEVELOPMENT_CSRF_SECRET, source) })
+    .parse(withDefault).CSRF_SECRET;
+}
+
+/**
+ * `TRUSTED_PROXIES`: the addresses or subnets whose `X-Forwarded-For` a BFF believes, comma
+ * separated, or `none` when clients reach it directly (`nestjs-web-security` rule 7). Required in
+ * production: behind a proxy, a BFF trusting none counts every client as the proxy's address, and the
+ * per-address caps become platform-wide, in silence. Outside production, unset means none.
+ */
+export function readTrustedProxies(
+  source: Record<string, string | undefined> = process.env,
+): readonly string[] {
+  const raw = stripEmpty(source).TRUSTED_PROXIES;
+  if (raw === undefined) {
+    if (readNodeEnv(source) === 'production') {
+      throw new Error(
+        'TRUSTED_PROXIES: required in production, `none` when no proxy fronts the BFF',
+      );
+    }
+    return [];
+  }
+  if (raw.trim() === 'none') return [];
+  return z
+    .array(z.union([z.ipv4(), z.ipv6(), z.cidrv4(), z.cidrv6()]))
+    .min(1)
+    .parse(raw.split(',').map((entry) => entry.trim()));
+}
+
+const headerName = z
+  .string()
+  .regex(/^[A-Za-z0-9-]+$/)
+  .transform((name) => name.toLowerCase());
+
+/**
+ * `VIEWER_COUNTRY_HEADER`: the header the infrastructure gateway writes the visitor's country into,
+ * from its geolocation, and the only one trusted. Required in production, where a BFF reading no
+ * header would record every visitor's country as unknown in silence; outside production, unset
+ * means no header is read and every country is unknown.
+ */
+export function readViewerCountryHeader(
+  source: Record<string, string | undefined> = process.env,
+): string | null {
+  const raw = stripEmpty(source).VIEWER_COUNTRY_HEADER;
+  if (raw === undefined && readNodeEnv(source) !== 'production') return null;
+  return z.object({ VIEWER_COUNTRY_HEADER: headerName }).parse({ VIEWER_COUNTRY_HEADER: raw })
+    .VIEWER_COUNTRY_HEADER;
+}
+
+function parseJson(raw: string | undefined, name: string): unknown {
+  if (raw === undefined) throw new Error(`${name} is required`);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`${name} is not JSON`);
+  }
 }

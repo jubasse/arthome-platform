@@ -4,7 +4,6 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
 import type { Clock } from '@arthome/core';
 
-import { asConflict } from './conflict.js';
 import { publicationView, satisfiedChecklistItems, type PublicationView } from './date-sheet.js';
 import { freeDateSlug } from './free-date-slug.js';
 import { loadDate } from './load-date.js';
@@ -52,18 +51,16 @@ export class TransitionPublicationHandler implements ICommandHandler<TransitionP
             now,
           )
         : null;
-    await asConflict(() =>
-      date.transitionPublication(
-        {
-          to: body.to,
-          expectedVersion: body.expectedVersion,
-          acknowledgedPromise: body.acknowledgedPromiseCode,
-        },
-        { satisfied, freeSlug, showRuntimeMin: show.runtime_min, now },
-      ),
+    date.transitionPublication(
+      {
+        to: body.to,
+        expectedVersion: body.expectedVersion,
+        acknowledgedPromise: body.acknowledgedPromiseCode,
+      },
+      { satisfied, freeSlug, showRuntimeMin: show.runtime_min, now },
     );
 
-    await asConflict(() => dates.save(date));
+    await dates.save(date);
     await recordDateEvents(manager, date.getUncommittedEvents(), {
       origin: this.publicWebOrigin,
       show,

@@ -11,11 +11,15 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
+  CatalogErrorCode,
   DomainError,
   DomainErrorCode,
+  DomainGuardCode,
   FailureNature,
   FixedClock,
   IdentityErrorCode,
+  OrderErrorCode,
+  SchemaIssueRule,
 } from '@arthome/core';
 
 import { ErrorEnvelopeFilter } from './error-envelope.filter.js';
@@ -106,6 +110,11 @@ function uniqueViolation(constraint: string, column: string, value: string): Err
   return Object.assign(new Error(driverError.message), { ...driverError, driverError });
 }
 
+/** Shaped as `@fastify/error` builds one: the name every Fastify error shares, its code, its status. */
+function fastifyError(code: string, statusCode: number, message: string): Error {
+  return Object.assign(new Error(message), { name: 'FastifyError', code, statusCode });
+}
+
 const emailCollision = (): Error =>
   uniqueViolation('account_email_key', 'email', 'marie@example.test');
 const handleCollision = (): Error =>
@@ -141,6 +150,19 @@ describe('ErrorEnvelopeFilter', () => {
     expect(sent.status).toBe(HttpStatus.CONFLICT);
     expect(sent.body).toMatchObject({ error: { code: IdentityErrorCode.HANDLE_TAKEN } });
     expect(JSON.stringify(sent.body)).not.toContain('email');
+  });
+
+  it('answers a collision with the nature core’s registry gives its code', () => {
+    // A slug the server chose: publishing again takes the next free one, so retrying succeeds.
+    const { run, sent } = filterFor({}, [
+      { column: 'show_slug', code: CatalogErrorCode.SHOW_SLUG_TAKEN },
+    ]);
+    run(uniqueViolation('show_slug_key', 'slug', 'nuit-blanche'));
+
+    expect(sent.status).toBe(HttpStatus.CONFLICT);
+    expect(sent.body).toMatchObject({
+      error: { code: CatalogErrorCode.SHOW_SLUG_TAKEN, nature: FailureNature.UNAVAILABLE },
+    });
   });
 
   it('matches the column inside the constraint name, so a rename does not silently fall through', () => {
@@ -215,7 +237,7 @@ describe('ErrorEnvelopeFilter', () => {
     run(
       new RefusalException(HttpStatus.BAD_REQUEST, {
         code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['locale'] },
+        params: { issues: [{ path: ['locale'], rule: SchemaIssueRule.INVALID_VALUE }] },
         nature: FailureNature.REFUSED,
       }),
     );
@@ -224,7 +246,7 @@ describe('ErrorEnvelopeFilter', () => {
     expect(sent.body).toMatchObject({
       error: {
         code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['locale'] },
+        params: { issues: [{ path: ['locale'], rule: SchemaIssueRule.INVALID_VALUE }] },
         nature: FailureNature.REFUSED,
       },
     });
@@ -252,12 +274,39 @@ describe('ErrorEnvelopeFilter', () => {
     });
   });
 
-  it('treats an unavailable domain error as 503, rather than blaming the caller', () => {
+  it('answers a published code at the status the error registry gives it, whoever throws it', () => {
+    for (const [error, status] of [
+      [
+        new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { currentVersion: 3 } }),
+        HttpStatus.CONFLICT,
+      ],
+      [
+        new DomainError({
+          code: OrderErrorCode.PAYMENT_DECLINED,
+          params: { declineCode: 'insufficient_funds' },
+        }),
+        HttpStatus.PAYMENT_REQUIRED,
+      ],
+    ] as const) {
+      const { run, sent } = filterFor();
+      run(error);
+      expect(sent.status).toBe(status);
+    }
+  });
+
+  it('answers a domain guard 400, with the nature the registry gives its code', () => {
     const { run, sent } = filterFor();
     run(
-      new DomainError({ code: DomainErrorCode.MEDIA_URL_EMPTY, nature: FailureNature.UNAVAILABLE }),
+      new DomainError({
+        code: DomainGuardCode.TIMEZONE_NOT_IANA,
+        params: { timeZone: 'Mars/Olympus' },
+      }),
     );
-    expect(sent.status).toBe(HttpStatus.SERVICE_UNAVAILABLE);
+
+    expect(sent.status).toBe(HttpStatus.BAD_REQUEST);
+    expect(sent.body).toMatchObject({
+      error: { code: DomainGuardCode.TIMEZONE_NOT_IANA, nature: FailureNature.REFUSED },
+    });
   });
 
   it('gives a NestJS exception the same envelope, so the 400 and the 404 are one shape', () => {
@@ -279,6 +328,44 @@ describe('ErrorEnvelopeFilter', () => {
     const { run, sent } = filterFor();
     run(new NotFoundException('gone', { errorCode: ApiErrorCode.CURSOR_TOO_OLD }));
     expect(sent.body).toMatchObject({ error: { code: ApiErrorCode.CURSOR_TOO_OLD } });
+  });
+
+  it('answers a Fastify refusal raised inside a handler with its status, never its message', () => {
+    // Nest maps a Fastify error to its status only in Fastify's own error handler; one thrown from
+    // inside a handler reaches this filter as it is.
+    const { run, sent } = filterFor();
+    run(fastifyError('FST_ERR_CTP_INVALID_JSON_BODY', 400, 'Body is not valid JSON'));
+
+    expect(sent.status).toBe(HttpStatus.BAD_REQUEST);
+    expect(sent.body).toMatchObject({
+      error: { code: ApiErrorCode.SCHEMA_INVALID, nature: FailureNature.REFUSED, params: {} },
+    });
+    expect(JSON.stringify(sent.body)).not.toContain('JSON');
+  });
+
+  it('answers an oversized or non-JSON body as a refusal with its code, never as unavailable', () => {
+    // As Nest's adapter hands over a Fastify refusal: the status, and Fastify's English message.
+    for (const [status, code] of [
+      [HttpStatus.PAYLOAD_TOO_LARGE, ApiErrorCode.PAYLOAD_TOO_LARGE],
+      [HttpStatus.UNSUPPORTED_MEDIA_TYPE, ApiErrorCode.UNSUPPORTED_MEDIA_TYPE],
+    ] as const) {
+      const { run, sent } = filterFor();
+      run(new HttpException('Request body is too large', status));
+
+      expect(sent.status).toBe(status);
+      expect(sent.body).toMatchObject({ error: { code, nature: FailureNature.REFUSED } });
+      expect(JSON.stringify(sent.body)).not.toContain('too large');
+    }
+    expect(logged).toEqual([]);
+  });
+
+  it('answers a Fastify failure of its own as any unknown error', () => {
+    const { run, sent } = filterFor();
+    run(fastifyError('FST_ERR_REP_ALREADY_SENT', 500, 'Reply was already sent'));
+
+    expect(sent.status).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+    expect(sent.body).toMatchObject({ error: { code: ApiErrorCode.INTERNAL } });
+    expect(logged).toEqual([{ level: 'error', message: 'Unhandled error; answered 500.' }]);
   });
 
   it('distinguishes 503 from 500, which one substitute code used to collapse', () => {

@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/events",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The Protobuf wire types, generated from arthome-core's proto/.",
@@ -13,7 +13,8 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json --incremental --tsBuildInfoFile node_modules/.cache/tsc/typecheck.tsbuildinfo",
+    "typecheck:full": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {

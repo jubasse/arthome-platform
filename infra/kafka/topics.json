@@ -33,6 +33,10 @@
       "partitions": 3
     },
     {
+      "name": "arthome.identity.email_verification",
+      "partitions": 3
+    },
+    {
       "name": "arthome.identity.retry",
       "partitions": 3
     },
@@ -83,6 +87,22 @@
     {
       "name": "arthome.ticketing.date_sales",
       "partitions": 12
+    },
+    {
+      "name": "arthome.ticketing.order",
+      "partitions": 6
+    },
+    {
+      "name": "arthome.ticketing.account",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.ticketing.retry",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.ticketing.dlq",
+      "partitions": 3
     },
     {
       "name": "arthome.streaming.run",

@@ -1,10 +1,9 @@
 import { Reflector, type ReflectableDecorator } from '@nestjs/core';
 
 /**
- * Exempts a route or a controller from `DenyInProductionGuard`.
- *
- * For the probes only. The guard exists because every write route here ships reachable; an
- *   exemption on one of those reopens exactly what it closed.
+ * Exempts a route or a controller from `DenyInProductionGuard`: the probes, and a route whose
+ *   authorisation has landed. A route a slice has not authorised yet stays refused in production
+ *   (the studio's until auth slice B): marking it reopens exactly what the guard closed.
  */
 export const AllowInProduction: ReflectableDecorator<void, true> = Reflector.createDecorator<
   void,

@@ -1,20 +1,14 @@
 import type { ServerResponse } from 'node:http';
 
-import { HttpStatus } from '@nestjs/common';
-
-import { ApiErrorCode, FailureNature, type Clock } from '@arthome/core';
+import { ApiErrorCode, SchemaIssueRule, type Clock } from '@arthome/core';
 import { InstantIn } from '@arthome/core/schema';
 
-import { RefusalException, schemaInvalidRefusal } from './refusal.js';
+import { refusalOf, type RefusalException } from './refusal.js';
 
 export const DEADLINE_HEADER = 'x-arthome-deadline';
 
 export function deadlineExceededException(): RefusalException {
-  return new RefusalException(HttpStatus.GATEWAY_TIMEOUT, {
-    code: ApiErrorCode.DEADLINE_EXCEEDED,
-    params: {},
-    nature: FailureNature.UNAVAILABLE,
-  });
+  return refusalOf(ApiErrorCode.DEADLINE_EXCEEDED);
 }
 
 /**
@@ -23,10 +17,13 @@ export function deadlineExceededException(): RefusalException {
  */
 export function remainingBeforeDeadline(header: string | undefined, clock: Clock): number {
   if (!InstantIn.safeParse(header).success) {
-    throw new RefusalException(
-      HttpStatus.BAD_REQUEST,
-      schemaInvalidRefusal([{ path: [DEADLINE_HEADER] }]),
-    );
+    throw refusalOf(ApiErrorCode.SCHEMA_INVALID, {
+      issues: [
+        header === undefined
+          ? { path: [DEADLINE_HEADER], rule: SchemaIssueRule.INVALID_TYPE }
+          : { path: [DEADLINE_HEADER], rule: SchemaIssueRule.INVALID_FORMAT, format: 'date-time' },
+      ],
+    });
   }
   const remaining = Date.parse(header ?? '') - clock.nowMs();
   if (remaining <= 0) throw deadlineExceededException();

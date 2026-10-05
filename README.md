@@ -9,10 +9,11 @@ Kafka with Kafka Connect and Debezium, Redis, OpenSearch, MinIO.
 
 **The event path is built and proven end to end.** An account is registered over HTTP, the fact
 reaches a second service's database through logical decoding, and replaying it changes nothing.
-Every step below was run against the real stack, not reasoned about.
+Every step below was run against the real stack, not reasoned about; the first step is now the
+storefront BFF's sign-up (auth slice A), which reaches identity with its internal token.
 
 ```
-POST /accounts  ->  account + outbox_event in ONE transaction, same manager
+POST /v1/auth/sign-up (BFF)  ->  identity: account + outbox_event in ONE transaction, same manager
                 ->  Postgres WAL  ->  Debezium outbox router
                 ->  arthome.identity.account, key = account_id
                 ->  notifications: dedup + effect in ONE transaction
@@ -20,22 +21,27 @@ POST /accounts  ->  account + outbox_event in ONE transaction, same manager
 
 | Built | What it is |
 | --- | --- |
-| `apps/identity` | `POST /accounts`, the outbox producer |
+| `apps/identity` | the storefront session on better-auth (sign-up, sign-in, sessions, the email verification link), the outbox producer |
 | `apps/catalog` | shows, venues, dates and their publication, the checklist consumer, the search over the date index, the public date page from `date_detail_public`, and the artist |
+| `apps/ticketing` | a date's commercial face, `DateSales`: capacity by tiers and its technical provision, prices and their lock, the studio's pane, the public availability read, the facts it takes from catalog, and `availability_changed` at a bounded rate; the seat's quote, purchase and order: holds, orders and their payment through the fake adapter |
 | `apps/notifications` | the idempotent consumer, with retries and dead-lettering |
-| `apps/bff-storefront` | the storefront's BFF: search, the date and artist pages, link resolution, from catalog, with the deadline and the error mapping |
+| `apps/bff-storefront` | the storefront's BFF: search, the date and artist pages, link resolution, from catalog; the authentication relay and the viewer context, from identity; an internal token on every call, the deadline, the error mapping, the caps and the cookie's CSRF check |
 | `apps/search-indexer` | the catalog projection into OpenSearch, composed from a read model of its own |
-| `libs/messaging` | the outbox, the processed-message claim (`claimMessage`, `messageIdOf`: a message-id that is not a UUID is dead-lettered at once), failure classification, retry, dead-lettering — shared by every service |
+| `libs/messaging` | the outbox and each service's writer over it (`outboxWriter`), the host a Nest consumer process runs its consumers in (`ConsumerHostModule`, from `@arthome-platform/messaging/nest`, the one entry that loads Nest), the processed-message claim (`claimMessage`, `messageIdOf`: a message-id that is not a UUID is dead-lettered at once), failure classification, retry and its schedule (`nextAttemptAt`, `doublingDelays`, for provider calls too), dead-lettering — shared by every service |
 | `libs/events` | the Protobuf wire types, generated from arthome-core's `proto/` |
-| `libs/http-edge` | the success and error envelopes, validation refusals, the deadline, idempotent commands and their table — every HTTP service's edge |
+| `libs/http-edge` | the success and error envelopes and the global providers that bind them (`edgeProviders`), the internal token's verification and its guard, validation refusals, the refusals a handler raises at the status core's error registry gives their code (`refuse(route, code, params)` on a bound route, `refusalOf`, `notFound`, `stateConflict`), the deadline, idempotent commands and their table, JSON as the only body parsed (`JsonBodiesOnly`), a handler bound to its `@arthome/contracts` route (`Endpoint`), with the guards, input, principal and answer shaping its declaration implies (`endpointProviders`) — every HTTP service's edge |
 | `libs/search-index` | the index mappings and document shapes, shared by the indexer and catalog's search |
-| `libs/transactions` | the transaction a CQRS command runs in, and its domain events published after the commit |
-| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers |
+| `libs/transactions` | the transaction a CQRS command runs in, its domain events published after the commit, `frozen`, which holds an aggregate's snapshot, and `updateReturning`, which reads an UPDATE's RETURNING rows |
+| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers, boots a service's feature modules over HTTP (`httpApp`) and checks each response a suite provokes against its contract route (`guardDeclaredResponses`) |
 
-**What is NOT built, said plainly.** `ticketing`, `streaming`, `chat` and `payouts` do not exist.
-`notifications` is only its consumer half. Redis runs in the development stack and nothing uses it
-yet: ticketing brings its queues and waiting room. There is no MinIO. There is no authentication:
-`adr-auth.md` gives it to better-auth in its own schema, and that is deliberately deferred.
+**What is NOT built, said plainly.** `streaming`, `chat` and `payouts` do not exist, and `ticketing`
+sells through its fake payment adapter only, with no Stripe adapter; refunds for an outcome, the
+waiting list and the waiting room come next.
+`notifications` is only its consumer half, and sends no email. Redis holds the storefront BFF's
+authentication caps; ticketing brings its queues and waiting room. There is no MinIO.
+Authentication covers the storefront's session (auth slice A): the studio (B), devices and the
+television (C), and the other sign-in methods (D) come next, and the studio's routes stay refused in
+production until B authorises them.
 
 `apps/search-indexer` is an **eighth** component and not one of the seven services — a projection
 onto the index, owned by the search side rather than by a bounded context.
@@ -50,9 +56,22 @@ Kafka 4.0 in KRaft mode, Debezium 3.0, OpenSearch 2.18, Redis 8.8 with no evicti
 append-only file. Postgres publishes on **55432**, not 5432, and Redis on **56379**: a development
 stack that fights for well-known ports is one you cannot run beside anything else.
 
-**`pnpm run verify` runs in under two seconds** and needs no Docker. The
-integration tests that do need it are `*.itest.ts`, behind their own command — a gate that costs
-half a minute stops being run, and then stops being true.
+**`pnpm run verify` needs no Docker**, and stays fast enough to run on every commit because it is
+cached: ESLint, Prettier and `tsc` each skip what has not changed — warm, about 25-55 s; cold, about
+110-140 s. Caching a cross-file lint check has a cost: a warm `verify` can miss a lint error that
+only shows up through another file's change. `pnpm run verify:full`, the same gate with every cache
+off, closes that gap and is what `.githooks/pre-push` runs before every push, so a PR never reaches
+review without it. The integration tests that do need Docker are `*.itest.ts`, behind their own
+command.
+
+**Setting up.** The `@arthome/*` packages come from a release of arthome-core, with nothing cloned
+beside this repository: `pnpm run use-core <version>` points the manifests at the tarballs attached
+to the GitHub release `v<version>`, installs, and builds the libs. The platform is on core 0.1.0, from
+its GitHub release. The first switch off `file:` specs needs `node tools/use-core.mjs <version>`, since
+pnpm 12 pre-installs before a script and fails on missing vendor tarballs; later bumps can use
+`pnpm run use-core`. To work against arthome-core
+changes that are not released, `pnpm run bootstrap` packs a sibling checkout instead; that is for
+feature branches, and `develop` and `main` must stay on a release.
 
 See **[AGENTS.md](AGENTS.md)** for the commands, how to replay the event path, and what happens when
 a message cannot be applied.

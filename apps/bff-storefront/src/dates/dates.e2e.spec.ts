@@ -1,14 +1,18 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+import { serveEndpoints } from '@arthome-platform/http-edge';
+import { guardDeclaredResponses } from '@arthome-platform/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import {
   ApiErrorCode,
   DisplayState,
   FailureNature,
+  FixedClock,
   ReplayPolicy,
   RightsScope,
   Surface,
@@ -16,6 +20,7 @@ import {
 
 import { AppModule } from '../app.module.js';
 import { CATALOG_URL } from '../catalog/catalog.client.js';
+import { CLOCK } from '../clock.js';
 import { answerNotModified } from '../conditional-get.js';
 
 const DATE_ID = '01a0e700-0000-7000-8000-000000000001';
@@ -38,14 +43,21 @@ const CARD = {
   media: { wide: [], poster: [] },
 };
 
+// An hour ahead, so no deadline falls due while a case runs: search.e2e records why.
+const clock = new FixedClock(Date.now() + 3_600_000);
+
 let catalogAnswer: { status: number; body: object } = { status: 200, body: {} };
 let catalogUrl = '';
+let catalogDeadlines: (string | string[] | undefined)[] = [];
 let catalog: Server;
 let app: NestFastifyApplication;
+
+const responses = guardDeclaredResponses(storefrontApi);
 
 beforeAll(async () => {
   catalog = createServer((request, response) => {
     catalogUrl = request.url ?? '';
+    catalogDeadlines.push(request.headers['x-arthome-deadline']);
     response.writeHead(catalogAnswer.status, { 'content-type': 'application/json' });
     response.end(JSON.stringify(catalogAnswer.body));
   });
@@ -54,23 +66,21 @@ beforeAll(async () => {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(CATALOG_URL)
     .useValue(`http://localhost:${(catalog.address() as AddressInfo).port}`)
+    .overrideProvider(CLOCK)
+    .useValue(clock)
     .compile();
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
   });
   answerNotModified(app);
+  serveEndpoints(app);
+  responses.watch(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
-  // Measured: under the full verify's parallel load, the first call through a cold app took
-  // longer than the 200 ms search budget, and the case read a 504 instead of the page.
-  await app.inject({
-    method: 'GET',
-    url: '/v1/search',
-    headers: { 'x-arthome-surface': Surface.STOREFRONT_WEB },
-  });
 });
 
 beforeEach(() => {
+  catalogDeadlines = [];
   catalogAnswer = {
     status: 200,
     body: {
@@ -181,7 +191,7 @@ describe('GET /v1/resolve on the storefront BFF', () => {
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.json()).toMatchObject({ error: { params: { fields: ['url'] } } });
+    expect(response.json()).toMatchObject({ error: { params: { issues: [{ path: ['url'] }] } } });
   });
 });
 
@@ -216,5 +226,19 @@ describe('GET /v1/artists/:artistId on the storefront BFF', () => {
     expect(response.headers['cache-control']).toBe('public, max-age=300');
     expect(response.json()).toMatchObject({ data: { name: 'Compagnie Verticale' } });
     expect(catalogUrl).toBe(`/v1/artists/${artistId}`);
+  });
+});
+
+describe('the public reads on the storefront BFF', () => {
+  it('give catalog a deadline 400 ms out: the date page, the artist page and the resolution', async () => {
+    for (const call of [
+      { url: `/v1/dates/${DATE_ID}` },
+      { url: '/v1/artists/01a0e700-0000-7000-8000-0000000000b1' },
+      { url: '/v1/resolve', query: { url: CARD.canonicalUrl } },
+    ]) {
+      await app.inject({ method: 'GET', headers: HEADERS, ...call });
+    }
+
+    expect(catalogDeadlines).toEqual(Array(3).fill(new Date(clock.nowMs() + 400).toISOString()));
   });
 });

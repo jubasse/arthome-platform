@@ -1,0 +1,21 @@
+<%= imports([
+  { name: 'Outcome', from: '@arthome-platform/messaging', typeOnly: true },
+  { name: 'Command', from: '@nestjs/cqrs' },
+  { name: 'Delivery', from: '../delivery.js', typeOnly: true },
+]) %>
+
+/** What `<%= type %>` states, at its `occurred_at`. */
+export interface <%= fact %>Fact {
+  readonly <%= key %>: string;
+  readonly occurredAt: Date;
+}
+
+/** Dispatched by the consumer, once per `<%= type %>` it reads. */
+export class <%= command.pascal %> extends Command<Outcome> {
+  public constructor(
+    public readonly delivery: Delivery,
+    public readonly fact: <%= fact %>Fact,
+  ) {
+    super();
+  }
+}

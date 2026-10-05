@@ -4,19 +4,20 @@ import {
   DATE_INDEX_MAPPING,
   INDEX_SETTINGS,
 } from '@arthome-platform/search-index';
-import { startStack, type StartedStack } from '@arthome-platform/testing';
+import { httpApp, startStack, type StartedStack } from '@arthome-platform/testing';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Client } from '@opensearch-project/opensearch';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, DisplayState, FixedClock, ReplayPolicy } from '@arthome/core';
+import { ApiErrorCode, DisplayState, FixedClock, ReplayPolicy, Service } from '@arthome/core';
 
 import { OPENSEARCH } from './search-catalog.handler.js';
 import { dateDocument } from './search-fixtures.js';
 import { SearchSort, SearchTab } from './search-query.schema.js';
 import { SearchModule } from './search.module.js';
 import type { ServableDateDocument } from './servable-document.js';
-import { httpApp } from '../itest/http-app.js';
+import { CLOCK } from '../clock.js';
+import { EDGE_PROVIDERS } from '../edge-providers.js';
 
 /**
  * The search against a real OpenSearch, through the HTTP edge. What only a cluster proves:
@@ -145,8 +146,12 @@ beforeAll(async () => {
 
   app = await httpApp({
     imports: [SearchModule],
-    clock: new FixedClock(NOW),
-    overrides: [[OPENSEARCH, client]],
+    providers: EDGE_PROVIDERS,
+    caller: { service: Service.CATALOG, clock: new FixedClock(NOW) },
+    overrides: [
+      [CLOCK, new FixedClock(NOW)],
+      [OPENSEARCH, client],
+    ],
   });
 }, STARTUP_MS);
 
@@ -241,7 +246,7 @@ describe('GET /v1/search at the edge', () => {
       expect(missing.status).toBe(400);
       expect(missing.body.error).toMatchObject({
         code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['x-arthome-deadline'] },
+        params: { issues: [{ path: ['x-arthome-deadline'] }] },
       });
       expect(passed.status).toBe(504);
       expect(passed.body.error?.code).toBe(ApiErrorCode.DEADLINE_EXCEEDED);
@@ -255,7 +260,8 @@ describe('GET /v1/search at the edge', () => {
       const { status, body } = await search({ q: 'nuit', priceMaxMinor: '2000', tab: 'artists' });
 
       expect(status).toBe(400);
-      expect(body.error?.params).toEqual({ fields: ['priceMaxMinor', 'tab'] });
+      const issues = (body.error?.params as { issues?: { path: unknown[] }[] } | undefined)?.issues;
+      expect(issues?.map(({ path }) => path.join('.')).sort()).toEqual(['priceMaxMinor', 'tab']);
     },
     CASE_MS,
   );

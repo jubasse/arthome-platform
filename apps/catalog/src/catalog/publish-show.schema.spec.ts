@@ -2,7 +2,13 @@ import { RefusalException, schemaInvalidException } from '@arthome-platform/http
 import { StandardSchemaValidationPipe, type ArgumentMetadata } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, FailureNature, LanguageDependency, rendition } from '@arthome/core';
+import {
+  ApiErrorCode,
+  FailureNature,
+  LanguageDependency,
+  rendition,
+  SchemaIssueRule,
+} from '@arthome/core';
 
 import { PublishShowSchema } from './publish-show.schema.js';
 
@@ -58,7 +64,7 @@ describe('the POST /shows body', () => {
     const refusal = await refusalFor({ ...body, genreIds: 'abc' });
 
     expect(refusal.getStatus()).toBe(400);
-    expect(refusal.refusal.params).toEqual({ fields: ['genreIds'] });
+    expect(refusal.refusal.params).toMatchObject({ issues: [{ path: ['genreIds'] }] });
   });
 
   it('refuses a genre id that is not a slug', async () => {
@@ -74,7 +80,9 @@ describe('the POST /shows body', () => {
     // checked with `isMember` in the controller; it is now `vocabularyIn`, which
     // that controller's own comment named as the proper `In` form.
     const refusal = await refusalFor({ ...body, languageDependency: 'light' });
-    expect(refusal.refusal.params).toEqual({ fields: ['languageDependency'] });
+    expect(refusal.refusal.params).toMatchObject({
+      issues: [{ path: ['languageDependency'], rule: SchemaIssueRule.INVALID_VALUE }],
+    });
   });
 
   it('refuses a language dependency of the wrong type, which would have published UNSPECIFIED', async () => {
@@ -113,12 +121,18 @@ describe('the POST /shows body', () => {
     expect(refusal.refusal.code).toBe(ApiErrorCode.SCHEMA_INVALID);
   });
 
-  it('names every field that failed, sorted, and not one word of the validation library', async () => {
+  it('names every field that failed, with its rule, and not one word of the validation library', async () => {
     const refusal = await refusalFor({ ...body, genreIds: 'abc', categoryId: 9, runtimeMin: -1 });
+    const { issues } = refusal.refusal.params as {
+      readonly issues: readonly { readonly path: readonly unknown[]; readonly rule: string }[];
+    };
 
-    expect(refusal.refusal.params).toEqual({
-      fields: ['categoryId', 'genreIds', 'runtimeMin'],
-    });
+    expect(issues.map(({ path }) => path.join('.')).sort()).toEqual([
+      'categoryId',
+      'genreIds',
+      'runtimeMin',
+    ]);
+    expect(issues.every(({ rule }) => typeof rule === 'string')).toBe(true);
     expect(refusal.refusal.code).toBe(ApiErrorCode.SCHEMA_INVALID);
     expect(refusal.refusal.nature).toBe(FailureNature.REFUSED);
     expect(JSON.stringify(refusal.refusal)).not.toMatch(/invalid input|expected|received/i);

@@ -1,4 +1,4 @@
-import { PerishableResponse, schemaInvalidException } from '@arthome-platform/http-edge';
+import { notFound, PerishableResponse, schemaInvalidException } from '@arthome-platform/http-edge';
 import { Inject } from '@nestjs/common';
 import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -18,7 +18,6 @@ import { Artist } from '../artists/artist.entity.js';
 import { Show } from '../catalog/show.entity.js';
 import { CLOCK } from '../clock.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
-import { notFound } from '../refusals.js';
 
 type LinkTo<K extends LinkKind> = Extract<PublicLink, { readonly kind: K }>;
 

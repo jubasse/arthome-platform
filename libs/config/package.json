@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/config",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Environment reading, validated once at startup.",
@@ -13,13 +13,14 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json --incremental --tsBuildInfoFile node_modules/.cache/tsc/typecheck.tsbuildinfo",
+    "typecheck:full": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-b2aac8898fe7.tgz",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-2cf0970eb95d.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz",
+    "@arthome/contracts": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-contracts-0.1.0.tgz",
     "zod": "4.6.5"
   }
 }

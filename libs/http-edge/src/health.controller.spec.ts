@@ -2,7 +2,7 @@ import type { CheckResult, CheckStatus } from '@arthome-platform/messaging';
 import { HttpStatus } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 
-import { ApiErrorCode } from '@arthome/core';
+import { ApiErrorCode, FailureNature } from '@arthome/core';
 
 import { HealthController, type ReadinessCheck } from './health.controller.js';
 import { RefusalException } from './refusal.js';
@@ -45,7 +45,7 @@ describe('HealthController', () => {
     ]);
   });
 
-  it('fails readiness with a 503 naming what is down', async () => {
+  it('fails readiness with a 503, what is down logged', async () => {
     const controller = new HealthController([
       check('database', 'down'),
       check('replication_slot', 'degraded'),
@@ -61,9 +61,11 @@ describe('HealthController', () => {
     expect(thrown).toBeInstanceOf(RefusalException);
     if (!(thrown instanceof RefusalException)) return;
     expect(thrown.getStatus()).toBe(HttpStatus.SERVICE_UNAVAILABLE);
-    expect(thrown.refusal).toMatchObject({
+    // What is down goes to the log: the code's params are none (the error registry).
+    expect(thrown.refusal).toEqual({
       code: ApiErrorCode.SERVICE_UNAVAILABLE,
-      params: { failing: 'database' },
+      params: {},
+      nature: FailureNature.UNAVAILABLE,
     });
   });
 });

@@ -1,6 +1,7 @@
 import {
   applyMigrations,
   createDatabase,
+  httpApp,
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
@@ -15,6 +16,7 @@ import {
   Locale,
   PublicationState,
   ReplayPolicy,
+  Service,
   worldwideRights,
 } from '@arthome/core';
 
@@ -24,7 +26,8 @@ import { LinkKind } from './resolve-query.schema.js';
 import { SlugAlias } from './slug-alias.entity.js';
 import { Artist } from '../artists/artist.entity.js';
 import { Show } from '../catalog/show.entity.js';
-import { httpApp } from '../itest/http-app.js';
+import { CLOCK } from '../clock.js';
+import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { CATALOG_SCHEMA } from '../itest/schema.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 
@@ -142,9 +145,13 @@ beforeAll(async () => {
 
   app = await httpApp({
     imports: [PublicModule],
-    clock: new FixedClock(NOW),
+    providers: EDGE_PROVIDERS,
+    caller: { service: Service.CATALOG, clock: new FixedClock(NOW) },
     dataSource,
-    overrides: [[PUBLIC_WEB_ORIGIN, ORIGIN]],
+    overrides: [
+      [CLOCK, new FixedClock(NOW)],
+      [PUBLIC_WEB_ORIGIN, ORIGIN],
+    ],
   });
 }, STARTUP_MS);
 
@@ -176,7 +183,10 @@ describe('the public reads over HTTP', () => {
       const unbounded = await get(`/v1/dates/${FIRST_DATE}`, null);
       expect(unbounded.statusCode).toBe(400);
       expect(unbounded.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['x-arthome-deadline'] } },
+        error: {
+          code: ApiErrorCode.SCHEMA_INVALID,
+          params: { issues: [{ path: ['x-arthome-deadline'] }] },
+        },
       });
 
       const missing = await get('/v1/dates/01a0e600-0000-7000-8000-0000000009ff');
@@ -239,7 +249,7 @@ describe('the public reads over HTTP', () => {
       const both = await get(`/v1/resolve?url=${encodeURIComponent(retired)}&kind=date`);
       expect(both.statusCode).toBe(400);
       expect(both.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['kind'] } },
+        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { issues: [{ path: ['kind'] }] } },
       });
     },
     CASE_MS,

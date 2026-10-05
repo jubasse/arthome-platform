@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/bff-storefront",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The storefront's BFF: the published storefront contract, served from the services behind it.",
@@ -8,20 +8,35 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.mjs"
   },
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/http-edge": "workspace:*",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-2cf0970eb95d.tgz",
-    "@arthome/core": "file:../../vendor/arthome-core-b2aac8898fe7.tgz",
+    "@arthome/contracts": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-contracts-0.1.0.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz",
+    "@fastify/cookie": "11.1.2",
+    "@fastify/csrf-protection": "8.0.1",
+    "@fastify/static": "10.1.5",
+    "@nest-lab/throttler-storage-redis": "1.2.0",
     "@nestjs/common": "12.0.3",
     "@nestjs/core": "12.0.3",
     "@nestjs/platform-fastify": "12.0.3",
+    "@nestjs/swagger": "12.0.2",
+    "@nestjs/throttler": "6.7.1",
+    "ioredis": "6.0.0",
+    "jose": "6.2.12",
     "reflect-metadata": "0.2.2",
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@nestjs/testing": "12.0.3"
+    "@arthome-platform/identity": "workspace:*",
+    "@arthome-platform/testing": "workspace:*",
+    "@nestjs/cqrs": "12.0.0",
+    "@nestjs/testing": "12.0.3",
+    "@nestjs/typeorm": "12.0.1",
+    "pg": "8.23.0",
+    "typeorm": "1.1.1"
   }
 }

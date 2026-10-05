@@ -1,0 +1,19 @@
+<%= imports([
+  { name: 'IEvent', from: '@nestjs/cqrs', typeOnly: true },
+  { name: 'Instant', from: '@arthome/core', typeOnly: true },
+]) %>
+
+export class <%= pascal %>Created implements IEvent {
+  public readonly kind = '<%= pascal %>Created';
+
+  public constructor(
+    public readonly <%= id %>: string,
+    public readonly occurredAt: Instant,
+  ) {}
+}
+
+/**
+ * Every event of the aggregate. A mapping switches on `kind` and ends in `assertNever`, so an event
+ *   without its case fails to compile rather than reach the wire as another.
+ */
+export type <%= event %> = <%= pascal %>Created;

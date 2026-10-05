@@ -1,7 +1,9 @@
 # `identity` — handover
 
-`POST /accounts` registers an account: one transaction, one `manager`, the business row and the
-outbox row together, and the inbound `traceparent` injected at write time.
+The storefront session (auth slice A, 2026-10-03): sign-up, sign-in, the session's resolution and
+revocation, the viewer's account and the email verification link, all called by the storefront BFF
+behind the internal token, on better-auth 1.7.5 used as a library. The account is written with its
+events through the outbox in one transaction, the inbound `traceparent` injected at write time.
 
 > **THIS FILE DID NOT EXIST UNTIL 2026-09-25, AND ITS ABSENCE WAS ITSELF A DEFECT.** `catalog`
 > wrote a handover and `identity` did not, so identity's debt was recorded nowhere — and the one
@@ -11,31 +13,128 @@ outbox row together, and the inbound `traceparent` injected at write time.
 > service that documents nothing is a service whose gaps get described by someone who did not write
 > it.
 >
-> Sections 1–2 below are reconstructed from the code by the author of the HTTP-edge pass, not by
-> this service's original author. Where that distinction matters it is stated.
+> §2 and §3 record the service before auth slice A, reconstructed from the code by the author of
+> the HTTP-edge pass. Where they name `POST /accounts`, sign-up replaced it on 2026-10-03 (§0); the
+> lessons they record still bind `SignUpSchema`.
+
+## 0. Auth slice A
+
+**better-auth is a library here, not a set of routes** (`adr-auth.md` §3.1, as the platform
+implemented it). `src/auth/better-auth.ts` builds the instance; identity's own controllers call
+`auth.api`; no better-auth route is mounted, so every route sits behind the internal token's guard
+and a caller reaching identity directly cannot skip the BFF's caps, which is what bounds
+enumeration (D-099). `@thallesp/nestjs-better-auth` is not installed, and `bodyParser: false`
+therefore applies nowhere. Approved by the lead on 2026-10-03 and recorded as an amendment to
+`adr-auth.md` §3.1, not as a decision.
+
+**What bounds password guessing** is the BFF's cap per (email, address or /64): ten wrong passwords
+per fifteen minutes, times the networks an attacker holds (the re-review's F5b, accepted for slice
+A). There is no lockout per email, so nobody can sign an owner out, and the BFF's slow-down only
+delays a sequential guesser. **Slice C** tightens the bound with OWASP's device cookies: a device
+that once signed the owner in is recognised and keeps its own allowance, so strangers' attempts can
+then be held to far less.
+
+| Route (BFF only) | What it does |
+| --- | --- |
+| `POST /v1/auth/sign-up` | the account, its two events and the first link, then the credential; `Idempotency-Key` required |
+| `POST /v1/auth/sign-in` | the password checked by better-auth, then the account's status; never idempotent (the contract's prohibition) |
+| `POST /v1/sessions/resolve` | `{ session }` with its `account` (handle, verified), so the viewer context costs the BFF one call; null for a token that opens nothing; a 401 from here only ever means the BFF's own token |
+| `POST /v1/sessions/revoke` | this session alone; succeeds on a session already gone |
+| `GET /v1/accounts/me` | the handle and whether the address is verified, for the token's `sub`; no BFF route calls it since `resolve` answers the same |
+| `POST /v1/accounts/me/email-verification` | a fresh link, the earlier ones spent: `queued`, since `notifications` owns the sending; `queued: false` once verified |
+| `POST /v1/email-verifications/confirm` | spends the token and verifies the address |
+
+**Two stores, one UUIDv7.** better-auth's tables are in the `auth` schema on Kysely, TypeORM's in
+`public` (R2). The account's id is generated first and handed to better-auth through
+`advanced.database.generateId` and an `AsyncLocalStorage` (`withPresetUserId`), so a join reads
+`account.id::text = auth."user".id` (better-auth types its ids `text`). `pnpm run migration:auth`
+runs better-auth's migrator; `migration:run` stays TypeORM's; either order works, and
+`auth-schema.itest.ts` keeps spike S1 as a regression.
+
+**The order of a sign-up is the design** (`sign-up.service.ts`). Identity's transaction claims the
+idempotency key, inserts the account with `ON CONFLICT DO NOTHING` (a taken address is 409
+`identity.email_taken` without aborting the transaction, 765134a; a taken handle is retried with
+fresh bytes), writes `identity.account.registered.v1` and the first verification link, then lets
+better-auth write the credential on its own connection, then commits. A refused credential rolls
+everything back; a commit that fails after the credential exists removes the credential; a crash
+between the two commits leaves a credential with no account, which the next sign-up of the address
+finds (better-auth says the address is taken while the account row was free) and replaces.
+
+**Passwords** are argon2id at OWASP's floor (`password-hashing.ts`), between 12 and 128
+characters, NFKC-normalised before hashing and verifying; a sign-in hashes again a digest made with
+older parameters, so raising them reaches every account that signs in. **better-auth's `baseURL`**
+is `PUBLIC_WEB_ORIGIN`, required in production: the public origin the surfaces and the BFF share
+(`adr-auth.md` §8.2.7), never identity's internal address. No link better-auth builds is sent today;
+a reset link (slice D) overrides `sendResetPassword` to point at the surface. **Sessions** live 7 days and slide once a day (`@arthome/core`'s lifetimes, owned by
+`adr-auth.md` §6.1); the token handed out is the signed one, and `bearer({ requireSignature: true
+})` refuses an unsigned one. **The idempotency fingerprint of a sign-up is keyed**
+(`keyedFingerprintOf`, the key derived from `BETTER_AUTH_SECRET`): the body carries a password, and
+the record keeps it for a day.
+
+**The email verification link** (`adr-auth.md` §6.7, D-100) is identity's, not better-auth's,
+whose token is a signed JWT a second use does not spend. 256 random bits, the hash alone stored in
+`email_verification`, spent by its first use, expired after
+`EMAIL_VERIFICATION_LINK_LIFETIME_HOURS`, bound to the address it was sent to; a resend spends the
+earlier ones. `identity.email_verification.requested.v1` carries the token to `notifications`, in
+clear, on a topic of its own, `arthome.identity.email_verification`, which `notifications` alone
+may read (`events.md` §3): the account topic, which other contexts may read, never carries a token.
+The token is never logged: identity logs none, and the connectors log a failed record's error, not
+its payload (`infra/debezium/README.md`). The topic keeps the standard week, since a shorter
+retention would make the republish check republish an expired link; the token dies with the link
+anyway. Unknown, expired and used answer one 410 `identity.verification_link_invalid`.
+
+**A password reset's token must NOT take this path.** It opens an account where this one only marks
+an address verified; slice D decides how it reaches the person (the lead's ruling, 2026-10-03).
+
+**One lock order** (the review checklist's): an account's row, then its links. `resend` locks the
+account and spends the outstanding links; `confirm` reads the link, locks its account, then spends
+the link. The race between the two is a suite case.
+
+**The public handle** is generated and neutral (`generatedPublicHandle`, D-101), changeable
+later through `updateProfile` (not yet served). **The country** is the one the BFF sends: the
+gateway's geolocation, or `ZZ`, CLDR's unknown region. **The device id** the BFF puts in the token
+is the session's own id until devices register (auth slice C).
+
+### What later slices inherit
+
+- **B (studio)**: the studio BFF's issuer is already in `INTERNAL_TOKEN_ISSUERS`; the claims schema
+  is loose for its `chn` and `rol`; Q4's invitation sign-up reuses `SignUpService`'s order. What B
+  must do first, identity's CQRS shape included, is in `apps/bff-storefront/HANDOVER.md` §4.
+- **C (devices)**: `deviceId` becomes the registered device; the bearer plugin is in place;
+  `multi-session` and `device-authorization` are not installed yet.
+- **D**: password reset, two-factor, social sign-in. A reset token must not take the verification
+  token's path: its delivery is D's decision. **Linking a social sign-in to an existing address**
+  (D-106) must also require identity's own `email_verified_at`, or drop the password and revoke the
+  sessions on link: D-100 lets a stranger register the address unverified, and that stranger's
+  password would still open the account the owner later links (the security review's m7). From
+  then on a verified address unlocks something, which ends the premise that lets the verification
+  token travel in clear.
+- **Nothing consumes `arthome.identity.email_verification` yet**: `notifications` records the
+  welcome email only, and no email is sent by anyone today. Its consumer, when written, is the
+  topic's only one (`verification-topic.spec.ts` fails on any other app naming it), and production
+  enforces it with the ACLs `infra/kafka/README.md` requires.
 
 ## 1. What is here
 
 | File | What it is |
 | --- | --- |
-| `src/identity/account.entity.ts` | the slice of the `Account` aggregate wave 1 needs — and a recorded finding that the domain is missing `ACCOUNT_STATUSES` |
-| `src/migrations/1758700000000-initial.ts` | the `account` table, `citext`, and the outbox |
-| `src/migrations/1758700200000-outbox-guards.ts` | the outbox CHECK constraints |
-| `src/identity/register-account.service.ts` | the one-transaction write via `writeOutboxEvent` |
-| `src/identity/identity.controller.ts` | `POST /accounts`, 201, `cache-control: no-store` |
-| `src/identity/register-account.schema.ts` | the zod schema for the body (added 2026-09-25) |
-| `src/app.module.ts` | `APP_PIPE`, `APP_FILTER`, `APP_GUARD` |
-| `src/identity/identity.module.ts`, `src/main.ts`, `src/data-source.ts` | the wiring |
+| `src/auth/account.entity.ts` | the domain's half of `Account`: handle, address, locale, country, `status` (`ACCOUNT_STATUSES`), `email_verified_at`, the accepted terms |
+| `src/auth/email-verification.entity.ts` | one verification link, by its token's hash |
+| `src/auth/better-auth.ts`, `password-hashing.ts`, `auth-migrations.ts`, `src/migrate-auth.ts` | better-auth's instance, its hashing, its migrator and the command running it |
+| `src/auth/sign-up.service.ts`, `sign-in.service.ts`, `sessions.service.ts`, `email-verifications.service.ts`, `viewer.service.ts` | the routes' work |
+| `src/auth/auth.controller.ts`, `sign-up.schema.ts`, `refusals.ts`, `auth.module.ts` | the routes, their bodies, their refusals, the wiring (better-auth's own pool, closed on shutdown) |
+| `src/migrations/1758700000000-initial.ts`, `1758700200000-outbox-guards.ts`, `1790500000000-storefront-session.ts` | the account and the outbox; the outbox CHECKs; slice A's columns, the links and the idempotency store |
+| `src/edge-providers.ts`, `src/app.module.ts`, `src/main.ts`, `src/data-source.ts` | the wiring: `edgeProviders`, so the internal token's guard comes first |
 
-The shared HTTP edge — the exception filter, the production guard, the refusal shape and the
-traceparent parser — is **`@arthome-platform/http-edge`** (`libs/http-edge`), not a file in this
-service. §3.
+The shared HTTP edge — the exception filter, the internal token's guard, the production guard, the
+refusal shape and the traceparent parser — is **`@arthome-platform/http-edge`** (`libs/http-edge`),
+not a file in this service. §3.
 
-Tests: 4 files, 24 tests here — `register-account.service.spec.ts` (6),
-`identity.controller.spec.ts` (6, new), `register-account.schema.spec.ts` (10, new),
-`unique-violations.spec.ts` (2, new) — plus 31 in `libs/http-edge`
-(`error-envelope.filter.spec.ts` 21, `traceparent.spec.ts` 7,
-`deny-in-production.guard.spec.ts` 3).
+Tests: `sign-up.schema.spec.ts`, `password-hashing.spec.ts`, `unique-violations.spec.ts`, and the
+container suites `auth-schema.itest.ts` (S1), `auth.http.itest.ts` (the routes, the refusals, the
+link's single use and expiry, two sign-ups racing, an orphaned credential replaced) and
+`boot.itest.ts` (`AppModule` itself). The BFF's `auth.e2e.itest.ts` runs this service behind the
+storefront BFF. `src/itest/` holds the harness both use.
 
 **`unique-violations.spec.ts` EXISTS BECAUSE THE FILTER'S OWN SUITE CANNOT CATCH WHAT IT CHECKS,
 AND DID NOT.** That suite tests the mechanism against a fixture that copies this service's table, so
@@ -163,6 +262,10 @@ not deferred by anything, and critical-rules #5 forbids the argument that would 
 `DenyInProductionGuard` is bound globally and refuses every request when `NODE_ENV` is neither
 `development` nor `test`. `AGENTS.md`'s walkthrough and the test suite both still reach the handler.
 
+Since auth slice A, the internal token's guard runs first on every route but the probes, and
+`DenyInProductionGuard` behind it refuses what no slice has authorised yet; identity's slice A
+routes are allowed in production.
+
 Two things to know about it:
 
 - **The predicate is `isProductionEnvironment` in `@arthome-platform/config`, not a comparison in
@@ -226,6 +329,10 @@ of band, by email. That is a registration-flow design decision, far larger than 
 the published vocabulary is the project's current answer — so `EMAIL_TAKEN` is served today. Raised
 and carried upward during this pass; **not implemented, deliberately.** If it is ever decided the
 other way, this filter's per-column mapping and `identity.email_taken` itself are what change.
+
+**Decided on 2026-10-03 (D-099): sign-up keeps answering `409` `identity.email_taken`**, the
+enumeration slowed by the storefront BFF's cap per address (`AuthRateLimit.SIGN_UP_PER_ADDRESS`).
+Sign-up now answers it itself, before the unique constraint is reached (§0).
 
 Also unreconciled, and smaller:
 
@@ -331,37 +438,15 @@ scaffold and were removed. The next reader's instinct will be to import `QueryFa
 
 ## 4. What remains
 
-**Never verified against a running stack by this pass.** No `docker`, no migration, no connector.
-`AGENTS.md`'s walkthrough is the end-to-end proof, and it was last exercised before these changes.
-Two things in it to re-check when it is next run: the response body of `POST /accounts` is now
-`{"publicHandle":"@marie.j"}` rather than `{"accountId":"…"}`, and a request whose `traceparent`
-is malformed now writes `NULL` to `tracecontext` instead of the malformed string — which Debezium
-renders as the four characters `null`, as the walkthrough's own table notes.
-
 Owed, in rough order of consequence:
 
-1. **The success envelope.** §5.5 wants `servedAt`, `validUntil` where applicable, and a `data`
-   wrapper; both routes answer a bare object. Errors carry `servedAt` now, through `@arthome/core`'s
-   `Clock` port. **The largest remaining §5.5 gap.**
-2. **Authentication and authorisation.** critical-rules #4 and #5. `DenyInProductionGuard` is a
-   stop-gap that makes the absence loud, not a substitute for either.
-3. **Idempotency.** critical-rules #12: a replayed `POST /accounts` does not return the original
-   response. It now answers 409 with `identity.email_taken` rather than 500, which is better and is
-   still not what #12 asks for.
-4. **A liveness probe, and the metadata exemption the global guard will need for it.** §2(f).
-5. **Rate limiting and a body-size limit.** Neither service has either, and `z.array()` carries no
-   maximum — a body with a million `genreIds` is accepted. `nestjs-web-security` owns both.
-6. **`ACCOUNT_STATUSES` is missing from the domain.** Recorded by `account.entity.ts` itself, not by
-   this pass, and still true.
-7. **The nine other code names `transport.md` §5.5 promises and nobody can emit.** `TOKEN_EXPIRED`,
-   `STATE_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, `IDEMPOTENCY_IN_FLIGHT`, `CAPACITY_SHRINK_FORBIDDEN`,
-   `PAIRING_EXPIRED`, `UPSTREAM_ERROR`, `DEADLINE_EXCEEDED`, `UPSTREAM_TIMEOUT`,
-   `GATEWAY_UNAVAILABLE`. All belong to surfaces that do not exist yet — the BFF, pairing,
-   idempotency, Traefik — so **no member should be added for them here**, and none is referenced.
-   Listed because the count is the finding: that table promises 28 names and 12 were unemittable
-   before this pass.
-
-**Done during this pass and no longer owed:** `libs/http-edge` (§3); `api.internal` and
-`api.service_unavailable` in `@arthome/core`; `identity.handle_taken`; and
-`@arthome-platform/config` exporting `isProductionEnvironment`, which removed the double-negative
-predicate both `app.module.ts` files carried.
+1. **`notifications` sends nothing.** The verification link reaches the outbox and the topic; no
+   consumer turns it into an email yet, as none turns the welcome into one.
+2. **Rate limiting** is the storefront BFF's (core's `AuthRateLimit`); identity has none of its own,
+   and is reachable only with a BFF's token. A body-size limit is still Fastify's default.
+3. **The success envelope** is served (`edgeProviders`' interceptor) on the slice A routes.
+4. **`AGENTS.md`'s walkthrough** registers through the storefront BFF's sign-up now; it has not
+   been run on the full stack in this pass (the container suites have).
+5. **The nine other code names `transport.md` §5.5 promised** are mostly emittable now
+   (`api.token_expired`, the idempotency pair, the deadline and upstream codes); `pairing.expired`
+   and `api.gateway_unavailable` wait for their surfaces.

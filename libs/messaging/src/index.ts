@@ -1,5 +1,12 @@
 export { PermanentError, RETRY_DELAYS_MS, JITTER_RATIO } from './failure.js';
-export { deadLetterTopic, retryTopic, routeFailure } from './failure.js';
+export {
+  attemptsAllowedBy,
+  deadLetterTopic,
+  doublingDelays,
+  nextAttemptAt,
+  retryTopic,
+  routeFailure,
+} from './failure.js';
 export type { FailureRoute } from './failure.js';
 
 export { OutboxEvent } from './outbox-event.entity.js';
@@ -11,8 +18,8 @@ export {
   purgeProcessedMessages,
 } from './retention.js';
 export type { PurgeOutcome } from './retention.js';
-export { writeOutboxEvent } from './write.js';
-export type { OutboxFact } from './write.js';
+export { outboxWriter, writeOutboxEvent } from './write.js';
+export type { OutboxFact, OutboxWriter, ServiceEvent } from './write.js';
 
 export {
   ATTEMPT_HEADER,

@@ -86,6 +86,7 @@ describe('applyChecklistMessage, before any write', () => {
       producer,
       Service.CATALOG,
       message('chat.date_chat_policy.changed.v1', policy, 'm-1'),
+      new Date(),
     );
 
     expect(disposition).toBe('dead-lettered');
@@ -148,6 +149,7 @@ describe('applyChecklistMessage, before any write', () => {
       producer,
       Service.CATALOG,
       message('chat.date_chat_policy.changed.v1', policy),
+      new Date(),
     );
 
     expect(disposition).toBe('retried');
@@ -157,7 +159,10 @@ describe('applyChecklistMessage, before any write', () => {
 
   it('dead-letters a refusal other than an unknown date under its code, not as unknown', async () => {
     const refusing = {
-      execute: () => Promise.reject(new DomainError({ code: DomainErrorCode.STATE_CONFLICT })),
+      execute: () =>
+        Promise.reject(
+          new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { currentVersion: 1 } }),
+        ),
     } as unknown as CommandBus;
     const policy = toBinary(
       DateChatPolicyChangedSchema,

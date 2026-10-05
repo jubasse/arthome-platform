@@ -1,0 +1,13 @@
+<%= imports([{ name: pascal, from: `./${kebab}.aggregate.js`, typeOnly: true }]) %>
+
+/** The port: domain types only, one transaction's, from `<%= app.transactionScope %>`. */
+export abstract class <%= repository %> {
+  /** Under the row's lock to the commit, so two commands on one <%= camel %> run one after the other. */
+  public abstract findById(<%= id %>: string): Promise<<%= pascal %> | null>;
+
+  /**
+   * Conditioned on the version it was loaded at: a change committed since is refused with core's
+   *   `STATE_CONFLICT`, naming the current version. One it did not load is inserted.
+   */
+  public abstract save(<%= camel %>: <%= pascal %>): Promise<void>;
+}

@@ -1,0 +1,23 @@
+<%= imports([
+  { name: 'MigrationInterface', from: 'typeorm', typeOnly: true },
+  { name: 'QueryRunner', from: 'typeorm', typeOnly: true },
+]) %>
+
+export class <%= migration %> implements MigrationInterface {
+  name = '<%= migration %>';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE "<%= table %>" (
+        <%= idColumn %> uuid PRIMARY KEY,
+        version integer NOT NULL CHECK (version >= 1),
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query('DROP TABLE "<%= table %>"');
+  }
+}

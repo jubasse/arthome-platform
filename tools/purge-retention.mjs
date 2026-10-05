@@ -8,6 +8,7 @@
 //   Usage: NODE_ENV=development node tools/purge-retention.mjs <service> [--apply]
 //   Without `--apply` it reports what it would delete and deletes nothing.
 
+import { purgeIdempotencyRecords } from '@arthome-platform/http-edge';
 import {
   OUTBOX_RETENTION_DAYS,
   PROCESSED_MESSAGE_RETENTION_DAYS,
@@ -15,8 +16,11 @@ import {
   purgeProcessedMessages,
 } from '@arthome-platform/messaging';
 
-const PUBLISHERS = new Set(['identity', 'catalog']);
-const CONSUMERS = new Set(['catalog', 'notifications', 'search-indexer']);
+const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing']);
+const CONSUMERS = new Set(['catalog', 'notifications', 'search-indexer', 'ticketing']);
+// The services whose commands are idempotent (transport.md §5.4): identity's record held a sign-up's
+//   session until the security review's M1, and still holds every first answer for a day.
+const IDEMPOTENT = new Set(['catalog', 'identity', 'ticketing']);
 
 const [service, ...flags] = process.argv.slice(2);
 const apply = flags.includes('--apply');
@@ -62,6 +66,19 @@ try {
           state === undefined ? 'absent' : `active=${state.active} lag=${state.lag}`
         }`,
       );
+    }
+  }
+
+  if (IDEMPOTENT.has(service)) {
+    if (apply) {
+      console.log(
+        `idempotency_record: ${await purgeIdempotencyRecords(dataSource)} row(s) deleted`,
+      );
+    } else {
+      const [{ count }] = await dataSource.query(
+        'SELECT count(*)::int AS count FROM idempotency_record WHERE expires_at < now()',
+      );
+      console.log(`idempotency_record: ${count} row(s) past their lifetime`);
     }
   }
 

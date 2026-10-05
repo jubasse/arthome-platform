@@ -1,3 +1,4 @@
+import { notFound } from '@arthome-platform/http-edge';
 import type { EntityManager } from 'typeorm';
 
 import type { DateRecords } from './date-sheet.js';
@@ -9,7 +10,6 @@ import {
 import { PublicationChecklistFact } from './publication-checklist-fact.entity.js';
 import { PublicationRow } from './publication.entity.js';
 import { Show } from '../catalog/show.entity.js';
-import { notFound } from '../refusals.js';
 import { Venue } from '../venues/venue.entity.js';
 
 export async function dateRecordsOf(manager: EntityManager, dateId: string): Promise<DateRecords> {

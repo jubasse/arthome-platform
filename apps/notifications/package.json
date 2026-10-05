@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/notifications",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The notifications service. In wave 1: the consumer that proves the path.",
@@ -15,7 +15,7 @@
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/events": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/core": "file:../../vendor/arthome-core-b2aac8898fe7.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "kafkajs": "2.2.4",
     "pg": "8.23.0",

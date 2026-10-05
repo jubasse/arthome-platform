@@ -1,4 +1,5 @@
 import {
+  AllowInProduction,
   DEADLINE_HEADER,
   remainingBeforeDeadline,
   type PerishableResponse,
@@ -18,6 +19,7 @@ import { ResolveQuerySchema, type ResolveQuery } from './resolve-query.schema.js
 import { CLOCK } from '../clock.js';
 
 /** The storefront's public reads, behind its BFF, which sets the cache headers. */
+@AllowInProduction()
 @Controller('v1')
 export class PublicDatesController {
   public constructor(

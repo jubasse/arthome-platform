@@ -1,10 +1,11 @@
 import type { CheckResult } from '@arthome-platform/messaging';
-import { Controller, Get, HttpStatus, Inject } from '@nestjs/common';
+import { Controller, Get, Inject, Logger } from '@nestjs/common';
 
-import { ApiErrorCode, FailureNature } from '@arthome/core';
+import { ApiErrorCode } from '@arthome/core';
 
+import { AllowAnonymous } from './allow-anonymous.js';
 import { AllowInProduction } from './allow-in-production.js';
-import { RefusalException } from './refusal.js';
+import { refusalOf } from './refusal.js';
 
 export const READINESS_CHECKS: unique symbol = Symbol('READINESS_CHECKS');
 
@@ -15,9 +16,12 @@ export interface ReadinessReport {
   readonly checks: readonly CheckResult[];
 }
 
+@AllowAnonymous()
 @AllowInProduction()
 @Controller('health')
 export class HealthController {
+  private readonly logger = new Logger(HealthController.name);
+
   public constructor(
     @Inject(READINESS_CHECKS) private readonly checks: readonly ReadinessCheck[],
   ) {}
@@ -41,11 +45,8 @@ export class HealthController {
 
     const failing = checks.filter(({ status }) => status === 'down').map(({ name }) => name);
     if (failing.length > 0) {
-      throw new RefusalException(HttpStatus.SERVICE_UNAVAILABLE, {
-        code: ApiErrorCode.SERVICE_UNAVAILABLE,
-        params: { failing: failing.join(',') },
-        nature: FailureNature.UNAVAILABLE,
-      });
+      this.logger.error(`Not ready: ${failing.join(', ')} down.`);
+      throw refusalOf(ApiErrorCode.SERVICE_UNAVAILABLE);
     }
 
     return {

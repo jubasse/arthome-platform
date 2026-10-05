@@ -27,6 +27,36 @@ export type FailureRoute =
   | { readonly kind: 'retry'; readonly attempt: number; readonly notBefore: Date }
   | { readonly kind: 'dlq'; readonly reason: 'permanent' | 'exhausted' };
 
+/**
+ * From `firstMs`, doubled up to `capMs`, until they add up to `totalMs`: the schedule of a call that
+ *   must outlast an incident.
+ */
+export function doublingDelays(firstMs: number, capMs: number, totalMs: number): number[] {
+  const delays: number[] = [];
+  for (let delay = firstMs, elapsed = 0; elapsed < totalMs; delay = Math.min(delay * 2, capMs)) {
+    delays.push(delay);
+    elapsed += delay;
+  }
+  return delays;
+}
+
+/** When the attempt after `attempts` failed ones is due; null once the last one has failed. */
+export function nextAttemptAt(
+  attempts: number,
+  nowMs: number,
+  delaysMs: readonly number[] = RETRY_DELAYS_MS,
+  random: () => number = Math.random,
+): Date | null {
+  const delay = delaysMs[attempts - 1];
+  if (delay === undefined) return null;
+  return new Date(nowMs + delay + Math.floor(delay * JITTER_RATIO * random()));
+}
+
+/** One more than its delays: `nextAttemptAt` answers null after the last. */
+export function attemptsAllowedBy(delaysMs: readonly number[]): number {
+  return delaysMs.length + 1;
+}
+
 /** Pure so it is testable without a broker; `now` and `random` injected to pin the schedule. */
 export function routeFailure(
   error: unknown,
@@ -36,16 +66,10 @@ export function routeFailure(
 ): FailureRoute {
   if (error instanceof PermanentError) return { kind: 'dlq', reason: 'permanent' };
 
-  const delayForThisAttempt = RETRY_DELAYS_MS[attemptsSoFar];
-  if (delayForThisAttempt === undefined) return { kind: 'dlq', reason: 'exhausted' };
-
-  const spreadToAvoidASynchronisedRetry = Math.floor(delayForThisAttempt * JITTER_RATIO * random());
-
-  return {
-    kind: 'retry',
-    attempt: attemptsSoFar + 1,
-    notBefore: new Date(now.getTime() + delayForThisAttempt + spreadToAvoidASynchronisedRetry),
-  };
+  const attempt = attemptsSoFar + 1;
+  const notBefore = nextAttemptAt(attempt, now.getTime(), RETRY_DELAYS_MS, random);
+  if (notBefore === null) return { kind: 'dlq', reason: 'exhausted' };
+  return { kind: 'retry', attempt, notBefore };
 }
 
 /**
