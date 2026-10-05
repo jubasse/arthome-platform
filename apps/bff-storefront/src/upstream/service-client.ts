@@ -75,7 +75,8 @@ const HOP_CODES: ReadonlySet<ErrorCode> = new Set(
  *   or a call made for no route, relays `STOREFRONT_RELAYED_CODES` at the service's status.
  */
 function relayedStatusOf(code: string, status: number, route: Route | undefined): number | null {
-  if (route?.errorCodes === undefined) {
+  // A built route always carries `errorCodes`, empty until it declares a code.
+  if (route?.errorCodes === undefined || Object.keys(route.errorCodes).length === 0) {
     return STOREFRONT_RELAYED_CODES.some((relayed) => relayed === code) ? status : null;
   }
   if (!isPublishedCode(code) || HOP_CODES.has(code)) return null;

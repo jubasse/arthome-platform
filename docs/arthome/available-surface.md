@@ -57,7 +57,7 @@ The shared response envelope and its meta instants (subpath @arthome/contracts/e
 
 Routes as TypeScript: an operation mirrors OpenAPI with zod in place of JSON Schema, typed for a server handler and a client, with the request decoders a server validates against.
 
-`AcceptedOptions` · `Access` · `AccessorOf` · `Acknowledged` · `ActionOptions` · `ActionRoute` · `Api` · `ApiComponents` · `ApiDefinition` · `BATCH_BODY_LIMIT` · `BatchRoute` · `BuiltRoute` · `BuiltRouteDefinition` · `CACHE_CONTROL_HEADER` · `CacheOptions` · `CachePolicy` · `ChildContext` · `ClientView` · `CodedResponse` · `CodesByStatus` · `CodesOf` · `CodesOfIdentity` · `CodesOfRequirement` · `Collected` · `CreateRoute` · `CrudMember` · `CrudOptions` · `CrudRoutes` · `DEFAULT_BODY_LIMIT` · `DERIVED_ERROR_CODES` · `DeadlineParameter` · `Degraded` · `DeleteRoute` · `Deleted` · `DerivedExample` · `DerivedStatus` · `ERRORS` · `Endpoints` · `EnvelopeOf` · `ErrorBody` · `ErrorCodesIn` · `ErrorDefinition` · `ErrorList` · `ErrorModel` · `ErrorResponse` · `ErrorStatus` · `ErrorStatusMap` · `ErrorsInput` · `ExpectedVersionQuery` · `Extensions` · `FindAllRoute` · `FindRoute` · `Freshness` · `GroupedByStatus` · `HandlerInput` · `HandlerOutput` · `Header` · `HeaderParameter` · `HttpMethod` · `IDEMPOTENCY_REPLAYED_HEADER` · `IdentifiedAccess` · `Identity` · `IdentityOptions` · `ItemResponse` · `JsonRequestBody` · `JsonResponse` · `MediaType` · `MemberDocs` · `MergedErrors` · `NATURE_BY_STATUS` · `PageResponse` · `Paging` · `PagingConvention` · `PagingConventions` · `PagingKind` · `Parameter` · `ParameterLocation` · `PathParameter` · `Period` · `PeriodOptions` · `PeriodType` · `PrincipalOf` · `PublicAccess` · `QueryParameter` · `RESTRICTED_KEY` · `ReplaceRoute` · `RequestBody` · `Requirement` · `Resource` · `ResourceContext` · `ResourceConventions` · `ResourceOf` · `ResourceOptions` · `Response` · `RestrictedField` · `Returned` · `RolesRequirement` · `RootScope` · `Route` · `RouteBody` · `RouteBuilder` · `RouteDefinition` · `RouteHeaders` · `RouteInput` · `RouteParams` · `RoutePrincipal` · `RouteQuery` · `RouteResponseBody` · `RouteShape` · `RouteStatus` · `RouteSuccessStatus` · `RouteTree` · `SENSITIVE_KEY` · `Scope` · `SearchTextOptions` · `SecurityRequirement` · `ServicePrincipalSchema` · `SingleOptions` · `SortDirection` · `SortKey` · `Strict` · `SubresourceReplaceRoute` · `TaggedBrand` · `TolerantParse` · `UnknownVariant` · `UpdateRoute` · `UpsertRoute` · `VARY_HEADER` · `VersionedPath` · `accepted` · `accessorOf` · `bodySchemaOf` · `cache` · `cacheControlOf` · `changesSince` · `collect` · `cursor` · `defineApi` · `defineErrorModel` · `defineRoute` · `errorCodesOf` · `errorExampleOf` · `errorResponse` · `errorResponseFor` · `exampleOf` · `groupByStatus` · `headersSchemaOf` · `identity` · `localVocabulary` · `makeResource` · `natureOf` · `pages` · `paramsSchemaOf` · `parseTolerant` · `period` · `perishable` · `querySchemaOf` · `recentAuth` · `requirement` · `restricted` · `restrictedFieldsOf` · `roles` · `routeBuilder` · `searchText` · `sensitive` · `sensitivePathsOf` · `service` · `sortDirectionSchema` · `sortKeyName` · `statusOf` · `stripping` · `strippingBodiesOf` · `successStatusOf` · `tagged` · `throttle` · `versionedPath`
+`AcceptedOptions` · `Access` · `AccessorOf` · `Acknowledged` · `ActionOptions` · `ActionRoute` · `Api` · `ApiComponents` · `ApiDefinition` · `BATCH_BODY_LIMIT` · `BatchRoute` · `BuiltRoute` · `BuiltRouteDefinition` · `CACHE_CONTROL_HEADER` · `CacheOptions` · `CachePolicy` · `ChildContext` · `ClientView` · `CodedResponse` · `CodesByStatus` · `CodesOf` · `CodesOfIdentity` · `CodesOfRequirement` · `Collected` · `CreateRoute` · `CrudMember` · `CrudOptions` · `CrudRoutes` · `DEFAULT_BODY_LIMIT` · `DERIVED_ERROR_CODES` · `DeadlineParameter` · `Degraded` · `DeleteRoute` · `Deleted` · `DerivedExample` · `DerivedStatus` · `ERRORS` · `Endpoints` · `EnvelopeOf` · `ErrorBody` · `ErrorCodesIn` · `ErrorDefinition` · `ErrorList` · `ErrorModel` · `ErrorResponse` · `ErrorStatus` · `ErrorStatusMap` · `ErrorsInput` · `ExpectedVersionQuery` · `Extensions` · `FindAllRoute` · `FindRoute` · `Freshness` · `GroupedByStatus` · `HandlerInput` · `HandlerOutput` · `Header` · `HeaderParameter` · `HttpMethod` · `IDEMPOTENCY_REPLAYED_HEADER` · `IdentifiedAccess` · `Identity` · `IdentityOptions` · `ItemResponse` · `JsonRequestBody` · `JsonResponse` · `MediaType` · `MemberDocs` · `MergedErrors` · `NATURE_BY_STATUS` · `NO_STORE_HEADER` · `PageResponse` · `Paging` · `PagingConvention` · `PagingConventions` · `PagingKind` · `Parameter` · `ParameterLocation` · `PathParameter` · `Period` · `PeriodOptions` · `PeriodType` · `PrincipalOf` · `PublicAccess` · `QueryParameter` · `RESTRICTED_KEY` · `ReauthProof` · `ReplaceRoute` · `RequestBody` · `Requirement` · `Resource` · `ResourceContext` · `ResourceConventions` · `ResourceOf` · `ResourceOptions` · `Response` · `RestrictedField` · `Returned` · `RolesRequirement` · `RootScope` · `Route` · `RouteBody` · `RouteBuilder` · `RouteDefinition` · `RouteHeaders` · `RouteInput` · `RouteParams` · `RoutePrincipal` · `RouteQuery` · `RouteResponseBody` · `RouteShape` · `RouteStatus` · `RouteSuccessStatus` · `RouteTree` · `SENSITIVE_KEY` · `Scope` · `SearchTextOptions` · `SecurityRequirement` · `ServicePrincipalSchema` · `SingleOptions` · `SortDirection` · `SortKey` · `Strict` · `SubresourceReplaceRoute` · `TaggedBrand` · `TolerantParse` · `UnknownVariant` · `UpdateRoute` · `UpsertRoute` · `VARY_HEADER` · `VersionedPath` · `accepted` · `accessorOf` · `bodySchemaOf` · `cache` · `cacheControlOf` · `changesSince` · `collect` · `cursor` · `defineApi` · `defineErrorModel` · `defineRoute` · `errorCodesOf` · `errorExampleOf` · `errorResponse` · `errorResponseFor` · `exampleOf` · `groupByStatus` · `headersSchemaOf` · `identity` · `localVocabulary` · `makeResource` · `natureOf` · `pages` · `paramsSchemaOf` · `parseTolerant` · `period` · `perishable` · `querySchemaOf` · `recentAuth` · `requirement` · `restricted` · `restrictedFieldsOf` · `roles` · `routeBuilder` · `searchText` · `sensitive` · `sensitivePathsOf` · `service` · `sortDirectionSchema` · `sortKeyName` · `statusOf` · `stripping` · `strippingBodiesOf` · `successStatusOf` · `tagged` · `throttle` · `versionedPath`
 
 ### `@arthome/contracts/http-client`
 
@@ -81,7 +81,7 @@ The tax basis of an amount on the wire (subpath @arthome/contracts/money).
 
 The OpenAPI document an api emits from its routes and components, through one zod registry per direction.
 
-`ApiDocs` · `ApiDocsDefinition` · `DocumentDocs` · `ExampleEntry` · `ExampleRegistry` · `MATURITY_BY_SERVICE` · `Maturity` · `ModuleDocs` · `ModuleExamples` · `OpenApiDocument` · `OperationDoc` · `apiDocs` · `maturityOf` · `openApiDocumentOf`
+`ApiDocs` · `ApiDocsDefinition` · `DocumentDocs` · `ExampleEntry` · `ExampleRegistry` · `MATURITY_BY_SERVICE` · `Maturity` · `ModuleDocs` · `ModuleExamples` · `OpenApiDocument` · `OperationDoc` · `OperationDocumentation` · `apiDocs` · `documentationLookup` · `documentationOf` · `maturityOf` · `openApiDocumentOf`
 
 ### `@arthome/contracts/pagination`
 
@@ -94,6 +94,10 @@ Cursor pagination primitives (subpath @arthome/contracts/pagination).
 Every operation of the storefront contract, declared as TypeScript: the source of openapi/storefront.yaml.
 
 `storefrontApi`
+
+### `@arthome/contracts/storefront-api/docs`
+
+`storefrontDocs` · `storefrontDocsOf`
 
 ### `@arthome/contracts/streaming`
 
@@ -112,6 +116,10 @@ Who may operate, and with what: the actor, their effective rights, and the boots
 Every operation of the studio contract, declared as TypeScript: the source of openapi/studio.yaml.
 
 `studioApi`
+
+### `@arthome/contracts/studio-api/docs`
+
+`studioDocs` · `studioDocsOf`
 
 ### `@arthome/contracts/studio-desk`
 
@@ -157,6 +165,6 @@ The boundary schemas (`@arthome/core/schema`); the only part of the package that
 
 ---
 
-844 exported names across 21 subpaths.
+853 exported names across 23 subpaths.
 A name is listed here only if it is reachable through a package’s `exports` map — if it is
 not in this file, a consumer cannot import it, whatever the source says.

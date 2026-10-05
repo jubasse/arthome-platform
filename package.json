@@ -48,7 +48,7 @@
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/tooling": "file:./vendor/arthome-tooling-6f1b75062168.tgz",
+    "@arthome/tooling": "file:./vendor/arthome-tooling-d0e6eb95ef65.tgz",
     "@bufbuild/buf": "1.73.0",
     "@bufbuild/protoc-gen-es": "2.15.0",
     "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",

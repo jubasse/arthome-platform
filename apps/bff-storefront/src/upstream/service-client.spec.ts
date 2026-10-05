@@ -64,7 +64,7 @@ const placeOrder: Route = routeBuilder(model)
     responses: { 201: { description: 'Placed.' } },
   });
 
-/** A BFF route declaring no error by code: the allowlist still decides. */
+/** BFF routes declaring no error by code, built or not: the allowlist still decides. */
 const legacyRead: Route = defineRoute({
   method: 'get',
   version: 1,
@@ -174,9 +174,19 @@ describe('a service refusal, for a route that declares its errors', () => {
   });
 });
 
+const builtRead: Route = routeBuilder(model)
+  .version(1)
+  .defineRoute({
+    method: 'get',
+    path: '/orders',
+    operationId: 'builtRead',
+    responses: { 200: { description: 'The orders.' } },
+  });
+
 describe('a service refusal, for a route that declares no error by code', () => {
   it('is relayed when the allowlist names it, and becomes a 502 otherwise', async () => {
-    for (const route of [legacyRead, undefined]) {
+    expect(builtRead.errorCodes).toStrictEqual({});
+    for (const route of [legacyRead, builtRead, undefined]) {
       expect((await refusalFrom('/not-found', route)).getStatus()).toBe(404);
       expect((await refusalFrom('/price-stale', route)).getStatus()).toBe(502);
     }
