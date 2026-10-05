@@ -51,6 +51,7 @@ const model = defineErrorModel<string>({
 /** A BFF route declaring its errors: the stale price and, for its own use, the 401 and the 403. */
 const placeOrder: Route = routeBuilder(model)
   .version(1)
+  .public()
   .defineRoute({
     method: 'post',
     path: '/orders',

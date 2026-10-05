@@ -19,17 +19,19 @@ const model = defineErrorModel<string>({
 
 const placeOrder = routeBuilder(model)
   .version(1)
+  .public()
   .defineRoute({
     method: 'post',
     path: '/orders',
     operationId: 'placeOrder',
-    errors: { 409: [OrderErrorCode.PRICE_STALE, DomainErrorCode.STATE_CONFLICT] },
+    errors: [OrderErrorCode.PRICE_STALE, DomainErrorCode.STATE_CONFLICT],
     responses: { 201: { description: 'Placed.' } },
   });
 
 /** The list form, on the group and on the route: core's route type carries both lists by status. */
 const cancelOrder = routeBuilder(model)
   .version(1)
+  .public()
   .errors([OrderErrorCode.SOLD_OUT])
   .defineRoute({
     method: 'post',

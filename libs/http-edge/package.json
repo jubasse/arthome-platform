@@ -22,8 +22,8 @@
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-5d72dd2c4a71.tgz",
-    "@arthome/core": "file:../../vendor/arthome-core-d67d5e5ae68b.tgz",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-5f3e2d2d557f.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-2aafc4d445d4.tgz",
     "jose": "6.2.12",
     "rxjs": "7.8.2",
     "zod": "4.6.5"

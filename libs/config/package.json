@@ -19,8 +19,8 @@
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-d67d5e5ae68b.tgz",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-5d72dd2c4a71.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-2aafc4d445d4.tgz",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-5f3e2d2d557f.tgz",
     "zod": "4.6.5"
   }
 }
