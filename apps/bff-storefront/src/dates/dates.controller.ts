@@ -3,21 +3,13 @@ import type { ServerResponse } from 'node:http';
 import {
   AllowInProduction,
   Endpoint,
-  EndpointHeaders,
-  EndpointParams,
-  EndpointQuery,
+  EndpointInput,
   successSchemaOf,
   whenCallerLeaves,
 } from '@arthome-platform/http-edge';
-import { Controller, Header, Headers, Inject, Res } from '@nestjs/common';
+import { Controller, Headers, Inject, Res } from '@nestjs/common';
 
-import type {
-  HandlerOutput,
-  Route,
-  RouteHeaders,
-  RouteParams,
-  RouteQuery,
-} from '@arthome/contracts/http';
+import type { HandlerInput, HandlerOutput, Route } from '@arthome/contracts/http';
 import { storefrontApi } from '@arthome/contracts/storefront-api';
 import type { Clock } from '@arthome/core';
 
@@ -25,7 +17,6 @@ import { CatalogClient, type CatalogCall } from '../catalog/catalog.client.js';
 import { CLOCK } from '../clock.js';
 import { entityTagOf } from '../conditional-get.js';
 import { searchParamsOf } from '../query-string.js';
-import { VARY_AUTH } from '../storefront-surface.js';
 
 /** transport.md §5.9's composed public read. */
 const PUBLIC_READ_BUDGET_MS = 400;
@@ -48,11 +39,8 @@ export class DatesController {
 
   /** The TV prefetches the focused date: the `ETag` spares it a second payment (the contract). */
   @Endpoint(getDateDetail)
-  @Header('cache-control', 'public, max-age=60')
-  @Header('vary', VARY_AUTH)
   public async detail(
-    @EndpointParams(getDateDetail) { dateId }: RouteParams<typeof getDateDetail>,
-    @EndpointHeaders(getDateDetail) _headers: RouteHeaders<typeof getDateDetail>,
+    @EndpointInput(getDateDetail) { params: { dateId } }: HandlerInput<typeof getDateDetail>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: Reply,
   ): Promise<HandlerOutput<typeof getDateDetail>> {
@@ -67,11 +55,8 @@ export class DatesController {
   }
 
   @Endpoint(getArtistDetail)
-  @Header('cache-control', 'public, max-age=300')
-  @Header('vary', VARY_AUTH)
   public async artist(
-    @EndpointParams(getArtistDetail) { artistId }: RouteParams<typeof getArtistDetail>,
-    @EndpointHeaders(getArtistDetail) _headers: RouteHeaders<typeof getArtistDetail>,
+    @EndpointInput(getArtistDetail) { params: { artistId } }: HandlerInput<typeof getArtistDetail>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: Reply,
   ): Promise<HandlerOutput<typeof getArtistDetail>> {
@@ -85,11 +70,8 @@ export class DatesController {
   }
 
   @Endpoint(resolvePublicLink)
-  @Header('cache-control', 'public, max-age=300')
-  @Header('vary', VARY_AUTH)
   public async resolve(
-    @EndpointQuery(resolvePublicLink) query: RouteQuery<typeof resolvePublicLink>,
-    @EndpointHeaders(resolvePublicLink) _headers: RouteHeaders<typeof resolvePublicLink>,
+    @EndpointInput(resolvePublicLink) { query }: HandlerInput<typeof resolvePublicLink>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: Reply,
   ): Promise<HandlerOutput<typeof resolvePublicLink>> {

@@ -30,6 +30,3 @@ export function assertStorefrontSurface(header: string | undefined): StorefrontS
   }
   return surface.data;
 }
-
-/** The contract's `VaryAuth`: public and identified bodies, and each surface's slice, kept apart. */
-export const VARY_AUTH = 'Cookie, Authorization, X-Arthome-Device-Token, X-Arthome-Surface';

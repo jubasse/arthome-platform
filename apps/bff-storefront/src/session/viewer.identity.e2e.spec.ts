@@ -17,6 +17,7 @@ import {
 } from '@arthome/contracts/http';
 import { ApiErrorCode, FixedClock, Surface } from '@arthome/core';
 
+import { PairedDeviceVerifier } from './paired-device.verifier.js';
 import { SESSION_COOKIE } from './session-carriers.js';
 import { AppModule } from '../app.module.js';
 import { CLOCK } from '../clock.js';
@@ -82,7 +83,10 @@ const viewerOrDevice = identity('viewer_or_device', {
     read: [{ sessionCookie: [] }, { bearerToken: [] }, { deviceToken: [] }],
     write: [{ sessionCookie: [], csrfToken: [] }, { bearerToken: [] }, { deviceToken: [] }],
   },
-  principal: z.object({ accountId: z.string(), deviceId: z.string() }),
+  principal: z.union([
+    z.object({ accountId: z.string(), deviceId: z.string() }),
+    z.object({ deviceId: z.string() }),
+  ]),
 });
 
 const bootstrapRead = routeBuilder(
@@ -166,6 +170,11 @@ beforeAll(async () => {
     // An hour ahead, so no deadline falls due under load: search.e2e records why.
     .overrideProvider(CLOCK)
     .useValue(new FixedClock(Date.now() + 3_600_000))
+    .overrideProvider(PairedDeviceVerifier)
+    .useValue({
+      verify: (token: string) =>
+        Promise.resolve(token === PAIRED_TOKEN ? { deviceId: DEVICE } : null),
+    })
     .compile();
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
@@ -184,6 +193,8 @@ afterAll(async () => {
 beforeEach(() => {
   resolutions = 0;
 });
+
+const PAIRED_TOKEN = 'paired-device-token';
 
 const WEB = { 'x-arthome-surface': Surface.STOREFRONT_WEB };
 
@@ -270,7 +281,21 @@ describe('the viewer_or_device identity', () => {
     });
   });
 
-  it('refuses a device token, which nothing verifies until pairing is built', async () => {
+  it('hands a paired device’s token over as the device principal', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/fixture/bootstrap',
+      headers: { ...WEB, 'x-arthome-device-token': PAIRED_TOKEN },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.json<{ data: { principal: string } }>().data.principal)).toEqual({
+      deviceId: DEVICE,
+    });
+    expect(resolutions).toBe(0);
+  });
+
+  it('refuses a device token that names no paired device', async () => {
     const response = await app.inject({
       method: 'GET',
       url: '/v1/fixture/bootstrap',
