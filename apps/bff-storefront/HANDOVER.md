@@ -33,8 +33,8 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
 Every route here is bound by `@Endpoint(route)` to its `storefrontApi` declaration (`AGENTS.md`,
 "Binding a route to its contract operation"): there is no hand copy of a query, a body or a
 response left, and the upstream answers are validated against `successSchemaOf(route)`. The
-development Swagger UI is at `http://localhost:3003/docs`, mounted by `main.ts` and absent in
-production.
+development Swagger UI is at `http://localhost:3003/docs`, mounted by `main.ts` from the
+contract's docs module (`storefront-docs.ts`) and absent in production.
 
 ## 2. Decisions, and why
 

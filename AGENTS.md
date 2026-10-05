@@ -313,11 +313,15 @@ export class DatesController {
   fails the test instead, which becomes the default once the routes declare their errors. Run by
   an agent, Vitest picks its `minimal` reporter, which hides a passing file's output: pass
   `--reporter=default` to read the list.
-- **Swagger UI, in development only**: `mountDevDocs(app, api, { title, path: 'docs' })` in
-  `main.ts` mounts the page and its raw document (`/docs-json`) when `NODE_ENV` is `development`
-  or `test`, and mounts nothing otherwise. The document is built from the controllers of the
-  process, so each lists only the operations it serves, under the api's servers and security
-  schemes, with the api's named schemas as shared `$ref` components.
+- **Swagger UI, in development only**: `mountDevDocs(app, api, { docs, path: 'docs' })` mounts
+  the page and its raw document (`/docs-json`) when `NODE_ENV` is `development` or `test`, and
+  mounts nothing otherwise. `docs` is the api's docs module, `@arthome/contracts/storefront-api/docs`
+  or `/studio-api/docs`, imported by a server only: its introduction titles the page (a `title`
+  option names a service serving part of the api), and it gives the servers, tags and security
+  schemes, and each operation's description and doc-only `x-arthome-*` (`Endpoint` writes no
+  description). The document is built from the controllers of the process, so each lists only the
+  operations it serves, with the api's named schemas as shared `$ref` components. The BFF mounts
+  it through `mountStorefrontDocs(app)`.
 
 | Process | Development port | Swagger UI | Operations |
 | --- | --- | --- | --- |

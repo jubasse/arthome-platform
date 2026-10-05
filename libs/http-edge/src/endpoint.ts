@@ -156,7 +156,7 @@ function responseDocumentationOf(route: RouteShape): MethodDecorator[] {
 /**
  * Binds a handler to its route, with real NestJS and `@nestjs/swagger` decorators only: the
  *   method, the path and the success status come from the contract, the document is filled from
- *   it (operation, tags, one response per declared status, security, headers), and the compiler
+ *   it (operation id, summary, tags, one response per declared status, security, headers), and the compiler
  *   refuses a handler that does not return core's `HandlerOutput` of the route: its success body
  *   without `servedAt`, which `SuccessEnvelopeInterceptor` stamps.
  */
@@ -176,10 +176,10 @@ export function Endpoint<R extends Route>(route: R): EndpointDecorator<R> {
       : [RouteConfig({ [BODY_LIMIT_CONFIG]: route.bodyLimit })]),
     Version(String(route.version)),
     HttpCode(successStatusOf(route)),
+    // The description is the api's docs module's: `mountDevDocs` writes it, with the doc-only meta.
     ApiOperation({
       operationId: route.operationId,
       ...(route.summary !== undefined && { summary: route.summary }),
-      ...(route.description !== undefined && { description: route.description }),
       ...(route.deprecated === true && { deprecated: true }),
     }),
     ...(route.tags === undefined ? [] : [ApiTags(...route.tags)]),

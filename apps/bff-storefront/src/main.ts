@@ -1,14 +1,13 @@
 import 'reflect-metadata';
 
-import { serveEndpoints, mountDevDocs } from '@arthome-platform/http-edge';
+import { serveEndpoints } from '@arthome-platform/http-edge';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-
-import { storefrontApi } from '@arthome/contracts/storefront-api';
 
 import { AppModule } from './app.module.js';
 import { answerNotModified } from './conditional-get.js';
 import { authEnv, env } from './env.js';
+import { mountStorefrontDocs } from './storefront-docs.js';
 
 async function bootstrap(): Promise<void> {
   // The exact proxies, never `true`: the caps count by address (`nestjs-web-security` rule 7).
@@ -21,8 +20,7 @@ async function bootstrap(): Promise<void> {
   // Same limits as the services: no drain window yet, so a rollout still cuts in-flight requests.
   app.enableShutdownHooks();
   serveEndpoints(app);
-  // The api's introduction is in its docs module, which core does not export to a server yet.
-  mountDevDocs(app, storefrontApi, { title: 'bff-storefront', path: 'docs' });
+  mountStorefrontDocs(app);
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 }
 
