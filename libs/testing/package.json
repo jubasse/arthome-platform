@@ -22,8 +22,8 @@
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-2e555a76d1f8.tgz",
-    "@arthome/core": "file:../../vendor/arthome-core-9e33ce7c8127.tgz",
+    "@arthome/contracts": "file:../../vendor/arthome-contracts-5d72dd2c4a71.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-d67d5e5ae68b.tgz",
     "ioredis": "6.0.0",
     "jose": "6.2.12",
     "kafkajs": "2.2.4",

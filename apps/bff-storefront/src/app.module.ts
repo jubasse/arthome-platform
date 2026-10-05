@@ -43,6 +43,7 @@ import { IdentityModule } from './identity/identity.module.js';
 import { SearchModule } from './search/search.module.js';
 import { CsrfGuard } from './session/csrf.guard.js';
 import { CSRF_SECRET, EdgePlugins } from './session/edge-plugins.js';
+import { ViewerOrDeviceIdentity } from './session/viewer-or-device.identity.js';
 import { ViewerGuard } from './session/viewer.guard.js';
 import { ViewerIdentity } from './session/viewer.identity.js';
 import { TraceparentMiddleware } from './traceparent.middleware.js';
@@ -65,13 +66,18 @@ import { TraceparentMiddleware } from './traceparent.middleware.js';
   ],
   providers: [
     ...endpointProviders({
-      inject: [ViewerIdentity, ThrottleRule],
-      useFactory: (viewer: ViewerIdentity, throttle: ThrottleRule) => ({
-        identities: { viewer },
+      inject: [ViewerIdentity, ViewerOrDeviceIdentity, ThrottleRule],
+      useFactory: (
+        viewer: ViewerIdentity,
+        viewerOrDevice: ViewerOrDeviceIdentity,
+        throttle: ThrottleRule,
+      ) => ({
+        identities: { viewer, viewer_or_device: viewerOrDevice },
         rules: { throttle },
       }),
     }),
     ViewerIdentity,
+    ViewerOrDeviceIdentity,
     ThrottleRule,
     AuthThrottlerGuard,
     {

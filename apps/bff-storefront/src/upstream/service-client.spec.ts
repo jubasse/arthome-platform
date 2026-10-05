@@ -6,7 +6,7 @@ import { DEADLINE_HEADER, RefusalException } from '@arthome-platform/http-edge';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { defineErrorModel, defineRoute, routeBuilder, type Route } from '@arthome/contracts/http';
+import { defineErrorModel, routeBuilder, type Route } from '@arthome/contracts/http';
 import { ApiErrorCode, FailureNature, OrderErrorCode, Service, SystemClock } from '@arthome/core';
 
 import { ServiceClient, type ServiceCall } from './service-client.js';
@@ -63,16 +63,6 @@ const placeOrder: Route = routeBuilder(model)
     ],
     responses: { 201: { description: 'Placed.' } },
   });
-
-/** BFF routes declaring no error by code, built or not: the allowlist still decides. */
-const legacyRead: Route = defineRoute({
-  method: 'get',
-  version: 1,
-  path: '/orders/{orderId}',
-  operationId: 'legacyRead',
-  parameters: [{ name: 'orderId', in: 'path', required: true, schema: z.string() }],
-  responses: { 200: { description: 'The order.' } },
-});
 
 let received: IncomingHttpHeaders = {};
 let server: Server;
@@ -174,21 +164,9 @@ describe('a service refusal, for a route that declares its errors', () => {
   });
 });
 
-const builtRead: Route = routeBuilder(model)
-  .version(1)
-  .defineRoute({
-    method: 'get',
-    path: '/orders',
-    operationId: 'builtRead',
-    responses: { 200: { description: 'The orders.' } },
-  });
-
-describe('a service refusal, for a route that declares no error by code', () => {
+describe('a service refusal, for a call made for no route', () => {
   it('is relayed when the allowlist names it, and becomes a 502 otherwise', async () => {
-    expect(builtRead.errorCodes).toStrictEqual({});
-    for (const route of [legacyRead, builtRead, undefined]) {
-      expect((await refusalFrom('/not-found', route)).getStatus()).toBe(404);
-      expect((await refusalFrom('/price-stale', route)).getStatus()).toBe(502);
-    }
+    expect((await refusalFrom('/not-found')).getStatus()).toBe(404);
+    expect((await refusalFrom('/forbidden')).getStatus()).toBe(502);
   });
 });

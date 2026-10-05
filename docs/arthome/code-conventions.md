@@ -2479,9 +2479,10 @@ holds the model, and these are the rules a reviewer holds it to:
   (`transport.md` §5.11) and with its reason, its schemas' examples in `examples.ts`. Only the api's docs module
   and the emitter import them (gate 21), and every registered example parses with its schema.
 - **A path segment that shares its spelling with an enumeration** (`'chat'`, `'crew'`, `'duplicate'`)
-  is an `enum-literals.allow.json` entry with its reason, never an import of the vocabulary.
-- **`check-openapi` R10** accepts the shared `ErrorEnvelope`, or a `oneOf` of one envelope per code
-  where a route adds a domain code.
+  is never an import of the vocabulary: `check-enums` skips the first argument of `resource`,
+  `single`, `path`, `action`, `collectionAction` and `subresource`, so it needs no allow entry.
+- **`check-openapi` R10** accepts the shared `ErrorEnvelope`, or a union of one envelope per code
+  where a route adds a domain code, each envelope a component the union refers to.
 - **The generated documents may move** with a conversion (derived errors, derived security, the
   parameters a convention adds) until the first client ships (`transport.md` §5.11); the commit that
   moves them lists each kind of change.

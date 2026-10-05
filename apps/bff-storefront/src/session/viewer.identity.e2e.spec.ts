@@ -77,6 +77,29 @@ const browse = viewers.optionalAuth().defineRoute({
   responses: answered(z.object({ principal: z.string() })),
 });
 
+const viewerOrDevice = identity('viewer_or_device', {
+  schemes: {
+    read: [{ sessionCookie: [] }, { bearerToken: [] }, { deviceToken: [] }],
+    write: [{ sessionCookie: [], csrfToken: [] }, { bearerToken: [] }, { deviceToken: [] }],
+  },
+  principal: z.object({ accountId: z.string(), deviceId: z.string() }),
+});
+
+const bootstrapRead = routeBuilder(
+  defineErrorModel<string>({
+    standard: {},
+    envelopeOf: (code) => z.object({ error: z.object({ code: z.literal(code) }) }),
+  }),
+)
+  .version(1)
+  .identity(viewerOrDevice)
+  .defineRoute({
+    method: 'get',
+    path: '/fixture/bootstrap',
+    operationId: 'fixtureBootstrap',
+    responses: answered(z.object({ principal: z.string() })),
+  });
+
 @Controller()
 class FixtureController {
   @Endpoint(whoAmI)
@@ -97,6 +120,13 @@ class FixtureController {
   public async browse(
     @EndpointInput(browse) { principal }: HandlerInput<typeof browse>,
   ): Promise<HandlerOutput<typeof browse>> {
+    return Promise.resolve({ data: { principal: JSON.stringify(principal) } });
+  }
+
+  @Endpoint(bootstrapRead)
+  public async bootstrapRead(
+    @EndpointInput(bootstrapRead) { principal }: HandlerInput<typeof bootstrapRead>,
+  ): Promise<HandlerOutput<typeof bootstrapRead>> {
     return Promise.resolve({ data: { principal: JSON.stringify(principal) } });
   }
 }
@@ -222,5 +252,43 @@ describe('the viewer identity, applied by Endpoint', () => {
 
     expect(response.json()).toMatchObject({ data: { principal: 'null' } });
     expect(resolutions).toBe(0);
+  });
+});
+
+describe('the viewer_or_device identity', () => {
+  it('takes the viewer’s session first', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/fixture/bootstrap',
+      headers: { ...WEB, authorization: `Bearer ${GOOD_TOKEN}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.json<{ data: { principal: string } }>().data.principal)).toEqual({
+      accountId: ACCOUNT,
+      deviceId: DEVICE,
+    });
+  });
+
+  it('refuses a device token, which nothing verifies until pairing is built', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/fixture/bootstrap',
+      headers: { ...WEB, 'x-arthome-device-token': 'device-token' },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: { code: ApiErrorCode.UNAUTHENTICATED } });
+    expect(resolutions).toBe(0);
+  });
+
+  it('refuses a caller presenting neither', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/fixture/bootstrap',
+      headers: WEB,
+    });
+
+    expect(response.statusCode).toBe(401);
   });
 });

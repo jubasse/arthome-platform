@@ -271,8 +271,10 @@ export class DatesController {
   `EndpointAccessGuard`: the identity's guard first, bound under the identity's name, then each
   rule's guard in its declared order. The table is the process's, given to `endpointProviders`
   (listed before every other global enhancer): the BFF binds `viewer` (the session, and the CSRF
-  token of a cookie write, from the identity's write schemes) and `throttle` (a bucket is a cap of
-  core's `AuthRateLimit`); every service binds `service` (`ServiceIdentity`: the internal token,
+  token of a cookie write, from the identity's write schemes), `viewer_or_device` (the viewer, then
+  the paired device, whose token nothing verifies yet, so it is refused) and `throttle` (a bucket is
+  a cap of core's `AuthRateLimit`; the `auth` bucket the auth routes declare until core names
+  their caps leaves the count to the caps each handler names with `@RateLimitedBy`); every service binds `service` (`ServiceIdentity`: the internal token,
   verified as `InternalTokenGuard` does, which leaves a route declaring an access to it). On a
   service, a route the contract declares public fails the boot unless `edgeProviders`'
   `publicRoutes` names it (empty today): reached in the cluster without TLS, a service has the
@@ -789,11 +791,9 @@ The handler is bound to `storefrontApi.routes.search` from `@arthome/contracts/s
 against the route's 200 body.
 
 The BFF gives catalog a deadline 200 ms out (`x-arthome-deadline`, transport.md §5.9), creates the
-`traceparent` when the surface sent none, relays only the codes the route declares (or, for a route
-that declares none by code, `STOREFRONT_RELAYED_CODES`), and turns every other failure into
-`api.upstream_unavailable` (502) or `api.upstream_timeout` (504). Catalog refuses a call without a
-deadline. What catalog serves and refuses is in
-`apps/catalog/HANDOVER.md` §0.
+`traceparent` when the surface sent none, relays only the codes the route declares, and turns every
+other failure into `api.upstream_unavailable` (502) or `api.upstream_timeout` (504). Catalog refuses
+a call without a deadline. What catalog serves and refuses is in `apps/catalog/HANDOVER.md` §0.
 
 Proven on the running stack on 2026-09-26, with a show published on two dates through the studio
 commands, the indexer, catalog and the BFF running:

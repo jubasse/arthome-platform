@@ -70,13 +70,12 @@ const HOP_CODES: ReadonlySet<ErrorCode> = new Set(
 );
 
 /**
- * The status a service's refusal reaches the surface with, or null when it does not. A route that
- *   declares its errors relays its declared codes at their registry status; a route that does not,
- *   or a call made for no route, relays `STOREFRONT_RELAYED_CODES` at the service's status.
+ * The status a service's refusal reaches the surface with, or null when it does not: a code the
+ *   route declares, at its registry status. A call made for no route (a guard's session lookup)
+ *   relays `STOREFRONT_RELAYED_CODES` at the service's status.
  */
 function relayedStatusOf(code: string, status: number, route: Route | undefined): number | null {
-  // A built route always carries `errorCodes`, empty until it declares a code.
-  if (route?.errorCodes === undefined || Object.keys(route.errorCodes).length === 0) {
+  if (route === undefined) {
     return STOREFRONT_RELAYED_CODES.some((relayed) => relayed === code) ? status : null;
   }
   if (!isPublishedCode(code) || HOP_CODES.has(code)) return null;

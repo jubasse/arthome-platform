@@ -2,9 +2,15 @@ import type { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { describe, expect, it } from 'vitest';
 
+import type { Requirement } from '@arthome/contracts/http';
 import { AuthRateLimit } from '@arthome/core';
 
-import { authThrottlers, type AuthRateLimitName } from './auth-rate-limits.js';
+import {
+  authThrottlers,
+  ThrottleRule,
+  type AuthRateLimitName,
+  type AuthThrottlerGuard,
+} from './auth-rate-limits.js';
 
 function limitOf(name: AuthRateLimitName, ip: string): unknown {
   const throttler = authThrottlers(new Reflector()).find((candidate) => candidate.name === name);
@@ -35,5 +41,27 @@ describe('the per-address caps, by the caller’s address family', () => {
     const { limit } = AuthRateLimit.SIGN_IN_PER_EMAIL;
     expect(limitOf('SIGN_IN_PER_EMAIL', '203.0.113.5')).toBe(limit);
     expect(limitOf('SIGN_IN_PER_EMAIL', '2001:db8:1:2::7')).toBe(limit);
+  });
+});
+
+describe('the auth bucket, until core names one cap per bucket', () => {
+  const rule = { name: 'throttle', params: { bucket: 'auth' } } as unknown as Requirement;
+  // The auth bucket never reaches the throttler: the caps the route names are counted globally.
+  const throttle = new ThrottleRule(undefined as unknown as AuthThrottlerGuard, new Reflector());
+
+  it('binds at boot, leaving the count to the caps the route names', () => {
+    expect(throttle.problemWith(rule)).toBeUndefined();
+  });
+
+  it('refuses a route that names no cap rather than let it through uncounted', () => {
+    const unnamed = (): undefined => undefined;
+    const context = {
+      getHandler: () => unnamed,
+      getClass: () => Object,
+    } as unknown as ExecutionContext;
+
+    expect(() => throttle.check(context, rule)).toThrow(
+      'A route throttled by the auth bucket names no cap.',
+    );
   });
 });

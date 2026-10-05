@@ -136,19 +136,41 @@ function isCapName(bucket: unknown): bucket is AuthRateLimitName {
   return typeof bucket === 'string' && Object.hasOwn(AuthRateLimit, bucket);
 }
 
+/**
+ * The bucket the auth routes declare until core names one cap per bucket. Each of those routes still
+ *   names its caps with `@RateLimitedBy`, which `AuthThrottlerGuard` counts on every request, so
+ *   counting them here as well would halve them.
+ */
+const AUTH_BUCKET = 'auth';
+
 /** `throttle(bucket)`, a bucket being one of core's `AuthRateLimit` caps: `SIGN_IN_PER_EMAIL`. */
 @Injectable()
 export class ThrottleRule implements RuleGuard {
-  public constructor(private readonly throttler: AuthThrottlerGuard) {}
+  public constructor(
+    private readonly throttler: AuthThrottlerGuard,
+    private readonly reflector: Reflector,
+  ) {}
 
   public check(context: ExecutionContext, rule: Requirement): Promise<void> {
     const { bucket } = rule.params as { readonly bucket?: unknown };
+    if (bucket === AUTH_BUCKET) {
+      const caps = this.reflector.getAllAndOverride(RateLimitedBy, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (caps === undefined || caps.length === 0) {
+        throw new Error(`A route throttled by the ${AUTH_BUCKET} bucket names no cap.`);
+      }
+      return Promise.resolve();
+    }
     if (!isCapName(bucket)) throw new Error(`No cap named ${String(bucket)}.`);
     return this.throttler.countAgainst(context, bucket);
   }
 
   public problemWith(rule: Requirement): string | undefined {
     const { bucket } = rule.params as { readonly bucket?: unknown };
-    return isCapName(bucket) ? undefined : `no cap named ${String(bucket)}`;
+    return bucket === AUTH_BUCKET || isCapName(bucket)
+      ? undefined
+      : `no cap named ${String(bucket)}`;
   }
 }
