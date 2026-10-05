@@ -294,16 +294,19 @@ describe('ErrorEnvelopeFilter', () => {
     }
   });
 
-  it('treats an unavailable domain guard as 503, rather than blaming the caller', () => {
+  it('answers a domain guard 400, with the nature the registry gives its code', () => {
     const { run, sent } = filterFor();
     run(
       new DomainError({
         code: DomainGuardCode.TIMEZONE_NOT_IANA,
         params: { timeZone: 'Mars/Olympus' },
-        nature: FailureNature.UNAVAILABLE,
       }),
     );
-    expect(sent.status).toBe(HttpStatus.SERVICE_UNAVAILABLE);
+
+    expect(sent.status).toBe(HttpStatus.BAD_REQUEST);
+    expect(sent.body).toMatchObject({
+      error: { code: DomainGuardCode.TIMEZONE_NOT_IANA, nature: FailureNature.REFUSED },
+    });
   });
 
   it('gives a NestJS exception the same envelope, so the 400 and the 404 are one shape', () => {

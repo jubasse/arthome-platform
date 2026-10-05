@@ -303,7 +303,8 @@ export class DatesController {
   with the route and the paths in the log, never a value; a `restricted` field the principal lacks
   the right for is removed (absent, never null;
   the rights are the principal's `rights` and `signedIn` for any identified caller), `Cache-Control`
-  and `Vary` come from the route's `cache`, `no-store` from a sensitive field in the answer, and an
+  and `Vary` come from the route's `cache` (`public` for an anonymous caller only, `private` for
+  any identified one), `no-store` from a sensitive field in the answer, and an
   identity's own headers from its guard (the studio's rights version).
 - **A body, or a trace attribute holding one, is logged only through `redactSensitive(route, body)`**
   (http-edge; a schema works too): every field the route marks `sensitive`, a password, a token, a

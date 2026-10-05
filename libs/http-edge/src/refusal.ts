@@ -3,7 +3,6 @@ import type { z } from 'zod';
 
 import {
   errorCodesOf,
-  natureOf,
   statusOf,
   versionedPath,
   type CodedResponse,
@@ -16,6 +15,7 @@ import {
   ERROR_CODES,
   FailureNature,
   SchemaIssueRule,
+  natureOf,
   type DomainError,
   type ErrorCode,
   type ErrorParamsOf,
@@ -189,8 +189,9 @@ export function refusalCausedBy<C extends ErrorCode>(
 
 /**
  * A domain error as the filter answers it: a published code at the status the error registry gives
- *   it, so no handler picks one. A domain guard's code is not published: a refusal the caller's own
- *   input provoked is the least wrong reading of it, 400, and an unavailable one 503.
+ *   it, so no handler picks one. A domain guard's code is not published: its nature, which the
+ *   registry gives every code, reads a refused one as the caller's own input, 400, and an
+ *   unavailable one as 503.
  */
 export function domainRefusal(error: DomainError): RefusalException {
   const status = isPublishedCode(error.code)

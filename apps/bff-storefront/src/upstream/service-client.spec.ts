@@ -6,8 +6,15 @@ import { DEADLINE_HEADER, RefusalException } from '@arthome-platform/http-edge';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { defineErrorModel, natureOf, routeBuilder, type Route } from '@arthome/contracts/http';
-import { ApiErrorCode, FailureNature, OrderErrorCode, Service, SystemClock } from '@arthome/core';
+import { defineErrorModel, routeBuilder, type Route } from '@arthome/contracts/http';
+import {
+  ApiErrorCode,
+  FailureNature,
+  OrderErrorCode,
+  Service,
+  SystemClock,
+  natureOf,
+} from '@arthome/core';
 
 import { ServiceClient, type ServiceCall } from './service-client.js';
 import { InternalTokenMinter } from '../internal-token.minter.js';

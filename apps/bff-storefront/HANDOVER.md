@@ -51,9 +51,9 @@ contract's docs module (`storefront-docs.ts`) and absent in production.
   the surface is the one layer that retries.
 - **A `traceparent` is created when the surface sent none or a broken one**, on the request itself:
   the error filter reads it there, and the storefront `Error` requires a `traceId`.
-- **`Cache-Control: public, max-age=60`** and the contract's `Vary`: every call is anonymous today,
-  no overlay is composed, so the body is the same for every caller. The day a session adds
-  overlays, the header must turn `private` for that caller.
+- **`Cache-Control: public, max-age=60`** for an anonymous caller, and the contract's `Vary`; a
+  signed-in viewer is answered `private, max-age=60` (core's `cacheControlOf` takes the caller),
+  so no shared cache keeps a page served to them once a session adds overlays.
 - **Every call to a service carries an internal token** (`adr-auth.md` §8): minted per call, never
   forwarded, naming the viewer's account and device, or no account for an anonymous visitor.
   `DenyInProductionGuard` stays bound behind the others, and every route here is allowed in

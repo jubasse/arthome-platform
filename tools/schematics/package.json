@@ -12,7 +12,7 @@
   "devDependencies": {
     "@angular-devkit/core": "22.1.8",
     "@angular-devkit/schematics": "22.1.8",
-    "@arthome/core": "file:../../vendor/arthome-core-2aafc4d445d4.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-cfd5df949916.tgz",
     "prettier": "3.9.8",
     "typescript": "6.0.3"
   }

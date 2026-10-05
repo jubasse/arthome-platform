@@ -15,12 +15,11 @@ import {
 import {
   DERIVED_ERROR_CODES,
   errorCodesOf,
-  natureOf,
   statusOf,
   stripping,
   type Route,
 } from '@arthome/contracts/http';
-import { ApiErrorCode, ERROR_CODES, type ErrorCode } from '@arthome/core';
+import { ApiErrorCode, ERROR_CODES, natureOf, type ErrorCode } from '@arthome/core';
 import { errorParamsSchemaOf } from '@arthome/core/schema';
 
 import type { Caller, InternalTokenMinter } from '../internal-token.minter.js';

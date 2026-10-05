@@ -11,6 +11,7 @@ import { map, type Observable } from 'rxjs';
 import type { z } from 'zod';
 
 import {
+  CallerKind,
   cacheControlOf,
   restrictedFieldsOf,
   sensitivePathsOf,
@@ -66,6 +67,12 @@ function rightsOf(principal: unknown): ReadonlySet<string> {
     ? rights.filter((right): right is string => typeof right === 'string')
     : [];
   return new Set([SIGNED_IN_RIGHT, ...held]);
+}
+
+function callerKindOf(principal: unknown): CallerKind {
+  return principal === null || principal === undefined
+    ? CallerKind.ANONYMOUS
+    : CallerKind.IDENTIFIED;
 }
 
 function issueAt(issue: z.core.$ZodIssue): string {
@@ -138,7 +145,7 @@ export class EndpointResponseInterceptor implements NestInterceptor {
     if (marksOf(route, status).sensitive) {
       reply.header('cache-control', 'no-store');
     } else if (route.cache !== undefined && route.method === 'get') {
-      reply.header('cache-control', cacheControlOf(route.cache));
+      reply.header('cache-control', cacheControlOf(route.cache, callerKindOf(principal)));
       if (route.cache.vary.length > 0) reply.header('vary', route.cache.vary.join(', '));
     }
     if (route.access?.kind !== 'identified' || principal === null) return;

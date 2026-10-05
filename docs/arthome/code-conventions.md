@@ -2432,11 +2432,11 @@ line belongs at that line (§5.10) or in the commit body, not restated in the PR
 ### 5.11 Comparing two documents: what the semantic comparison grants
 
 `check:openapi-generated` is byte equality and grants nothing. The proof that the switch to generated
-documents (D-120) lost nothing was a semantic comparison against the pre-switch documents (kept under
-`.work/semantic-diff/`, the comparator itself retired with `check-emit-diff` in ed781a6). It compared
-operation by operation and component by component, and granted these equivalences on schema nodes.
-**Only the first four trace to a written decision; the rest were granted in gate commits and are
-recorded here so they can be audited.**
+documents (D-120) lost nothing was a semantic comparison against the pre-switch documents (the
+comparator was retired with `check-emit-diff` in ed781a6). It compared operation by operation and
+component by component, and granted these equivalences on schema nodes. **Only rows 1, 2, 5 and 6
+trace to a written decision (D-060); the rest were granted in gate commits or in the comparison
+itself, and are recorded here so they can be audited.**
 
 | # | Equivalence | Where it comes from |
 |---|---|---|
@@ -2449,12 +2449,12 @@ recorded here so they can be audited.**
 | 7 | `required` is compared as a set | 88b0f94. No DECISIONS entry |
 | 8 | an empty `properties: {}` equals an absent one | 88b0f94. No DECISIONS entry |
 | 9 | a description's trailing whitespace is not compared | 0366fe5. No DECISIONS entry |
-| 10 | an operation's `parameters` list is compared as a set | accepted by the product owner in the second round (OpenAPI identifies a parameter by name and location; no positional client consumes the documents; no client has shipped) |
+| 10 | an operation's `parameters` list is compared as a set | granted for the switch to generated documents, no DECISIONS entry. OpenAPI identifies a parameter by name and location, the typed client takes named parameters, no positional-SDK generator consumes the documents, and no client has shipped |
 
-Numbers 3, 4, 7, 8 and 9 were granted without a decision. Each is lossless for a reader of the
+Numbers 3, 4, 7, 8, 9 and 10 were granted without a decision. Each is lossless for a reader of the
 document (a constraint is neither added nor dropped), which is the ground they were granted on; a
-tenth-and-later equivalence is a ruling and goes through `DECISIONS.md`, never into a comparator
-alone. Everything outside a schema node was compared exactly, except number 10.
+further equivalence is a ruling and goes through `DECISIONS.md`, never into a comparator alone.
+Everything outside a schema node was compared exactly, except number 10.
 
 ### 5.12 Declaring a contract route
 
@@ -2986,7 +2986,7 @@ v1. Routes are declared through the immutable group builder (`packages/contracts
 holds what a group shares. The order of an operation's `parameters` has no meaning (OpenAPI identifies a parameter by name
 and location, the typed client takes named parameters, no positional-SDK generator consumes the
 documents, no client has shipped), so the semantic comparison used to review a change to the
-generated documents treats the list as a set; the product owner accepted this on 2026-10-03.
+generated documents treats the list as a set (§5.11, row 10, which no decision records).
 
 Gate 18 is five checks, and **three of them need no annotation**, which is why it was worth
 building before the 120-block migration rather than after it:
