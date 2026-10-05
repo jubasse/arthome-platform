@@ -199,6 +199,30 @@ const legacy = defineRoute({
   },
 });
 
+const answerMore = base.public().defineRoute({
+  method: 'get',
+  path: '/answers/more',
+  operationId: 'answerMore',
+  responses: {
+    200: {
+      description: 'A body the handler pads.',
+      content: { 'application/json': { schema: envelope(z.looseObject({ shown: z.boolean() })) } },
+    },
+  },
+});
+
+const answerWrong = base.public().defineRoute({
+  method: 'get',
+  path: '/answers/wrong',
+  operationId: 'answerWrong',
+  responses: {
+    200: {
+      description: 'A body the handler gets wrong at run time.',
+      content: { 'application/json': { schema: envelope(z.object({ count: z.number() })) } },
+    },
+  },
+});
+
 const THING = '01a0e700-0000-7000-8000-000000000001';
 
 @Controller()
@@ -259,6 +283,16 @@ class ThingsController {
   public async legacy(): Promise<{ ok: boolean }> {
     return Promise.resolve({ ok: true });
   }
+
+  @Endpoint(answerMore)
+  public async answerMore(): Promise<{ shown: boolean; internalNote: string }> {
+    return Promise.resolve({ shown: true, internalNote: 'never served' });
+  }
+
+  @Endpoint(answerWrong)
+  public async answerWrong(): Promise<{ count: number }> {
+    return Promise.resolve({ count: 'three' } as unknown as { count: number });
+  }
 }
 
 @Module({ controllers: [ThingsController] })
@@ -316,6 +350,7 @@ function providersWith(guards: EndpointGuards) {
 // The app runs with `logger: false`, which silences the output and not the calls. Read in
 //   `beforeAll`: Vitest 5 clears a mock's calls before each test.
 const warn = vi.spyOn(Logger.prototype, 'warn');
+const logged = vi.spyOn(Logger.prototype, 'error');
 let bootWarnings: unknown[] = [];
 
 let app: Awaited<ReturnType<typeof httpApp>>;
@@ -467,6 +502,22 @@ describe('the answer, projected and headed from the declaration', () => {
 
   it('writes no identity header for an anonymous caller', async () => {
     expect((await get('/v1/things')).headers).not.toHaveProperty('x-arthome-rights-version');
+  });
+
+  it('serves only what the success body declares, though its schema reads tolerantly', async () => {
+    const response = await get('/v1/answers/more');
+
+    expect(response.json()).toStrictEqual({ servedAt: NOW, data: { shown: true } });
+  });
+
+  it('answers 500 to a body outside the declaration, logging the route and the paths', async () => {
+    const response = await get('/v1/answers/wrong');
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toMatchObject({ error: { code: ApiErrorCode.INTERNAL } });
+    expect(logged).toHaveBeenCalledWith(
+      'answerWrong answered outside its declared body, at data.count invalid_type; answered 500.',
+    );
   });
 });
 

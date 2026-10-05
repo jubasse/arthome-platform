@@ -279,7 +279,11 @@ export class DatesController {
   `RequiresViewer`, `CsrfGuard` and the caps named by `RateLimitedBy` on the BFF.
   `@AllowInProduction()` stays where it was.
 - **The answer is shaped from the route** by `EndpointResponseInterceptor`, around the success
-  envelope: a `restricted` field the principal lacks the right for is removed (absent, never null;
+  envelope: it is parsed through core's stripping schema of the success body
+  (`strippingBodiesOf(route)`), so a field the route does not declare never leaves, even where the
+  schema is loose for the client, and a body outside the declaration answers 500 `api.internal`
+  with the route and the paths in the log, never a value; a `restricted` field the principal lacks
+  the right for is removed (absent, never null;
   the rights are the principal's `rights` and `signedIn` for any identified caller), `Cache-Control`
   and `Vary` come from the route's `cache`, `no-store` from a sensitive field in the answer, and an
   identity's own headers from its guard (the studio's rights version).

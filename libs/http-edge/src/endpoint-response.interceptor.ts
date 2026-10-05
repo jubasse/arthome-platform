@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
@@ -13,9 +14,12 @@ import {
   cacheControlOf,
   restrictedFieldsOf,
   sensitivePathsOf,
+  strippingBodiesOf,
+  successStatusOf,
   type RestrictedField,
   type Route,
 } from '@arthome/contracts/http';
+import { ApiErrorCode } from '@arthome/core';
 
 import {
   ENDPOINT_GUARDS,
@@ -23,6 +27,7 @@ import {
   routePrincipalOf,
   type EndpointGuards,
 } from './endpoint-access.js';
+import { refusalOf } from './refusal.js';
 import { withoutPath } from './schema-paths.js';
 
 /** The right every identified caller holds, so an `optionalAuth` route can restrict a field to it (ADR §6.3). */
@@ -69,14 +74,21 @@ function rightsOf(principal: unknown): ReadonlySet<string> {
   return new Set([SIGNED_IN_RIGHT, ...held]);
 }
 
+function issueAt(issue: z.core.$ZodIssue): string {
+  return `${issue.path.length === 0 ? '(root)' : issue.path.map(String).join('.')} ${issue.code}`;
+}
+
 /**
- * After the handler and the success envelope, so its paths are the declared body's: removes each
- *   restricted field the caller lacks the right for, absent rather than null (critical rule 11),
- *   and writes the headers the declaration implies: the freshness, `no-store` on an answer holding
- *   a sensitive field, and the identity's own (the rights version).
+ * After the handler and the success envelope, so its paths are the declared body's: keeps only
+ *   what the route's success body declares (ADR principle 2), a body outside it answering 500;
+ *   removes each restricted field the caller lacks the right for, absent rather than null (critical
+ *   rule 11); and writes the headers the declaration implies: the freshness, `no-store` on an
+ *   answer holding a sensitive field, and the identity's own (the rights version).
  */
 @Injectable()
 export class EndpointResponseInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(EndpointResponseInterceptor.name);
+
   public constructor(
     private readonly reflector: Reflector,
     @Inject(ENDPOINT_GUARDS) private readonly guards: EndpointGuards,
@@ -89,6 +101,7 @@ export class EndpointResponseInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       map((body: unknown) => {
+        const declared = this.declaredBodyOf(route, body);
         const http = context.switchToHttp();
         const principal =
           route.access === undefined ? undefined : routePrincipalOf(http.getRequest<object>());
@@ -96,9 +109,22 @@ export class EndpointResponseInterceptor implements NestInterceptor {
         const rights = rightsOf(principal);
         return marksOf(route)
           .restricted.filter(({ path, right }) => path !== '' && !rights.has(right))
-          .reduce((projected, { path }) => withoutPath(projected, path), body);
+          .reduce((projected, { path }) => withoutPath(projected, path), declared);
       }),
     );
+  }
+
+  /** The log names the paths and the rules broken, never a value: the body may hold a sensitive one. */
+  private declaredBodyOf(route: Route, body: unknown): unknown {
+    const schema = strippingBodiesOf(route)[String(successStatusOf(route))];
+    if (schema === undefined) return body;
+    const parsed = schema.safeParse(body);
+    if (parsed.success) return parsed.data;
+    this.logger.error(
+      `${route.operationId} answered outside its declared body, at ` +
+        `${parsed.error.issues.map(issueAt).join(', ')}; answered 500.`,
+    );
+    throw refusalOf(ApiErrorCode.INTERNAL);
   }
 
   private writeHeaders(route: Route, principal: unknown, reply: HeaderWriter): void {
