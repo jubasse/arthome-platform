@@ -1,12 +1,12 @@
 import { AllowInProduction, Endpoint, EndpointHeaders } from '@arthome-platform/http-edge';
 import { Controller, Header, Inject, Req, Res } from '@nestjs/common';
 
-import type { RouteHeaders } from '@arthome/contracts/http';
+import type { HandlerOutput, RouteHeaders } from '@arthome/contracts/http';
 import { SessionMode } from '@arthome/contracts/identity';
 import { storefrontApi } from '@arthome/contracts/storefront-api';
 import type { Clock } from '@arthome/core';
 
-import { viewerContextOf, type ServedViewerContext } from './viewer-context.js';
+import { viewerContextOf } from './viewer-context.js';
 import type { SessionReply } from '../auth/auth.controller.js';
 import { CLOCK } from '../clock.js';
 import { setSessionCookies, type CookieCarrier } from '../session/session-carriers.js';
@@ -36,10 +36,12 @@ export class ViewerContextController {
     @EndpointHeaders(getViewerContext) headers: RouteHeaders<typeof getViewerContext>,
     @Req() request: CookieCarrier,
     @Res({ passthrough: true }) reply: SessionReply,
-  ): Promise<ServedViewerContext> {
+  ): Promise<HandlerOutput<typeof getViewerContext>> {
     if (viewer.carrier === SessionMode.COOKIE) {
       setSessionCookies(reply, request, viewer, this.clock.nowMs());
     }
-    return Promise.resolve(viewerContextOf(viewer, viewer.account, headers['x-arthome-surface']));
+    return Promise.resolve({
+      data: viewerContextOf(viewer, viewer.account, headers['x-arthome-surface']),
+    });
   }
 }

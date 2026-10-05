@@ -13,6 +13,7 @@ import {
   identity,
   routeBuilder,
   type HandlerInput,
+  type HandlerOutput,
 } from '@arthome/contracts/http';
 import { ApiErrorCode, FixedClock, Surface } from '@arthome/core';
 
@@ -81,22 +82,22 @@ class FixtureController {
   @Endpoint(whoAmI)
   public async whoAmI(
     @EndpointInput(whoAmI) { principal }: HandlerInput<typeof whoAmI>,
-  ): Promise<{ principal: string }> {
-    return Promise.resolve({ principal: JSON.stringify(principal) });
+  ): Promise<HandlerOutput<typeof whoAmI>> {
+    return Promise.resolve({ data: { principal: JSON.stringify(principal) } });
   }
 
   @Endpoint(noteDown)
   public async noteDown(
     @EndpointInput(noteDown) { body }: HandlerInput<typeof noteDown>,
-  ): Promise<{ note: string }> {
-    return Promise.resolve({ note: body.note });
+  ): Promise<HandlerOutput<typeof noteDown>> {
+    return Promise.resolve({ data: { note: body.note } });
   }
 
   @Endpoint(browse)
   public async browse(
     @EndpointInput(browse) { principal }: HandlerInput<typeof browse>,
-  ): Promise<{ principal: string }> {
-    return Promise.resolve({ principal: JSON.stringify(principal) });
+  ): Promise<HandlerOutput<typeof browse>> {
+    return Promise.resolve({ data: { principal: JSON.stringify(principal) } });
   }
 }
 

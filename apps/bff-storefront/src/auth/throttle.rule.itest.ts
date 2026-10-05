@@ -11,6 +11,7 @@ import {
   routeBuilder,
   throttle,
   type HandlerInput,
+  type HandlerOutput,
 } from '@arthome/contracts/http';
 import { ApiErrorCode, AuthRateLimit, FailureNature } from '@arthome/core';
 
@@ -58,8 +59,8 @@ class FixtureController {
   @Endpoint(resend)
   public async resend(
     @EndpointInput(resend) _input: HandlerInput<typeof resend>,
-  ): Promise<{ queued: boolean }> {
-    return Promise.resolve({ queued: true });
+  ): Promise<HandlerOutput<typeof resend>> {
+    return Promise.resolve({ data: { queued: true } });
   }
 }
 

@@ -2,7 +2,6 @@ import type { ServerResponse } from 'node:http';
 
 import {
   AllowInProduction,
-  CollectionResponse,
   Endpoint,
   EndpointHeaders,
   EndpointQuery,
@@ -11,7 +10,7 @@ import {
 } from '@arthome-platform/http-edge';
 import { Controller, Header, Headers, Inject, Res } from '@nestjs/common';
 
-import type { RouteHeaders, RouteQuery, RouteResponseBody } from '@arthome/contracts/http';
+import type { HandlerOutput, RouteHeaders, RouteQuery } from '@arthome/contracts/http';
 import { storefrontApi } from '@arthome/contracts/storefront-api';
 import type { Clock } from '@arthome/core';
 
@@ -24,8 +23,6 @@ import { VARY_AUTH } from '../storefront-surface.js';
 const SEARCH_BUDGET_MS = 200;
 
 const { search } = storefrontApi.routes;
-
-type Fields = Pick<RouteResponseBody<typeof search, 200>, 'groups' | 'facets' | 'page'>;
 
 @AllowInProduction()
 @Controller()
@@ -49,7 +46,7 @@ export class SearchController {
     @EndpointHeaders(search) _headers: RouteHeaders<typeof search>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: { readonly raw: ServerResponse },
-  ): Promise<CollectionResponse<Fields>> {
+  ): Promise<HandlerOutput<typeof search>> {
     const { groups, facets, page, validUntil } = await this.catalog.get(
       '/v1/search',
       searchParamsOf(query),
@@ -61,9 +58,11 @@ export class SearchController {
       },
       successSchemaOf(search),
     );
-    return new CollectionResponse(
-      { ...(groups !== undefined && { groups }), facets, page },
-      validUntil ?? null,
-    );
+    return {
+      ...(groups !== undefined && { groups }),
+      facets,
+      page,
+      ...(validUntil !== undefined && { validUntil }),
+    };
   }
 }

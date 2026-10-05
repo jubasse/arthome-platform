@@ -11,7 +11,7 @@ import {
 } from '@arthome-platform/http-edge';
 import { Controller, Header, Inject, Logger, Req, Res } from '@nestjs/common';
 
-import type { Route, RouteBody, RouteHeaders } from '@arthome/contracts/http';
+import type { HandlerOutput, Route, RouteBody, RouteHeaders } from '@arthome/contracts/http';
 import { SessionMode } from '@arthome/contracts/identity';
 import { storefrontApi } from '@arthome/contracts/storefront-api';
 import { IdentityErrorCode, type Clock, type StorefrontSurface } from '@arthome/core';
@@ -103,7 +103,7 @@ export class AuthController {
     @EndpointHeaders(signUp) headers: RouteHeaders<typeof signUp>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-  ): Promise<SessionEstablished> {
+  ): Promise<HandlerOutput<typeof signUp>> {
     const { body: opened, replayed } = await this.identity.signUp(
       {
         email: body.email,
@@ -118,7 +118,9 @@ export class AuthController {
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
     await this.closeReplaced(request, reply, opened);
-    return this.established(body.mode, opened, headers['x-arthome-surface'], request, reply);
+    return {
+      data: this.established(body.mode, opened, headers['x-arthome-surface'], request, reply),
+    };
   }
 
   /**
@@ -135,7 +137,7 @@ export class AuthController {
     @EndpointHeaders(signIn) headers: RouteHeaders<typeof signIn>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-  ): Promise<SessionEstablished> {
+  ): Promise<HandlerOutput<typeof signIn>> {
     await this.failedSignIns.holdBefore(body.email);
     let opened: SessionOpened;
     try {
@@ -150,7 +152,9 @@ export class AuthController {
     }
     await this.failedSignIns.forget(body.email);
     await this.closeReplaced(request, reply, opened);
-    return this.established(body.mode, opened, headers['x-arthome-surface'], request, reply);
+    return {
+      data: this.established(body.mode, opened, headers['x-arthome-surface'], request, reply),
+    };
   }
 
   /**
@@ -164,13 +168,13 @@ export class AuthController {
     @EndpointHeaders(signOut) headers: RouteHeaders<typeof signOut>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-  ): Promise<{ readonly signedOut: true }> {
+  ): Promise<HandlerOutput<typeof signOut>> {
     idempotencyKeyOf(headers['idempotency-key']);
     const presented = presentedSession(request);
     if (presented === null) throw unauthenticated();
     await this.identity.revoke(presented.token, this.anonymousCall(request, reply, signOut));
     if (presented.carrier === SessionMode.COOKIE) clearSessionCookies(reply);
-    return { signedOut: true };
+    return { data: { signedOut: true } };
   }
 
   @Endpoint(confirmEmailVerification)
@@ -183,14 +187,14 @@ export class AuthController {
     headers: RouteHeaders<typeof confirmEmailVerification>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-  ): Promise<{ readonly verified: boolean }> {
+  ): Promise<HandlerOutput<typeof confirmEmailVerification>> {
     const { body: verified, replayed } = await this.identity.confirmVerification(
       body.token,
       idempotencyKeyOf(headers['idempotency-key']),
       this.anonymousCall(request, reply, confirmEmailVerification),
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
-    return verified;
+    return { data: verified };
   }
 
   @Endpoint(resendEmailVerification)
@@ -206,7 +210,7 @@ export class AuthController {
     headers: RouteHeaders<typeof resendEmailVerification>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-  ): Promise<{ readonly queued: boolean }> {
+  ): Promise<HandlerOutput<typeof resendEmailVerification>> {
     const { body: queued, replayed } = await this.identity.resendVerification(
       idempotencyKeyOf(headers['idempotency-key']),
       serviceCallFor(
@@ -219,7 +223,7 @@ export class AuthController {
       ),
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
-    return queued;
+    return { data: queued };
   }
 
   /**

@@ -28,6 +28,7 @@ import {
   querySchemaOf,
   successStatusOf,
   versionedPath,
+  type HandlerOutput,
   type HttpMethod,
   type Parameter,
   type Route,
@@ -40,12 +41,7 @@ import {
 import { EndpointRoute } from './endpoint-access.js';
 import { schemaInvalidException } from './refusal.js';
 import { requirementObjectOf } from './security-requirement.js';
-import type {
-  CollectionResponse,
-  MemorisedResponse,
-  PerishableResponse,
-  SuccessEnvelope,
-} from './success-envelope.interceptor.js';
+import type { MemorisedResponse, SuccessEnvelope } from './success-envelope.interceptor.js';
 
 const ROUTE_METHOD: Record<HttpMethod, (path: string) => MethodDecorator> = {
   get: Get,
@@ -60,21 +56,6 @@ function routerPathOf(path: string): string {
   return path.replace(/\{([^}]+)\}/g, ':$1');
 }
 
-interface EnvelopeInstants {
-  readonly servedAt: string;
-  readonly validUntil?: string;
-}
-
-/** What `SuccessEnvelopeInterceptor` sends for what a handler returns. */
-type Enveloped<Answer> =
-  Answer extends CollectionResponse<infer Fields>
-    ? EnvelopeInstants & Fields
-    : Answer extends PerishableResponse<infer Data>
-      ? EnvelopeInstants & { readonly data: Data }
-      : Answer extends MemorisedResponse<infer Data>
-        ? SuccessEnvelope<Data>
-        : { readonly servedAt: string; readonly data: Answer };
-
 /**
  * The body without its open index signatures: a response schema is loose so a client tolerates a
  *   new field, but an answer typed as an interface has no index signature to match it with.
@@ -87,13 +68,23 @@ type Closed<T> = T extends readonly (infer Item)[]
 
 type SuccessBody<R extends RouteShape> = Closed<RouteResponseBody<R, RouteSuccessStatus<R>>>;
 
-/** `unknown` when the handler's answer, enveloped, is the route's success body; a named mismatch otherwise. */
+/** A replay answers the stored envelope, so it is checked whole; anything else is core's `HandlerOutput`. */
+type Answers<R extends RouteShape, Answer> =
+  Answer extends MemorisedResponse<infer Data>
+    ? [SuccessEnvelope<Data>] extends [SuccessBody<R>]
+      ? true
+      : false
+    : [Answer] extends [HandlerOutput<R>]
+      ? true
+      : false;
+
+/** `unknown` when the handler returns what its route owes; a named mismatch otherwise. */
 type AnswerCheck<R extends RouteShape, Handler> = Handler extends (
   ...args: never[]
 ) => Promise<infer Answer>
-  ? [Enveloped<Answer>] extends [SuccessBody<R>]
+  ? Answers<R, Answer> extends true
     ? unknown
-    : { readonly 'the handler answers outside its route': SuccessBody<R> }
+    : { readonly 'the handler answers outside its route': HandlerOutput<R> }
   : { readonly 'the handler answers outside its route': 'it must be async' };
 
 export type EndpointDecorator<R extends RouteShape> = <
@@ -166,10 +157,17 @@ function responseDocumentationOf(route: RouteShape): MethodDecorator[] {
  * Binds a handler to its route, with real NestJS and `@nestjs/swagger` decorators only: the
  *   method, the path and the success status come from the contract, the document is filled from
  *   it (operation, tags, one response per declared status, security, headers), and the compiler
- *   refuses a handler whose answer, once enveloped, is not the route's success body. Its inputs
- *   are bound by the `Endpoint*` parameter decorators below.
+ *   refuses a handler that does not return core's `HandlerOutput` of the route: its success body
+ *   without `servedAt`, which `SuccessEnvelopeInterceptor` stamps.
  */
 export function Endpoint<R extends Route>(route: R): EndpointDecorator<R> {
+  const successStatuses = Object.keys(route.responses).filter((status) => status.startsWith('2'));
+  if (successStatuses.length > 1) {
+    throw new Error(
+      `${route.operationId} declares ${successStatuses.join(' and ')}: a handler answers one ` +
+        'success status until a route needs several.',
+    );
+  }
   const decorators = applyDecorators(
     EndpointRoute(route),
     ROUTE_METHOD[route.method](routerPathOf(route.path)),

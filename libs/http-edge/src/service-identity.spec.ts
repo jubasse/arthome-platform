@@ -8,6 +8,7 @@ import {
   identity,
   routeBuilder,
   type HandlerInput,
+  type HandlerOutput,
 } from '@arthome/contracts/http';
 import { ApiErrorCode, FixedClock, Service } from '@arthome/core';
 
@@ -65,16 +66,16 @@ class OverlayController {
   @Endpoint(readOverlay)
   public async readOverlay(
     @EndpointInput(readOverlay) { principal }: HandlerInput<typeof readOverlay>,
-  ): Promise<{ caller: string }> {
-    return Promise.resolve({ caller: JSON.stringify(principal) });
+  ): Promise<HandlerOutput<typeof readOverlay>> {
+    return Promise.resolve({ data: { caller: JSON.stringify(principal) } });
   }
 }
 
 @Controller()
 class WebhookController {
   @Endpoint(takeWebhook)
-  public async takeWebhook(): Promise<{ caller: string }> {
-    return Promise.resolve({ caller: 'nobody' });
+  public async takeWebhook(): Promise<HandlerOutput<typeof takeWebhook>> {
+    return Promise.resolve({ data: { caller: 'nobody' } });
   }
 }
 

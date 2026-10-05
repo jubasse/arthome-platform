@@ -24,6 +24,7 @@ import {
   routeBuilder,
   sensitive,
   type HandlerInput,
+  type HandlerOutput,
   type Requirement,
 } from '@arthome/contracts/http';
 import { ApiErrorCode, FailureNature, FixedClock, SchemaIssueRule } from '@arthome/core';
@@ -230,68 +231,72 @@ class ThingsController {
   @Endpoint(readThing)
   public async readThing(
     @EndpointInput(readThing) { params, query, principal }: HandlerInput<typeof readThing>,
-  ): Promise<{ thingId: string; readBy: string; verbose: boolean; revenue: number }> {
+  ): Promise<HandlerOutput<typeof readThing>> {
     return Promise.resolve({
-      thingId: params.thingId,
-      readBy: JSON.stringify(principal),
-      verbose: query.verbose ?? false,
-      revenue: 1200,
+      data: {
+        thingId: params.thingId,
+        readBy: JSON.stringify(principal),
+        verbose: query.verbose ?? false,
+        revenue: 1200,
+      },
     });
   }
 
   @Endpoint(browseThings)
   public async browseThings(
     @EndpointPrincipal(browseThings) principal: HandlerInput<typeof browseThings>['principal'],
-  ): Promise<{ anonymous: boolean; note: string }> {
-    return Promise.resolve({ anonymous: principal === null, note: 'for members' });
+  ): Promise<HandlerOutput<typeof browseThings>> {
+    return Promise.resolve({ data: { anonymous: principal === null, note: 'for members' } });
   }
 
   @Endpoint(promoteThing)
   public async promoteThing(
     @EndpointInput(promoteThing) { body }: HandlerInput<typeof promoteThing>,
-  ): Promise<{ reason: string }> {
-    return Promise.resolve({ reason: body.reason });
+  ): Promise<HandlerOutput<typeof promoteThing>> {
+    return Promise.resolve({ data: { reason: body.reason } });
   }
 
   @Endpoint(revealKey)
-  public async revealKey(): Promise<{ key: string }> {
-    return Promise.resolve({ key: 'sk_live' });
+  public async revealKey(): Promise<HandlerOutput<typeof revealKey>> {
+    return Promise.resolve({ data: { key: 'sk_live' } });
   }
 
   @Endpoint(postNote)
   public async postNote(
     @EndpointInput(postNote) { body }: HandlerInput<typeof postNote>,
-  ): Promise<{ length: number }> {
-    return Promise.resolve({ length: body.text.length });
+  ): Promise<HandlerOutput<typeof postNote>> {
+    return Promise.resolve({ data: { length: body.text.length } });
   }
 
   @Endpoint(postBatch)
   public async postBatch(
     @EndpointInput(postBatch) { body }: HandlerInput<typeof postBatch>,
-  ): Promise<{ length: number }> {
-    return Promise.resolve({ length: body.text.length });
+  ): Promise<HandlerOutput<typeof postBatch>> {
+    return Promise.resolve({ data: { length: body.text.length } });
   }
 
   @Endpoint(ping)
-  public async ping(@EndpointInput(ping) { principal }: HandlerInput<typeof ping>): Promise<{
-    pong: boolean;
-  }> {
-    return Promise.resolve({ pong: principal === undefined });
+  public async ping(
+    @EndpointInput(ping) { principal }: HandlerInput<typeof ping>,
+  ): Promise<HandlerOutput<typeof ping>> {
+    return Promise.resolve({ data: { pong: principal === undefined } });
   }
 
   @Endpoint(legacy)
-  public async legacy(): Promise<{ ok: boolean }> {
-    return Promise.resolve({ ok: true });
+  public async legacy(): Promise<HandlerOutput<typeof legacy>> {
+    return Promise.resolve({ data: { ok: true } });
   }
 
   @Endpoint(answerMore)
-  public async answerMore(): Promise<{ shown: boolean; internalNote: string }> {
-    return Promise.resolve({ shown: true, internalNote: 'never served' });
+  public async answerMore(): Promise<{ data: { shown: boolean; internalNote: string } }> {
+    return Promise.resolve({ data: { shown: true, internalNote: 'never served' } });
   }
 
   @Endpoint(answerWrong)
-  public async answerWrong(): Promise<{ count: number }> {
-    return Promise.resolve({ count: 'three' } as unknown as { count: number });
+  public async answerWrong(): Promise<HandlerOutput<typeof answerWrong>> {
+    return Promise.resolve({ data: { count: 'three' } } as unknown as HandlerOutput<
+      typeof answerWrong
+    >);
   }
 }
 

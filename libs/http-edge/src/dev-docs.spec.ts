@@ -41,8 +41,8 @@ const api = defineApi({
 @Controller()
 class OrdersController {
   @Endpoint(getOrder)
-  public order(): Promise<{ readonly id: string; readonly total: number }> {
-    return Promise.resolve({ id: 'o1', total: 1 });
+  public order(): Promise<{ readonly data: { readonly id: string; readonly total: number } }> {
+    return Promise.resolve({ data: { id: 'o1', total: 1 } });
   }
 }
 

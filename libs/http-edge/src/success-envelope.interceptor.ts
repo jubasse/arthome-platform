@@ -4,9 +4,12 @@ import {
   type ExecutionContext,
   type NestInterceptor,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { map, type Observable } from 'rxjs';
 
 import type { Clock } from '@arthome/core';
+
+import { routeOf } from './endpoint-access.js';
 
 export interface SuccessEnvelope<T> {
   readonly servedAt: string;
@@ -50,20 +53,33 @@ interface HeaderWriter {
   header(name: string, value: string): unknown;
 }
 
-/** transport.md §5.5's success envelope, applied once rather than remembered per route. */
+/**
+ * transport.md §5.5's success envelope, applied once rather than remembered per route. A handler
+ *   bound by `Endpoint` returns its route's body without `servedAt` (core's `HandlerOutput`), which
+ *   is stamped on it; any other handler's value is wrapped.
+ */
 @Injectable()
 export class SuccessEnvelopeInterceptor implements NestInterceptor {
-  public constructor(private readonly clock: Clock) {}
+  public constructor(
+    private readonly clock: Clock,
+    private readonly reflector: Reflector = new Reflector(),
+  ) {}
 
   public intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     // A global interceptor reaches WS messages and RPC handlers too
     //   (`nestjs-request-pipeline` rule 5), and neither carries this envelope.
     if (context.getType() !== 'http') return next.handle();
+    const bound = routeOf(this.reflector, context) !== undefined;
 
     // Through the `Clock` port, never `new Date()`, so a `FixedClock` can assert `servedAt` —
     // the same reason the error filter takes one.
     return next.handle().pipe(
       map((data: unknown) => {
+        if (bound && !(data instanceof MemorisedResponse)) {
+          return data === undefined
+            ? undefined
+            : { servedAt: this.clock.now(), ...(data as object) };
+        }
         if (data instanceof CollectionResponse) {
           const { fields, validUntil } = data as CollectionResponse<object>;
           return {

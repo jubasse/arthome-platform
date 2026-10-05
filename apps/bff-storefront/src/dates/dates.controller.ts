@@ -6,18 +6,17 @@ import {
   EndpointHeaders,
   EndpointParams,
   EndpointQuery,
-  PerishableResponse,
   successSchemaOf,
   whenCallerLeaves,
 } from '@arthome-platform/http-edge';
 import { Controller, Header, Headers, Inject, Res } from '@nestjs/common';
 
 import type {
+  HandlerOutput,
   Route,
   RouteHeaders,
   RouteParams,
   RouteQuery,
-  RouteResponseBody,
 } from '@arthome/contracts/http';
 import { storefrontApi } from '@arthome/contracts/storefront-api';
 import type { Clock } from '@arthome/core';
@@ -32,10 +31,6 @@ import { VARY_AUTH } from '../storefront-surface.js';
 const PUBLIC_READ_BUDGET_MS = 400;
 
 const { getDateDetail, getArtistDetail, resolvePublicLink } = storefrontApi.routes;
-
-type DateDetail = RouteResponseBody<typeof getDateDetail, 200>['data'];
-type ArtistDetail = RouteResponseBody<typeof getArtistDetail, 200>['data'];
-type ResolvedLink = RouteResponseBody<typeof resolvePublicLink, 200>['data'];
 
 interface Reply {
   readonly raw: ServerResponse;
@@ -60,7 +55,7 @@ export class DatesController {
     @EndpointHeaders(getDateDetail) _headers: RouteHeaders<typeof getDateDetail>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: Reply,
-  ): Promise<PerishableResponse<DateDetail>> {
+  ): Promise<HandlerOutput<typeof getDateDetail>> {
     const { data, validUntil } = await this.catalog.get(
       `/v1/dates/${dateId}`,
       new URLSearchParams(),
@@ -68,7 +63,7 @@ export class DatesController {
       successSchemaOf(getDateDetail),
     );
     reply.header('etag', entityTagOf({ data, validUntil }));
-    return new PerishableResponse(data, validUntil ?? null);
+    return { data, ...(validUntil !== undefined && { validUntil }) };
   }
 
   @Endpoint(getArtistDetail)
@@ -79,14 +74,14 @@ export class DatesController {
     @EndpointHeaders(getArtistDetail) _headers: RouteHeaders<typeof getArtistDetail>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: Reply,
-  ): Promise<PerishableResponse<ArtistDetail>> {
+  ): Promise<HandlerOutput<typeof getArtistDetail>> {
     const { data, validUntil } = await this.catalog.get(
       `/v1/artists/${artistId}`,
       new URLSearchParams(),
       this.callFor(traceparent, reply, getArtistDetail),
       successSchemaOf(getArtistDetail),
     );
-    return new PerishableResponse(data, validUntil ?? null);
+    return { data, ...(validUntil !== undefined && { validUntil }) };
   }
 
   @Endpoint(resolvePublicLink)
@@ -97,14 +92,14 @@ export class DatesController {
     @EndpointHeaders(resolvePublicLink) _headers: RouteHeaders<typeof resolvePublicLink>,
     @Headers('traceparent') traceparent: string,
     @Res({ passthrough: true }) reply: Reply,
-  ): Promise<PerishableResponse<ResolvedLink>> {
+  ): Promise<HandlerOutput<typeof resolvePublicLink>> {
     const { data, validUntil } = await this.catalog.get(
       '/v1/resolve',
       searchParamsOf(query),
       this.callFor(traceparent, reply, resolvePublicLink),
       successSchemaOf(resolvePublicLink),
     );
-    return new PerishableResponse(data, validUntil ?? null);
+    return { data, ...(validUntil !== undefined && { validUntil }) };
   }
 
   private callFor(traceparent: string, reply: Reply, route: Route): CatalogCall {

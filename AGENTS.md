@@ -234,7 +234,7 @@ export class DatesController {
   @Endpoint(getDateDetail)
   public async detail(
     @EndpointInput(getDateDetail) { params, headers }: HandlerInput<typeof getDateDetail>,
-  ): Promise<PerishableResponse<DateDetail>> { /* ... */ }
+  ): Promise<HandlerOutput<typeof getDateDetail>> { /* { data, validUntil? } */ }
 }
 ```
 
@@ -249,10 +249,15 @@ export class DatesController {
   and every failing field named at once in `api.schema_invalid`'s `fields`; `@EndpointPrincipal(route)`
   gives the principal alone. The four separate decorators the bound routes still use,
   `EndpointParams`, `EndpointQuery`, `EndpointBody` and `EndpointHeaders`, are deprecated.
-- **The compiler checks the answer.** The handler must be `async` and what it returns, once
-  enveloped by `SuccessEnvelopeInterceptor`, must be the route's success body; a body that is not
-  fails at the decorator, naming `the handler answers outside its route`. `successSchemaOf(route)`
-  is the success body's schema, for a relay that validates an upstream answer.
+- **The handler returns data, the server stamps the envelope.** The handler must be `async` and
+  return core's `HandlerOutput<typeof route>`: the route's success body without `servedAt`
+  (`{ data }`, `{ data, validUntil }` on a perishable read, `{ items, page }` on a list), which
+  `SuccessEnvelopeInterceptor` stamps on it. A handler returning anything else fails at the
+  decorator, naming `the handler answers outside its route` and the output it owes; a
+  `MemorisedResponse` is replayed as stored. A route declaring several success statuses fails at
+  the decorator until a route needs them. `CollectionResponse` and `PerishableResponse` are for
+  the routes no contract binds yet. `successSchemaOf(route)` is the success body's schema, for a
+  relay that validates an upstream answer.
 - **A refusal names its route**: `throw refuse(route, code, params)`. Only a code the route's type
   declares compiles (its error responses' codes, and its `errorCodes` once core types the list
   form), with the params core's `ERROR_PARAMS` gives it, at the status core's `ERRORS` registry
