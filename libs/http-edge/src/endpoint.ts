@@ -42,6 +42,7 @@ import { EndpointRoute } from './endpoint-access.js';
 import { schemaInvalidException } from './refusal.js';
 import { requirementObjectOf } from './security-requirement.js';
 import type { MemorisedResponse, SuccessEnvelope } from './success-envelope.interceptor.js';
+import { answeredStatusOf } from './success-status.js';
 
 const ROUTE_METHOD: Record<HttpMethod, (path: string) => MethodDecorator> = {
   get: Get,
@@ -68,15 +69,26 @@ type Closed<T> = T extends readonly (infer Item)[]
 
 type SuccessBody<R extends RouteShape> = Closed<RouteResponseBody<R, RouteSuccessStatus<R>>>;
 
-/** A replay answers the stored envelope, so it is checked whole; anything else is core's `HandlerOutput`. */
+type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
+
+interface Outside<R extends RouteShape> {
+  readonly 'the handler answers outside its route': HandlerOutput<R>;
+}
+
+/**
+ * A replay answers the stored envelope, so it is checked whole, and only on a route with one
+ *   success status: it carries no status to replay. Anything else is core's `HandlerOutput`.
+ */
 type Answers<R extends RouteShape, Answer> =
   Answer extends MemorisedResponse<infer Data>
-    ? [SuccessEnvelope<Data>] extends [SuccessBody<R>]
-      ? true
-      : false
+    ? true extends IsUnion<RouteSuccessStatus<R>>
+      ? { readonly 'a memorised answer replays one success status': RouteSuccessStatus<R> }
+      : [SuccessEnvelope<Data>] extends [SuccessBody<R>]
+        ? true
+        : Outside<R>
     : [Answer] extends [HandlerOutput<R>]
       ? true
-      : false;
+      : Outside<R>;
 
 /** `unknown` when the handler returns what its route owes; a named mismatch otherwise. */
 type AnswerCheck<R extends RouteShape, Handler> = Handler extends (
@@ -84,7 +96,7 @@ type AnswerCheck<R extends RouteShape, Handler> = Handler extends (
 ) => Promise<infer Answer>
   ? Answers<R, Answer> extends true
     ? unknown
-    : { readonly 'the handler answers outside its route': HandlerOutput<R> }
+    : Exclude<Answers<R, Answer>, true>
   : { readonly 'the handler answers outside its route': 'it must be async' };
 
 export type EndpointDecorator<R extends RouteShape> = <
@@ -100,22 +112,30 @@ const BODY_LIMIT_CONFIG = 'arthomeBodyLimit';
 
 /**
  * What an app serving `Endpoint` routes needs before `init()`: URI versioning, which `Endpoint`'s
- *   `Version` needs, and each route's body ceiling as its Fastify `bodyLimit`, which only an
- *   `onRoute` hook can set, as Nest registers the route. Call before `mountDevDocs`, whose
- *   document is built after it.
+ *   `Version` needs; each route's body ceiling as its Fastify `bodyLimit`, which only an `onRoute`
+ *   hook can set, as Nest registers the route; and the success status a handler chose among its
+ *   route's several. Call before `mountDevDocs`, whose document is built after it.
  */
 export function serveEndpoints(app: NestFastifyApplication): void {
   app.enableVersioning({ type: VersioningType.URI });
-  app
-    .getHttpAdapter()
-    .getInstance()
-    .addHook('onRoute', (options) => {
-      const limit: unknown = (options.config as Readonly<Record<string, unknown>> | undefined)?.[
-        BODY_LIMIT_CONFIG
-      ];
-      // eslint-disable-next-line no-param-reassign -- an onRoute hook configures the route by mutating its options.
-      if (typeof limit === 'number') options.bodyLimit = limit;
-    });
+  const instance = app.getHttpAdapter().getInstance();
+  instance.addHook('onRoute', (options) => {
+    const limit: unknown = (options.config as Readonly<Record<string, unknown>> | undefined)?.[
+      BODY_LIMIT_CONFIG
+    ];
+    // eslint-disable-next-line no-param-reassign -- an onRoute hook configures the route by mutating its options.
+    if (typeof limit === 'number') options.bodyLimit = limit;
+  });
+  // Nest re-applies the route's `@HttpCode` after the handler returns (`FastifyAdapter.reply`,
+  //   Nest 12.0.3), so only a hook can send another status; a refusal raised after the handler
+  //   chose keeps its own.
+  instance.addHook('onSend', async (request, reply, payload) => {
+    const status = answeredStatusOf(request);
+    const succeeded = reply.statusCode >= 200 && reply.statusCode < 300;
+    // Not awaited: a Fastify reply is thenable, and awaiting it here waits for its own send.
+    if (status !== undefined && succeeded) void reply.code(status);
+    return payload;
+  });
 }
 
 /** `{}` is a call with no credential at all, which a decorator spells as an empty requirement. */
@@ -158,16 +178,10 @@ function responseDocumentationOf(route: RouteShape): MethodDecorator[] {
  *   method, the path and the success status come from the contract, the document is filled from
  *   it (operation id, summary, tags, one response per declared status, security, headers), and the compiler
  *   refuses a handler that does not return core's `HandlerOutput` of the route: its success body
- *   without `servedAt`, which `SuccessEnvelopeInterceptor` stamps.
+ *   without `servedAt`, which `SuccessEnvelopeInterceptor` stamps, or `{ status, body }` on a
+ *   route declaring several success statuses.
  */
 export function Endpoint<R extends Route>(route: R): EndpointDecorator<R> {
-  const successStatuses = Object.keys(route.responses).filter((status) => status.startsWith('2'));
-  if (successStatuses.length > 1) {
-    throw new Error(
-      `${route.operationId} declares ${successStatuses.join(' and ')}: a handler answers one ` +
-        'success status until a route needs several.',
-    );
-  }
   const decorators = applyDecorators(
     EndpointRoute(route),
     ROUTE_METHOD[route.method](routerPathOf(route.path)),

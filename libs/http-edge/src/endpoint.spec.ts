@@ -189,20 +189,6 @@ describe('a handler bound to its route', () => {
     });
   });
 
-  it('refuses a route declaring several success statuses, which no handler answers yet', () => {
-    const queueExport = defineRoute({
-      method: 'post',
-      version: 1,
-      path: '/exports',
-      operationId: 'queueExport',
-      responses: { 200: { description: 'Ready.' }, 202: { description: 'Queued.' } },
-    });
-
-    expect(() => Endpoint(queueExport)).toThrow(
-      'queueExport declares 200 and 202: a handler answers one success status until a route needs several.',
-    );
-  });
-
   it('documents the operation from the route: id, tag, a response per status, security, header', () => {
     const document = SwaggerModule.createDocument(app, new DocumentBuilder().build(), {
       autoTagControllers: false,

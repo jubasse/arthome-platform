@@ -7,9 +7,11 @@ import {
 import { Reflector } from '@nestjs/core';
 import { map, type Observable } from 'rxjs';
 
+import type { Route } from '@arthome/contracts/http';
 import type { Clock } from '@arthome/core';
 
 import { routeOf } from './endpoint-access.js';
+import { answerWithStatus, successStatusesOf } from './success-status.js';
 
 export interface SuccessEnvelope<T> {
   readonly servedAt: string;
@@ -53,10 +55,18 @@ interface HeaderWriter {
   header(name: string, value: string): unknown;
 }
 
+function unwrapAnsweredStatus(route: Route, output: unknown, context: ExecutionContext): unknown {
+  if (successStatusesOf(route).length < 2) return output;
+  const { status, body } = output as { readonly status: number; readonly body: unknown };
+  answerWithStatus(context.switchToHttp().getRequest<object>(), status);
+  return body;
+}
+
 /**
  * transport.md §5.5's success envelope, applied once rather than remembered per route. A handler
  *   bound by `Endpoint` returns its route's body without `servedAt` (core's `HandlerOutput`), which
- *   is stamped on it; any other handler's value is wrapped.
+ *   is stamped on it, or `{ status, body }` where the route declares several success statuses, whose
+ *   status `serveEndpoints` sends; any other handler's value is wrapped.
  */
 @Injectable()
 export class SuccessEnvelopeInterceptor implements NestInterceptor {
@@ -69,16 +79,17 @@ export class SuccessEnvelopeInterceptor implements NestInterceptor {
     // A global interceptor reaches WS messages and RPC handlers too
     //   (`nestjs-request-pipeline` rule 5), and neither carries this envelope.
     if (context.getType() !== 'http') return next.handle();
-    const bound = routeOf(this.reflector, context) !== undefined;
+    const route = routeOf(this.reflector, context);
 
     // Through the `Clock` port, never `new Date()`, so a `FixedClock` can assert `servedAt` —
     // the same reason the error filter takes one.
     return next.handle().pipe(
       map((data: unknown) => {
-        if (bound && !(data instanceof MemorisedResponse)) {
-          return data === undefined
+        if (route !== undefined && !(data instanceof MemorisedResponse)) {
+          const body = unwrapAnsweredStatus(route, data, context);
+          return body === undefined
             ? undefined
-            : { servedAt: this.clock.now(), ...(data as object) };
+            : { servedAt: this.clock.now(), ...(body as object) };
         }
         if (data instanceof CollectionResponse) {
           const { fields, validUntil } = data as CollectionResponse<object>;
