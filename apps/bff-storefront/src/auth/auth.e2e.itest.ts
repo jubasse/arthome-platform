@@ -309,6 +309,7 @@ describe('signing up in bearer mode', () => {
       const replay = await signUp(email, SessionMode.BEARER, key);
       expect(replay.statusCode).toBe(201);
       expect(replay.headers['idempotency-replayed']).toBe('true');
+      expect(replay.headers['x-arthome-served-at']).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
       expect(replay.json<{ data: { accessToken: string } }>().data.accessToken).toBe(
         data.accessToken,
       );

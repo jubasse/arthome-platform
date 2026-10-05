@@ -55,6 +55,15 @@ interface HeaderWriter {
   header(name: string, value: string): unknown;
 }
 
+/**
+ * A replayed write's headers: `Idempotency-Replayed`, and `X-Arthome-Served-At` for when this
+ *   answer was served, the stored body's `servedAt` being the first attempt's.
+ */
+export function markReplayed(reply: HeaderWriter, clock: Clock): void {
+  reply.header('Idempotency-Replayed', 'true');
+  reply.header('x-arthome-served-at', clock.now());
+}
+
 function unwrapAnsweredStatus(route: Route, output: unknown, context: ExecutionContext): unknown {
   if (successStatusesOf(route).length < 2) return output;
   const { status, body } = output as { readonly status: number; readonly body: unknown };
@@ -109,10 +118,7 @@ export class SuccessEnvelopeInterceptor implements NestInterceptor {
         }
         if (!(data instanceof MemorisedResponse)) return { servedAt: this.clock.now(), data };
         if (data.replayed) {
-          // The body's `servedAt` is the first attempt's; this header says when the replay was.
-          const reply = context.switchToHttp().getResponse<HeaderWriter>();
-          reply.header('Idempotency-Replayed', 'true');
-          reply.header('x-arthome-served-at', this.clock.now());
+          markReplayed(context.switchToHttp().getResponse<HeaderWriter>(), this.clock);
         }
         return data.envelope;
       }),

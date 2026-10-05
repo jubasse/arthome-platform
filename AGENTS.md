@@ -253,7 +253,9 @@ export class DatesController {
   (`{ data }`, `{ data, validUntil }` on a perishable read, `{ items, page }` on a list), which
   `SuccessEnvelopeInterceptor` stamps on it. A handler returning anything else fails at the
   decorator, naming `the handler answers outside its route` and the output it owes; a
-  `MemorisedResponse` is replayed as stored. `CollectionResponse` and `PerishableResponse` are for
+  `MemorisedResponse` is replayed as stored, with the `Idempotency-Replayed` and
+  `X-Arthome-Served-At` headers core declares beside each other (`markReplayed`, which a BFF
+  handler relaying a service's replay calls itself). `CollectionResponse` and `PerishableResponse` are for
   the routes no contract binds yet. `successSchemaOf(route)` is the success body's schema (the
   lowest 2xx's), for a relay that validates an upstream answer.
 - **A route declaring several success statuses** (purchaseSeat and checkoutCart 201 or 202,

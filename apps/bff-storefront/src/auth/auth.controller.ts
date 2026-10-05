@@ -6,6 +6,7 @@ import {
   EndpointInput,
   RefusalException,
   idempotencyKeyOf,
+  markReplayed,
   unauthenticated,
 } from '@arthome-platform/http-edge';
 import { Controller, Header, Inject, Logger, Req, Res } from '@nestjs/common';
@@ -110,7 +111,7 @@ export class AuthController {
       idempotencyKeyOf(headers['idempotency-key']),
       this.anonymousCall(request, reply, signUp),
     );
-    if (replayed) reply.header('idempotency-replayed', 'true');
+    if (replayed) markReplayed(reply, this.clock);
     await this.closeReplaced(request, reply, opened);
     return {
       data: this.established(body.mode, opened, headers['x-arthome-surface'], request, reply),
@@ -181,7 +182,7 @@ export class AuthController {
       idempotencyKeyOf(headers['idempotency-key']),
       this.anonymousCall(request, reply, confirmEmailVerification),
     );
-    if (replayed) reply.header('idempotency-replayed', 'true');
+    if (replayed) markReplayed(reply, this.clock);
     return { data: verified };
   }
 
@@ -206,7 +207,7 @@ export class AuthController {
         resendEmailVerification,
       ),
     );
-    if (replayed) reply.header('idempotency-replayed', 'true');
+    if (replayed) markReplayed(reply, this.clock);
     return { data: queued };
   }
 

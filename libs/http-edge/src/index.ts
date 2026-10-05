@@ -58,6 +58,7 @@ export {
   MemorisedResponse,
   PerishableResponse,
   SuccessEnvelopeInterceptor,
+  markReplayed,
 } from './success-envelope.interceptor.js';
 export type { SuccessEnvelope } from './success-envelope.interceptor.js';
 
