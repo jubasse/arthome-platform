@@ -78,7 +78,10 @@ NestJS skips them; this block is what makes loading systematic rather than remem
   everywhere at once, and check `node_modules/.pnpm` holds one version of each after install.
 - **arthome-core arrives in one of two ways.** `pnpm run use-core <version>` installs a release: the
   manifests point at the tarballs attached to the GitHub release `v<version>` of arthome-core, and
-  the lockfile pins their integrity. That is the state of `develop` and `main`.
+  the lockfile pins their integrity. That is the state of `develop` and `main`, now on core 0.1.0 from
+  its GitHub release. A checkout still on `file:` specs switches with `node tools/use-core.mjs 0.1.0`:
+  pnpm 12 pre-installs before running a script and fails on the missing vendor tarballs. Later bumps
+  can use `pnpm run use-core`.
   `pnpm run bootstrap` packs a sibling arthome-core checkout into `vendor/` and points the manifests
   at it with `file:` paths, for cross-repository work that is not released yet. Use it on a feature
   branch only: `pnpm run check:core-specs` refuses a `file:` spec on `develop` and `main`, and a pull

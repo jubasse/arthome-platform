@@ -19,8 +19,8 @@
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-cfd5df949916.tgz",
-    "@arthome/contracts": "file:../../vendor/arthome-contracts-baddb180fe71.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz",
+    "@arthome/contracts": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-contracts-0.1.0.tgz",
     "zod": "4.6.5"
   }
 }

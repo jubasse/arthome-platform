@@ -66,7 +66,10 @@ command.
 
 **Setting up.** The `@arthome/*` packages come from a release of arthome-core, with nothing cloned
 beside this repository: `pnpm run use-core <version>` points the manifests at the tarballs attached
-to the GitHub release `v<version>`, installs, and builds the libs. To work against arthome-core
+to the GitHub release `v<version>`, installs, and builds the libs. The platform is on core 0.1.0, from
+its GitHub release. The first switch off `file:` specs needs `node tools/use-core.mjs <version>`, since
+pnpm 12 pre-installs before a script and fails on missing vendor tarballs; later bumps can use
+`pnpm run use-core`. To work against arthome-core
 changes that are not released, `pnpm run bootstrap` packs a sibling checkout instead; that is for
 feature branches, and `develop` and `main` must stay on a release.
 
