@@ -322,10 +322,10 @@ export class DatesController {
 - **Every response a suite provokes is checked against its route** (ADR contract model §7.3):
   `const responses = guardDeclaredResponses(storefrontApi)` at the top of the file, and
   `responses.watch(app)` before `app.init()`. A status the route does not declare, or a code its
-  response does not name, is listed at the end of the file; `ARTHOME_UNDECLARED_RESPONSES=fail`
-  fails the test instead, which becomes the default once the routes declare their errors. Run by
-  an agent, Vitest picks its `minimal` reporter, which hides a passing file's output: pass
-  `--reporter=default` to read the list.
+  response does not name, fails the test, the code being compared with the route's `errorCodes` at
+  every error status; `ARTHOME_UNDECLARED_RESPONSES=report` lists them at the end of the file
+  instead. Run by an agent, Vitest picks its `minimal` reporter, which hides a passing file's
+  output: pass `--reporter=default` to read the list.
 - **Swagger UI, in development only**: `mountDevDocs(app, api, { docs, path: 'docs' })` mounts
   the page and its raw document (`/docs-json`) when `NODE_ENV` is `development` or `test`, and
   mounts nothing otherwise. `docs` is the api's docs module, `@arthome/contracts/storefront-api/docs`

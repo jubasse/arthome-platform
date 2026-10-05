@@ -2,7 +2,13 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, afterEach } from 'vitest';
 import { z } from 'zod';
 
-import { versionedPath, type Api, type Response, type Route } from '@arthome/contracts/http';
+import {
+  errorCodesOf,
+  versionedPath,
+  type Api,
+  type Response,
+  type Route,
+} from '@arthome/contracts/http';
 
 /** `fail` makes an undeclared response fail its test; `report` lists them once per file. */
 export type UndeclaredResponsesMode = 'report' | 'fail';
@@ -20,9 +26,9 @@ export interface DeclaredResponses {
   readonly undeclared: readonly UndeclaredResponse[];
 }
 
-/** `ARTHOME_UNDECLARED_RESPONSES=fail` until the routes declare what they answer, then the default. */
+/** Failing, unless `ARTHOME_UNDECLARED_RESPONSES=report` asks for the list alone. */
 export function undeclaredResponsesMode(): UndeclaredResponsesMode {
-  return process.env.ARTHOME_UNDECLARED_RESPONSES === 'fail' ? 'fail' : 'report';
+  return process.env.ARTHOME_UNDECLARED_RESPONSES === 'report' ? 'report' : 'fail';
 }
 
 /**
@@ -80,7 +86,7 @@ export function guardDeclaredResponses(
   afterAll(() => {
     if (mode === 'report' && responses.undeclared.length > 0) {
       console.warn(
-        'Responses the contract does not declare (ARTHOME_UNDECLARED_RESPONSES=fail fails them):\n' +
+        'Responses the contract does not declare (unset ARTHOME_UNDECLARED_RESPONSES=report to fail them):\n' +
           linesOf(responses.undeclared),
       );
     }
@@ -104,7 +110,7 @@ function undeclaredResponseOf(
   const code = status >= 400 ? errorCodeOf(payload) : null;
   const declared = route.responses[String(status)];
   if (declared !== undefined) {
-    const codes = declaredCodesOf(declared);
+    const codes = errorCodesOf(route, status) ?? declaredCodesOf(declared);
     if (code === null || codes === null || codes.includes(code)) return null;
   }
   return { operationId: route.operationId, status, code };
@@ -122,8 +128,8 @@ function errorCodeOf(payload: unknown): string | null {
 }
 
 /**
- * The codes a response names, one envelope per code with a literal `error.code`; null when it does
- *   not name them, as the api's shared responses do.
+ * The codes a hand-written response names, one envelope per code with a literal `error.code`; null
+ *   when it does not name them. A route built with `errors` declares them through `errorCodesOf`.
  */
 function declaredCodesOf(response: Response): readonly string[] | null {
   const schema = response.content?.['application/json']?.schema;

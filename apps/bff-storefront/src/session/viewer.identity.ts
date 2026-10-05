@@ -1,6 +1,6 @@
 import type { ServerResponse } from 'node:http';
 
-import { unauthenticated, type IdentityGuard } from '@arthome-platform/http-edge';
+import { RefusalException, unauthenticated, type IdentityGuard } from '@arthome-platform/http-edge';
 import { Inject, Injectable, type ExecutionContext } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 
@@ -9,11 +9,17 @@ import { SessionMode } from '@arthome/contracts/identity';
 import type { Clock } from '@arthome/core';
 
 import { cookieWriteNeedsCsrf, verifyCsrfToken } from './csrf.guard.js';
-import { presentedSession, type CookieCarrier } from './session-carriers.js';
+import { presentedSession, type CookieCarrier, type PresentedSession } from './session-carriers.js';
 import { attachViewer } from './viewer.js';
 import { CLOCK } from '../clock.js';
 import { IdentityClient } from '../identity/identity.client.js';
 import { SESSION_VALIDATION_BUDGET_MS, serviceCallFor } from '../upstream/service-call.js';
+
+function refusedCredentialIsAnonymous(route: Route): boolean {
+  return (
+    route.access?.kind === 'identified' && route.access.refusedCredentialIsAnonymous !== undefined
+  );
+}
 
 /**
  * The `viewer` identity: the session the request presents, by cookie or bearer token, resolved by
@@ -31,7 +37,7 @@ export class ViewerIdentity implements IdentityGuard {
   public async identify(context: ExecutionContext, route: Route): Promise<unknown> {
     const http = context.switchToHttp();
     const request = http.getRequest<CookieCarrier>();
-    const presented = presentedSession(request);
+    const presented = this.presentedBy(request, route);
     if (presented === null) return null;
     if (presented.carrier === SessionMode.COOKIE && cookieWriteNeedsCsrf(route)) {
       await verifyCsrfToken(this.adapterHost, context);
@@ -48,12 +54,19 @@ export class ViewerIdentity implements IdentityGuard {
       ),
     );
     if (session === null) {
-      if (route.access?.kind === 'identified' && route.access.refusedCredentialIsAnonymous) {
-        return null;
-      }
+      if (refusedCredentialIsAnonymous(route)) return null;
       throw unauthenticated();
     }
     attachViewer(request, { ...session, ...presented });
     return session;
+  }
+
+  private presentedBy(request: CookieCarrier, route: Route): PresentedSession | null {
+    try {
+      return presentedSession(request);
+    } catch (error) {
+      if (error instanceof RefusalException && refusedCredentialIsAnonymous(route)) return null;
+      throw error;
+    }
   }
 }

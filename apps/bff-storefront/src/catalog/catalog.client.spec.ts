@@ -6,7 +6,7 @@ import { InternalTokenVerifier, RefusalException } from '@arthome-platform/http-
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { ApiErrorCode, FailureNature, Service, SystemClock } from '@arthome/core';
+import { ApiErrorCode, FailureNature, SchemaIssueRule, Service, SystemClock } from '@arthome/core';
 
 import { CatalogClient, type CatalogCall } from './catalog.client.js';
 import { InternalTokenMinter } from '../internal-token.minter.js';
@@ -22,6 +22,10 @@ const minter = new InternalTokenMinter(
   new SystemClock(),
 );
 
+const SCHEMA_INVALID_PARAMS = {
+  issues: [{ path: ['priceMaxMinor'], rule: SchemaIssueRule.INVALID_TYPE }],
+};
+
 function errorEnvelope(code: string, params: object = {}): string {
   return JSON.stringify({
     error: { code, nature: FailureNature.REFUSED, params, traceId: TRACEPARENT.slice(3, 35) },
@@ -34,7 +38,7 @@ const ANSWERS: Record<string, { status: number; body: string; delayMs?: number }
   '/off-contract': { status: 200, body: JSON.stringify({ servedAt: 'yesterday' }) },
   '/refused': {
     status: 400,
-    body: errorEnvelope(ApiErrorCode.SCHEMA_INVALID, { fields: ['priceMaxMinor'] }),
+    body: errorEnvelope(ApiErrorCode.SCHEMA_INVALID, SCHEMA_INVALID_PARAMS),
   },
   '/forbidden': { status: 403, body: errorEnvelope(ApiErrorCode.FORBIDDEN) },
   '/late': { status: 504, body: errorEnvelope(ApiErrorCode.DEADLINE_EXCEEDED) },
@@ -108,7 +112,7 @@ describe('CatalogClient', () => {
     expect(refusal.getStatus()).toBe(400);
     expect(refusal.refusal).toEqual({
       code: ApiErrorCode.SCHEMA_INVALID,
-      params: { fields: ['priceMaxMinor'] },
+      params: SCHEMA_INVALID_PARAMS,
       nature: FailureNature.REFUSED,
     });
   });
