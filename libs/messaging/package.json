@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/messaging",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The messaging contract every service shares: the outbox, failure classification, retry and dead-lettering, and the host a consumer process runs its consumers in.",

@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/http-edge",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The HTTP edge every service shares: the exception filter, the production guard, the traceparent parser, the refusals a handler raises, idempotent commands.",

@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/testing",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The integration harness: real Postgres, Kafka, OpenSearch and Redis in containers, and a service's feature modules over HTTP.",

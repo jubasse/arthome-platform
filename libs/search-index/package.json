@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/search-index",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The search indices' names, mappings and document shapes, shared by the indexer that writes them and catalog that reads them.",

@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/schematics",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The repository's own code generators: a service, an aggregate, a command and a consumer handler, shaped like the current services.",
