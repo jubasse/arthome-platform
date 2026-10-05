@@ -29,6 +29,7 @@ import {
 } from './endpoint-access.js';
 import { refusalOf } from './refusal.js';
 import { withoutPath } from './schema-paths.js';
+import { answeredStatusOf, successStatusesOf } from './success-status.js';
 
 /** The right every identified caller holds, so an `optionalAuth` route can restrict a field to it (ADR §6.3). */
 export const SIGNED_IN_RIGHT = 'signedIn';
@@ -42,26 +43,19 @@ interface SuccessMarks {
   readonly sensitive: boolean;
 }
 
-const marksByRoute = new WeakMap<Route, SuccessMarks>();
+const marksByRoute = new WeakMap<Route, Map<number, SuccessMarks>>();
 
-function successSchemasOf(route: Route): z.ZodType[] {
-  return Object.entries(route.responses)
-    .filter(([status]) => status.startsWith('2'))
-    .flatMap(([, response]) => {
-      const schema = response.content?.['application/json']?.schema;
-      return schema === undefined ? [] : [schema];
-    });
-}
-
-function marksOf(route: Route): SuccessMarks {
-  const known = marksByRoute.get(route);
+function marksOf(route: Route, status: number): SuccessMarks {
+  const byStatus = marksByRoute.get(route) ?? new Map<number, SuccessMarks>();
+  marksByRoute.set(route, byStatus);
+  const known = byStatus.get(status);
   if (known !== undefined) return known;
-  const schemas = successSchemasOf(route);
+  const schema = route.responses[status]?.content?.['application/json']?.schema;
   const marks = {
-    restricted: schemas.flatMap((schema) => restrictedFieldsOf(schema)),
-    sensitive: schemas.some((schema) => sensitivePathsOf(schema).length > 0),
+    restricted: schema === undefined ? [] : restrictedFieldsOf(schema),
+    sensitive: schema !== undefined && sensitivePathsOf(schema).length > 0,
   };
-  marksByRoute.set(route, marks);
+  byStatus.set(status, marks);
   return marks;
 }
 
@@ -80,10 +74,11 @@ function issueAt(issue: z.core.$ZodIssue): string {
 
 /**
  * After the handler and the success envelope, so its paths are the declared body's: keeps only
- *   what the route's success body declares (ADR principle 2), a body outside it answering 500;
- *   removes each restricted field the caller lacks the right for, absent rather than null (critical
- *   rule 11); and writes the headers the declaration implies: the freshness, `no-store` on an
- *   answer holding a sensitive field, and the identity's own (the rights version).
+ *   what the route's body for the status answered declares (ADR principle 2), a body outside it or
+ *   an undeclared status answering 500; removes each restricted field the caller lacks the right
+ *   for, absent rather than null (critical rule 11); and writes the headers the declaration
+ *   implies: the freshness, `no-store` on an answer holding a sensitive field, and the identity's
+ *   own (the rights version).
  */
 @Injectable()
 export class EndpointResponseInterceptor implements NestInterceptor {
@@ -101,13 +96,14 @@ export class EndpointResponseInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       map((body: unknown) => {
-        const declared = this.declaredBodyOf(route, body);
         const http = context.switchToHttp();
-        const principal =
-          route.access === undefined ? undefined : routePrincipalOf(http.getRequest<object>());
-        this.writeHeaders(route, principal, http.getResponse<HeaderWriter>());
+        const request = http.getRequest<object>();
+        const status = answeredStatusOf(request) ?? successStatusOf(route);
+        const declared = this.declaredBodyOf(route, status, body);
+        const principal = route.access === undefined ? undefined : routePrincipalOf(request);
+        this.writeHeaders(route, status, principal, http.getResponse<HeaderWriter>());
         const rights = rightsOf(principal);
-        return marksOf(route)
+        return marksOf(route, status)
           .restricted.filter(({ path, right }) => path !== '' && !rights.has(right))
           .reduce((projected, { path }) => withoutPath(projected, path), declared);
       }),
@@ -115,8 +111,14 @@ export class EndpointResponseInterceptor implements NestInterceptor {
   }
 
   /** The log names the paths and the rules broken, never a value: the body may hold a sensitive one. */
-  private declaredBodyOf(route: Route, body: unknown): unknown {
-    const schema = strippingBodiesOf(route)[String(successStatusOf(route))];
+  private declaredBodyOf(route: Route, status: number, body: unknown): unknown {
+    if (!successStatusesOf(route).includes(status)) {
+      this.logger.error(
+        `${route.operationId} answered ${String(status)}, which it does not declare; answered 500.`,
+      );
+      throw refusalOf(ApiErrorCode.INTERNAL);
+    }
+    const schema = strippingBodiesOf(route)[String(status)];
     if (schema === undefined) return body;
     const parsed = schema.safeParse(body);
     if (parsed.success) return parsed.data;
@@ -127,8 +129,13 @@ export class EndpointResponseInterceptor implements NestInterceptor {
     throw refusalOf(ApiErrorCode.INTERNAL);
   }
 
-  private writeHeaders(route: Route, principal: unknown, reply: HeaderWriter): void {
-    if (marksOf(route).sensitive) {
+  private writeHeaders(
+    route: Route,
+    status: number,
+    principal: unknown,
+    reply: HeaderWriter,
+  ): void {
+    if (marksOf(route, status).sensitive) {
       reply.header('cache-control', 'no-store');
     } else if (route.cache !== undefined && route.method === 'get') {
       reply.header('cache-control', cacheControlOf(route.cache));

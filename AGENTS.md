@@ -254,10 +254,16 @@ export class DatesController {
   (`{ data }`, `{ data, validUntil }` on a perishable read, `{ items, page }` on a list), which
   `SuccessEnvelopeInterceptor` stamps on it. A handler returning anything else fails at the
   decorator, naming `the handler answers outside its route` and the output it owes; a
-  `MemorisedResponse` is replayed as stored. A route declaring several success statuses fails at
-  the decorator until a route needs them. `CollectionResponse` and `PerishableResponse` are for
-  the routes no contract binds yet. `successSchemaOf(route)` is the success body's schema, for a
-  relay that validates an upstream answer.
+  `MemorisedResponse` is replayed as stored. `CollectionResponse` and `PerishableResponse` are for
+  the routes no contract binds yet. `successSchemaOf(route)` is the success body's schema (the
+  lowest 2xx's), for a relay that validates an upstream answer.
+- **A route declaring several success statuses** (purchaseSeat and checkoutCart 201 or 202,
+  setSubscriptionPlan 200 or 202) is answered `{ status, body }`, core's `HandlerOutput` for it.
+  `SuccessEnvelopeInterceptor` stamps the body, `EndpointResponseInterceptor` shapes it by that
+  status's declaration (a status the route does not declare answers 500, logged), and an `onSend`
+  hook `serveEndpoints` installs sends the status, since Nest re-applies `@HttpCode` after the
+  handler; a refusal raised after the choice keeps its own status. Such a route cannot answer a
+  `MemorisedResponse` (the decorator refuses it), which carries no status to replay.
 - **A refusal names its route**: `throw refuse(route, code, params)`. Only a code the route's type
   declares compiles (in its error responses or its `errors` list, the group's included), with the
   params core's `ERROR_PARAMS` gives it, at the status core's `ERRORS` registry gives it. A code
