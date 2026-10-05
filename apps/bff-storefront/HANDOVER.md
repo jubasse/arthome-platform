@@ -41,8 +41,13 @@ production.
 - **The deadline is 200 ms out**, transport.md §5.9's search budget, sent as `x-arthome-deadline`
   and armed locally with `AbortSignal.timeout` on the same instant. The surface hanging up aborts
   the call too.
-- **Only `STOREFRONT_RELAYED_CODES` cross** (`@arthome/contracts/envelope`, where transport.md §5.5
-  puts the allowlist), with their status and params. Catalog's `api.deadline_exceeded` becomes
+- **Only the codes the BFF route declares cross**, with their params, at the status core's error
+  registry gives them: the call carries its route (`serviceCallFor`'s last argument, `route` on a
+  `CatalogCall`). A code about the call itself (a 5xx, or a 4xx core derives on every route but
+  `api.schema_invalid`: the token, the limits) never crosses, declared or not. A route that declares
+  no error by code, and a guard's call, which serves no route, keep `STOREFRONT_RELAYED_CODES`
+  (`@arthome/contracts/envelope`, where transport.md §5.5 puts the allowlist) at the service's
+  status. Catalog's `api.deadline_exceeded` becomes
   `api.upstream_timeout`; anything else, a 2xx outside the contract included, becomes
   `api.upstream_unavailable`, and the original is logged with the `traceparent`. No retry here:
   the surface is the one layer that retries.

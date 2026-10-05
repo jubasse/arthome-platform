@@ -1,4 +1,9 @@
-import { DEADLINE_HEADER, RefusalException, type Refusal } from '@arthome-platform/http-edge';
+import {
+  DEADLINE_HEADER,
+  RefusalException,
+  isPublishedCode,
+  type Refusal,
+} from '@arthome-platform/http-edge';
 import { HttpStatus, Logger } from '@nestjs/common';
 import type { z } from 'zod';
 
@@ -6,6 +11,7 @@ import {
   STOREFRONT_RELAYED_CODES,
   StorefrontErrorEnvelopeSchema,
 } from '@arthome/contracts/envelope';
+import { DERIVED_ERROR_CODES, errorCodesOf, statusOf, type Route } from '@arthome/contracts/http';
 import {
   ApiErrorCode,
   FAILURE_NATURES,
@@ -24,6 +30,8 @@ export interface ServiceCall {
   readonly callerLeft: AbortSignal;
   /** Null for an anonymous visitor: the token then names no account. */
   readonly caller: Caller | null;
+  /** The BFF route the call serves: the service refusals relayed are the codes it declares. */
+  readonly route?: Route;
 }
 
 export interface ServiceRequest {
@@ -41,6 +49,31 @@ export interface ServiceAnswer<T> {
   readonly replayed: boolean;
 }
 
+/**
+ * What a service answers about the call itself, its token, its limits, its health: the BFF's
+ *   failure, never the viewer's, even where the BFF route declares the same code for its own use.
+ */
+const HOP_CODES: ReadonlySet<string> = new Set(
+  Object.entries(DERIVED_ERROR_CODES)
+    .filter(([status]) => Number(status) !== Number(HttpStatus.BAD_REQUEST))
+    .flatMap(([, codes]) => codes),
+);
+
+/**
+ * The status a service's refusal reaches the surface with, or null when it does not. A route that
+ *   declares its errors relays its declared codes at their registry status; a route that does not,
+ *   or a call made for no route, relays `STOREFRONT_RELAYED_CODES` at the service's status.
+ */
+function relayedStatusOf(code: string, status: number, route: Route | undefined): number | null {
+  if (route?.errorCodes === undefined) {
+    return STOREFRONT_RELAYED_CODES.some((relayed) => relayed === code) ? status : null;
+  }
+  if (!isPublishedCode(code) || HOP_CODES.has(code)) return null;
+  const declaredStatus = statusOf(code);
+  if (declaredStatus >= Number(HttpStatus.INTERNAL_SERVER_ERROR)) return null;
+  return errorCodesOf(route, declaredStatus)?.includes(code) === true ? declaredStatus : null;
+}
+
 function isOwnTimeout(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'TimeoutError';
 }
@@ -48,8 +81,8 @@ function isOwnTimeout(error: unknown): boolean {
 /**
  * The one way this BFF calls a service (transport.md §5.8): a fresh internal token, the trace and the
  *   deadline it gives up at, the answer validated against the contract's schema, and the service's
- *   refusal relayed only when `STOREFRONT_RELAYED_CODES` lists it. It retries nothing: the surface is
- *   the one layer that does, and it knows whether anyone is still waiting.
+ *   refusal relayed only when the call's route declares it. It retries nothing: the surface is the
+ *   one layer that does, and it knows whether anyone is still waiting.
  */
 export class ServiceClient {
   private readonly logger: Logger;
@@ -111,19 +144,20 @@ export class ServiceClient {
       );
       throw this.upstreamUnavailable();
     }
-    throw this.refusalFor(status, body, request.path, call.traceparent);
+    throw this.refusalFor(status, body, request.path, call);
   }
 
   private refusalFor(
     status: number,
     body: unknown,
     path: string,
-    traceparent: string,
+    call: ServiceCall,
   ): RefusalException {
     const envelope = StorefrontErrorEnvelopeSchema.safeParse(body);
     const code = envelope.success ? envelope.data.error.code : null;
     if (code === ApiErrorCode.DEADLINE_EXCEEDED) return this.upstreamTimeout();
-    if (envelope.success && STOREFRONT_RELAYED_CODES.some((relayed) => relayed === code)) {
+    const relayedStatus = code === null ? null : relayedStatusOf(code, status, call.route);
+    if (envelope.success && relayedStatus !== null) {
       const { error } = envelope.data;
       const refusal: Refusal = {
         code: error.code,
@@ -131,9 +165,12 @@ export class ServiceClient {
         // The contract's declared fallback for a nature this build does not know.
         nature: memberOr(FAILURE_NATURES, error.nature, FailureNature.UNAVAILABLE),
       };
-      return new RefusalException(status, refusal);
+      return new RefusalException(relayedStatus, refusal);
     }
-    this.logger.warn(`refused ${path} with ${status} ${code ?? 'no code'} (${traceparent})`);
+    const servedRoute = call.route === undefined ? '' : ` for ${call.route.operationId}`;
+    this.logger.warn(
+      `refused ${path}${servedRoute} with ${status} ${code ?? 'no code'} (${call.traceparent})`,
+    );
     return this.upstreamUnavailable();
   }
 

@@ -776,9 +776,10 @@ The handler is bound to `storefrontApi.routes.search` from `@arthome/contracts/s
 against the route's 200 body.
 
 The BFF gives catalog a deadline 200 ms out (`x-arthome-deadline`, transport.md §5.9), creates the
-`traceparent` when the surface sent none, relays only `STOREFRONT_RELAYED_CODES`, and turns every
-other failure into `api.upstream_unavailable` (502) or `api.upstream_timeout` (504). Catalog
-refuses a call without a deadline. What catalog serves and refuses is in
+`traceparent` when the surface sent none, relays only the codes the route declares (or, for a route
+that declares none by code, `STOREFRONT_RELAYED_CODES`), and turns every other failure into
+`api.upstream_unavailable` (502) or `api.upstream_timeout` (504). Catalog refuses a call without a
+deadline. What catalog serves and refuses is in
 `apps/catalog/HANDOVER.md` §0.
 
 Proven on the running stack on 2026-09-26, with a show published on two dates through the studio

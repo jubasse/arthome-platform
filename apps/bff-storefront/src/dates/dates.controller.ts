@@ -13,6 +13,7 @@ import {
 import { Controller, Header, Headers, Inject, Res } from '@nestjs/common';
 
 import type {
+  Route,
   RouteHeaders,
   RouteParams,
   RouteQuery,
@@ -63,7 +64,7 @@ export class DatesController {
     const { data, validUntil } = await this.catalog.get(
       `/v1/dates/${dateId}`,
       new URLSearchParams(),
-      this.callFor(traceparent, reply),
+      this.callFor(traceparent, reply, getDateDetail),
       successSchemaOf(getDateDetail),
     );
     reply.header('etag', entityTagOf({ data, validUntil }));
@@ -82,7 +83,7 @@ export class DatesController {
     const { data, validUntil } = await this.catalog.get(
       `/v1/artists/${artistId}`,
       new URLSearchParams(),
-      this.callFor(traceparent, reply),
+      this.callFor(traceparent, reply, getArtistDetail),
       successSchemaOf(getArtistDetail),
     );
     return new PerishableResponse(data, validUntil ?? null);
@@ -100,17 +101,18 @@ export class DatesController {
     const { data, validUntil } = await this.catalog.get(
       '/v1/resolve',
       searchParamsOf(query),
-      this.callFor(traceparent, reply),
+      this.callFor(traceparent, reply, resolvePublicLink),
       successSchemaOf(resolvePublicLink),
     );
     return new PerishableResponse(data, validUntil ?? null);
   }
 
-  private callFor(traceparent: string, reply: Reply): CatalogCall {
+  private callFor(traceparent: string, reply: Reply, route: Route): CatalogCall {
     return {
       deadline: new Date(this.clock.nowMs() + PUBLIC_READ_BUDGET_MS),
       traceparent,
       callerLeft: whenCallerLeaves(reply.raw),
+      route,
     };
   }
 }

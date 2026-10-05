@@ -29,6 +29,7 @@ export function serviceCallFor(
   clock: Clock,
   budgetMs: number,
   caller: Caller | null,
+  route?: Route,
 ): ServiceCall {
   const traceparent = request.headers.traceparent;
   return {
@@ -37,6 +38,7 @@ export function serviceCallFor(
     traceparent: typeof traceparent === 'string' ? traceparent : '',
     callerLeft: whenCallerLeaves(response),
     caller,
+    ...(route !== undefined && { route }),
   };
 }
 

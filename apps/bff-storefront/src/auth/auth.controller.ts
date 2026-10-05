@@ -11,7 +11,7 @@ import {
 } from '@arthome-platform/http-edge';
 import { Controller, Header, Inject, Logger, Req, Res } from '@nestjs/common';
 
-import type { RouteBody, RouteHeaders } from '@arthome/contracts/http';
+import type { Route, RouteBody, RouteHeaders } from '@arthome/contracts/http';
 import { SessionMode } from '@arthome/contracts/identity';
 import { storefrontApi } from '@arthome/contracts/storefront-api';
 import { IdentityErrorCode, type Clock, type StorefrontSurface } from '@arthome/core';
@@ -114,7 +114,7 @@ export class AuthController {
         acceptedTermsVersion: body.acceptedTermsVersion,
       },
       idempotencyKeyOf(headers['idempotency-key']),
-      this.anonymousCall(request, reply),
+      this.anonymousCall(request, reply, signUp),
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
     await this.closeReplaced(request, reply, opened);
@@ -142,7 +142,7 @@ export class AuthController {
       opened = await this.identity.signIn(
         body.email,
         body.password,
-        this.anonymousCall(request, reply),
+        this.anonymousCall(request, reply, signIn),
       );
     } catch (error) {
       if (isWrongPassword(error)) await this.failedSignIns.count(body.email);
@@ -168,7 +168,7 @@ export class AuthController {
     idempotencyKeyOf(headers['idempotency-key']);
     const presented = presentedSession(request);
     if (presented === null) throw unauthenticated();
-    await this.identity.revoke(presented.token, this.anonymousCall(request, reply));
+    await this.identity.revoke(presented.token, this.anonymousCall(request, reply, signOut));
     if (presented.carrier === SessionMode.COOKIE) clearSessionCookies(reply);
     return { signedOut: true };
   }
@@ -187,7 +187,7 @@ export class AuthController {
     const { body: verified, replayed } = await this.identity.confirmVerification(
       body.token,
       idempotencyKeyOf(headers['idempotency-key']),
-      this.anonymousCall(request, reply),
+      this.anonymousCall(request, reply, confirmEmailVerification),
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
     return verified;
@@ -215,6 +215,7 @@ export class AuthController {
         this.clock,
         AUTHENTICATION_WRITE_BUDGET_MS,
         callerOf(viewer),
+        resendEmailVerification,
       ),
     );
     if (replayed) reply.header('idempotency-replayed', 'true');
@@ -239,8 +240,15 @@ export class AuthController {
     }
   }
 
-  private anonymousCall(request: Inbound, reply: SessionReply): ServiceCall {
-    return serviceCallFor(request, reply.raw, this.clock, AUTHENTICATION_WRITE_BUDGET_MS, null);
+  private anonymousCall(request: Inbound, reply: SessionReply, route?: Route): ServiceCall {
+    return serviceCallFor(
+      request,
+      reply.raw,
+      this.clock,
+      AUTHENTICATION_WRITE_BUDGET_MS,
+      null,
+      route,
+    );
   }
 
   /** The mode is the surface's explicit choice (D-023), never inferred from its `User-Agent`. */

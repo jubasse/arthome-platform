@@ -57,6 +57,7 @@ export class SearchController {
         deadline: new Date(this.clock.nowMs() + SEARCH_BUDGET_MS),
         traceparent,
         callerLeft: whenCallerLeaves(reply.raw),
+        route: search,
       },
       successSchemaOf(search),
     );
