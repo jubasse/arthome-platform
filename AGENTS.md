@@ -76,8 +76,17 @@ NestJS skips them; this block is what makes loading systematic rather than remem
   no gate checks it yet: a bump that misses one library's pin makes a second `@nestjs/common`, and
   a `RefusalException` from that copy is no longer an `HttpException` to the error filter. Bump them
   everywhere at once, and check `node_modules/.pnpm` holds one version of each after install.
-- **`vendor/` is build output of another repository.** Do not edit anything inside it. To pick up a
-  change made in arthome-core, run `pnpm run bootstrap`.
+- **arthome-core arrives in one of two ways.** `pnpm run use-core <version>` installs a release: the
+  manifests point at the tarballs attached to the GitHub release `v<version>` of arthome-core, and
+  the lockfile pins their integrity. That is the state of `develop` and `main`, now on core 0.1.0 from
+  its GitHub release. A checkout still on `file:` specs switches with `node tools/use-core.mjs 0.1.0`:
+  pnpm 12 pre-installs before running a script and fails on the missing vendor tarballs. Later bumps
+  can use `pnpm run use-core`.
+  `pnpm run bootstrap` packs a sibling arthome-core checkout into `vendor/` and points the manifests
+  at it with `file:` paths, for cross-repository work that is not released yet. Use it on a feature
+  branch only: `pnpm run check:core-specs` refuses a `file:` spec on `develop` and `main`, and a pull
+  request check runs it with `--require-release`, so run `use-core` before opening the PR.
+  `vendor/` is build output: do not edit anything inside it.
 - **After `pnpm run bootstrap`, restart your editor's ESLint server.** Bootstrap re-packs
   `@arthome/tooling`, so the shared ESLint configuration changes *inside `node_modules`* — and the
   extension only watches the root `eslint.config.js`, which did not move. The server keeps the flat
@@ -134,11 +143,13 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 
 | command | what it does |
 | --- | --- |
-| `pnpm run bootstrap` | packs the sibling arthome-core into `vendor/`, installs, then builds every lib (`build:libs`) |
+| `pnpm run use-core <version>` | points every `@arthome/*` spec at the arthome-core release `v<version>`, refreshes the lockfile, builds every lib |
+| `pnpm run bootstrap` | local mode: packs the sibling arthome-core into `vendor/`, installs, then builds every lib (`build:libs`) |
+| `pnpm run check:core-specs` | every `@arthome/*` spec is one build of one source; `--require-release` also refuses a `file:` spec |
 | `pnpm run build:libs` | `tsc -p tsconfig.build.json` in every `libs/*`; also what makes their `dist/` exist for ESLint's `import-x/order` (see below) |
 | `pnpm run verify` | everything below, in order, stopping at the first failure — cached |
 | `pnpm run verify:full` | the same, every cache off; what `.githooks/pre-push` runs before a push |
-| `pnpm run verify:offline` | the subset needing no install — vendor, versions, tsconfig, enums, language, symbols |
+| `pnpm run verify:offline` | the subset needing no install — core specs, versions, tsconfig, enums, language, symbols |
 | `pnpm run check:enums` | string literals that duplicate a domain vocabulary |
 | `pnpm run fix` | Prettier, then ESLint `--fix`, then Prettier again |
 | `pnpm run test:affected` | Vitest limited to what changed against `origin/develop` — the agent's working loop, not the gate |
@@ -359,10 +370,10 @@ what changed (the agent's own loop).
    `pnpm --filter "...[origin/develop]" run test:integration`, dependents included through pnpm's
    dependency graph, not just the packages that changed. Both diff against `origin/develop`'s tip as
    last fetched — a stale ref only over-selects, which is safe, but `git fetch` first if it might be
-   old. **Except**: a change under `vendor/`, `libs/events`, `infra/`, any `.proto` file, or a root
+   old. **Except**: a change of the arthome-core release or build (`vendor/`, or the `@arthome/*` specs), `libs/events`, `infra/`, any `.proto` file, or a root
    config (`package.json`, a `tsconfig*.json`, `eslint.config.js`, `vitest.config.mjs`,
    `pnpm-workspace.yaml`) — run the full `pnpm run test` and `pnpm run test:integration` instead.
-   `vendor/` is gitignored, so a filter based on `git diff` never sees a tarball change at all;
+   `vendor/` is gitignored, so a filter based on `git diff` never sees a local tarball change at all;
    `libs/events` and a proto both name the wire contract every service and consumer reads; `infra/`
    feeds the integration stack (`libs/testing/src/stack.ts`'s Debezium and topic config) from outside
    every workspace package, so a package-based filter cannot select it; and a root config changes

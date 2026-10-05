@@ -180,7 +180,7 @@ named out of no bounded context on purpose: database `harness_outbox`, topic
 `arthome.harness.probe`, aggregate type `harness.probe`, event type `harness.probe.happened.v1`.
 
 **If a future integration test needs real service names, `@arthome/core` must be added to this
-package's dependencies** (`file:../../vendor/arthome-core-41a7a1edfeb9.tgz`, as the services
+package's dependencies** (the release tarball URL, as the services
 declare it) and installed. I could not do either.
 
 ### 2.7 `*.itest.ts` is invisible to Vitest's defaults — and to two things it perhaps should not be

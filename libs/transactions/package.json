@@ -19,7 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@arthome/core": "file:../../vendor/arthome-core-cfd5df949916.tgz"
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz"
   },
   "peerDependencies": {
     "@nestjs/cqrs": "^12.0.0",

@@ -25,23 +25,28 @@ minimumReleaseAgeExclude:
 # -------------------------------------------------------------------- catalog
 # THERE IS NO CATALOG HERE, AND IT WAS TRIED FIRST.
 #
-#   The three @arthome/* packages are unpublished and installed from tarballs
-#   under vendor/, so every service that imports the domain repeats a path like
-#   `file:../../vendor/arthome-core.tgz` — a parallel literal table under a
-#   common name, fault E2 applied to paths. A catalog is exactly the instrument
-#   for that, so the specs were written as `catalog:` and pnpm refused:
+#   The three @arthome/* packages are not on a registry. They are the tarballs
+#   attached to a GitHub release of arthome-core (`pnpm run use-core <version>`),
+#   or, for unreleased work, tarballs packed from a sibling checkout under
+#   vendor/ (`pnpm run bootstrap`), so every manifest that imports the domain
+#   repeats the same URL or a path like `file:../../vendor/arthome-core.tgz` --
+#   a parallel literal table under a common name, fault E2 applied to specs.
+#   A catalog is exactly the instrument for that, so the specs were written as
+#   `catalog:` and pnpm refused:
 #
-#     ERR_PNPM_CATALOG_ENTRY_INVALID_SPEC — the entry for '@arthome/tooling' in
+#     ERR_PNPM_CATALOG_ENTRY_INVALID_SPEC -- the entry for '@arthome/tooling' in
 #     catalog 'default' declares a dependency using the 'file' protocol. This is
 #     not yet supported, but may be in a future version of pnpm.
 #
 #   So the repetition stands, and it is GATED instead of trusted:
-#   `tools/check-vendor-specs.mjs` fails when a manifest's path disagrees with
-#   the tarball it should point at. That is the same answer versions.json gives
-#   to the same shape of problem — seven manifests repeating a value, with a
-#   check keeping them identical, because the repetition cannot be removed.
+#   `tools/check-core-specs.mjs` fails when the specs disagree on the build, and
+#   on develop and main when one is a `file:` path. That is the same answer
+#   versions.json gives to the same shape of problem -- seven manifests repeating
+#   a value, with a check keeping them identical, because the repetition cannot
+#   be removed.
 #
-#   Revisit when pnpm supports `file:` in catalogs; the gate becomes redundant.
+#   Revisit when pnpm supports `file:` in catalogs; only the local mode is
+#   affected, the gate stays.
 
 # ------------------------------------------------------------------------ builds
 # pnpm 11 no longer runs a dependency's install script without a NAMED approval,
