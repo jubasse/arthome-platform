@@ -14,6 +14,7 @@ import {
 import { DERIVED_ERROR_CODES, errorCodesOf, statusOf, type Route } from '@arthome/contracts/http';
 import {
   ApiErrorCode,
+  ERROR_CODES,
   FAILURE_NATURES,
   FailureNature,
   memberOr,
@@ -49,14 +50,22 @@ export interface ServiceAnswer<T> {
   readonly replayed: boolean;
 }
 
-/**
- * What a service answers about the call itself, its token, its limits, its health: the BFF's
- *   failure, never the viewer's, even where the BFF route declares the same code for its own use.
- */
-const HOP_CODES: ReadonlySet<string> = new Set(
+const DERIVED_REFUSALS: ReadonlySet<string> = new Set(
   Object.entries(DERIVED_ERROR_CODES)
-    .filter(([status]) => Number(status) !== Number(HttpStatus.BAD_REQUEST))
+    .filter(([status]) => Number(status) < Number(HttpStatus.INTERNAL_SERVER_ERROR))
     .flatMap(([, codes]) => codes),
+);
+
+/**
+ * These codes describe the BFF-to-service hop, never the surface's request: every 5xx, and every
+ *   4xx core derives on a route except `api.schema_invalid`.
+ */
+const HOP_CODES: ReadonlySet<ErrorCode> = new Set(
+  ERROR_CODES.filter(
+    (code) =>
+      statusOf(code) >= Number(HttpStatus.INTERNAL_SERVER_ERROR) ||
+      (DERIVED_REFUSALS.has(code) && code !== ApiErrorCode.SCHEMA_INVALID),
+  ),
 );
 
 /**
@@ -70,7 +79,6 @@ function relayedStatusOf(code: string, status: number, route: Route | undefined)
   }
   if (!isPublishedCode(code) || HOP_CODES.has(code)) return null;
   const declaredStatus = statusOf(code);
-  if (declaredStatus >= Number(HttpStatus.INTERNAL_SERVER_ERROR)) return null;
   return errorCodesOf(route, declaredStatus)?.includes(code) === true ? declaredStatus : null;
 }
 

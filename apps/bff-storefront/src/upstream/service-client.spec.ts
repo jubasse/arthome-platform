@@ -39,6 +39,7 @@ const ANSWERS: Record<string, { status: number; body: string }> = {
   },
   '/sold-out': { status: 409, body: errorEnvelope(OrderErrorCode.SOLD_OUT) },
   '/forbidden': { status: 403, body: errorEnvelope(ApiErrorCode.FORBIDDEN) },
+  '/unauthenticated': { status: 401, body: errorEnvelope(ApiErrorCode.UNAUTHENTICATED) },
   '/not-found': { status: 404, body: errorEnvelope(ApiErrorCode.NOT_FOUND) },
 };
 
@@ -47,14 +48,19 @@ const model = defineErrorModel<string>({
   envelopeOf: (code) => z.object({ error: z.object({ code: z.literal(code) }) }),
 });
 
-/** A BFF route declaring its errors: the stale price and, for its own use, the forbidden. */
+/** A BFF route declaring its errors: the stale price and, for its own use, the 401 and the 403. */
 const placeOrder: Route = routeBuilder(model)
   .version(1)
   .defineRoute({
     method: 'post',
     path: '/orders',
     operationId: 'placeOrder',
-    errors: [OrderErrorCode.PRICE_STALE, ApiErrorCode.FORBIDDEN, ApiErrorCode.NOT_FOUND],
+    errors: [
+      OrderErrorCode.PRICE_STALE,
+      ApiErrorCode.UNAUTHENTICATED,
+      ApiErrorCode.FORBIDDEN,
+      ApiErrorCode.NOT_FOUND,
+    ],
     responses: { 201: { description: 'Placed.' } },
   });
 
@@ -159,10 +165,12 @@ describe('a service refusal, for a route that declares its errors', () => {
   });
 
   it('becomes the BFF’s 502 when it is about the call itself, though the route declares the code', async () => {
-    const refusal = await refusalFrom('/forbidden', placeOrder);
+    for (const path of ['/unauthenticated', '/forbidden']) {
+      const refusal = await refusalFrom(path, placeOrder);
 
-    expect(refusal.getStatus()).toBe(502);
-    expect(refusal.refusal.code).toBe(ApiErrorCode.UPSTREAM_UNAVAILABLE);
+      expect(refusal.getStatus()).toBe(502);
+      expect(refusal.refusal.code).toBe(ApiErrorCode.UPSTREAM_UNAVAILABLE);
+    }
   });
 });
 
