@@ -18,7 +18,16 @@ import {
   type ExecutionContext,
 } from '@nestjs/common';
 import { RouteConfig, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { ApiHeader, ApiOperation, ApiResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiHeader,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import { z } from 'zod';
 
 import {
@@ -146,20 +155,48 @@ function securityOf(requirements: readonly SecurityRequirement[]): MethodDecorat
 
 function inputJsonSchemaOf(schema: z.ZodType): Record<string, unknown> {
   const { $schema: _dialect, ...jsonSchema } = z.toJSONSchema(schema, {
+    target: 'openapi-3.0',
     io: 'input',
     unrepresentable: 'any',
   });
   return jsonSchema;
 }
 
-/** Only headers: a path and a query parameter are documented from the pipe's schema. */
-function headerDocumentationOf(parameter: Parameter): MethodDecorator {
-  return ApiHeader({
+function parameterDocumentationOf(parameter: Parameter): MethodDecorator[] {
+  const documented = {
     name: parameter.name,
-    required: parameter.required === true,
+    required: parameter.in === 'path' || parameter.required === true,
     ...(parameter.description !== undefined && { description: parameter.description }),
     schema: inputJsonSchemaOf(parameter.schema),
-  });
+  };
+  switch (parameter.in) {
+    case 'path':
+      return [ApiParam(documented)];
+    case 'query':
+      return [ApiQuery(documented)];
+    case 'header':
+      return [ApiHeader(documented)];
+    case 'cookie':
+      return [];
+  }
+}
+
+/**
+ * Swagger reads the inputs of `@Param`, `@Query` and `@Body`, never of a custom decorator such as
+ *   `EndpointInput`: each declared parameter and the body are documented from the route instead.
+ *   A cookie is the session's, documented by its security scheme.
+ */
+function inputDocumentationOf(route: RouteShape): MethodDecorator[] {
+  const parameters = (route.parameters ?? []).flatMap(parameterDocumentationOf);
+  const body = route.requestBody?.content['application/json'];
+  if (body === undefined) return parameters;
+  return [
+    ...parameters,
+    ApiBody({
+      required: route.requestBody?.required === true,
+      schema: inputJsonSchemaOf(body.schema),
+    }),
+  ];
 }
 
 function responseDocumentationOf(route: RouteShape): MethodDecorator[] {
@@ -176,10 +213,10 @@ function responseDocumentationOf(route: RouteShape): MethodDecorator[] {
 /**
  * Binds a handler to its route, with real NestJS and `@nestjs/swagger` decorators only: the
  *   method, the path and the success status come from the contract, the document is filled from
- *   it (operation id, summary, tags, one response per declared status, security, headers), and the compiler
- *   refuses a handler that does not return core's `HandlerOutput` of the route: its success body
- *   without `servedAt`, which `SuccessEnvelopeInterceptor` stamps, or `{ status, body }` on a
- *   route declaring several success statuses.
+ *   it (operation id, summary, tags, one response per declared status, security, parameters and
+ *   body), and the compiler refuses a handler that does not return core's `HandlerOutput` of the
+ *   route: its success body without `servedAt`, which `SuccessEnvelopeInterceptor` stamps, or
+ *   `{ status, body }` on a route declaring several success statuses.
  */
 export function Endpoint<R extends Route>(route: R): EndpointDecorator<R> {
   const decorators = applyDecorators(
@@ -199,9 +236,7 @@ export function Endpoint<R extends Route>(route: R): EndpointDecorator<R> {
     ...(route.tags === undefined ? [] : [ApiTags(...route.tags)]),
     ...responseDocumentationOf(route),
     ...(route.security === undefined ? [] : securityOf(route.security)),
-    ...(route.parameters ?? [])
-      .filter((parameter) => parameter.in === 'header')
-      .map(headerDocumentationOf),
+    ...inputDocumentationOf(route),
   );
   return (target, key, descriptor) => {
     decorators(target, key, descriptor);

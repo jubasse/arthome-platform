@@ -10,10 +10,15 @@ import { AppModule } from './app.module.js';
 import { CATALOG_URL } from './catalog/catalog.client.js';
 import { mountStorefrontDocs } from './storefront-docs.js';
 
+interface SwaggerOperation {
+  readonly parameters?: readonly object[];
+  readonly requestBody?: object;
+}
+
 interface SwaggerDocument {
   readonly info: Readonly<Record<string, unknown>>;
   readonly servers: readonly unknown[];
-  readonly paths: Readonly<Record<string, Readonly<Record<string, object>>>>;
+  readonly paths: Readonly<Record<string, Readonly<Record<string, SwaggerOperation>>>>;
   readonly components: { readonly securitySchemes: Readonly<Record<string, unknown>> };
 }
 
@@ -61,5 +66,18 @@ describe('the storefront BFF’s development documentation', () => {
     );
     expect(document.paths['/v1/auth/sign-in']?.post).toMatchObject(storefrontDocsOf(signIn));
     expect(storefrontDocsOf(search).description).toBeDefined();
+  });
+
+  it('documents the inputs each operation declares, which its handler takes through EndpointInput', () => {
+    expect(document.paths['/v1/dates/{dateId}']?.get?.parameters).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'dateId', in: 'path' })]),
+    );
+    expect(document.paths['/v1/search']?.get?.parameters).toEqual(
+      expect.arrayContaining([expect.objectContaining({ in: 'query' })]),
+    );
+    expect(document.paths['/v1/auth/sign-in']?.post?.requestBody).toMatchObject({
+      required: true,
+      content: { 'application/json': { schema: { type: 'object' } } },
+    });
   });
 });
