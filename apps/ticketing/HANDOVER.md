@@ -245,8 +245,9 @@ does; the three answer `no-store`.
   applies what the provider said, forward only; confirmed, `settleConfirmedPayment` consumes the
   hold, moves `seats_sold`, draws the seat codes and pays the order, which writes `order.paid` on the
   order's key, then one `seat.activated` per seat on the date's (D-077, D-078). It answers 201 with
-  the tickets and the order, 202 with the `PaymentHandoff` (its `expiresAt` the hold's), 409
-  `order.payment_declined` with the provider's `declineCode` (hold released, seats back), or 503
+  the tickets and the order, 202 with the `PaymentHandoff` (its `expiresAt` the hold's), 402
+  `order.payment_declined` with the provider's `declineCode` when it gave one (hold released, seats
+  back), or 503
   `api.service_unavailable`. A route cannot declare two statuses: the controller sets the command's
   through `@Res({ passthrough: true })`, which keeps the envelope and the replay header.
 - **The hot row is never locked on this path.** `DateSales` is loaded by `findUnlocked`, decides the
@@ -290,8 +291,8 @@ does; the three answer `no-store`.
   follows: D-082's `takeAndSellSeats` (pay or owe a refund), off the normal path.
 - **The price** is core's `quoteSeats` over the date's own tier price (`date-sales/seat-quote.ts`),
   the rule `quoteSeat` serves and `purchaseSeat` verifies `expectedTotal` against: 409
-  `order.price_stale` with `expectedAmountMinor`, `currentAmountMinor` (absent for a tier not sold)
-  and `currencyCode`. With no promotion stored, no subscription known and no fee schedule set, a
+  `order.price_stale` with `expectedAmountMinor`, `currentAmountMinor` and `currencyCode`, or 409
+  `order.tier_unavailable` for a tier the date does not sell. With no promotion stored, no subscription known and no fee schedule set, a
   quote has its tier line alone. `quoteSeat` answers 404 for a date not on sale or a tier it does not
   sell; `purchaseSeat`, whose contract has no 404, answers `order.sold_out` for a date not on sale,
   as its statement does past the seats left.

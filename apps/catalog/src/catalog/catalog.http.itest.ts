@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
+  CatalogErrorCode,
   DomainErrorCode,
   FailureNature,
   FixedClock,
@@ -206,7 +207,7 @@ describe('the show, venue and artist routes over HTTP', () => {
       const lost = await publishing;
       expect(lost?.statusCode).toBe(409);
       expect(lost?.json()).toMatchObject({
-        error: { code: DomainErrorCode.STATE_CONFLICT, nature: FailureNature.REFUSED },
+        error: { code: CatalogErrorCode.SHOW_SLUG_TAKEN, nature: FailureNature.UNAVAILABLE },
       });
 
       const retried = await send('POST', '/shows', show);

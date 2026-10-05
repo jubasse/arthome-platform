@@ -14,6 +14,7 @@ import {
   domainRefusal,
   isMappedStatus,
   refusalForStatus,
+  refusalOf,
   RefusalException,
   type Refusal,
   type UniqueViolationCode,
@@ -169,11 +170,11 @@ export class ErrorEnvelopeFilter implements ExceptionFilter {
       };
     }
 
-    this.logger.warn(`Unique violation on ${constraint ?? 'an unnamed constraint'}; answered 409.`);
-    return {
-      status: HttpStatus.CONFLICT,
-      refusal: { code: matched.code, params: {}, nature: FailureNature.REFUSED },
-    };
+    const refusal = refusalOf(matched.code);
+    this.logger.warn(
+      `Unique violation on ${constraint ?? 'an unnamed constraint'}; answered ${String(refusal.getStatus())}.`,
+    );
+    return { status: refusal.getStatus(), refusal: refusal.refusal };
   }
 }
 

@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
+  CatalogErrorCode,
   DomainError,
   DomainErrorCode,
   DomainGuardCode,
@@ -149,6 +150,19 @@ describe('ErrorEnvelopeFilter', () => {
     expect(sent.status).toBe(HttpStatus.CONFLICT);
     expect(sent.body).toMatchObject({ error: { code: IdentityErrorCode.HANDLE_TAKEN } });
     expect(JSON.stringify(sent.body)).not.toContain('email');
+  });
+
+  it('answers a collision with the nature core’s registry gives its code', () => {
+    // A slug the server chose: publishing again takes the next free one, so retrying succeeds.
+    const { run, sent } = filterFor({}, [
+      { column: 'show_slug', code: CatalogErrorCode.SHOW_SLUG_TAKEN },
+    ]);
+    run(uniqueViolation('show_slug_key', 'slug', 'nuit-blanche'));
+
+    expect(sent.status).toBe(HttpStatus.CONFLICT);
+    expect(sent.body).toMatchObject({
+      error: { code: CatalogErrorCode.SHOW_SLUG_TAKEN, nature: FailureNature.UNAVAILABLE },
+    });
   });
 
   it('matches the column inside the constraint name, so a rename does not silently fall through', () => {

@@ -3,10 +3,9 @@ import { createHash, createHmac } from 'node:crypto';
 import type { EntityManager } from 'typeorm';
 import { z } from 'zod';
 
-import { statusOf } from '@arthome/contracts/http';
-import { ApiErrorCode, FailureNature, type Clock } from '@arthome/core';
+import { ApiErrorCode, type Clock } from '@arthome/core';
 
-import { RefusalException, refusalOf, schemaInvalidException } from './refusal.js';
+import { refusalOf, schemaInvalidException, type RefusalException } from './refusal.js';
 import { MemorisedResponse, type SuccessEnvelope } from './success-envelope.interceptor.js';
 
 /** transport.md §5.4. */
@@ -211,14 +210,8 @@ async function replay<T>(
   return new MemorisedResponse(stored.response_body as SuccessEnvelope<T>, true);
 }
 
-/** Ruled `unavailable`, though a 409: retrying shortly is the point. Core's `natureOf` will carry it. */
 function inFlight(): RefusalException {
-  const code = ApiErrorCode.IDEMPOTENCY_IN_FLIGHT;
-  return new RefusalException(statusOf(code), {
-    code,
-    params: { retryAfterMs: RETRY_AFTER_MS },
-    nature: FailureNature.UNAVAILABLE,
-  });
+  return refusalOf(ApiErrorCode.IDEMPOTENCY_IN_FLIGHT, { retryAfterMs: RETRY_AFTER_MS });
 }
 
 function postgresCodeOf(error: unknown): string | undefined {

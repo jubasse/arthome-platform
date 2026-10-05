@@ -367,7 +367,7 @@ describe('the key is bound to the order (adr-ticketing.md §2)', () => {
 
 describe('a purchase the tx A refuses', () => {
   it(
-    'refuses a stale price with both amounts, and writes nothing',
+    'refuses a stale price with both amounts, a tier no longer sold by its own code, and writes nothing',
     async () => {
       const dateId = await dateOnSale();
       const before = await countersOf(dateId);
@@ -385,7 +385,12 @@ describe('a purchase the tx A refuses', () => {
         nature: FailureNature.REFUSED,
       });
       const inactive = await refusalOf(purchase(dateId, 1, nextKey(), { tier: PriceTier.REDUCED }));
-      expect(inactive.refusal.params).toEqual({ expectedAmountMinor: 2400, currencyCode: 'EUR' });
+      expect(inactive.getStatus()).toBe(409);
+      expect(inactive.refusal).toEqual({
+        code: OrderErrorCode.TIER_UNAVAILABLE,
+        params: {},
+        nature: FailureNature.REFUSED,
+      });
       expect(await countersOf(dateId)).toEqual(before);
       expect(await ordersOf(dateId)).toEqual([]);
     },
@@ -463,7 +468,7 @@ describe('a purchase the provider declines', () => {
 
       const declined = await refusalOf(purchase(dateId, 2, key));
 
-      expect(declined.getStatus()).toBe(409);
+      expect(declined.getStatus()).toBe(402);
       expect(declined.refusal).toMatchObject({
         code: OrderErrorCode.PAYMENT_DECLINED,
         params: { declineCode: 'card_declined' },

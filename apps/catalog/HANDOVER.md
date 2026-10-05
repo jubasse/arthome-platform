@@ -95,7 +95,8 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
 with the channel (data-model.md §2.4); `GET /v1/artists/:artistId` serves its public page.
 
 - **`expectedVersion: 0` creates the face**, on a channel that has none, and needs `publicName` and
-  `categoryId`; every later edit names the version it read (409 `state.conflict`). The answer
+  `categoryId`; every later edit names the version it read (409 `state.conflict`). Two first edits
+  racing collide on `artist_channel_id`, and the loser is refused 409 `artist.already_exists`. The answer
   carries `version` at the envelope's root (`runIdempotentlyVersioned`).
 - **The slug** is the one sent, or the name's, or the name's with the artist's id when another
   artist holds it. A slug sent and held elsewhere is 409 `artist.slug_taken`; the unique index
@@ -123,8 +124,8 @@ with the channel (data-model.md §2.4); `GET /v1/artists/:artistId` serves its p
   language, two levels at most, on `PUBLIC_WEB_ORIGIN`.
 - **A show's slug** is its title's (the French one when it has any), else the title's with the
   show's id tail; set at publication, in `ShowPublished.slug`, unique (`show_slug`). Two shows of
-  one title published at once both find it free: the second is refused 409 `state.conflict`, and its
-  retry takes the id-tailed slug.
+  one title published at once both find it free: the second is refused 409 `show.slug_taken`,
+  `unavailable` in core's registry, and its retry takes the id-tailed slug.
 - **A date's slug** is its day at the venue (`2026-12-15`), then `2026-12-15-2000` for a second
   performance that day, then the day with the date's id tail; unique within its show
   (`date_show_slug`); set at publication, moved by a postponement, picked under the show's row lock
@@ -396,7 +397,7 @@ Decided here, and each could have gone the other way:
 - **A command on a date locks its publication's row and its show's row to the commit** (`findById`,
   `loadDate`), and a checklist fact takes the publication's `FOR SHARE`: a second command on the
   date, a fact the publication decides on, a show update and another date of the show picking a slug
-  wait for it. Two shows of one title published at once answer the loser 409 `state.conflict`, where
+  wait for it. Two shows of one title published at once answer the loser 409 `show.slug_taken`, where
   it answered 500.
 
 Known and left as they are:

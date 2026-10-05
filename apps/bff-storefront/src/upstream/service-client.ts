@@ -2,6 +2,7 @@ import {
   DEADLINE_HEADER,
   RefusalException,
   isPublishedCode,
+  refusalOf,
   type Refusal,
 } from '@arthome-platform/http-edge';
 import { HttpStatus, Logger } from '@nestjs/common';
@@ -182,19 +183,11 @@ export class ServiceClient {
     return this.upstreamUnavailable();
   }
 
-  private upstream(status: HttpStatus, code: ErrorCode): RefusalException {
-    return new RefusalException(status, {
-      code,
-      params: { service: this.service },
-      nature: FailureNature.UNAVAILABLE,
-    });
-  }
-
   private upstreamTimeout(): RefusalException {
-    return this.upstream(HttpStatus.GATEWAY_TIMEOUT, ApiErrorCode.UPSTREAM_TIMEOUT);
+    return refusalOf(ApiErrorCode.UPSTREAM_TIMEOUT, { service: this.service });
   }
 
   private upstreamUnavailable(): RefusalException {
-    return this.upstream(HttpStatus.BAD_GATEWAY, ApiErrorCode.UPSTREAM_UNAVAILABLE);
+    return refusalOf(ApiErrorCode.UPSTREAM_UNAVAILABLE, { service: this.service });
   }
 }

@@ -1,14 +1,11 @@
-import { RefusalException } from '@arthome-platform/http-edge';
-import { HttpStatus } from '@nestjs/common';
+import { refusalCausedBy, refusalOf, type RefusalException } from '@arthome-platform/http-edge';
 
 import {
   ApiErrorCode,
-  FailureNature,
   OrderErrorCode,
   type Instant,
-  type Money,
-  type MessageParams,
   type LateEntry,
+  type Money,
 } from '@arthome/core';
 
 import type { SeatOrderSnapshot } from './seat-order.aggregate.js';
@@ -17,21 +14,13 @@ import type { SeatOrderSnapshot } from './seat-order.aggregate.js';
 export const KEY_HOLDER_WAIT_MS = 5_000;
 const RETRY_AFTER_MS = 1_000;
 
-function refused(code: string, params: MessageParams = {}): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, { code, params, nature: FailureNature.REFUSED });
-}
-
 /** A body naming a profile the internal token does not: the buyer is the token's (review m6). */
 export function notTheCallersProfile(): RefusalException {
-  return new RefusalException(HttpStatus.FORBIDDEN, {
-    code: ApiErrorCode.FORBIDDEN,
-    params: {},
-    nature: FailureNature.REFUSED,
-  });
+  return refusalOf(ApiErrorCode.FORBIDDEN);
 }
 
 export function soldOut(): RefusalException {
-  return refused(OrderErrorCode.SOLD_OUT);
+  return refusalOf(OrderErrorCode.SOLD_OUT);
 }
 
 /**
@@ -39,16 +28,21 @@ export function soldOut(): RefusalException {
  *   is the waiting list's cue.
  */
 export function salesClosed(salesEndAt: Instant): RefusalException {
-  return refused(OrderErrorCode.SALES_CLOSED, { salesEndAt });
+  return refusalOf(OrderErrorCode.SALES_CLOSED, { salesEndAt });
 }
 
-/** The storefront contract's params: what the surface showed, and the price now, when there is one. */
-export function priceStale(expected: Money, current: Money | null): RefusalException {
-  return refused(OrderErrorCode.PRICE_STALE, {
+/** The storefront contract's params: what the surface showed, and the price now. */
+export function priceStale(expected: Money, current: Money): RefusalException {
+  return refusalOf(OrderErrorCode.PRICE_STALE, {
     expectedAmountMinor: expected.amountMinor,
-    ...(current !== null && { currentAmountMinor: current.amountMinor }),
-    currencyCode: current?.currencyCode ?? expected.currencyCode,
+    currentAmountMinor: current.amountMinor,
+    currencyCode: current.currencyCode,
   });
+}
+
+/** A tier the date no longer sells: there is no price now to show. */
+export function tierUnavailable(): RefusalException {
+  return refusalOf(OrderErrorCode.TIER_UNAVAILABLE);
 }
 
 /**
@@ -60,7 +54,7 @@ export function lateEntryUnacknowledged({
   minutesElapsed,
   salesEndAt,
 }: LateEntry): RefusalException {
-  return refused(OrderErrorCode.LATE_ENTRY_UNACKNOWLEDGED, {
+  return refusalOf(OrderErrorCode.LATE_ENTRY_UNACKNOWLEDGED, {
     startedAt,
     minutesElapsed,
     salesEndAt,
@@ -68,24 +62,16 @@ export function lateEntryUnacknowledged({
 }
 
 export function keyReused(): RefusalException {
-  return refused(ApiErrorCode.IDEMPOTENCY_KEY_REUSED);
+  return refusalOf(ApiErrorCode.IDEMPOTENCY_KEY_REUSED);
 }
 
 export function keyInFlight(): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, {
-    code: ApiErrorCode.IDEMPOTENCY_IN_FLIGHT,
-    params: { retryAfterMs: RETRY_AFTER_MS },
-    nature: FailureNature.UNAVAILABLE,
-  });
+  return refusalOf(ApiErrorCode.IDEMPOTENCY_IN_FLIGHT, { retryAfterMs: RETRY_AFTER_MS });
 }
 
 /** The provider did not answer: its hold given back, the purchase retried under the same key. */
 export function paymentUnavailable(cause: unknown): RefusalException {
-  return new RefusalException(
-    HttpStatus.SERVICE_UNAVAILABLE,
-    { code: ApiErrorCode.SERVICE_UNAVAILABLE, params: {}, nature: FailureNature.UNAVAILABLE },
-    { cause },
-  );
+  return refusalCausedBy(cause, ApiErrorCode.SERVICE_UNAVAILABLE);
 }
 
 /**
@@ -98,7 +84,7 @@ export function refusalOfUnpaid(
 ): RefusalException {
   const { failure } = order;
   if (failure?.code === OrderErrorCode.PAYMENT_DECLINED) {
-    return refused(OrderErrorCode.PAYMENT_DECLINED, {
+    return refusalOf(OrderErrorCode.PAYMENT_DECLINED, {
       ...(failure.declineCode !== null && { declineCode: failure.declineCode }),
     });
   }

@@ -32,6 +32,7 @@ import {
   refusalOfUnpaid,
   salesClosed,
   soldOut,
+  tierUnavailable,
 } from './purchase-refusals.js';
 import { PurchaseSeat, PurchaseStatus, type PurchaseAnswer } from './purchase-seat.command.js';
 import { recordWaitingIntent } from './record-waiting-intent.js';
@@ -147,11 +148,12 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     if (lateEntry !== null && !lateEntryAcknowledged) throw lateEntryUnacknowledged(lateEntry);
     const quote = sales.quote(body.tier, body.quantity);
     const { expectedTotal } = body;
+    if (quote === null) throw tierUnavailable();
     if (
-      quote?.total.amountMinor !== expectedTotal.amountMinor ||
+      quote.total.amountMinor !== expectedTotal.amountMinor ||
       quote.total.currencyCode !== expectedTotal.currencyCode
     ) {
-      throw priceStale(expectedTotal, quote?.total ?? null);
+      throw priceStale(expectedTotal, quote.total);
     }
 
     const orderId = uuidv7();

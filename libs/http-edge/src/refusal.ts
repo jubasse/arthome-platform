@@ -3,6 +3,7 @@ import type { z } from 'zod';
 
 import {
   errorCodesOf,
+  natureOf,
   statusOf,
   versionedPath,
   type CodedResponse,
@@ -51,6 +52,11 @@ export class RefusalException extends HttpException {
   }
 }
 
+/** A code whose params are all optional: what a refusal known by a constraint's name can carry. */
+export type ParamlessErrorCode = {
+  [C in ErrorCode]: Record<never, never> extends ErrorParamsOf<C> ? C : never;
+}[ErrorCode];
+
 /**
  * A 409 carries the domain code naming the specific refusal, never a generic one — the
  *   published contract's 18 `409`s share one description reading "the `code` says which
@@ -60,8 +66,8 @@ export class RefusalException extends HttpException {
 export interface UniqueViolationCode {
   /** The uniquely-constrained column, as it appears inside the constraint's name. */
   readonly column: string;
-  /** A published `ERROR_CODES` member naming this refusal. Never invented locally. */
-  readonly code: string;
+  /** The refusal, at its registry status: a 409 whose code names the conflict, from the name alone. */
+  readonly code: ParamlessErrorCode;
 }
 
 /**
@@ -73,31 +79,16 @@ export interface UniqueViolationCode {
  *   the correct outcome — it is a thrower who did not say which refusal it was.
  */
 const REFUSAL_BY_STATUS = {
-  [HttpStatus.BAD_REQUEST]: { code: ApiErrorCode.SCHEMA_INVALID, nature: FailureNature.REFUSED },
-  [HttpStatus.UNAUTHORIZED]: { code: ApiErrorCode.UNAUTHENTICATED, nature: FailureNature.REFUSED },
-  [HttpStatus.FORBIDDEN]: { code: ApiErrorCode.FORBIDDEN, nature: FailureNature.REFUSED },
-  [HttpStatus.NOT_FOUND]: { code: ApiErrorCode.NOT_FOUND, nature: FailureNature.REFUSED },
-  [HttpStatus.PAYLOAD_TOO_LARGE]: {
-    code: ApiErrorCode.PAYLOAD_TOO_LARGE,
-    nature: FailureNature.REFUSED,
-  },
-  [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: {
-    code: ApiErrorCode.UNSUPPORTED_MEDIA_TYPE,
-    nature: FailureNature.REFUSED,
-  },
-  [HttpStatus.TOO_MANY_REQUESTS]: {
-    code: ApiErrorCode.RATE_LIMITED,
-    nature: FailureNature.UNAVAILABLE,
-  },
-  [HttpStatus.INTERNAL_SERVER_ERROR]: {
-    code: ApiErrorCode.INTERNAL,
-    nature: FailureNature.UNAVAILABLE,
-  },
-  [HttpStatus.SERVICE_UNAVAILABLE]: {
-    code: ApiErrorCode.SERVICE_UNAVAILABLE,
-    nature: FailureNature.UNAVAILABLE,
-  },
-} satisfies Record<number, { code: string; nature: FailureNature }>;
+  [HttpStatus.BAD_REQUEST]: ApiErrorCode.SCHEMA_INVALID,
+  [HttpStatus.UNAUTHORIZED]: ApiErrorCode.UNAUTHENTICATED,
+  [HttpStatus.FORBIDDEN]: ApiErrorCode.FORBIDDEN,
+  [HttpStatus.NOT_FOUND]: ApiErrorCode.NOT_FOUND,
+  [HttpStatus.PAYLOAD_TOO_LARGE]: ApiErrorCode.PAYLOAD_TOO_LARGE,
+  [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: ApiErrorCode.UNSUPPORTED_MEDIA_TYPE,
+  [HttpStatus.TOO_MANY_REQUESTS]: ApiErrorCode.RATE_LIMITED,
+  [HttpStatus.INTERNAL_SERVER_ERROR]: ApiErrorCode.INTERNAL,
+  [HttpStatus.SERVICE_UNAVAILABLE]: ApiErrorCode.SERVICE_UNAVAILABLE,
+} satisfies Record<number, ErrorCode>;
 
 /**
  * `api.upstream_unavailable` must not appear here: it means "a service behind the BFF
@@ -107,23 +98,13 @@ const REFUSAL_BY_STATUS = {
  *   those were collapsing into one substitute here.
  */
 export function refusalForStatus(status: number): Refusal {
-  const known = (REFUSAL_BY_STATUS as Record<number, { code: string; nature: FailureNature }>)[
-    status
-  ];
-  return known === undefined
-    ? { code: ApiErrorCode.INTERNAL, params: {}, nature: FailureNature.UNAVAILABLE }
-    : { code: known.code, params: {}, nature: known.nature };
+  const code =
+    (REFUSAL_BY_STATUS as Readonly<Record<number, ErrorCode>>)[status] ?? ApiErrorCode.INTERNAL;
+  return { code, params: {}, nature: natureOf(code) };
 }
 
 export function isMappedStatus(status: number): boolean {
   return Object.hasOwn(REFUSAL_BY_STATUS, status);
-}
-
-/** transport.md §5.5: a 4xx is a refusal except 429, a 5xx is unavailable. Core's `natureOf` replaces it. */
-export function natureOfStatus(status: number): FailureNature {
-  return status >= 500 || status === Number(HttpStatus.TOO_MANY_REQUESTS)
-    ? FailureNature.UNAVAILABLE
-    : FailureNature.REFUSED;
 }
 
 /** A code of the published vocabulary, which the registry gives a status, rather than a domain guard's. */
@@ -141,11 +122,10 @@ export function refusalOf<C extends ErrorCode>(
   code: C,
   ...[params]: ParamsArgument<C>
 ): RefusalException {
-  const status = statusOf(code);
-  return new RefusalException(status, {
+  return new RefusalException(statusOf(code), {
     code,
     params: params ?? {},
-    nature: natureOfStatus(status),
+    nature: natureOf(code),
   });
 }
 
@@ -191,11 +171,7 @@ export function refuse<R extends RouteShape, C extends DeclaredCodeOf<R>>(
         `not declare at ${String(status)}; answered it anyway.`,
     );
   }
-  return new RefusalException(status, {
-    code,
-    params: params ?? {},
-    nature: natureOfStatus(status),
-  });
+  return new RefusalException(status, { code, params: params ?? {}, nature: natureOf(code) });
 }
 
 /** `refusalOf`, keeping what caused it for the log: a cause is never served. */
@@ -204,10 +180,9 @@ export function refusalCausedBy<C extends ErrorCode>(
   code: C,
   ...[params]: ParamsArgument<C>
 ): RefusalException {
-  const status = statusOf(code);
   return new RefusalException(
-    status,
-    { code, params: params ?? {}, nature: natureOfStatus(status) },
+    statusOf(code),
+    { code, params: params ?? {}, nature: natureOf(code) },
     { cause },
   );
 }

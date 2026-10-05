@@ -10,7 +10,6 @@ export {
   domainRefusal,
   isMappedStatus,
   isPublishedCode,
-  natureOfStatus,
   notFound,
   refusalForStatus,
   refusalCausedBy,
@@ -19,7 +18,12 @@ export {
   schemaInvalidException,
   stateConflict,
 } from './refusal.js';
-export type { DeclaredCodeOf, Refusal, UniqueViolationCode } from './refusal.js';
+export type {
+  DeclaredCodeOf,
+  ParamlessErrorCode,
+  Refusal,
+  UniqueViolationCode,
+} from './refusal.js';
 
 export { DenyInProductionGuard } from './deny-in-production.guard.js';
 
