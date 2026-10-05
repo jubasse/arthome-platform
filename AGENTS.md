@@ -259,10 +259,10 @@ export class DatesController {
   the routes no contract binds yet. `successSchemaOf(route)` is the success body's schema, for a
   relay that validates an upstream answer.
 - **A refusal names its route**: `throw refuse(route, code, params)`. Only a code the route's type
-  declares compiles (its error responses' codes, and its `errorCodes` once core types the list
-  form), with the params core's `ERROR_PARAMS` gives it, at the status core's `ERRORS` registry
-  gives it. A code the route's runtime `errorCodes` leaves out at that status is still answered,
-  and logged naming the route. `refusalOf(code, params)` stays for code no route reaches.
+  declares compiles (in its error responses or its `errors` list, the group's included), with the
+  params core's `ERROR_PARAMS` gives it, at the status core's `ERRORS` registry gives it. A code
+  the route's runtime `errorCodes` leaves out at that status is still answered, and logged naming
+  the route. `refusalOf(code, params)` stays for code no route reaches.
 - **Only the storefront BFF binds the public contract.** Catalog and ticketing keep their own
   routes until their INTERNAL contracts exist (their paths and headers differ); they are not bound
   here and serve no Swagger UI.

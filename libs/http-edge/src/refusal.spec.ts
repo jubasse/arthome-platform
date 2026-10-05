@@ -27,6 +27,19 @@ const placeOrder = routeBuilder(model)
     responses: { 201: { description: 'Placed.' } },
   });
 
+/** The list form, on the group and on the route: core's route type carries both lists by status. */
+const cancelOrder = routeBuilder(model)
+  .version(1)
+  .errors([OrderErrorCode.SOLD_OUT])
+  .defineRoute({
+    method: 'post',
+    path: '/orders/{orderId}/cancel',
+    operationId: 'cancelOrder',
+    parameters: [{ name: 'orderId', in: 'path', required: true, schema: z.string() }],
+    errors: [OrderErrorCode.SEAT_CANCEL_DEADLINE_PASSED],
+    responses: { 200: { description: 'Cancelled.' } },
+  });
+
 const readOrder = defineRoute({
   method: 'get',
   version: 1,
@@ -42,7 +55,7 @@ const readOrder = defineRoute({
   },
 });
 
-/** The shape core's list form will give the type: codes in `errorCodes`, here out of step with what it holds. */
+/** A route whose typed `errorCodes` is out of step with the list it holds at run time. */
 const drifted: Omit<typeof placeOrder, 'errorCodes'> & {
   readonly errorCodes: { readonly 409: readonly [typeof OrderErrorCode.SOLD_OUT] };
 } = { ...placeOrder, errorCodes: { 409: [] as never } };
@@ -68,6 +81,29 @@ describe('refuse(route, code, params)', () => {
       nature: FailureNature.REFUSED,
     });
     expect(logged).not.toHaveBeenCalled();
+  });
+
+  it('takes a code the route or its group declares in the list form', () => {
+    const refusals = [
+      refuse(cancelOrder, OrderErrorCode.SEAT_CANCEL_DEADLINE_PASSED),
+      refuse(cancelOrder, OrderErrorCode.SOLD_OUT),
+      // @ts-expect-error -- cancelOrder declares no order.price_stale.
+      refuse(cancelOrder, OrderErrorCode.PRICE_STALE, {
+        expectedAmountMinor: 4500,
+        currentAmountMinor: 5200,
+        currencyCode: 'EUR',
+      }),
+    ];
+
+    expect(refusals.map((refusal) => refusal.refusal.code)).toStrictEqual([
+      OrderErrorCode.SEAT_CANCEL_DEADLINE_PASSED,
+      OrderErrorCode.SOLD_OUT,
+      OrderErrorCode.PRICE_STALE,
+    ]);
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(logged).toHaveBeenCalledWith(
+      'POST /v1/orders/{orderId}/cancel refused with order.price_stale, which it does not declare at 409; answered it anyway.',
+    );
   });
 
   it('takes the code a shared response stands for, without params when the code has none', () => {

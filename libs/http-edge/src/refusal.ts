@@ -144,9 +144,9 @@ type CodesInErrorCodes<R> = R extends {
   : never;
 
 /**
- * The codes a route declares, where its type carries them: its error responses' codes, and its
- *   `errorCodes` once typed. Each source is narrowed on its own: a wide `string` in one would
- *   swallow the others' literals.
+ * The codes a route's type declares: its error responses' codes and its `errorCodes` (the list
+ *   form). Each source is narrowed on its own: a route typed by hand with a wide `string` in one
+ *   would swallow the others' literals.
  */
 export type DeclaredCodeOf<R extends RouteShape> =
   Extract<CodesInResponses<R>, ErrorCode> | Extract<CodesInErrorCodes<R>, ErrorCode>;
