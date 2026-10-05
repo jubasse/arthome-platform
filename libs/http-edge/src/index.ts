@@ -15,10 +15,11 @@ export {
   refusalForStatus,
   refusalCausedBy,
   refusalOf,
+  refuse,
   schemaInvalidException,
   stateConflict,
 } from './refusal.js';
-export type { Refusal, UniqueViolationCode } from './refusal.js';
+export type { DeclaredCodeOf, Refusal, UniqueViolationCode } from './refusal.js';
 
 export { DenyInProductionGuard } from './deny-in-production.guard.js';
 

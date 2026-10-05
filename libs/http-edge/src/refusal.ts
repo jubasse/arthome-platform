@@ -1,7 +1,14 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { z } from 'zod';
 
-import { statusOf } from '@arthome/contracts/http';
+import {
+  errorCodesOf,
+  statusOf,
+  versionedPath,
+  type CodedResponse,
+  type CodesOf,
+  type RouteShape,
+} from '@arthome/contracts/http';
 import {
   ApiErrorCode,
   DomainErrorCode,
@@ -135,6 +142,55 @@ export function refusalOf<C extends ErrorCode>(
   ...[params]: ParamsArgument<C>
 ): RefusalException {
   const status = statusOf(code);
+  return new RefusalException(status, {
+    code,
+    params: params ?? {},
+    nature: natureOfStatus(status),
+  });
+}
+
+type CodesInResponse<Res> = CodesOf<Res> | (Res extends CodedResponse<infer C> ? C : never);
+
+type CodesInResponses<R extends RouteShape> = {
+  [S in keyof R['responses']]: CodesInResponse<R['responses'][S]>;
+}[keyof R['responses']];
+
+type CodesInErrorCodes<R> = R extends {
+  readonly errorCodes?: Readonly<Record<string, readonly (infer C)[]>>;
+}
+  ? string extends C
+    ? never
+    : C
+  : never;
+
+/**
+ * The codes a route declares, where its type carries them: its error responses' codes, and its
+ *   `errorCodes` once typed. Each source is narrowed on its own: a wide `string` in one would
+ *   swallow the others' literals.
+ */
+export type DeclaredCodeOf<R extends RouteShape> =
+  Extract<CodesInResponses<R>, ErrorCode> | Extract<CodesInErrorCodes<R>, ErrorCode>;
+
+const undeclaredLogger = new Logger('refuse');
+
+/**
+ * The refusal of `code` on `route`: only a code the route declares compiles, with the params the
+ *   registry gives it. A code its `errorCodes` leaves out at that status still answers, and the log
+ *   names it: the route's declaration is the one to fix.
+ */
+export function refuse<R extends RouteShape, C extends DeclaredCodeOf<R>>(
+  route: R,
+  code: C,
+  ...[params]: ParamsArgument<C>
+): RefusalException {
+  const status = statusOf(code);
+  const declared = errorCodesOf(route, status);
+  if (declared !== undefined && !declared.includes(code)) {
+    undeclaredLogger.error(
+      `${route.method.toUpperCase()} ${versionedPath(route)} refused with ${code}, which it does ` +
+        `not declare at ${String(status)}; answered it anyway.`,
+    );
+  }
   return new RefusalException(status, {
     code,
     params: params ?? {},
