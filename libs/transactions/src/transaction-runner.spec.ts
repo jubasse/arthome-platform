@@ -89,7 +89,7 @@ class CounterRepository {
       { id: counter.id },
       loadedVersion,
       { value: counter.value, version: loadedVersion + 1 },
-      ({ version }) => ({ version }),
+      ({ version }) => ({ currentVersion: version }),
     );
     this.tracker.written(counter, loadedVersion + 1);
   }
@@ -239,7 +239,7 @@ describe('TransactionRunner', () => {
 
     expect(isDomainError(refusal) && [refusal.code, refusal.params]).toEqual([
       DomainErrorCode.STATE_CONFLICT,
-      { version: 2 },
+      { currentVersion: 2 },
     ]);
     expect(h.delivered).toEqual([]);
   });

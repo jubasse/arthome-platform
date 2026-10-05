@@ -1,14 +1,14 @@
 import {
   CollectionResponse,
-  RefusalException,
   deadlineExceededException,
+  refusalCausedBy,
 } from '@arthome-platform/http-edge';
 import { DATE_INDEX_ALIAS } from '@arthome-platform/search-index';
-import { HttpStatus, Inject } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
 import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { Client, errors } from '@opensearch-project/opensearch';
 
-import { ApiErrorCode, FailureNature, type Clock } from '@arthome/core';
+import { ApiErrorCode, type Clock } from '@arthome/core';
 
 import { searchBodyOf } from './search-body.js';
 import { SearchCatalog } from './search-catalog.query.js';
@@ -24,11 +24,7 @@ function mapped(error: unknown): unknown {
     return deadlineExceededException();
   }
   if (error instanceof errors.ConnectionError || error instanceof errors.NoLivingConnectionsError) {
-    return new RefusalException(
-      HttpStatus.SERVICE_UNAVAILABLE,
-      { code: ApiErrorCode.SERVICE_UNAVAILABLE, params: {}, nature: FailureNature.UNAVAILABLE },
-      { cause: error },
-    );
+    return refusalCausedBy(error, ApiErrorCode.SERVICE_UNAVAILABLE);
   }
   return error;
 }

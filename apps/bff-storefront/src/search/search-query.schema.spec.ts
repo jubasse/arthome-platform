@@ -1,10 +1,30 @@
-import { schemaInvalidRefusal } from '@arthome-platform/http-edge';
+import { schemaInvalidException } from '@arthome-platform/http-edge';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { SearchCriteriaSchema } from '@arthome/contracts/catalog';
+import { querySchemaOf } from '@arthome/contracts/http';
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 
-import { CRITERIA_SHAPE, SearchQuerySchema } from './search-query.schema.js';
 import { searchParamsOf } from '../query-string.js';
+
+function pathsOf(issues: Parameters<typeof schemaInvalidException>[0]): string[] {
+  const { issues: refused } = schemaInvalidException(issues).refusal.params as {
+    readonly issues: readonly { readonly path: readonly unknown[] }[];
+  };
+  return refused.map(({ path }) => path.join('.')).sort();
+}
+
+const { search } = storefrontApi.routes;
+const SearchQuerySchema = querySchemaOf(search);
+
+const routeParameterNames = new Set<string>(search.parameters.map((parameter) => parameter.name));
+
+const CRITERIA_SHAPE: Readonly<Record<string, z.ZodType>> = Object.fromEntries(
+  Object.entries(SearchQuerySchema instanceof z.ZodObject ? SearchQuerySchema.shape : {}).filter(
+    ([name]) => !routeParameterNames.has(name),
+  ),
+);
 
 describe('the storefront search query', () => {
   it('reads every criterion the contract publishes, so a new one fails here first', () => {
@@ -35,7 +55,7 @@ describe('the storefront search query', () => {
     const result = await SearchQuerySchema['~standard'].validate({ tab: 'concerts', page: '2' });
     const issues = 'issues' in result && result.issues !== undefined ? result.issues : [];
 
-    expect(schemaInvalidRefusal(issues).params).toEqual({ fields: ['page', 'tab'] });
+    expect(pathsOf(issues)).toEqual(['page', 'tab']);
   });
 
   it('writes lists back as repeated keys, and leaves out what was not sent', () => {

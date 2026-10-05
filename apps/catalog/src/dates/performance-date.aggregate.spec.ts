@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CatalogErrorCode,
   DateOutcome,
   DomainErrorCode,
   Locale,
@@ -204,8 +205,8 @@ describe('PerformanceDate', () => {
     );
 
     expect(isDomainError(refusal) && [refusal.code, refusal.params]).toEqual([
-      DomainErrorCode.STATE_CONFLICT,
-      { slug: '2026-11-04' },
+      DomainErrorCode.PUBLICATION_TRANSITION_FORBIDDEN,
+      { from: DRAFT_AT_1.state, to: PUBLISH.to },
     ]);
     expect(date.snapshot).toBe(PUBLISHED);
     expect(date.publication).toBe(DRAFT_AT_1);
@@ -317,7 +318,7 @@ describe('PerformanceDate', () => {
       refusal = error;
     }
 
-    expect(isDomainError(refusal) && refusal.code).toBe(DomainErrorCode.STATE_CONFLICT);
+    expect(isDomainError(refusal) && refusal.code).toBe(CatalogErrorCode.DATE_NOT_STARTED);
     expect(date.snapshot).toBe(before);
     expect(date.publication).toBe(SCHEDULED_AT_2);
     expect(date.getUncommittedEvents()).toEqual([]);
@@ -336,7 +337,7 @@ describe('PerformanceDate', () => {
 
     expect(isDomainError(refusal) && [refusal.code, refusal.params]).toEqual([
       DomainErrorCode.STATE_CONFLICT,
-      { state: PublicationState.SCHEDULED, version: 2 },
+      { currentVersion: 2, state: PublicationState.SCHEDULED },
     ]);
     expect(date.getUncommittedEvents()).toEqual([]);
   });

@@ -147,18 +147,17 @@ describe('PUT /v1/dates/:dateId/prices', () => {
       const cases = [
         [putPrices(dateId, { expectedVersion: 1, ...PRICES }, null), ['Idempotency-Key']],
         [putPrices(dateId, { expectedVersion: 1, tiers: [full, full] }), ['tiers']],
-        [putPrices(dateId, { expectedVersion: 1, ...PRICES, lockedAt: NOW }), []],
+        [putPrices(dateId, { expectedVersion: 1, ...PRICES, lockedAt: NOW }), ['lockedAt']],
       ] as const;
 
-      for (const [attempt, fields] of cases) {
+      for (const [attempt, paths] of cases) {
         const response = await attempt;
         expect(response.statusCode).toBe(400);
-        expect(response.json()).toMatchObject({
-          error: {
-            code: ApiErrorCode.SCHEMA_INVALID,
-            ...(fields.length > 0 && { params: { fields } }),
-          },
-        });
+        const { error } = response.json<{
+          error: { code: string; params: { issues: { path: string[] }[] } };
+        }>();
+        expect(error.code).toBe(ApiErrorCode.SCHEMA_INVALID);
+        expect(error.params.issues.map(({ path }) => path.join('.'))).toEqual(paths);
       }
     },
     CASE_MS,
@@ -190,7 +189,7 @@ describe('PUT /v1/dates/:dateId/prices', () => {
       expect(stale.json()).toMatchObject({
         error: {
           code: DomainErrorCode.STATE_CONFLICT,
-          params: { version: 2 },
+          params: { currentVersion: 2 },
           nature: FailureNature.REFUSED,
         },
       });
@@ -218,7 +217,9 @@ describe('POST /v1/dates/:dateId/capacity-tiers', () => {
         data: { sales: { capacityTotal: 120, seatsAvailable: 120 }, waitlistNotified: 0 },
       });
       expect(empty.statusCode).toBe(400);
-      expect(empty.json()).toMatchObject({ error: { params: { fields: ['additionalCapacity'] } } });
+      expect(empty.json()).toMatchObject({
+        error: { params: { issues: [{ path: ['additionalCapacity'] }] } },
+      });
     },
     CASE_MS,
   );
@@ -248,7 +249,7 @@ describe('PUT /v1/dates/:dateId/technical-provision', () => {
       });
       expect(nothing.statusCode).toBe(400);
       expect(nothing.json()).toMatchObject({
-        error: { params: { fields: ['provisionedCapacity'] } },
+        error: { params: { issues: [{ path: ['provisionedCapacity'] }] } },
       });
     },
     CASE_MS,
@@ -317,7 +318,7 @@ describe('GET /v1/dates/:dateId/availability', () => {
       });
       expect(withoutDeadline.statusCode).toBe(400);
       expect(withoutDeadline.json()).toMatchObject({
-        error: { params: { fields: ['x-arthome-deadline'] } },
+        error: { params: { issues: [{ path: ['x-arthome-deadline'] }] } },
       });
     },
     CASE_MS,

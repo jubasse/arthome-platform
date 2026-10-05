@@ -1,4 +1,4 @@
-import { asConflict, runIdempotently, type MemorisedResponse } from '@arthome-platform/http-edge';
+import { runIdempotently, type MemorisedResponse } from '@arthome-platform/http-edge';
 import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
@@ -60,11 +60,9 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
             venue.time_zone,
             now,
           );
-    await asConflict(() =>
-      date.declareOutcome(body.expectedVersion, declaration, body.message, { slugAtNewStart, now }),
-    );
+    date.declareOutcome(body.expectedVersion, declaration, body.message, { slugAtNewStart, now });
 
-    await asConflict(() => dates.save(date));
+    await dates.save(date);
     await recordDateEvents(manager, date.getUncommittedEvents(), {
       origin: this.publicWebOrigin,
       show,

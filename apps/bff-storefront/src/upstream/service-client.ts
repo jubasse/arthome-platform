@@ -1,4 +1,10 @@
-import { DEADLINE_HEADER, RefusalException, type Refusal } from '@arthome-platform/http-edge';
+import {
+  DEADLINE_HEADER,
+  RefusalException,
+  isPublishedCode,
+  refusalOf,
+  type Refusal,
+} from '@arthome-platform/http-edge';
 import { HttpStatus, Logger } from '@nestjs/common';
 import type { z } from 'zod';
 
@@ -7,12 +13,14 @@ import {
   StorefrontErrorEnvelopeSchema,
 } from '@arthome/contracts/envelope';
 import {
-  ApiErrorCode,
-  FAILURE_NATURES,
-  FailureNature,
-  memberOr,
-  type ErrorCode,
-} from '@arthome/core';
+  DERIVED_ERROR_CODES,
+  errorCodesOf,
+  statusOf,
+  stripping,
+  type Route,
+} from '@arthome/contracts/http';
+import { ApiErrorCode, ERROR_CODES, natureOf, type ErrorCode } from '@arthome/core';
+import { errorParamsSchemaOf } from '@arthome/core/schema';
 
 import type { Caller, InternalTokenMinter } from '../internal-token.minter.js';
 
@@ -24,6 +32,8 @@ export interface ServiceCall {
   readonly callerLeft: AbortSignal;
   /** Null for an anonymous visitor: the token then names no account. */
   readonly caller: Caller | null;
+  /** The BFF route the call serves: the service refusals relayed are the codes it declares. */
+  readonly route?: Route;
 }
 
 export interface ServiceRequest {
@@ -41,6 +51,38 @@ export interface ServiceAnswer<T> {
   readonly replayed: boolean;
 }
 
+const DERIVED_REFUSALS: ReadonlySet<string> = new Set(
+  Object.entries(DERIVED_ERROR_CODES)
+    .filter(([status]) => Number(status) < Number(HttpStatus.INTERNAL_SERVER_ERROR))
+    .flatMap(([, codes]) => codes),
+);
+
+/**
+ * These codes describe the BFF-to-service hop, never the surface's request: every 5xx, and every
+ *   4xx core derives on a route except `api.schema_invalid`.
+ */
+const HOP_CODES: ReadonlySet<ErrorCode> = new Set(
+  ERROR_CODES.filter(
+    (code) =>
+      statusOf(code) >= Number(HttpStatus.INTERNAL_SERVER_ERROR) ||
+      (DERIVED_REFUSALS.has(code) && code !== ApiErrorCode.SCHEMA_INVALID),
+  ),
+);
+
+/**
+ * The status a service's refusal reaches the surface with, or null when it does not: a code the
+ *   route declares, at its registry status. A call made for no route (a guard's session lookup)
+ *   relays `STOREFRONT_RELAYED_CODES` at the service's status.
+ */
+function relayedStatusOf(code: string, status: number, route: Route | undefined): number | null {
+  if (route === undefined) {
+    return STOREFRONT_RELAYED_CODES.some((relayed) => relayed === code) ? status : null;
+  }
+  if (!isPublishedCode(code) || HOP_CODES.has(code)) return null;
+  const declaredStatus = statusOf(code);
+  return errorCodesOf(route, declaredStatus)?.includes(code) === true ? declaredStatus : null;
+}
+
 function isOwnTimeout(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'TimeoutError';
 }
@@ -48,8 +90,8 @@ function isOwnTimeout(error: unknown): boolean {
 /**
  * The one way this BFF calls a service (transport.md §5.8): a fresh internal token, the trace and the
  *   deadline it gives up at, the answer validated against the contract's schema, and the service's
- *   refusal relayed only when `STOREFRONT_RELAYED_CODES` lists it. It retries nothing: the surface is
- *   the one layer that does, and it knows whether anyone is still waiting.
+ *   refusal relayed only when the call's route declares it. It retries nothing: the surface is the
+ *   one layer that does, and it knows whether anyone is still waiting.
  */
 export class ServiceClient {
   private readonly logger: Logger;
@@ -111,45 +153,49 @@ export class ServiceClient {
       );
       throw this.upstreamUnavailable();
     }
-    throw this.refusalFor(status, body, request.path, call.traceparent);
+    throw this.refusalFor(status, body, request.path, call);
   }
 
   private refusalFor(
     status: number,
     body: unknown,
     path: string,
-    traceparent: string,
+    call: ServiceCall,
   ): RefusalException {
     const envelope = StorefrontErrorEnvelopeSchema.safeParse(body);
     const code = envelope.success ? envelope.data.error.code : null;
     if (code === ApiErrorCode.DEADLINE_EXCEEDED) return this.upstreamTimeout();
-    if (envelope.success && STOREFRONT_RELAYED_CODES.some((relayed) => relayed === code)) {
-      const { error } = envelope.data;
-      const refusal: Refusal = {
-        code: error.code,
-        params: error.params,
-        // The contract's declared fallback for a nature this build does not know.
-        nature: memberOr(FAILURE_NATURES, error.nature, FailureNature.UNAVAILABLE),
-      };
-      return new RefusalException(status, refusal);
+    const relayedStatus = code === null ? null : relayedStatusOf(code, status, call.route);
+    if (envelope.success && relayedStatus !== null && isPublishedCode(envelope.data.error.code)) {
+      const relayedCode = envelope.data.error.code;
+      const params = stripping(errorParamsSchemaOf(relayedCode)).safeParse(
+        envelope.data.error.params,
+      );
+      if (params.success) {
+        return new RefusalException(relayedStatus, {
+          code: relayedCode,
+          params: params.data as Refusal['params'],
+          nature: natureOf(relayedCode),
+        });
+      }
+      this.logger.warn(
+        `refused ${path} with ${relayedCode} outside its params (${call.traceparent})`,
+        params.error.issues,
+      );
+      return this.upstreamUnavailable();
     }
-    this.logger.warn(`refused ${path} with ${status} ${code ?? 'no code'} (${traceparent})`);
+    const servedRoute = call.route === undefined ? '' : ` for ${call.route.operationId}`;
+    this.logger.warn(
+      `refused ${path}${servedRoute} with ${status} ${code ?? 'no code'} (${call.traceparent})`,
+    );
     return this.upstreamUnavailable();
   }
 
-  private upstream(status: HttpStatus, code: ErrorCode): RefusalException {
-    return new RefusalException(status, {
-      code,
-      params: { service: this.service },
-      nature: FailureNature.UNAVAILABLE,
-    });
-  }
-
   private upstreamTimeout(): RefusalException {
-    return this.upstream(HttpStatus.GATEWAY_TIMEOUT, ApiErrorCode.UPSTREAM_TIMEOUT);
+    return refusalOf(ApiErrorCode.UPSTREAM_TIMEOUT, { service: this.service });
   }
 
   private upstreamUnavailable(): RefusalException {
-    return this.upstream(HttpStatus.BAD_GATEWAY, ApiErrorCode.UPSTREAM_UNAVAILABLE);
+    return refusalOf(ApiErrorCode.UPSTREAM_UNAVAILABLE, { service: this.service });
   }
 }

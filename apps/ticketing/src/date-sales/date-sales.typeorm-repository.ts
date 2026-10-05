@@ -127,7 +127,7 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
           seats_sold: movedBy('seats_sold', current.seatsSold - stored.seatsSold),
           waitlist_count: movedBy('waitlist_count', current.waitlistCount - stored.waitlistCount),
         },
-        ({ version }) => ({ version }),
+        ({ version }) => ({ currentVersion: version }),
       );
     }
     this.storedSnapshots.set(sales, current);

@@ -20,7 +20,7 @@
     "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome-platform/transactions": "workspace:*",
-    "@arthome/core": "file:../../vendor/arthome-core-f3136e57e73c.tgz",
+    "@arthome/core": "file:../../vendor/arthome-core-cfd5df949916.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "@nestjs/common": "12.0.3",
     "@nestjs/core": "12.0.3",

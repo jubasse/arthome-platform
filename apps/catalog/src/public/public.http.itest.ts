@@ -183,7 +183,10 @@ describe('the public reads over HTTP', () => {
       const unbounded = await get(`/v1/dates/${FIRST_DATE}`, null);
       expect(unbounded.statusCode).toBe(400);
       expect(unbounded.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['x-arthome-deadline'] } },
+        error: {
+          code: ApiErrorCode.SCHEMA_INVALID,
+          params: { issues: [{ path: ['x-arthome-deadline'] }] },
+        },
       });
 
       const missing = await get('/v1/dates/01a0e600-0000-7000-8000-0000000009ff');
@@ -246,7 +249,7 @@ describe('the public reads over HTTP', () => {
       const both = await get(`/v1/resolve?url=${encodeURIComponent(retired)}&kind=date`);
       expect(both.statusCode).toBe(400);
       expect(both.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['kind'] } },
+        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { issues: [{ path: ['kind'] }] } },
       });
     },
     CASE_MS,

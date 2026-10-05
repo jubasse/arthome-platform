@@ -337,7 +337,7 @@ describe('catalog and ticketing', () => {
         ticketingCommands.execute(
           new SetDatePrices(DATE_ID, { expectedVersion: 5, tiers: [] }, null, idempotency(200)),
         ),
-      ).rejects.toMatchObject({ refusal: { code: CatalogErrorCode.PRICES_LOCKED } });
+      ).rejects.toMatchObject({ code: CatalogErrorCode.PRICES_LOCKED });
     },
     CASE_MS,
   );

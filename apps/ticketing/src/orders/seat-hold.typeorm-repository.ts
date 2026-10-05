@@ -49,7 +49,7 @@ export class TypeOrmSeatHoldRepository extends SeatHoldRepository {
         { id: current.id },
         loadedVersion,
         { state: current.state, version: current.version },
-        ({ version }) => ({ version }),
+        ({ version }) => ({ currentVersion: version }),
       );
     }
     this.tracker.written(hold, current.version);

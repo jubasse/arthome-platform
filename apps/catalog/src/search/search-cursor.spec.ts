@@ -1,7 +1,7 @@
 import { RefusalException } from '@arthome-platform/http-edge';
 import { describe, expect, it } from 'vitest';
 
-import { ApiErrorCode } from '@arthome/core';
+import { ApiErrorCode, SchemaIssueRule } from '@arthome/core';
 
 import { MAX_RESULT_WINDOW, cursorAt, offsetOf } from './search-cursor.js';
 
@@ -36,7 +36,7 @@ describe('the search cursor', () => {
     for (const cursor of ['bm90LWpzb24', cursorAt(-1, NOW), cursorAt(MAX_RESULT_WINDOW, NOW)]) {
       expect(refusalOf(cursor).refusal).toMatchObject({
         code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['cursor'] },
+        params: { issues: [{ path: ['cursor'], rule: SchemaIssueRule.INVALID_VALUE }] },
       });
     }
   });

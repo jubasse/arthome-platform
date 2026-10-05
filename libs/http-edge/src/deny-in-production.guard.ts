@@ -1,10 +1,10 @@
-import { HttpStatus, Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
+import { Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 
-import { ApiErrorCode, FailureNature } from '@arthome/core';
+import { ApiErrorCode } from '@arthome/core';
 
 import { AllowInProduction } from './allow-in-production.js';
-import { RefusalException } from './refusal.js';
+import { refusalOf } from './refusal.js';
 
 /**
  * Refuses every request when the service runs in production.
@@ -36,12 +36,8 @@ export class DenyInProductionGuard implements CanActivate {
     }
     // Thrown, not `return false`: a `false` yields NestJS's own 403 with an English message
     //   and no code, which critical-rules #8 forbids.
-    throw new RefusalException(HttpStatus.FORBIDDEN, {
-      code: ApiErrorCode.FORBIDDEN,
-      // No parameters: naming the environment, the route or the missing mechanism tells an
-      // unauthenticated caller about the deployment.
-      params: {},
-      nature: FailureNature.REFUSED,
-    });
+    // No parameters: naming the environment, the route or the missing mechanism tells an
+    //   unauthenticated caller about the deployment.
+    throw refusalOf(ApiErrorCode.FORBIDDEN);
   }
 }

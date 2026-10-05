@@ -1,6 +1,7 @@
 import { ArtistUpdatedSchema } from '@arthome-platform/events';
 import {
   RefusalException,
+  refusalOf,
   runIdempotentlyVersioned,
   schemaInvalidException,
   stateConflict,
@@ -8,12 +9,12 @@ import {
 } from '@arthome-platform/http-edge';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
-import { HttpStatus, Inject } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import type { EntityManager } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { CatalogErrorCode, FailureNature, type Clock, type Instant } from '@arthome/core';
+import { CatalogErrorCode, type Clock, type Instant } from '@arthome/core';
 
 import { Artist } from './artist.entity.js';
 import { holdChannelFace } from './channel-face-lock.js';
@@ -24,14 +25,10 @@ import { CLOCK } from '../clock.js';
 import { slugify } from '../dates/slug.js';
 import { projectArtist } from '../public/date-detail-projection.js';
 import { LinkKind } from '../public/resolve-query.schema.js';
-import { UNSCOPED, reservedForAnother, retireSlug, type SlugKey } from '../public/slug-aliases.js';
+import { reservedForAnother, retireSlug, UNSCOPED, type SlugKey } from '../public/slug-aliases.js';
 
 function slugTaken(): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, {
-    code: CatalogErrorCode.ARTIST_SLUG_TAKEN,
-    params: {},
-    nature: FailureNature.REFUSED,
-  });
+  return refusalOf(CatalogErrorCode.ARTIST_SLUG_TAKEN);
 }
 
 @CommandHandler(UpdateChannelIdentity)
@@ -59,7 +56,7 @@ export class UpdateChannelIdentityHandler implements ICommandHandler<UpdateChann
       lock: { mode: 'pessimistic_write' },
     });
     const version = current?.version ?? 0;
-    if (body.expectedVersion !== version) throw stateConflict({ version });
+    if (body.expectedVersion !== version) throw stateConflict(version);
 
     const id = current?.id ?? uuidv7();
     const publicName = body.publicName ?? current?.public_name;

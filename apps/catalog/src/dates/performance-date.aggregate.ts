@@ -169,7 +169,10 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
       this.apply(changed);
       return;
     }
-    const date = this.madePublic(context);
+    const date = this.madePublic(context, {
+      from: this.currentPublication.snapshot.state,
+      to: command.to,
+    });
     this.currentPublication = publication;
     this.current = frozen(date);
     this.apply(changed);
@@ -238,11 +241,16 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
     }
   }
 
-  /** Publishing happens once: a date that already holds a slug is refused, naming it. */
-  private madePublic({ freeSlug, showRuntimeMin }: PublicationContext): PublicDateSnapshot {
-    const { slug } = this.current;
-    if (slug !== null) {
-      throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { slug } });
+  /** Publishing happens once: a date that already holds a slug refuses the transition attempted. */
+  private madePublic(
+    { freeSlug, showRuntimeMin }: PublicationContext,
+    transition: { readonly from: string; readonly to: string },
+  ): PublicDateSnapshot {
+    if (this.current.slug !== null) {
+      throw new DomainError({
+        code: DomainErrorCode.PUBLICATION_TRANSITION_FORBIDDEN,
+        params: transition,
+      });
     }
     if (freeSlug === null) throw new Error('publishing a date without its free slug');
     return { ...this.current, slug: freeSlug, runtimeMin: showRuntimeMin };

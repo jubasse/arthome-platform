@@ -206,10 +206,7 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
       this.current;
     const { provisionedCapacity, salesClosedAt, outcome } = this.current;
     if (salesClosedAt !== null && outcome !== null) {
-      throw new DomainError({
-        code: DomainErrorCode.STATE_CONFLICT,
-        params: { version: expectedVersion, outcome },
-      });
+      throw new DomainError({ code: CatalogErrorCode.OUTCOME_FINAL, params: { outcome } });
     }
     const widened = capacityTotal + additionalCapacity;
     assertTierWidens(capacityTotal, widened);
@@ -344,7 +341,10 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
   private advancedFrom(expectedVersion: number): number {
     const { version } = this.current;
     if (version !== expectedVersion) {
-      throw new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { version } });
+      throw new DomainError({
+        code: DomainErrorCode.STATE_CONFLICT,
+        params: { currentVersion: version },
+      });
     }
     return version + 1;
   }

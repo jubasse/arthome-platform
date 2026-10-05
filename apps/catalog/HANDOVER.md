@@ -24,7 +24,8 @@ at the envelope's root beside `servedAt` and `validUntil` (`CollectionResponse`)
   `api.cursor_too_old`) and never points past `max_result_window`.
 - **Refused by name, never ignored**: the `artists` tab, the `popularity` and price sorts, and the
   criteria the index cannot answer (`cityIds`, `displayStates`, prices, `almostSoldOut`,
-  `onPromotion`, `accessibility`) answer 400 `api.schema_invalid` with `fields`.
+  `onPromotion`, `accessibility`) answer 400 `api.schema_invalid` with `issues`, each its path and
+  rule.
 - **`x-arthome-deadline` is required** (transport.md §5.3): absent, 400; past, 504
   `api.deadline_exceeded` before the query; the time left bounds the OpenSearch request, and the
   query is aborted when the caller hangs up (`whenCallerLeaves`, from the response's `close`), both
@@ -94,7 +95,8 @@ message in the language it was written in, an `Idempotency-Key`, and `expectedVe
 with the channel (data-model.md §2.4); `GET /v1/artists/:artistId` serves its public page.
 
 - **`expectedVersion: 0` creates the face**, on a channel that has none, and needs `publicName` and
-  `categoryId`; every later edit names the version it read (409 `state.conflict`). The answer
+  `categoryId`; every later edit names the version it read (409 `state.conflict`). Two first edits
+  racing collide on `artist_channel_id`, and the loser is refused 409 `artist.already_exists`. The answer
   carries `version` at the envelope's root (`runIdempotentlyVersioned`).
 - **The slug** is the one sent, or the name's, or the name's with the artist's id when another
   artist holds it. A slug sent and held elsewhere is 409 `artist.slug_taken`; the unique index
@@ -122,8 +124,8 @@ with the channel (data-model.md §2.4); `GET /v1/artists/:artistId` serves its p
   language, two levels at most, on `PUBLIC_WEB_ORIGIN`.
 - **A show's slug** is its title's (the French one when it has any), else the title's with the
   show's id tail; set at publication, in `ShowPublished.slug`, unique (`show_slug`). Two shows of
-  one title published at once both find it free: the second is refused 409 `state.conflict`, and its
-  retry takes the id-tailed slug.
+  one title published at once both find it free: the second is refused 409 `show.slug_taken`,
+  `unavailable` in core's registry, and its retry takes the id-tailed slug.
 - **A date's slug** is its day at the venue (`2026-12-15`), then `2026-12-15-2000` for a second
   performance that day, then the day with the date's id tail; unique within its show
   (`date_show_slug`); set at publication, moved by a postponement, picked under the show's row lock
@@ -229,24 +231,17 @@ channel (`holdChannelFace`), since a face not yet created has no row to lock. Me
   answered 500;
 - of two show updates at once, the second overwrote the first's fields (7 rounds in 8).
 
-**Refusals keep their code and params.** The aggregate and the repository throw core's
-`DomainError`. The transition and outcome handlers wrap exactly two calls in `asConflict` (the draft
-and `RecordChecklistFact` refuse nothing as 409), which rethrows one as a 409 `RefusalException`
-with the same `code`, `params` and `nature`: the aggregate's method (`transitionPublication`,
-`declareOutcome`) and `dates.save`, whose `saveVersioned` refuses a change committed since the load.
-That refusal is the guard of last resort: the load already holds the publication row `FOR UPDATE`,
-so in catalog no change can commit between the load and the save. Those are the refusals the
-contract answers 409 (`moveDatePublicationState`, `decideDateOutcome`): a state or rule said no. Any
-other `DomainError` in the handler (a `media.*` or `content.*` value) is a fault in what the request
-carried, so it stays unwrapped and `ErrorEnvelopeFilter` answers it 400, as on main
-(`transition-publication.handler.spec.ts`). The stale version is a refusal too, checked before any
-rule, as before: core's `assertCommandedTransition` for a transition, `Publication.advancedFrom` for
-an outcome. A 404 or a 400 stays the `RefusalException` it was, built by `@arthome-platform/http-edge`
-(`notFound()`, `stateConflict(params)`, `schemaInvalidException`). Two refusals are still built
-where they are raised, each with one caller: the artist's `slugTaken` and the search's 503.
-`publication.checklist_incomplete` names a list, which core's `MessageParams` cannot carry:
-`PublicationChecklistIncomplete` extends `DomainError` with `missing` beside it, and the transition
-handler hands `asConflict` a mapper that answers `{ missing }`.
+**Refusals keep their code and params, and take their status from core's error registry.** The
+aggregate and the repository throw core's `DomainError`, its params typed by its code, and
+`ErrorEnvelopeFilter` answers it at the status the registry gives the code: a state or rule that said
+no (`state.conflict`, the publication rules, the outcome refusals) is a 409, a `content.*` value its
+own. No handler wraps a call. `dates.save`'s `saveVersioned` refusal is the guard of last resort: the
+load already holds the publication row `FOR UPDATE`, so in catalog no change can commit between the
+load and the save. The stale version is checked before any rule: core's `assertCommandedTransition`
+for a transition, `Publication.advancedFrom` for an outcome. A refusal built where it is raised goes
+through `@arthome-platform/http-edge`'s `refusalOf(code, params)` (`notFound()`,
+`stateConflict(currentVersion)`, `schemaInvalidException` are its shortcuts), the status again the
+registry's. `publication.checklist_incomplete` carries its list in its params, `{ missing }`.
 
 **What happened becomes rows from the uncommitted events, inside the transaction.** A method changes
 the snapshot, then `apply()`s one event per fact (no `on<Event>` handlers: nothing is replayed).
@@ -365,9 +360,8 @@ review, M4); never a catalog concept and never in arthome-core:
   `writtenUnversioned` registers a write that leaves the version as loaded, which ticketing's
   conditional decrement is. `frozen` deep-freezes each snapshot an aggregate replaces;
 - `@arthome-platform/http-edge`: `edgeProviders({ clock, uniqueViolations })`, the global pipe,
-  filter, interceptor and guard and the system clock under the service's token; `asConflict` (a
-  `DomainError` as the 409 `RefusalException`, its `params` through an optional mapper),
-  `notFound()` and `stateConflict(params)`; and
+  filter, interceptor and guard and the system clock under the service's token; `refusalOf(code,
+  params)`, `notFound()` and `stateConflict(currentVersion)`; and
   `runIdempotently`, `runIdempotentlyVersioned`, `idempotentRequestOf` and
   `idempotencyRecordTableDdl()`, which a new service's migration runs the way it runs
   `outboxTableDdl()`. Catalog's own two migrations stay as they are, and
@@ -390,10 +384,10 @@ Decided here, and each could have gone the other way:
 
 - **The entities were renamed `PerformanceDateRow` and `PublicationRow`**, so the aggregate and its
   entity carry the domain names; the tables did not move.
-- **Handlers reached from HTTP alone throw `RefusalException`**, not domain errors mapped at an
-  edge. `RecordChecklistFact`, reached from Kafka alone, throws `DomainError`, mapped by the
-  consumer. The day a consumer dispatches an HTTP one, its `asConflict` calls move from the handler
-  to the controller (`nestjs-request-pipeline` rule 1).
+- **A domain rule's refusal stays core's `DomainError`** wherever it is thrown: the filter answers it
+  at the registry's status over HTTP, and the checklist consumer maps it from Kafka (dead-lettered
+  under its code). A refusal no domain rule makes, a missing row or a malformed cursor, is built
+  with `refusalOf` (`nestjs-request-pipeline` rule 1).
 - **A lost race on the version answers the version committed since**, re-read, as a transition
   always did; the outcome path used to answer the one it had read. Only two concurrent commands see
   the difference.
@@ -403,7 +397,7 @@ Decided here, and each could have gone the other way:
 - **A command on a date locks its publication's row and its show's row to the commit** (`findById`,
   `loadDate`), and a checklist fact takes the publication's `FOR SHARE`: a second command on the
   date, a fact the publication decides on, a show update and another date of the show picking a slug
-  wait for it. Two shows of one title published at once answer the loser 409 `state.conflict`, where
+  wait for it. Two shows of one title published at once answer the loser 409 `show.slug_taken`, where
   it answered 500.
 
 Known and left as they are:
@@ -411,9 +405,6 @@ Known and left as they are:
 - `satisfiedChecklistItems`, the input of publishing's checklist rule, is computed in
   `date-sheet.ts`, the sheet's shaping module; moving it beside the aggregate would make the read
   model depend on the write side rather than the reverse.
-- `PublicationChecklistIncomplete` carries `missing` beside core's scalar `params`: only the
-  transition handler's `asConflict` serves it, and a path that let it escape unwrapped would answer
-  400 without the list.
 
 ## 1. What was built
 

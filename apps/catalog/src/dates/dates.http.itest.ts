@@ -227,7 +227,7 @@ describe('the date routes over HTTP', () => {
         error: {
           code: DomainErrorCode.STATE_CONFLICT,
           nature: FailureNature.REFUSED,
-          params: { state: PublicationState.SCHEDULED, version: 3 },
+          params: { currentVersion: 3, state: PublicationState.SCHEDULED },
         },
       });
 

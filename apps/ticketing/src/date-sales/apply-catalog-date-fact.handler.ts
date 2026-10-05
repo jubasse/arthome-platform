@@ -70,7 +70,7 @@ export class ApplyCatalogDateFactHandler implements ICommandHandler<ApplyCatalog
   ): Promise<DateSales | null> {
     const sales = await dateSales.findById(fact.dateId);
     if (sales === null) {
-      throw new DomainError({ code: ApiErrorCode.NOT_FOUND, params: { dateId: fact.dateId } });
+      throw new DomainError({ code: ApiErrorCode.NOT_FOUND });
     }
     return applied(sales, fact, this.clock.now()) ? sales : null;
   }

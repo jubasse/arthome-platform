@@ -1,4 +1,4 @@
-import { MemorisedResponse, asConflict } from '@arthome-platform/http-edge';
+import { MemorisedResponse } from '@arthome-platform/http-edge';
 import { Inject, Logger } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { v7 as uuidv7 } from 'uuid';
@@ -32,6 +32,7 @@ import {
   refusalOfUnpaid,
   salesClosed,
   soldOut,
+  tierUnavailable,
 } from './purchase-refusals.js';
 import { PurchaseSeat, PurchaseStatus, type PurchaseAnswer } from './purchase-seat.command.js';
 import { recordWaitingIntent } from './record-waiting-intent.js';
@@ -142,16 +143,17 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     const sales = await dateSales.findUnlocked(body.dateId);
     if (sales === null) throw soldOut();
     // Its decision first, its statement last: past the end or off sale, refused before the key.
-    await asConflict(() => sales.holdSeats(body.quantity, now));
+    sales.holdSeats(body.quantity, now);
     const lateEntry = sales.lateEntryAt(now);
     if (lateEntry !== null && !lateEntryAcknowledged) throw lateEntryUnacknowledged(lateEntry);
     const quote = sales.quote(body.tier, body.quantity);
     const { expectedTotal } = body;
+    if (quote === null) throw tierUnavailable();
     if (
-      quote?.total.amountMinor !== expectedTotal.amountMinor ||
+      quote.total.amountMinor !== expectedTotal.amountMinor ||
       quote.total.currencyCode !== expectedTotal.currencyCode
     ) {
-      throw priceStale(expectedTotal, quote?.total ?? null);
+      throw priceStale(expectedTotal, quote.total);
     }
 
     const orderId = uuidv7();

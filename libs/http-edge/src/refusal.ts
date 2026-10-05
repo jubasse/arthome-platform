@@ -1,6 +1,26 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { HttpException, HttpStatus, Logger } from '@nestjs/common';
+import type { z } from 'zod';
 
-import { ApiErrorCode, DomainErrorCode, FailureNature, type MessageParams } from '@arthome/core';
+import {
+  errorCodesOf,
+  statusOf,
+  versionedPath,
+  type CodedResponse,
+  type CodesOf,
+  type RouteShape,
+} from '@arthome/contracts/http';
+import {
+  ApiErrorCode,
+  DomainErrorCode,
+  ERROR_CODES,
+  FailureNature,
+  SchemaIssueRule,
+  natureOf,
+  type DomainError,
+  type ErrorCode,
+  type ErrorParamsOf,
+} from '@arthome/core';
+import { schemaInvalidParams } from '@arthome/core/schema';
 
 /**
  * The one error shape this project has (transport.md §5.5, critical-rules #8): a code, its
@@ -32,6 +52,11 @@ export class RefusalException extends HttpException {
   }
 }
 
+/** A code whose params are all optional: what a refusal known by a constraint's name can carry. */
+export type ParamlessErrorCode = {
+  [C in ErrorCode]: Record<never, never> extends ErrorParamsOf<C> ? C : never;
+}[ErrorCode];
+
 /**
  * A 409 carries the domain code naming the specific refusal, never a generic one — the
  *   published contract's 18 `409`s share one description reading "the `code` says which
@@ -41,36 +66,29 @@ export class RefusalException extends HttpException {
 export interface UniqueViolationCode {
   /** The uniquely-constrained column, as it appears inside the constraint's name. */
   readonly column: string;
-  /** A published `ERROR_CODES` member naming this refusal. Never invented locally. */
-  readonly code: string;
+  /** The refusal, at its registry status: a 409 whose code names the conflict, from the name alone. */
+  readonly code: ParamlessErrorCode;
 }
 
 /**
- * So a refusal NestJS raised on its own — an unmatched route, an oversized payload — still
- * leaves in §5.5's shape.
+ * So a refusal NestJS or Fastify raised on its own — an unmatched route, an oversized payload, a
+ * body that is not JSON — still leaves in §5.5's shape.
  *
  * 409 is absent on purpose: a conflict arrives either as a mapped unique violation or as a
  *   `ConflictException` whose thrower set `errorCode`. A bare one falling to the gap below is
  *   the correct outcome — it is a thrower who did not say which refusal it was.
  */
 const REFUSAL_BY_STATUS = {
-  [HttpStatus.BAD_REQUEST]: { code: ApiErrorCode.SCHEMA_INVALID, nature: FailureNature.REFUSED },
-  [HttpStatus.UNAUTHORIZED]: { code: ApiErrorCode.UNAUTHENTICATED, nature: FailureNature.REFUSED },
-  [HttpStatus.FORBIDDEN]: { code: ApiErrorCode.FORBIDDEN, nature: FailureNature.REFUSED },
-  [HttpStatus.NOT_FOUND]: { code: ApiErrorCode.NOT_FOUND, nature: FailureNature.REFUSED },
-  [HttpStatus.TOO_MANY_REQUESTS]: {
-    code: ApiErrorCode.RATE_LIMITED,
-    nature: FailureNature.UNAVAILABLE,
-  },
-  [HttpStatus.INTERNAL_SERVER_ERROR]: {
-    code: ApiErrorCode.INTERNAL,
-    nature: FailureNature.UNAVAILABLE,
-  },
-  [HttpStatus.SERVICE_UNAVAILABLE]: {
-    code: ApiErrorCode.SERVICE_UNAVAILABLE,
-    nature: FailureNature.UNAVAILABLE,
-  },
-} satisfies Record<number, { code: string; nature: FailureNature }>;
+  [HttpStatus.BAD_REQUEST]: ApiErrorCode.SCHEMA_INVALID,
+  [HttpStatus.UNAUTHORIZED]: ApiErrorCode.UNAUTHENTICATED,
+  [HttpStatus.FORBIDDEN]: ApiErrorCode.FORBIDDEN,
+  [HttpStatus.NOT_FOUND]: ApiErrorCode.NOT_FOUND,
+  [HttpStatus.PAYLOAD_TOO_LARGE]: ApiErrorCode.PAYLOAD_TOO_LARGE,
+  [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: ApiErrorCode.UNSUPPORTED_MEDIA_TYPE,
+  [HttpStatus.TOO_MANY_REQUESTS]: ApiErrorCode.RATE_LIMITED,
+  [HttpStatus.INTERNAL_SERVER_ERROR]: ApiErrorCode.INTERNAL,
+  [HttpStatus.SERVICE_UNAVAILABLE]: ApiErrorCode.SERVICE_UNAVAILABLE,
+} satisfies Record<number, ErrorCode>;
 
 /**
  * `api.upstream_unavailable` must not appear here: it means "a service behind the BFF
@@ -80,73 +98,145 @@ const REFUSAL_BY_STATUS = {
  *   those were collapsing into one substitute here.
  */
 export function refusalForStatus(status: number): Refusal {
-  const known = (REFUSAL_BY_STATUS as Record<number, { code: string; nature: FailureNature }>)[
-    status
-  ];
-  return known === undefined
-    ? { code: ApiErrorCode.INTERNAL, params: {}, nature: FailureNature.UNAVAILABLE }
-    : { code: known.code, params: {}, nature: known.nature };
+  const code =
+    (REFUSAL_BY_STATUS as Readonly<Record<number, ErrorCode>>)[status] ?? ApiErrorCode.INTERNAL;
+  return { code, params: {}, nature: natureOf(code) };
 }
 
 export function isMappedStatus(status: number): boolean {
   return Object.hasOwn(REFUSAL_BY_STATUS, status);
 }
 
+/** A code of the published vocabulary, which the registry gives a status, rather than a domain guard's. */
+export function isPublishedCode(code: string): code is ErrorCode {
+  return (ERROR_CODES as readonly string[]).includes(code);
+}
+
+type ParamsArgument<C extends ErrorCode> =
+  Record<never, never> extends ErrorParamsOf<C>
+    ? [params?: ErrorParamsOf<C>]
+    : [params: ErrorParamsOf<C>];
+
+/** The refusal of `code`, at the status the error registry gives it, with the params it declares. */
+export function refusalOf<C extends ErrorCode>(
+  code: C,
+  ...[params]: ParamsArgument<C>
+): RefusalException {
+  return new RefusalException(statusOf(code), {
+    code,
+    params: params ?? {},
+    nature: natureOf(code),
+  });
+}
+
+type CodesInResponse<Res> = CodesOf<Res> | (Res extends CodedResponse<infer C> ? C : never);
+
+type CodesInResponses<R extends RouteShape> = {
+  [S in keyof R['responses']]: CodesInResponse<R['responses'][S]>;
+}[keyof R['responses']];
+
+type CodesInErrorCodes<R> = R extends {
+  readonly errorCodes?: Readonly<Record<string, readonly (infer C)[]>>;
+}
+  ? string extends C
+    ? never
+    : C
+  : never;
+
 /**
- * `message` is deliberately untyped: an issue carries a library's English prose, and not
- *   typing it is how this file cannot forward it to a wire by accident.
- * Declared, not imported: `StandardSchemaV1.Issue` lives in `@standard-schema/spec`,
- *   `@nestjs/common`'s dependency and not this library's. This shape is structurally what the
- *   pipe passes, so `exceptionFactory` still type-checks.
+ * The codes a route's type declares: its error responses' codes and its `errorCodes` (the list
+ *   form). Each source is narrowed on its own: a route typed by hand with a wide `string` in one
+ *   would swallow the others' literals.
  */
-interface SchemaIssue {
+export type DeclaredCodeOf<R extends RouteShape> =
+  Extract<CodesInResponses<R>, ErrorCode> | Extract<CodesInErrorCodes<R>, ErrorCode>;
+
+const undeclaredLogger = new Logger('refuse');
+
+/**
+ * The refusal of `code` on `route`: only a code the route declares compiles, with the params the
+ *   registry gives it. A code its `errorCodes` leaves out at that status still answers, and the log
+ *   names it: the route's declaration is the one to fix.
+ */
+export function refuse<R extends RouteShape, C extends DeclaredCodeOf<R>>(
+  route: R,
+  code: C,
+  ...[params]: ParamsArgument<C>
+): RefusalException {
+  const status = statusOf(code);
+  const declared = errorCodesOf(route, status);
+  if (declared !== undefined && !declared.includes(code)) {
+    undeclaredLogger.error(
+      `${route.method.toUpperCase()} ${versionedPath(route)} refused with ${code}, which it does ` +
+        `not declare at ${String(status)}; answered it anyway.`,
+    );
+  }
+  return new RefusalException(status, { code, params: params ?? {}, nature: natureOf(code) });
+}
+
+/** `refusalOf`, keeping what caused it for the log: a cause is never served. */
+export function refusalCausedBy<C extends ErrorCode>(
+  cause: unknown,
+  code: C,
+  ...[params]: ParamsArgument<C>
+): RefusalException {
+  return new RefusalException(
+    statusOf(code),
+    { code, params: params ?? {}, nature: natureOf(code) },
+    { cause },
+  );
+}
+
+/**
+ * A domain error as the filter answers it: a published code at the status the error registry gives
+ *   it, so no handler picks one. A domain guard's code is not published: its nature, which the
+ *   registry gives every code, reads a refused one as the caller's own input, 400, and an
+ *   unavailable one as 503.
+ */
+export function domainRefusal(error: DomainError): RefusalException {
+  const status = isPublishedCode(error.code)
+    ? statusOf(error.code)
+    : error.nature === FailureNature.REFUSED
+      ? HttpStatus.BAD_REQUEST
+      : HttpStatus.SERVICE_UNAVAILABLE;
+  return new RefusalException(status, error);
+}
+
+/** What a schema pipe hands over: a zod issue, under Standard Schema's name. */
+interface StandardIssue {
   readonly path?: readonly (PropertyKey | { readonly key: PropertyKey })[] | undefined;
 }
 
-function dottedFieldPath(issue: SchemaIssue): string {
-  return (issue.path ?? [])
-    .map((segment) =>
-      typeof segment === 'object' && segment !== null ? String(segment.key) : String(segment),
-    )
-    .join('.');
+function isZodIssue(issue: StandardIssue): issue is z.core.$ZodIssue {
+  return 'code' in issue && Array.isArray(issue.path);
 }
 
 /**
- * `issueToCode` is not used: it builds `validation.<code>`, a spelling in no `ERROR_CODES`
- *   family, and it reads a ZOD issue where `exceptionFactory` gets Standard Schema's, which
- *   has no `code`. §5.5 fixes the code anyway, so an issue is read for its path alone.
- * `fields` is plural, which `issueToCode` could not give — the envelope has one `params` and
- *   a form needs every failing field. Sorted and de-duplicated so equal bodies answer alike.
+ * `api.schema_invalid` with each issue's path, rule and limit, never the library's English message.
+ *   An issue that is not zod's, which no schema here produces, reads as a broken custom rule.
  */
-export function schemaInvalidRefusal(issues: readonly SchemaIssue[]): Refusal {
-  const fields = [...new Set(issues.map(dottedFieldPath).filter((path) => path.length > 0))].sort();
-  return {
-    code: ApiErrorCode.SCHEMA_INVALID,
-    // Omitted rather than empty: `fields: []` reads as "no field was at fault", the opposite
-    // of what a root-level failure — a body that is not an object — means.
-    params: fields.length > 0 ? { fields } : {},
-    nature: FailureNature.REFUSED,
-  };
-}
-
-export function schemaInvalidException(issues: readonly SchemaIssue[]): RefusalException {
-  return new RefusalException(HttpStatus.BAD_REQUEST, schemaInvalidRefusal(issues));
+export function schemaInvalidException(issues: readonly StandardIssue[]): RefusalException {
+  const zodIssues = issues.map((issue): z.core.$ZodIssue =>
+    isZodIssue(issue)
+      ? issue
+      : {
+          code: SchemaIssueRule.CUSTOM,
+          path: (issue.path ?? []).map((segment) =>
+            typeof segment === 'object' ? segment.key : segment,
+          ),
+          message: '',
+          input: undefined,
+        },
+  );
+  return refusalOf(ApiErrorCode.SCHEMA_INVALID, schemaInvalidParams(zodIssues));
 }
 
 /** `api.not_found` is a route that does not resolve, which a route naming nothing held here is too. */
 export function notFound(): RefusalException {
-  return new RefusalException(HttpStatus.NOT_FOUND, {
-    code: ApiErrorCode.NOT_FOUND,
-    params: {},
-    nature: FailureNature.REFUSED,
-  });
+  return refusalOf(ApiErrorCode.NOT_FOUND);
 }
 
-/** A command sent against a version that has moved, naming what the caller must read again. */
-export function stateConflict(params: MessageParams): RefusalException {
-  return new RefusalException(HttpStatus.CONFLICT, {
-    code: DomainErrorCode.STATE_CONFLICT,
-    params,
-    nature: FailureNature.REFUSED,
-  });
+/** A command sent against a version that has moved, naming the version the caller must read again. */
+export function stateConflict(currentVersion: number): RefusalException {
+  return refusalOf(DomainErrorCode.STATE_CONFLICT, { currentVersion });
 }

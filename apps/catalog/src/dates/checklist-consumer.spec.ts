@@ -159,7 +159,10 @@ describe('applyChecklistMessage, before any write', () => {
 
   it('dead-letters a refusal other than an unknown date under its code, not as unknown', async () => {
     const refusing = {
-      execute: () => Promise.reject(new DomainError({ code: DomainErrorCode.STATE_CONFLICT })),
+      execute: () =>
+        Promise.reject(
+          new DomainError({ code: DomainErrorCode.STATE_CONFLICT, params: { currentVersion: 1 } }),
+        ),
     } as unknown as CommandBus;
     const policy = toBinary(
       DateChatPolicyChangedSchema,

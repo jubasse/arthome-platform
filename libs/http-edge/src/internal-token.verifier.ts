@@ -1,5 +1,5 @@
 import { isDevelopmentTokenKey, type JwksSource } from '@arthome-platform/config';
-import { HttpStatus, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import {
   createLocalJWKSet,
   createRemoteJWKSet,
@@ -12,35 +12,27 @@ import {
 
 import {
   ApiErrorCode,
-  FailureNature,
+  audienceOf,
   INTERNAL_TOKEN_ALGORITHM,
   INTERNAL_TOKEN_ISSUERS,
   INTERNAL_TOKEN_LIFETIME_SECONDS,
-  TOKEN_CLOCK_TOLERANCE_SECONDS,
-  audienceOf,
   isKeyIdOfIssuer,
+  TOKEN_CLOCK_TOLERANCE_SECONDS,
   type Clock,
 } from '@arthome/core';
 import { InternalTokenClaimsSchema } from '@arthome/core/schema';
 
 import { unauthenticated, type Principal } from './principal.js';
-import { RefusalException } from './refusal.js';
+import type { RefusalException } from './refusal.js';
+import { refusalCausedBy, refusalOf } from './refusal.js';
 
 function tokenExpired(): RefusalException {
-  return new RefusalException(HttpStatus.UNAUTHORIZED, {
-    code: ApiErrorCode.TOKEN_EXPIRED,
-    params: {},
-    nature: FailureNature.REFUSED,
-  });
+  return refusalOf(ApiErrorCode.TOKEN_EXPIRED);
 }
 
 /** The keys could not be read: nothing is known about the token, and the fault is ours. */
 function keysUnavailable(cause: unknown): RefusalException {
-  return new RefusalException(
-    HttpStatus.SERVICE_UNAVAILABLE,
-    { code: ApiErrorCode.SERVICE_UNAVAILABLE, params: {}, nature: FailureNature.UNAVAILABLE },
-    { cause },
-  );
+  return refusalCausedBy(cause, ApiErrorCode.SERVICE_UNAVAILABLE);
 }
 
 /** What a caller's token can be blamed for; anything else is the key set failing us. */

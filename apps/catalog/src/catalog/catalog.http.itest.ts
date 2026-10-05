@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
+  CatalogErrorCode,
   DomainErrorCode,
   FailureNature,
   FixedClock,
@@ -97,7 +98,7 @@ describe('the show, venue and artist routes over HTTP', () => {
       const unknown = await send('POST', '/venues', { ...venue, timeZone: 'Mars/Olympus_Mons' });
       expect(unknown.statusCode).toBe(400);
       expect(unknown.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['timeZone'] } },
+        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { issues: [{ path: ['timeZone'] }] } },
       });
     },
     CASE_MS,
@@ -206,7 +207,7 @@ describe('the show, venue and artist routes over HTTP', () => {
       const lost = await publishing;
       expect(lost?.statusCode).toBe(409);
       expect(lost?.json()).toMatchObject({
-        error: { code: DomainErrorCode.STATE_CONFLICT, nature: FailureNature.REFUSED },
+        error: { code: CatalogErrorCode.SHOW_SLUG_TAKEN, nature: FailureNature.UNAVAILABLE },
       });
 
       const retried = await send('POST', '/shows', show);
@@ -249,7 +250,7 @@ describe('the show, venue and artist routes over HTTP', () => {
         error: {
           code: DomainErrorCode.STATE_CONFLICT,
           nature: FailureNature.REFUSED,
-          params: { version: 1 },
+          params: { currentVersion: 1 },
         },
       });
     },

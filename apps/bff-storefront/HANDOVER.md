@@ -11,20 +11,17 @@ Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10
 
 | File | What it is |
 | --- | --- |
-| `src/search/search.controller.ts` | the route: surface check, deadline, the call, the public cache headers |
-| `src/search/search-query.schema.ts` | the contract's query parameters, query-string values coerced |
-| `src/search/search-response.schema.ts` | the 200 body, composed from `@arthome/contracts` |
+| `src/search/search.controller.ts` | the route, bound to `storefrontApi.routes.search` with `@Endpoint`: deadline, the call, the public cache headers |
 | `src/upstream/service-client.ts` | the one way this BFF calls a service: a fresh internal token, the deadline, the trace, the answer validated, the refusal relayed or mapped |
 | `src/internal-token.minter.ts` | the token each call carries: ES256, this BFF as issuer, the service as audience, 60 s |
 | `src/catalog/catalog.client.ts` | catalog's adapter on `ServiceClient`, always anonymous: the public reads serve every caller one body |
 | `src/identity/identity.client.ts` | identity's adapter: the relayed authentication calls and the session's resolution |
-| `src/auth/auth.controller.ts`, `auth-requests.schema.ts` | `/v1/auth/*`, the contract's bodies, the delivery mode |
+| `src/auth/auth.controller.ts` | `/v1/auth/*`, bound to the contract's routes: its bodies and headers, the delivery mode |
 | `src/auth/auth-rate-limits.ts`, `throttler-storage.ts` | the caps of core's `AuthRateLimit`, counted in Redis, refused as `api.rate_limited` |
-| `src/session/` | the session's two carriers, the viewer, `ViewerGuard`, `CsrfGuard` and the plugins they rely on |
+| `src/session/` | the session's two carriers, the viewer, `ViewerIdentity`, `CsrfGuard` and the plugins they rely on |
 | `src/viewer-context/` | `getViewerContext` and the composition `SessionEstablished` reuses |
 | `src/dates/dates.controller.ts` | `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`, relayed from catalog |
 | `src/conditional-get.ts` | the `ETag` and the `onSend` hook that answers a matching `If-None-Match` with 304 |
-| `src/storefront-surface.ts` | the `X-Arthome-Surface` check and the contract's `Vary`, for every route |
 | `src/traceparent.middleware.ts` | a `traceparent` on every request that arrives without a valid one |
 
 Proven by `src/catalog/catalog.client.spec.ts` (a stand-in catalog over HTTP), the two
@@ -32,21 +29,31 @@ Proven by `src/catalog/catalog.client.spec.ts` (a stand-in catalog over HTTP), t
 `src/auth/auth.e2e.itest.ts` (this BFF against the real identity, Postgres and Redis), and on the
 running stack (`AGENTS.md`, "Search, the date page and link resolution, from the storefront BFF").
 
+Every route here is bound by `@Endpoint(route)` to its `storefrontApi` declaration (`AGENTS.md`,
+"Binding a route to its contract operation"): there is no hand copy of a query, a body or a
+response left, and the upstream answers are validated against `successSchemaOf(route)`. The
+development Swagger UI is at `http://localhost:3003/docs`, mounted by `main.ts` from the
+contract's docs module (`storefront-docs.ts`) and absent in production.
+
 ## 2. Decisions, and why
 
 - **The deadline is 200 ms out**, transport.md §5.9's search budget, sent as `x-arthome-deadline`
   and armed locally with `AbortSignal.timeout` on the same instant. The surface hanging up aborts
   the call too.
-- **Only `STOREFRONT_RELAYED_CODES` cross** (`@arthome/contracts/envelope`, where transport.md §5.5
-  puts the allowlist), with their status and params. Catalog's `api.deadline_exceeded` becomes
-  `api.upstream_timeout`; anything else, a 2xx outside the contract included, becomes
+- **Only the codes the BFF route declares cross**, with their params, at the status core's error
+  registry gives them: the call carries its route (`serviceCallFor`'s last argument, `route` on a
+  `CatalogCall`). A code about the call itself (a 5xx, or a 4xx core derives on every route but
+  `api.schema_invalid`: the token, the limits) never crosses, declared or not. A guard's call,
+  which serves no route, keeps `STOREFRONT_RELAYED_CODES` (`@arthome/contracts/envelope`, where
+  transport.md §5.5 puts the allowlist) at the service's status. Catalog's `api.deadline_exceeded`
+  becomes `api.upstream_timeout`; anything else, a 2xx outside the contract included, becomes
   `api.upstream_unavailable`, and the original is logged with the `traceparent`. No retry here:
   the surface is the one layer that retries.
 - **A `traceparent` is created when the surface sent none or a broken one**, on the request itself:
   the error filter reads it there, and the storefront `Error` requires a `traceId`.
-- **`Cache-Control: public, max-age=60`** and the contract's `Vary`: every call is anonymous today,
-  no overlay is composed, so the body is the same for every caller. The day a session adds
-  overlays, the header must turn `private` for that caller.
+- **`Cache-Control: public, max-age=60`** for an anonymous caller, and the contract's `Vary`; a
+  signed-in viewer is answered `private, max-age=60` (core's `cacheControlOf` takes the caller),
+  so no shared cache keeps a page served to them once a session adds overlays.
 - **Every call to a service carries an internal token** (`adr-auth.md` §8): minted per call, never
   forwarded, naming the viewer's account and device, or no account for an anonymous visitor.
   `DenyInProductionGuard` stays bound behind the others, and every route here is allowed in
@@ -59,8 +66,13 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   (`internal-token.verifier.spec.ts`), so a CDN document that carried it by mistake still verifies
   nothing it signed (approved by the lead, 2026-10-03). The minter refuses a key whose `kid` is not
   `bff-sf-`.
-- **The session is identity's, validated here** (§8): `ViewerGuard` asks identity on the routes
-  marked `RequiresViewer`, and nowhere else, so a public read never waits on identity. No Redis
+- **The session is identity's, validated here** (§8): a route declared with the `viewer` identity
+  is resolved by `ViewerIdentity`, bound in `AppModule`'s `endpointProviders`, which also checks a
+  cookie write's CSRF token (not on a `csrfExempt` route) and counts a refused credential as none
+  where the route declares `refusedCredentialIsAnonymous` (sign-out). Public routes never wait on
+  identity. `viewer_or_device` is `ViewerIdentity` first, then `ViewerOrDeviceIdentity`'s
+  device token, verified by `PairedDeviceVerifier`: `NoPairedDevices` is bound until pairing is
+  built, so a device token alone answers 401. No Redis
   cache of sessions yet: one identity call per authenticated request, within transport.md §5.9's
   150 ms. Identity answers an unknown session `session: null`, so a 401 from identity means this
   BFF's own token was refused, and becomes `api.upstream_unavailable`.
@@ -109,7 +121,7 @@ running stack (`AGENTS.md`, "Search, the date page and link resolution, from the
   requirement. The impact is low: the country only feeds `AccountRegistered`, and every read
   evaluates it again.
 - **The viewer context is the contract's type** (`ServedViewerContext`), served from the session
-  `ViewerGuard` resolved: identity answers the account with it, so `getViewerContext` makes one
+  `ViewerIdentity` resolved: identity answers the account with it, so `getViewerContext` makes one
   identity call, within §5.9's session validation. The label catalogue and the taxonomy artifact
   are `null` until a publication pipeline exists (core's CI, context-map §1.8): the surface uses its
   embedded snapshot. The reaction quota per date is omitted until the product owner gives the

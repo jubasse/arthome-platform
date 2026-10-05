@@ -45,6 +45,16 @@ export { applyMigrations, createDatabase, truncateAll } from './database.js';
 export type { MigrationPlan } from './database.js';
 
 export { httpApp } from './http-app.js';
+export {
+  declaredResponses,
+  guardDeclaredResponses,
+  undeclaredResponsesMode,
+} from './declared-responses.js';
+export type {
+  DeclaredResponses,
+  UndeclaredResponse,
+  UndeclaredResponsesMode,
+} from './declared-responses.js';
 export { mintInternalToken } from './internal-token.js';
 export type { InternalCaller, MintOptions } from './internal-token.js';
 export type { HttpAppOptions } from './http-app.js';

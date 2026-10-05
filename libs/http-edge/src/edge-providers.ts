@@ -12,9 +12,11 @@ import {
 import { SystemClock, type Clock } from '@arthome/core';
 
 import { DenyInProductionGuard } from './deny-in-production.guard.js';
+import { endpointProviders } from './endpoint-providers.js';
 import { ErrorEnvelopeFilter } from './error-envelope.filter.js';
-import { InternalTokenGuard } from './internal-token.guard.js';
+import { InternalTokenGuard, ServiceIdentity } from './internal-token.guard.js';
 import { InternalTokenVerifier } from './internal-token.verifier.js';
+import { JsonBodiesOnly } from './json-bodies-only.js';
 import { schemaInvalidException, type UniqueViolationCode } from './refusal.js';
 import { SuccessEnvelopeInterceptor } from './success-envelope.interceptor.js';
 
@@ -25,14 +27,35 @@ export interface EdgeOptions {
   readonly clock: InjectionToken;
   /** Every unique constraint a request can collide on: one left out answers 500. */
   readonly uniqueViolations?: readonly UniqueViolationCode[];
+  /**
+   * The operation ids this service serves without the internal token. A service is reached inside
+   *   the cluster without TLS, so the token is its only authorisation (transport.md §5.1): any
+   *   other route the contract declares public, or optional, fails the boot. Empty today, health
+   *   being outside the contracts.
+   */
+  readonly publicRoutes?: readonly string[];
 }
 
 /**
  * A service's global enhancers and its system clock, bound by its root module and by its HTTP
  *   suites (`httpApp` in `@arthome-platform/testing`), so a suite answers what the service answers.
  */
-export function edgeProviders({ service, clock, uniqueViolations = [] }: EdgeOptions): Provider[] {
+export function edgeProviders({
+  service,
+  clock,
+  uniqueViolations = [],
+  publicRoutes = [],
+}: EdgeOptions): Provider[] {
   return [
+    ...endpointProviders({
+      inject: [ServiceIdentity],
+      useFactory: (identity: ServiceIdentity) => ({
+        identities: { service: identity },
+        rules: {},
+        publicAllowed: publicRoutes,
+      }),
+    }),
+    ServiceIdentity,
     // Global rather than `@UsePipes` on a method, where the schema would run on every parameter
     //   of the handler, `@Param('id')` included.
     {
@@ -73,5 +96,6 @@ export function edgeProviders({ service, clock, uniqueViolations = [] }: EdgeOpt
         new DenyInProductionGuard(isProductionEnvironment(), reflector),
     },
     { provide: clock, useValue: new SystemClock() },
+    { provide: JsonBodiesOnly, useClass: JsonBodiesOnly },
   ];
 }

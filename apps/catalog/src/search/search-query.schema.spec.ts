@@ -1,9 +1,16 @@
-import { schemaInvalidRefusal } from '@arthome-platform/http-edge';
+import { schemaInvalidException } from '@arthome-platform/http-edge';
 import { describe, expect, it } from 'vitest';
 
 import { LanguageDependency } from '@arthome/core';
 
 import { SearchQuerySchema, SearchSort, SearchTab } from './search-query.schema.js';
+
+function pathsOf(issues: Parameters<typeof schemaInvalidException>[0]): string[] {
+  const { issues: refused } = schemaInvalidException(issues).refusal.params as {
+    readonly issues: readonly { readonly path: readonly unknown[] }[];
+  };
+  return refused.map(({ path }) => path.join('.')).sort();
+}
 
 async function issuesOf(query: Record<string, unknown>) {
   const result = await SearchQuerySchema['~standard'].validate(query);
@@ -42,9 +49,7 @@ describe('SearchQuerySchema', () => {
       cityIds: 'paris',
     });
 
-    expect(schemaInvalidRefusal(issues).params).toEqual({
-      fields: ['cityIds', 'priceMaxMinor', 'sort', 'tab'],
-    });
+    expect(pathsOf(issues)).toEqual(['cityIds', 'priceMaxMinor', 'sort', 'tab']);
   });
 
   it('refuses a one-letter query, which the contract bounds at two', () => {

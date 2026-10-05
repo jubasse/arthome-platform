@@ -3,7 +3,7 @@ import type { ServerResponse } from 'node:http';
 
 import { describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, FixedClock } from '@arthome/core';
+import { ApiErrorCode, FixedClock, SchemaIssueRule } from '@arthome/core';
 
 import { remainingBeforeDeadline, whenCallerLeaves } from './deadline.js';
 import { RefusalException } from './refusal.js';
@@ -33,13 +33,22 @@ describe('remainingBeforeDeadline', () => {
     }
   });
 
-  it('refuses a call without one, or with a duration or an offset, as malformed', () => {
-    for (const header of [undefined, '200ms', '2026-09-26T22:00:00.000+02:00']) {
-      const refusal = refusalOf(header);
-      expect(refusal.getStatus()).toBe(400);
-      expect(refusal.refusal).toMatchObject({
-        code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['x-arthome-deadline'] },
+  it('refuses a call without one as missing, and a duration or an offset as malformed', () => {
+    const missing = refusalOf(undefined);
+    expect(missing.getStatus()).toBe(400);
+    expect(missing.refusal).toMatchObject({
+      code: ApiErrorCode.SCHEMA_INVALID,
+      params: { issues: [{ path: ['x-arthome-deadline'], rule: SchemaIssueRule.INVALID_TYPE }] },
+    });
+    for (const header of ['200ms', '2026-09-26T22:00:00.000+02:00']) {
+      expect(refusalOf(header).refusal.params).toEqual({
+        issues: [
+          {
+            path: ['x-arthome-deadline'],
+            rule: SchemaIssueRule.INVALID_FORMAT,
+            format: 'date-time',
+          },
+        ],
       });
     }
   });

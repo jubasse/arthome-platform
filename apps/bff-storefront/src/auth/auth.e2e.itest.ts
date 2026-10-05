@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto';
 
+import { serveEndpoints } from '@arthome-platform/http-edge';
 import {
   startIdentity,
   type IdentityHarness,
 } from '@arthome-platform/identity/src/itest/identity-app.js';
 import { newestLinkTokenTo } from '@arthome-platform/identity/src/itest/verification-links.js';
-import { startStack, type StartedStack } from '@arthome-platform/testing';
+import { guardDeclaredResponses, startStack, type StartedStack } from '@arthome-platform/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { SessionMode, ViewerContextSchema } from '@arthome/contracts/identity';
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import {
   ApiErrorCode,
   AuthRateLimit,
@@ -57,6 +59,8 @@ const clock = new FixedClock(Date.now() + 3_600_000);
 let identity: IdentityHarness;
 let redis: StartedStack;
 let app: NestFastifyApplication;
+
+const responses = guardDeclaredResponses(storefrontApi);
 let addresses = 0;
 let emails = 0;
 /** The pauses sign-in asked for, recorded rather than waited out. */
@@ -86,6 +90,8 @@ beforeAll(async () => {
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
     logger: false,
   });
+  serveEndpoints(app);
+  responses.watch(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
 }, STARTUP_MS);
@@ -303,6 +309,7 @@ describe('signing up in bearer mode', () => {
       const replay = await signUp(email, SessionMode.BEARER, key);
       expect(replay.statusCode).toBe(201);
       expect(replay.headers['idempotency-replayed']).toBe('true');
+      expect(replay.headers['x-arthome-served-at']).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
       expect(replay.json<{ data: { accessToken: string } }>().data.accessToken).toBe(
         data.accessToken,
       );
@@ -384,7 +391,10 @@ describe('the refusals a surface is told', () => {
       );
       expect(refused.statusCode).toBe(400);
       expect(refused.json()).toMatchObject({
-        error: { code: ApiErrorCode.SCHEMA_INVALID, params: { fields: ['x-arthome-surface'] } },
+        error: {
+          code: ApiErrorCode.SCHEMA_INVALID,
+          params: { issues: [{ path: ['x-arthome-surface'] }] },
+        },
       });
     },
     CASE_MS,

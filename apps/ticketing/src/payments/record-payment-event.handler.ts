@@ -1,10 +1,10 @@
-import { RefusalException, schemaInvalidException } from '@arthome-platform/http-edge';
-import { HttpStatus, Inject } from '@nestjs/common';
+import { refusalOf, schemaInvalidException } from '@arthome-platform/http-edge';
+import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { ApiErrorCode, FailureNature, type Clock, type PaymentWebhookPort } from '@arthome/core';
+import { ApiErrorCode, type Clock, type PaymentWebhookPort } from '@arthome/core';
 
 import { RecordPaymentEvent, type PaymentEventReceipt } from './record-payment-event.command.js';
 import { CLOCK } from '../clock.js';
@@ -30,11 +30,7 @@ export class RecordPaymentEventHandler implements ICommandHandler<RecordPaymentE
     traceparent,
   }: RecordPaymentEvent): Promise<PaymentEventReceipt> {
     if (!this.webhooks.verifySignature(rawBody, signature, this.clock.now())) {
-      throw new RefusalException(HttpStatus.UNAUTHORIZED, {
-        code: ApiErrorCode.UNAUTHENTICATED,
-        params: {},
-        nature: FailureNature.REFUSED,
-      });
+      throw refusalOf(ApiErrorCode.UNAUTHENTICATED);
     }
     const event = this.webhooks.parse(rawBody);
     if (event === null) throw schemaInvalidException([]);

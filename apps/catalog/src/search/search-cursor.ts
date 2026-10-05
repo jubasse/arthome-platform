@@ -1,10 +1,10 @@
-import { RefusalException, schemaInvalidRefusal } from '@arthome-platform/http-edge';
-import { HttpStatus } from '@nestjs/common';
+import { refusalOf, type RefusalException } from '@arthome-platform/http-edge';
 
-import { ApiErrorCode, FailureNature } from '@arthome/core';
+import { ApiErrorCode, SchemaIssueRule } from '@arthome/core';
 
 /** The `Cursor` parameter's promise in `storefront.yaml`. */
-const CURSOR_LIFETIME_MS = 24 * 60 * 60 * 1000;
+const CURSOR_LIFETIME_HOURS = 24;
+const CURSOR_LIFETIME_MS = CURSOR_LIFETIME_HOURS * 60 * 60 * 1000;
 
 /**
  * OpenSearch's default `index.max_result_window`: `from + size` past it is an error, not an
@@ -30,7 +30,9 @@ export function cursorAt(offset: number, issuedAtMs: number): string {
 }
 
 function malformedCursor(): RefusalException {
-  return new RefusalException(HttpStatus.BAD_REQUEST, schemaInvalidRefusal([{ path: ['cursor'] }]));
+  return refusalOf(ApiErrorCode.SCHEMA_INVALID, {
+    issues: [{ path: ['cursor'], rule: SchemaIssueRule.INVALID_VALUE }],
+  });
 }
 
 function decoded(cursor: string): OffsetCursor {
@@ -58,11 +60,7 @@ export function offsetOf(cursor: string | undefined, nowMs: number): number {
   const { offset, issuedAtMs } = decoded(cursor);
   if (offset < 0 || offset >= MAX_RESULT_WINDOW) throw malformedCursor();
   if (nowMs - issuedAtMs > CURSOR_LIFETIME_MS) {
-    throw new RefusalException(HttpStatus.GONE, {
-      code: ApiErrorCode.CURSOR_TOO_OLD,
-      params: {},
-      nature: FailureNature.REFUSED,
-    });
+    throw refusalOf(ApiErrorCode.CURSOR_TOO_OLD, { maxAgeHours: CURSOR_LIFETIME_HOURS });
   }
   return offset;
 }

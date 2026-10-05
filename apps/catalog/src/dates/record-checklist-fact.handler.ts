@@ -27,7 +27,7 @@ export class RecordChecklistFactHandler implements ICommandHandler<RecordCheckli
         lock: { mode: 'pessimistic_read' },
       });
       if (publication === null) {
-        throw new DomainError({ code: ApiErrorCode.NOT_FOUND, params: { dateId: fact.dateId } });
+        throw new DomainError({ code: ApiErrorCode.NOT_FOUND });
       }
 
       // A retry topic can bring an older fact after a newer one for the same item: the WHERE is

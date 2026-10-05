@@ -246,7 +246,7 @@ describe('GET /v1/search at the edge', () => {
       expect(missing.status).toBe(400);
       expect(missing.body.error).toMatchObject({
         code: ApiErrorCode.SCHEMA_INVALID,
-        params: { fields: ['x-arthome-deadline'] },
+        params: { issues: [{ path: ['x-arthome-deadline'] }] },
       });
       expect(passed.status).toBe(504);
       expect(passed.body.error?.code).toBe(ApiErrorCode.DEADLINE_EXCEEDED);
@@ -260,7 +260,8 @@ describe('GET /v1/search at the edge', () => {
       const { status, body } = await search({ q: 'nuit', priceMaxMinor: '2000', tab: 'artists' });
 
       expect(status).toBe(400);
-      expect(body.error?.params).toEqual({ fields: ['priceMaxMinor', 'tab'] });
+      const issues = (body.error?.params as { issues?: { path: unknown[] }[] } | undefined)?.issues;
+      expect(issues?.map(({ path }) => path.join('.')).sort()).toEqual(['priceMaxMinor', 'tab']);
     },
     CASE_MS,
   );

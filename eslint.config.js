@@ -72,6 +72,14 @@ export default defineConfig([
     },
   },
 
+  {
+    // A new use of a deprecated API fails, so what the contract model replaces cannot spread.
+    files: ['**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-deprecated': 'error',
+    },
+  },
+
   // 4. LAST
   prettier,
 ]);

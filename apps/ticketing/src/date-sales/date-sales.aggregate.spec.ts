@@ -3,13 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   CatalogErrorCode,
   DateOutcome,
-  DomainError,
   DomainErrorCode,
   OrderErrorCode,
   PriceTier,
   TECHNICAL_PROVISION_THRESHOLD,
+  isDomainError,
   money,
   provisionRevisableUntil,
+  type DomainError,
   type TierPrice,
 } from '@arthome/core';
 
@@ -52,7 +53,7 @@ function refusalOf(decide: () => unknown): DomainError {
   try {
     decide();
   } catch (error) {
-    if (error instanceof DomainError) return error;
+    if (isDomainError(error)) return error;
     throw error;
   }
   throw new Error('expected a refusal');
@@ -92,7 +93,7 @@ describe('setPrices', () => {
     const refusal = refusalOf(() => sales.setPrices(2, [FULL], NOW));
 
     expect(refusal.code).toBe(DomainErrorCode.STATE_CONFLICT);
-    expect(refusal.params).toEqual({ version: 3 });
+    expect(refusal.params).toEqual({ currentVersion: 3 });
   });
 
   it('refuses tiers in two currencies, and changes nothing', () => {
@@ -204,8 +205,8 @@ describe('openCapacityTier', () => {
 
     const refusal = refusalOf(() => sales.openCapacityTier(3, 10, NOW));
 
-    expect(refusal.code).toBe(DomainErrorCode.STATE_CONFLICT);
-    expect(refusal.params).toEqual({ version: 3, outcome: DateOutcome.CANCELLED });
+    expect(refusal.code).toBe(CatalogErrorCode.OUTCOME_FINAL);
+    expect(refusal.params).toEqual({ outcome: DateOutcome.CANCELLED });
     expect(sales.snapshot.capacityTotal).toBe(200);
   });
 

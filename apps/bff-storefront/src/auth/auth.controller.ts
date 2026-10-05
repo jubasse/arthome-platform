@@ -2,41 +2,25 @@ import type { ServerResponse } from 'node:http';
 
 import {
   AllowInProduction,
+  Endpoint,
+  EndpointInput,
   RefusalException,
   idempotencyKeyOf,
+  markReplayed,
   unauthenticated,
 } from '@arthome-platform/http-edge';
-import {
-  Body,
-  Controller,
-  Header,
-  Headers,
-  HttpCode,
-  Inject,
-  Logger,
-  Post,
-  Req,
-  Res,
-} from '@nestjs/common';
+import { Controller, Header, Inject, Logger, Req, Res } from '@nestjs/common';
 
+import type { HandlerInput, HandlerOutput, Route, RouteBody } from '@arthome/contracts/http';
 import { SessionMode } from '@arthome/contracts/identity';
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import { IdentityErrorCode, type Clock, type StorefrontSurface } from '@arthome/core';
 
-import { RateLimitedBy } from './auth-rate-limits.js';
-import {
-  SignInRequestSchema,
-  SignUpRequestSchema,
-  VerificationLinkSchema,
-  type SignInRequest,
-  type SignUpRequest,
-  type VerificationLink,
-} from './auth-requests.schema.js';
 import { FailedSignIns } from './failed-sign-ins.js';
 import { viewerCountryOf } from './viewer-country.js';
 import { CLOCK } from '../clock.js';
 import type { SessionOpened } from '../identity/identity-answers.schema.js';
 import { IdentityClient } from '../identity/identity.client.js';
-import { EndsSessionOnly, OpensNoSession } from '../session/csrf.guard.js';
 import {
   clearSessionCookies,
   presentedSession,
@@ -45,11 +29,13 @@ import {
   type CsrfReply,
   type PresentedSession,
 } from '../session/session-carriers.js';
-import { CurrentViewer, RequiresViewer, callerOf, type Viewer } from '../session/viewer.js';
-import { SURFACE_HEADER, assertStorefrontSurface } from '../storefront-surface.js';
+import { callerOf, viewerOf } from '../session/viewer.js';
 import { AUTHENTICATION_WRITE_BUDGET_MS, serviceCallFor } from '../upstream/service-call.js';
 import type { ServiceCall } from '../upstream/service-client.js';
 import { viewerContextOf, type ServedViewerContext } from '../viewer-context/viewer-context.js';
+
+const { signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification } =
+  storefrontApi.routes;
 
 export const VIEWER_COUNTRY_HEADER: unique symbol = Symbol('ViewerCountryHeader');
 
@@ -94,7 +80,7 @@ export type SessionEstablished =
  *   hardening. better-auth's own shapes and English never reach a surface.
  */
 @AllowInProduction()
-@Controller('v1/auth')
+@Controller()
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
 
@@ -106,19 +92,13 @@ export class AuthController {
   ) {}
 
   /** A replayed key answers the first session again, with `Idempotency-Replayed`. */
-  @Post('sign-up')
-  @HttpCode(201)
+  @Endpoint(signUp)
   @Header('cache-control', 'no-store')
-  @OpensNoSession()
-  @RateLimitedBy(['SIGN_UP_PER_ADDRESS'])
   public async signUp(
-    @Body({ schema: SignUpRequestSchema }) body: SignUpRequest,
+    @EndpointInput(signUp) { body, headers }: HandlerInput<typeof signUp>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-    @Headers(SURFACE_HEADER) surface?: string,
-    @Headers('idempotency-key') idempotencyKey?: string,
-  ): Promise<SessionEstablished> {
-    const storefront = assertStorefrontSurface(surface);
+  ): Promise<HandlerOutput<typeof signUp>> {
     const { body: opened, replayed } = await this.identity.signUp(
       {
         email: body.email,
@@ -128,12 +108,14 @@ export class AuthController {
         country: viewerCountryOf(request.headers, this.countryHeader),
         acceptedTermsVersion: body.acceptedTermsVersion,
       },
-      idempotencyKeyOf(idempotencyKey),
-      this.anonymousCall(request, reply),
+      idempotencyKeyOf(headers['idempotency-key']),
+      this.anonymousCall(request, reply, signUp),
     );
-    if (replayed) reply.header('idempotency-replayed', 'true');
+    if (replayed) markReplayed(reply, this.clock);
     await this.closeReplaced(request, reply, opened);
-    return this.established(body.mode, opened, storefront, request, reply);
+    return {
+      data: this.established(body.mode, opened, headers['x-arthome-surface'], request, reply),
+    };
   }
 
   /**
@@ -141,25 +123,20 @@ export class AuthController {
    *   email's recent failures hold the attempt before identity hears it, and only a wrong password
    *   counts as one.
    */
-  @Post('sign-in')
-  @HttpCode(200)
+  @Endpoint(signIn)
   @Header('cache-control', 'no-store')
-  @OpensNoSession()
-  @RateLimitedBy(['SIGN_IN_PER_ADDRESS', 'SIGN_IN_PER_EMAIL'])
   public async signIn(
-    @Body({ schema: SignInRequestSchema }) body: SignInRequest,
+    @EndpointInput(signIn) { body, headers }: HandlerInput<typeof signIn>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-    @Headers(SURFACE_HEADER) surface?: string,
-  ): Promise<SessionEstablished> {
-    const storefront = assertStorefrontSurface(surface);
+  ): Promise<HandlerOutput<typeof signIn>> {
     await this.failedSignIns.holdBefore(body.email);
     let opened: SessionOpened;
     try {
       opened = await this.identity.signIn(
         body.email,
         body.password,
-        this.anonymousCall(request, reply),
+        this.anonymousCall(request, reply, signIn),
       );
     } catch (error) {
       if (isWrongPassword(error)) await this.failedSignIns.count(body.email);
@@ -167,82 +144,71 @@ export class AuthController {
     }
     await this.failedSignIns.forget(body.email);
     await this.closeReplaced(request, reply, opened);
-    return this.established(body.mode, opened, storefront, request, reply);
+    return {
+      data: this.established(body.mode, opened, headers['x-arthome-surface'], request, reply),
+    };
   }
 
   /**
    * Closes the presented session and nothing else, and succeeds again on a replay: a session already
    *   gone is still signed out. In cookie mode the cookies leave with the attributes that set them.
    */
-  @Post('sign-out')
-  @HttpCode(200)
+  @Endpoint(signOut)
   @Header('cache-control', 'no-store')
-  @EndsSessionOnly()
   public async signOut(
+    @EndpointInput(signOut) { headers, principal }: HandlerInput<typeof signOut>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-    @Headers(SURFACE_HEADER) surface?: string,
-    @Headers('idempotency-key') idempotencyKey?: string,
-  ): Promise<{ readonly signedOut: true }> {
-    assertStorefrontSurface(surface);
-    idempotencyKeyOf(idempotencyKey);
-    const presented = presentedSession(request);
-    if (presented === null) throw unauthenticated();
-    await this.identity.revoke(presented.token, this.anonymousCall(request, reply));
-    if (presented.carrier === SessionMode.COOKIE) clearSessionCookies(reply);
-    return { signedOut: true };
+  ): Promise<HandlerOutput<typeof signOut>> {
+    idempotencyKeyOf(headers['idempotency-key']);
+    const presented = replacedSession(request);
+    if (principal !== null && presented !== null) {
+      await this.identity.revoke(presented.token, this.anonymousCall(request, reply, signOut));
+    }
+    if (presented?.carrier === SessionMode.COOKIE) clearSessionCookies(reply);
+    return { data: { signedOut: true } };
   }
 
-  @Post('verify-email')
-  @HttpCode(200)
+  @Endpoint(confirmEmailVerification)
   @Header('cache-control', 'no-store')
-  @OpensNoSession()
-  @RateLimitedBy(['EMAIL_VERIFICATION_CONFIRM_PER_ADDRESS'])
   public async confirmEmailVerification(
-    @Body({ schema: VerificationLinkSchema }) body: VerificationLink,
+    @EndpointInput(confirmEmailVerification)
+    { body, headers }: HandlerInput<typeof confirmEmailVerification>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-    @Headers(SURFACE_HEADER) surface?: string,
-    @Headers('idempotency-key') idempotencyKey?: string,
-  ): Promise<{ readonly verified: boolean }> {
-    assertStorefrontSurface(surface);
+  ): Promise<HandlerOutput<typeof confirmEmailVerification>> {
     const { body: verified, replayed } = await this.identity.confirmVerification(
       body.token,
-      idempotencyKeyOf(idempotencyKey),
-      this.anonymousCall(request, reply),
+      idempotencyKeyOf(headers['idempotency-key']),
+      this.anonymousCall(request, reply, confirmEmailVerification),
     );
-    if (replayed) reply.header('idempotency-replayed', 'true');
-    return verified;
+    if (replayed) markReplayed(reply, this.clock);
+    return { data: verified };
   }
 
-  @Post('verify-email/resend')
-  @HttpCode(200)
+  @Endpoint(resendEmailVerification)
   @Header('cache-control', 'no-store')
-  @RequiresViewer()
-  @RateLimitedBy([
-    'EMAIL_VERIFICATION_RESEND_PER_ACCOUNT',
-    'EMAIL_VERIFICATION_RESEND_PER_ACCOUNT_DAILY',
-  ])
   public async resendEmailVerification(
-    @CurrentViewer() viewer: Viewer,
+    @EndpointInput(resendEmailVerification)
+    { headers }: HandlerInput<typeof resendEmailVerification>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
-    @Headers(SURFACE_HEADER) surface?: string,
-    @Headers('idempotency-key') idempotencyKey?: string,
-  ): Promise<{ readonly queued: boolean }> {
-    assertStorefrontSurface(surface);
+  ): Promise<HandlerOutput<typeof resendEmailVerification>> {
+    const viewer = viewerOf(request);
+    if (viewer === null) throw unauthenticated();
     const { body: queued, replayed } = await this.identity.resendVerification(
-      idempotencyKeyOf(idempotencyKey),
+      idempotencyKeyOf(headers['idempotency-key']),
       serviceCallFor(
         request,
         reply.raw,
         this.clock,
         AUTHENTICATION_WRITE_BUDGET_MS,
         callerOf(viewer),
+        resendEmailVerification,
       ),
     );
-    if (replayed) reply.header('idempotency-replayed', 'true');
-    return queued;
+    if (replayed) markReplayed(reply, this.clock);
+    return { data: queued };
   }
 
   /**
@@ -263,13 +229,20 @@ export class AuthController {
     }
   }
 
-  private anonymousCall(request: Inbound, reply: SessionReply): ServiceCall {
-    return serviceCallFor(request, reply.raw, this.clock, AUTHENTICATION_WRITE_BUDGET_MS, null);
+  private anonymousCall(request: Inbound, reply: SessionReply, route?: Route): ServiceCall {
+    return serviceCallFor(
+      request,
+      reply.raw,
+      this.clock,
+      AUTHENTICATION_WRITE_BUDGET_MS,
+      null,
+      route,
+    );
   }
 
   /** The mode is the surface's explicit choice (D-023), never inferred from its `User-Agent`. */
   private established(
-    mode: SignUpRequest['mode'],
+    mode: RouteBody<typeof signUp>['mode'],
     opened: SessionOpened,
     surface: StorefrontSurface,
     request: Inbound,

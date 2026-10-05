@@ -1,5 +1,4 @@
 import { DateSalesAvailabilityChangedSchema } from '@arthome-platform/events';
-import { RefusalException } from '@arthome-platform/http-edge';
 import { OutboxEvent } from '@arthome-platform/messaging';
 import {
   applyMigrations,
@@ -13,7 +12,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { FixedClock, plusMinutes, plusSeconds, OrderErrorCode } from '@arthome/core';
+import { FixedClock, OrderErrorCode, plusMinutes, plusSeconds } from '@arthome/core';
 
 import { ApplyCatalogDateFactHandler } from './apply-catalog-date-fact.handler.js';
 import { applyCatalogDateMessage } from './catalog-date-messages.js';
@@ -142,8 +141,7 @@ describe('a pass of the sales closing', () => {
       } catch (error) {
         refusal = error;
       }
-      expect(refusal).toBeInstanceOf(RefusalException);
-      expect((refusal as RefusalException).refusal.code).toBe(OrderErrorCode.SALES_CLOSED);
+      expect(refusal).toMatchObject({ code: OrderErrorCode.SALES_CLOSED });
     },
     CASE_MS,
   );
