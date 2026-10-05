@@ -18,7 +18,7 @@ Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10
 | `src/identity/identity.client.ts` | identity's adapter: the relayed authentication calls and the session's resolution |
 | `src/auth/auth.controller.ts` | `/v1/auth/*`, bound to the contract's routes: its bodies and headers, the delivery mode |
 | `src/auth/auth-rate-limits.ts`, `throttler-storage.ts` | the caps of core's `AuthRateLimit`, counted in Redis, refused as `api.rate_limited` |
-| `src/session/` | the session's two carriers, the viewer, `ViewerGuard`, `ViewerIdentity`, `CsrfGuard` and the plugins they rely on |
+| `src/session/` | the session's two carriers, the viewer, `ViewerIdentity`, `CsrfGuard` and the plugins they rely on |
 | `src/viewer-context/` | `getViewerContext` and the composition `SessionEstablished` reuses |
 | `src/dates/dates.controller.ts` | `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`, relayed from catalog |
 | `src/conditional-get.ts` | the `ETag` and the `onSend` hook that answers a matching `If-None-Match` with 304 |
@@ -67,12 +67,11 @@ contract's docs module (`storefront-docs.ts`) and absent in production.
   (`internal-token.verifier.spec.ts`), so a CDN document that carried it by mistake still verifies
   nothing it signed (approved by the lead, 2026-10-03). The minter refuses a key whose `kid` is not
   `bff-sf-`.
-- **The session is identity's, validated here** (§8): `ViewerGuard` asks identity on the routes
-  marked `RequiresViewer`, and nowhere else, so a public read never waits on identity. A route
-  declared with the `viewer` identity (contract pass 1) is resolved by `ViewerIdentity` instead,
-  bound in `AppModule`'s `endpointProviders`, which also checks a cookie write's CSRF token; the
-  dates, search and viewer-context controllers are on it, the auth controller still on
-  `ViewerGuard`. `viewer_or_device` is `ViewerIdentity` first, then `ViewerOrDeviceIdentity`'s
+- **The session is identity's, validated here** (§8): a route declared with the `viewer` identity
+  is resolved by `ViewerIdentity`, bound in `AppModule`'s `endpointProviders`, which also checks a
+  cookie write's CSRF token (not on a `csrfExempt` route) and counts a refused credential as none
+  where the route declares `refusedCredentialIsAnonymous` (sign-out). Public routes never wait on
+  identity. `viewer_or_device` is `ViewerIdentity` first, then `ViewerOrDeviceIdentity`'s
   device token, verified by `PairedDeviceVerifier`: `NoPairedDevices` is bound until pairing is
   built, so a device token alone answers 401. No Redis
   cache of sessions yet: one identity call per authenticated request, within transport.md §5.9's

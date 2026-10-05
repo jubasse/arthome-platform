@@ -84,10 +84,6 @@ export default defineConfig([
     // The files that used a deprecated API when the rule was turned on (2026-10-05). A file leaves
     //   the list with its last deprecated use, and the list must be empty when the fan-out closes.
     files: [
-      'apps/bff-storefront/src/app.module.ts',
-      'apps/bff-storefront/src/auth/auth-rate-limits.ts',
-      'apps/bff-storefront/src/auth/auth.controller.ts',
-      'apps/bff-storefront/src/session/viewer.guard.ts',
       'libs/http-edge/src/endpoint.spec.ts',
       'libs/http-edge/src/index.ts',
       'tools/schematics/src/lib/source-file.ts',

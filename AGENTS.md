@@ -247,8 +247,8 @@ export class DatesController {
 - **Inputs** come in one decorator, `@EndpointInput(route)`, typed `HandlerInput<typeof route>`:
   `{ params, query, body, headers, principal }`, each part validated against the route's schema
   and every failing field named at once in `api.schema_invalid`'s `fields`; `@EndpointPrincipal(route)`
-  gives the principal alone. The four separate decorators the bound routes still use,
-  `EndpointParams`, `EndpointQuery`, `EndpointBody` and `EndpointHeaders`, are deprecated.
+  gives the principal alone. The four separate decorators, `EndpointParams`, `EndpointQuery`,
+  `EndpointBody` and `EndpointHeaders`, are deprecated; no BFF controller uses them any more.
 - **The handler returns data, the server stamps the envelope.** The handler must be `async` and
   return core's `HandlerOutput<typeof route>`: the route's success body without `servedAt`
   (`{ data }`, `{ data, validUntil }` on a perishable read, `{ items, page }` on a list), which
@@ -277,10 +277,12 @@ export class DatesController {
   `EndpointAccessGuard`: the identity's guard first, bound under the identity's name, then each
   rule's guard in its declared order. The table is the process's, given to `endpointProviders`
   (listed before every other global enhancer): the BFF binds `viewer` (the session, and the CSRF
-  token of a cookie write, from the identity's write schemes), `viewer_or_device` (the viewer, then
+  token of a cookie write, from the identity's write schemes, except on a route declaring
+  `csrfExempt`; a refused credential is none on a route declaring `refusedCredentialIsAnonymous`), `viewer_or_device` (the viewer, then
   the paired device, whose token nothing verifies yet, so it is refused) and `throttle` (a bucket is
-  a cap of core's `AuthRateLimit`; the `auth` bucket the auth routes declare until core names
-  their caps leaves the count to the caps each handler names with `@RateLimitedBy`); every service binds `service` (`ServiceIdentity`: the internal token,
+  a cap of core's `AuthRateLimit`, `CAPS_OF_BUCKET` being the one map from bucket to caps; the rule
+  counts nothing and fails the boot on a bucket with no cap, the global `AuthThrottlerGuard` counts
+  the caps of the buckets the route's contract declares); every service binds `service` (`ServiceIdentity`: the internal token,
   verified as `InternalTokenGuard` does, which leaves a route declaring an access to it). On a
   service, a route the contract declares public fails the boot unless `edgeProviders`'
   `publicRoutes` names it (empty today): reached in the cluster without TLS, a service has the
@@ -288,9 +290,11 @@ export class DatesController {
   cannot enforce, fails the boot. The handler receives the identity's principal, stripped to its
   schema: `null` only on an `optionalAuth` route, `undefined` on a public one.
 - **Routes bound without an access keep the legacy guards** until their module opts in, and the boot
-  lists them: `InternalTokenGuard` and `DenyInProductionGuard` on the services, `ViewerGuard` with
-  `RequiresViewer`, `CsrfGuard` and the caps named by `RateLimitedBy` on the BFF.
-  `@AllowInProduction()` stays where it was.
+  lists them: `InternalTokenGuard` and `DenyInProductionGuard` on the services. The BFF's global
+  `CsrfGuard` and `AuthThrottlerGuard` stay as a second line and read the route's contract:
+  `csrfExempt` is the only exemption besides a public route, and the caps come from the declared
+  buckets. The BFF refuses to boot on a controller method that serves a path without `@Endpoint`
+  (`ContractRoutesOnly`, `HealthController` apart). `@AllowInProduction()` stays where it was.
 - **The answer is shaped from the route** by `EndpointResponseInterceptor`, around the success
   envelope: it is parsed through core's stripping schema of the success body
   (`strippingBodiesOf(route)`), so a field the route does not declare never leaves, even where the
@@ -306,8 +310,8 @@ export class DatesController {
 - **Budgets are the routes'** (transport.md §5.9). A BFF handler gives its calls the deadline of
   its own route's budget, `serviceCallFor(..., budgetOf(route), ...)`, and a call to a route that
   declares a budget of its own is given up at its end when that comes first,
-  `withinBudget(call, calledRoute.budgetMs, clock)`. The `*_BUDGET_MS` constants go as routes
-  declare theirs.
+  `withinBudget(call, calledRoute.budgetMs, clock)`. `AUTHENTICATION_WRITE_BUDGET_MS` stays until the
+  authentication routes declare a budget.
 - **What Fastify refuses before the handler leaves in the envelope too**: a malformed JSON body
   400 `api.schema_invalid`, a body over 1 MiB 413 `api.payload_too_large`, an unknown route 404
   `api.not_found`, and any body that is not JSON 415 `api.unsupported_media_type`.

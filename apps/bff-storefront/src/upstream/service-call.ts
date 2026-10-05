@@ -8,10 +8,7 @@ import type { Clock } from '@arthome/core';
 import type { Caller } from '../internal-token.minter.js';
 import type { ServiceCall } from './service-client.js';
 
-/**
- * transport.md §5.9's authentication write.
- * @deprecated The route's own budget, `budgetOf(route)`, once the authentication routes declare it.
- */
+/** transport.md §5.9's authentication write, until the authentication routes declare their budget. */
 export const AUTHENTICATION_WRITE_BUDGET_MS = 2_000;
 
 /** transport.md §5.9's session validation, until identity's internal route declares it (D-121). */

@@ -78,6 +78,16 @@ const browse = viewers.optionalAuth().defineRoute({
   responses: answered(z.object({ principal: z.string() })),
 });
 
+const leaving = viewers
+  .identity(viewer, { csrfExempt: 'A forged departure grants nothing.' })
+  .optionalAuth({ refusedCredentialIsAnonymous: 'A dead session is already left.' })
+  .defineRoute({
+    method: 'post',
+    path: '/fixture/leave',
+    operationId: 'fixtureLeave',
+    responses: answered(z.object({ principal: z.string() })),
+  });
+
 const viewerOrDevice = identity('viewer_or_device', {
   schemes: {
     read: [{ sessionCookie: [] }, { bearerToken: [] }, { deviceToken: [] }],
@@ -124,6 +134,13 @@ class FixtureController {
   public async browse(
     @EndpointInput(browse) { principal }: HandlerInput<typeof browse>,
   ): Promise<HandlerOutput<typeof browse>> {
+    return Promise.resolve({ data: { principal: JSON.stringify(principal) } });
+  }
+
+  @Endpoint(leaving)
+  public async leave(
+    @EndpointInput(leaving) { principal }: HandlerInput<typeof leaving>,
+  ): Promise<HandlerOutput<typeof leaving>> {
     return Promise.resolve({ data: { principal: JSON.stringify(principal) } });
   }
 
@@ -256,6 +273,32 @@ describe('the viewer identity, applied by Endpoint', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ data: { note: 'hello' } });
+  });
+
+  it('asks a route that declares csrfExempt for no CSRF token on a cookie write', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/fixture/leave',
+      headers: WEB,
+      cookies: { [SESSION_COOKIE]: GOOD_TOKEN },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.json<{ data: { principal: string } }>().data.principal)).toEqual({
+      accountId: ACCOUNT,
+      deviceId: DEVICE,
+    });
+  });
+
+  it('counts a refused credential as none where the route declares it so', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/fixture/leave',
+      headers: { ...WEB, authorization: 'Bearer sess_revoked' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ data: { principal: 'null' } });
   });
 
   it('lets an anonymous caller into an optional route, with a null principal', async () => {

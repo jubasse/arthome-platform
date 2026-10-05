@@ -1,26 +1,11 @@
 import { RefusalException, refusalOf, routeOf } from '@arthome-platform/http-edge';
 import { Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
-import { HttpAdapterHost, Reflector, type ReflectableDecorator } from '@nestjs/core';
+import { HttpAdapterHost, Reflector } from '@nestjs/core';
 
+import type { Route, SecurityRequirement } from '@arthome/contracts/http';
 import { ApiErrorCode } from '@arthome/core';
 
 import { SESSION_COOKIE, type CookieCarrier } from './session-carriers.js';
-
-/** Marks a route that opens a session rather than using one: sign-up, sign-in, the email link. */
-export const OpensNoSession: ReflectableDecorator<void, true> = Reflector.createDecorator<
-  void,
-  true
->({ transform: () => true });
-
-/**
- * Marks sign-out, exempt from the token: a forged one ends a session and grants nothing, it carries
- *   headers no cross-origin page can send without a preflight this BFF never answers, and a browser
- *   that lost its CSRF secret must still be able to sign out.
- */
-export const EndsSessionOnly: ReflectableDecorator<void, true> = Reflector.createDecorator<
-  void,
-  true
->({ transform: () => true });
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -33,12 +18,27 @@ function csrfRefused(): RefusalException {
 }
 
 /**
+ * A write by the session cookie must carry the CSRF token when the identity's write schemes pair
+ *   them, unless the route declares `csrfExempt` (sign-out: a forged one grants nothing, and a
+ *   browser that lost its secret must still be able to leave).
+ */
+export function cookieWriteNeedsCsrf(route: Route): boolean {
+  if (route.method === 'get' || route.access?.kind !== 'identified') return false;
+  if (route.access.csrfExempt !== undefined) return false;
+  return route.access.identity.schemes.write.some(
+    (scheme: SecurityRequirement) => 'sessionCookie' in scheme && 'csrfToken' in scheme,
+  );
+}
+
+/**
  * Every request that writes with the session cookie carries its CSRF token (storefront.yaml
  *   `sessionCookie`, `nestjs-web-security` rule 4), checked by `@fastify/csrf-protection` itself.
  *   A guard rather than the plugin's own hook: the plugin answers a refusal with Fastify's error
  *   body, and this one leaves through the error envelope (critical rule 8). A request without the
- *   cookie carries no ambient credential, so it has nothing to forge.
- * @deprecated The `viewer` identity checks the token of a cookie write, from its write schemes.
+ *   cookie carries no ambient credential, so it has nothing to forge. What is exempt is the
+ *   route's contract to say: a public route opens a session rather than using one, and
+ *   `csrfExempt` names the rest. `ViewerIdentity` checks the same token where it resolves the
+ *   session; this guard is the second line.
  */
 @Injectable()
 export class CsrfGuard implements CanActivate {
@@ -51,15 +51,8 @@ export class CsrfGuard implements CanActivate {
     const http = context.switchToHttp();
     const request = http.getRequest<CookieCarrier & { readonly method: string }>();
     if (SAFE_METHODS.has(request.method)) return true;
-    // Its identity checks the token, from the schemes it declares.
-    if (routeOf(this.reflector, context)?.access !== undefined) return true;
-    const targets = [context.getHandler(), context.getClass()];
-    if (
-      this.reflector.getAllAndOverride(OpensNoSession, targets) ||
-      this.reflector.getAllAndOverride(EndsSessionOnly, targets)
-    ) {
-      return true;
-    }
+    const route = routeOf(this.reflector, context);
+    if (route?.access !== undefined && !cookieWriteNeedsCsrf(route)) return true;
     if (!request.cookies?.[SESSION_COOKIE]) return true;
 
     await verifyCsrfToken(this.adapterHost, context);

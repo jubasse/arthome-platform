@@ -1,8 +1,8 @@
 import { isIPv4 } from 'node:net';
 
-import { refusalOf, type RuleGuard } from '@arthome-platform/http-edge';
+import { refusalOf, routeOf, type RuleGuard } from '@arthome-platform/http-edge';
 import { Injectable, type ExecutionContext } from '@nestjs/common';
-import { Reflector, type ReflectableDecorator } from '@nestjs/core';
+import type { Reflector } from '@nestjs/core';
 import {
   DEFAULT_IPV6_SUBNET_PREFIX,
   normalizeIp,
@@ -12,21 +12,12 @@ import {
   type ThrottlerOptions,
 } from '@nestjs/throttler';
 
-import type { Requirement } from '@arthome/contracts/http';
+import type { Requirement, Route } from '@arthome/contracts/http';
 import { ApiErrorCode, AuthRateLimit, limitForAddress } from '@arthome/core';
 
 import { viewerOf } from '../session/viewer.js';
 
 export type AuthRateLimitName = keyof typeof AuthRateLimit;
-
-/**
- * The caps a route counts against, by their name in core's `AuthRateLimit`.
- * @deprecated A route declares `requires(throttle(cap))`, which `ThrottleRule` counts.
- */
-export const RateLimitedBy: ReflectableDecorator<
-  readonly AuthRateLimitName[],
-  readonly AuthRateLimitName[]
-> = Reflector.createDecorator<readonly AuthRateLimitName[]>();
 
 interface TrackedRequest {
   readonly ip: string;
@@ -69,9 +60,30 @@ const TRACKERS: Record<AuthRateLimitName, (request: TrackedRequest) => string> =
 };
 
 /**
- * One named throttler per cap, each skipped on every route that does not name it. Its limit is the
- *   caller's family's: core's high ceiling for an IPv4 address, which carriers share (CGNAT), the
- *   tight one for an IPv6 /64.
+ * The caps each bucket a route can declare counts against, `throttle(bucket)` in core's contract.
+ *   Core names a bucket after its cap where it has one; a bucket without a cap has no entry, and a
+ *   bound route declaring it fails the boot rather than go uncounted.
+ */
+export const CAPS_OF_BUCKET: Readonly<Record<string, readonly AuthRateLimitName[]>> =
+  Object.fromEntries(
+    (Object.keys(AuthRateLimit) as AuthRateLimitName[]).map((name) => [name, [name]]),
+  );
+
+function bucketOf(rule: Requirement): string {
+  return String((rule.params as { readonly bucket?: unknown }).bucket);
+}
+
+/** Every cap the route's throttle rules count against, in the order it declares them. */
+export function capsOfRoute(route: Route | undefined): readonly AuthRateLimitName[] {
+  return (route?.requires ?? [])
+    .filter((rule) => rule.name === 'throttle')
+    .flatMap((rule) => CAPS_OF_BUCKET[bucketOf(rule)] ?? []);
+}
+
+/**
+ * One named throttler per cap, each skipped on every route whose contract does not declare a bucket
+ *   that holds it. Its limit is the caller's family's: core's high ceiling for an IPv4 address, which
+ *   carriers share (CGNAT), the tight one for an IPv6 /64.
  */
 export function authThrottlers(reflector: Reflector): ThrottlerOptions[] {
   return (Object.keys(AuthRateLimit) as AuthRateLimitName[]).map((name) => ({
@@ -82,12 +94,7 @@ export function authThrottlers(reflector: Reflector): ThrottlerOptions[] {
         isIPv4(addressOf(context.switchToHttp().getRequest<TrackedRequest>())),
       ),
     ttl: seconds(AuthRateLimit[name].windowSeconds),
-    skipIf: (context: ExecutionContext) =>
-      !(
-        reflector
-          .getAllAndOverride(RateLimitedBy, [context.getHandler(), context.getClass()])
-          ?.includes(name) ?? false
-      ),
+    skipIf: (context: ExecutionContext) => !capsOfRoute(routeOf(reflector, context)).includes(name),
     getTracker: (request: Record<string, unknown>) =>
       TRACKERS[name](request as unknown as TrackedRequest),
   }));
@@ -99,26 +106,6 @@ export function authThrottlers(reflector: Reflector): ThrottlerOptions[] {
  */
 @Injectable()
 export class AuthThrottlerGuard extends ThrottlerGuard {
-  /** One cap counted for a route that declares it as a rule, past the `skipIf` legacy routes go through. */
-  public async countAgainst(context: ExecutionContext, name: AuthRateLimitName): Promise<void> {
-    const throttler = this.throttlers.find((candidate) => candidate.name === name);
-    const { getTracker, generateKey } = this.commonOptions;
-    if (throttler === undefined || getTracker === undefined || generateKey === undefined) {
-      throw new Error(`No cap named ${name} is bound.`);
-    }
-    const ttl = typeof throttler.ttl === 'function' ? await throttler.ttl(context) : throttler.ttl;
-    await this.handleRequest({
-      context,
-      limit:
-        typeof throttler.limit === 'function' ? await throttler.limit(context) : throttler.limit,
-      ttl,
-      blockDuration: ttl,
-      throttler,
-      getTracker: throttler.getTracker ?? getTracker,
-      generateKey: throttler.generateKey ?? generateKey,
-    });
-  }
-
   protected override throwThrottlingException(
     context: ExecutionContext,
     detail: ThrottlerLimitDetail,
@@ -132,45 +119,19 @@ export class AuthThrottlerGuard extends ThrottlerGuard {
   }
 }
 
-function isCapName(bucket: unknown): bucket is AuthRateLimitName {
-  return typeof bucket === 'string' && Object.hasOwn(AuthRateLimit, bucket);
-}
-
 /**
- * The bucket the auth routes declare until core names one cap per bucket. Each of those routes still
- *   names its caps with `@RateLimitedBy`, which `AuthThrottlerGuard` counts on every request, so
- *   counting them here as well would halve them.
+ * `throttle(bucket)`: counted by the global `AuthThrottlerGuard` from the route's contract, so this
+ *   rule only makes the boot refuse a bucket that holds no cap.
  */
-const AUTH_BUCKET = 'auth';
-
-/** `throttle(bucket)`, a bucket being one of core's `AuthRateLimit` caps: `SIGN_IN_PER_EMAIL`. */
 @Injectable()
 export class ThrottleRule implements RuleGuard {
-  public constructor(
-    private readonly throttler: AuthThrottlerGuard,
-    private readonly reflector: Reflector,
-  ) {}
-
-  public check(context: ExecutionContext, rule: Requirement): Promise<void> {
-    const { bucket } = rule.params as { readonly bucket?: unknown };
-    if (bucket === AUTH_BUCKET) {
-      const caps = this.reflector.getAllAndOverride(RateLimitedBy, [
-        context.getHandler(),
-        context.getClass(),
-      ]);
-      if (caps === undefined || caps.length === 0) {
-        throw new Error(`A route throttled by the ${AUTH_BUCKET} bucket names no cap.`);
-      }
-      return Promise.resolve();
-    }
-    if (!isCapName(bucket)) throw new Error(`No cap named ${String(bucket)}.`);
-    return this.throttler.countAgainst(context, bucket);
+  public check(): Promise<void> {
+    return Promise.resolve();
   }
 
   public problemWith(rule: Requirement): string | undefined {
-    const { bucket } = rule.params as { readonly bucket?: unknown };
-    return bucket === AUTH_BUCKET || isCapName(bucket)
-      ? undefined
-      : `no cap named ${String(bucket)}`;
+    return CAPS_OF_BUCKET[bucketOf(rule)] === undefined
+      ? `no cap named ${bucketOf(rule)}`
+      : undefined;
   }
 }

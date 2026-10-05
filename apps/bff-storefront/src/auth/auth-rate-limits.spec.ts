@@ -3,13 +3,15 @@ import { Reflector } from '@nestjs/core';
 import { describe, expect, it } from 'vitest';
 
 import type { Requirement } from '@arthome/contracts/http';
+import { storefrontApi } from '@arthome/contracts/storefront-api';
 import { AuthRateLimit } from '@arthome/core';
 
 import {
   authThrottlers,
+  CAPS_OF_BUCKET,
+  capsOfRoute,
   ThrottleRule,
   type AuthRateLimitName,
-  type AuthThrottlerGuard,
 } from './auth-rate-limits.js';
 
 function limitOf(name: AuthRateLimitName, ip: string): unknown {
@@ -44,24 +46,48 @@ describe('the per-address caps, by the caller’s address family', () => {
   });
 });
 
-describe('the auth bucket, until core names one cap per bucket', () => {
-  const rule = { name: 'throttle', params: { bucket: 'auth' } } as unknown as Requirement;
-  // The auth bucket never reaches the throttler: the caps the route names are counted globally.
-  const throttle = new ThrottleRule(undefined as unknown as AuthThrottlerGuard, new Reflector());
+describe('the caps a route declares', () => {
+  const todaysCaps: Record<string, readonly AuthRateLimitName[]> = {
+    signUp: ['SIGN_UP_PER_ADDRESS'],
+    signIn: ['SIGN_IN_PER_ADDRESS', 'SIGN_IN_PER_EMAIL'],
+    signOut: [],
+    confirmEmailVerification: ['EMAIL_VERIFICATION_CONFIRM_PER_ADDRESS'],
+    resendEmailVerification: [
+      'EMAIL_VERIFICATION_RESEND_PER_ACCOUNT',
+      'EMAIL_VERIFICATION_RESEND_PER_ACCOUNT_DAILY',
+    ],
+  };
 
-  it('binds at boot, leaving the count to the caps the route names', () => {
-    expect(throttle.problemWith(rule)).toBeUndefined();
+  it.each(Object.entries(todaysCaps))(
+    'are, on %s, the caps the route counted before',
+    (id, caps) => {
+      expect(capsOfRoute(storefrontApi.routes[id as keyof typeof storefrontApi.routes])).toEqual(
+        caps,
+      );
+    },
+  );
+
+  it('count against nothing on a route that declares no throttle', () => {
+    expect(capsOfRoute(storefrontApi.routes.getDateDetail)).toEqual([]);
   });
 
-  it('refuses a route that names no cap rather than let it through uncounted', () => {
-    const unnamed = (): undefined => undefined;
-    const context = {
-      getHandler: () => unnamed,
-      getClass: () => Object,
-    } as unknown as ExecutionContext;
+  it('are named by every cap of core, each under its own bucket', () => {
+    for (const name of Object.keys(AuthRateLimit)) {
+      expect(CAPS_OF_BUCKET[name]).toEqual([name]);
+    }
+  });
+});
 
-    expect(() => throttle.check(context, rule)).toThrow(
-      'A route throttled by the auth bucket names no cap.',
-    );
+describe('the throttle rule', () => {
+  const throttle = new ThrottleRule();
+  const ruleOf = (bucket: string): Requirement =>
+    ({ name: 'throttle', params: { bucket } }) as unknown as Requirement;
+
+  it('binds a bucket that holds a cap', () => {
+    expect(throttle.problemWith(ruleOf('SIGN_IN_PER_EMAIL'))).toBeUndefined();
+  });
+
+  it('refuses at boot a bucket that holds none, rather than let its route go uncounted', () => {
+    expect(throttle.problemWith(ruleOf('password-reset'))).toBe('no cap named password-reset');
   });
 });

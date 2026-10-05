@@ -3,26 +3,23 @@ import type { ServerResponse } from 'node:http';
 import {
   AllowInProduction,
   Endpoint,
-  EndpointBody,
-  EndpointHeaders,
+  EndpointInput,
   RefusalException,
   idempotencyKeyOf,
   unauthenticated,
 } from '@arthome-platform/http-edge';
 import { Controller, Header, Inject, Logger, Req, Res } from '@nestjs/common';
 
-import type { HandlerOutput, Route, RouteBody, RouteHeaders } from '@arthome/contracts/http';
+import type { HandlerInput, HandlerOutput, Route, RouteBody } from '@arthome/contracts/http';
 import { SessionMode } from '@arthome/contracts/identity';
 import { storefrontApi } from '@arthome/contracts/storefront-api';
 import { IdentityErrorCode, type Clock, type StorefrontSurface } from '@arthome/core';
 
-import { RateLimitedBy } from './auth-rate-limits.js';
 import { FailedSignIns } from './failed-sign-ins.js';
 import { viewerCountryOf } from './viewer-country.js';
 import { CLOCK } from '../clock.js';
 import type { SessionOpened } from '../identity/identity-answers.schema.js';
 import { IdentityClient } from '../identity/identity.client.js';
-import { EndsSessionOnly, OpensNoSession } from '../session/csrf.guard.js';
 import {
   clearSessionCookies,
   presentedSession,
@@ -31,7 +28,7 @@ import {
   type CsrfReply,
   type PresentedSession,
 } from '../session/session-carriers.js';
-import { CurrentViewer, RequiresViewer, callerOf, type Viewer } from '../session/viewer.js';
+import { callerOf, viewerOf } from '../session/viewer.js';
 import { AUTHENTICATION_WRITE_BUDGET_MS, serviceCallFor } from '../upstream/service-call.js';
 import type { ServiceCall } from '../upstream/service-client.js';
 import { viewerContextOf, type ServedViewerContext } from '../viewer-context/viewer-context.js';
@@ -96,11 +93,8 @@ export class AuthController {
   /** A replayed key answers the first session again, with `Idempotency-Replayed`. */
   @Endpoint(signUp)
   @Header('cache-control', 'no-store')
-  @OpensNoSession()
-  @RateLimitedBy(['SIGN_UP_PER_ADDRESS'])
   public async signUp(
-    @EndpointBody(signUp) body: RouteBody<typeof signUp>,
-    @EndpointHeaders(signUp) headers: RouteHeaders<typeof signUp>,
+    @EndpointInput(signUp) { body, headers }: HandlerInput<typeof signUp>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
   ): Promise<HandlerOutput<typeof signUp>> {
@@ -130,11 +124,8 @@ export class AuthController {
    */
   @Endpoint(signIn)
   @Header('cache-control', 'no-store')
-  @OpensNoSession()
-  @RateLimitedBy(['SIGN_IN_PER_ADDRESS', 'SIGN_IN_PER_EMAIL'])
   public async signIn(
-    @EndpointBody(signIn) body: RouteBody<typeof signIn>,
-    @EndpointHeaders(signIn) headers: RouteHeaders<typeof signIn>,
+    @EndpointInput(signIn) { body, headers }: HandlerInput<typeof signIn>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
   ): Promise<HandlerOutput<typeof signIn>> {
@@ -163,28 +154,25 @@ export class AuthController {
    */
   @Endpoint(signOut)
   @Header('cache-control', 'no-store')
-  @EndsSessionOnly()
   public async signOut(
-    @EndpointHeaders(signOut) headers: RouteHeaders<typeof signOut>,
+    @EndpointInput(signOut) { headers, principal }: HandlerInput<typeof signOut>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
   ): Promise<HandlerOutput<typeof signOut>> {
     idempotencyKeyOf(headers['idempotency-key']);
-    const presented = presentedSession(request);
-    if (presented === null) throw unauthenticated();
-    await this.identity.revoke(presented.token, this.anonymousCall(request, reply, signOut));
-    if (presented.carrier === SessionMode.COOKIE) clearSessionCookies(reply);
+    const presented = replacedSession(request);
+    if (principal !== null && presented !== null) {
+      await this.identity.revoke(presented.token, this.anonymousCall(request, reply, signOut));
+    }
+    if (presented?.carrier === SessionMode.COOKIE) clearSessionCookies(reply);
     return { data: { signedOut: true } };
   }
 
   @Endpoint(confirmEmailVerification)
   @Header('cache-control', 'no-store')
-  @OpensNoSession()
-  @RateLimitedBy(['EMAIL_VERIFICATION_CONFIRM_PER_ADDRESS'])
   public async confirmEmailVerification(
-    @EndpointBody(confirmEmailVerification) body: RouteBody<typeof confirmEmailVerification>,
-    @EndpointHeaders(confirmEmailVerification)
-    headers: RouteHeaders<typeof confirmEmailVerification>,
+    @EndpointInput(confirmEmailVerification)
+    { body, headers }: HandlerInput<typeof confirmEmailVerification>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
   ): Promise<HandlerOutput<typeof confirmEmailVerification>> {
@@ -199,18 +187,14 @@ export class AuthController {
 
   @Endpoint(resendEmailVerification)
   @Header('cache-control', 'no-store')
-  @RequiresViewer()
-  @RateLimitedBy([
-    'EMAIL_VERIFICATION_RESEND_PER_ACCOUNT',
-    'EMAIL_VERIFICATION_RESEND_PER_ACCOUNT_DAILY',
-  ])
   public async resendEmailVerification(
-    @CurrentViewer() viewer: Viewer,
-    @EndpointHeaders(resendEmailVerification)
-    headers: RouteHeaders<typeof resendEmailVerification>,
+    @EndpointInput(resendEmailVerification)
+    { headers }: HandlerInput<typeof resendEmailVerification>,
     @Req() request: Inbound,
     @Res({ passthrough: true }) reply: SessionReply,
   ): Promise<HandlerOutput<typeof resendEmailVerification>> {
+    const viewer = viewerOf(request);
+    if (viewer === null) throw unauthenticated();
     const { body: queued, replayed } = await this.identity.resendVerification(
       idempotencyKeyOf(headers['idempotency-key']),
       serviceCallFor(
