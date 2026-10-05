@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // pack-siblings — turn the sibling arthome-core checkout into installable
-// tarballs under vendor/, because the @arthome/* packages are not published.
+// tarballs under vendor/. This is the LOCAL mode, for cross-repository work that
+// arthome-core has not released yet; a release is consumed with `use-core`, and
+// develop and main must be on one (tools/check-core-specs.mjs).
 //
 // WHY TARBALLS AND NOT `file:../arthome-core/packages/core`
 //   A `file:` reference to a source DIRECTORY makes pnpm symlink the whole
@@ -47,12 +49,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO = path.resolve(HERE, '..');
+import { ARTHOME_PACKAGES, REPO, rewriteArthomeSpecs } from './arthome-specs.mjs';
+
 const VENDOR = path.join(REPO, 'vendor');
-const PACKAGES = ['core', 'contracts', 'tooling'];
 
 function siblingRoot() {
   const explicit = process.env.ARTHOME_CORE;
@@ -62,9 +62,9 @@ function siblingRoot() {
   }
   console.error('pack-siblings: arthome-core not found.');
   console.error(`  Looked in: ${candidates.join(', ')}`);
-  console.error('  The @arthome/* packages are not published, so this repository is built');
-  console.error('  against a sibling checkout. Clone arthome-core next to this one, or set');
-  console.error('  ARTHOME_CORE to its path.');
+  console.error('  Local mode builds against a sibling checkout. Clone arthome-core next to');
+  console.error('  this one, or set ARTHOME_CORE to its path. To consume a release instead,');
+  console.error('  run `pnpm run use-core <version>`.');
   return null;
 }
 
@@ -72,48 +72,13 @@ function siblingRoot() {
 // just produced. Rewriting rather than asking a human to is the whole point: a
 // hand-edited path is the parallel table this repository cannot use a catalog
 // to remove (pnpm refuses `file:` in catalogs), so it is written by machine and
-// checked by `tools/check-vendor-specs.mjs`.
+// checked by `tools/check-core-specs.mjs`.
 function rewriteManifests(packed) {
-  const byName = new Map(packed.map((p) => [`@arthome/${p.name}`, p]));
-  const touched = [];
-
-  for (const file of manifestPaths()) {
-    const text = fs.readFileSync(file, 'utf8');
-    const manifest = JSON.parse(text);
-    let changed = false;
-
-    for (const field of ['dependencies', 'devDependencies', 'peerDependencies']) {
-      for (const dep of Object.keys(manifest[field] ?? {})) {
-        const p = byName.get(dep);
-        if (!p) continue;
-        const rel = path.relative(path.dirname(file), path.join(VENDOR, p.file));
-        const spec = `file:${rel.startsWith('.') ? rel : `./${rel}`}`;
-        if (manifest[field][dep] !== spec) {
-          manifest[field][dep] = spec;
-          changed = true;
-        }
-      }
-    }
-
-    if (changed) {
-      fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
-      touched.push(path.relative(REPO, file));
-    }
-  }
-  return touched;
-}
-
-function manifestPaths() {
-  const found = [path.join(REPO, 'package.json')];
-  for (const dir of ['apps', 'libs', 'tools']) {
-    const parent = path.join(REPO, dir);
-    if (!fs.existsSync(parent)) continue;
-    for (const entry of fs.readdirSync(parent)) {
-      const candidate = path.join(parent, entry, 'package.json');
-      if (fs.existsSync(candidate)) found.push(candidate);
-    }
-  }
-  return found;
+  const byName = new Map(packed.map((p) => [p.name, p]));
+  return rewriteArthomeSpecs((name, manifestFile) => {
+    const rel = path.relative(path.dirname(manifestFile), path.join(VENDOR, byName.get(name).file));
+    return `file:${rel.startsWith('.') ? rel : `./${rel}`}`;
+  });
 }
 
 function main() {
@@ -123,7 +88,7 @@ function main() {
   fs.mkdirSync(VENDOR, { recursive: true });
   const packed = [];
 
-  for (const name of PACKAGES) {
+  for (const name of ARTHOME_PACKAGES) {
     const dir = path.join(root, 'packages', name);
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
 

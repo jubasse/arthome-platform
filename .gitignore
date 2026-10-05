@@ -3,7 +3,7 @@ dist/
 coverage/
 *.tsbuildinfo
 
-# The sibling packages, packed into tarballs by `pnpm run pack:siblings`.
+# The sibling packages, packed into tarballs by `pnpm run pack:siblings` (local mode).
 # Build output of another repository: reproducible from it, never committed.
 vendor/
 
