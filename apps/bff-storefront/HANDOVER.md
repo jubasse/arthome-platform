@@ -22,7 +22,6 @@ Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10
 | `src/viewer-context/` | `getViewerContext` and the composition `SessionEstablished` reuses |
 | `src/dates/dates.controller.ts` | `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`, relayed from catalog |
 | `src/conditional-get.ts` | the `ETag` and the `onSend` hook that answers a matching `If-None-Match` with 304 |
-| `src/storefront-surface.ts` | the contract's `Vary`, for every route (the surface header itself is refused by `EndpointHeaders`) |
 | `src/traceparent.middleware.ts` | a `traceparent` on every request that arrives without a valid one |
 
 Proven by `src/catalog/catalog.client.spec.ts` (a stand-in catalog over HTTP), the two
