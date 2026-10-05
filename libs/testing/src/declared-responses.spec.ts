@@ -1,12 +1,13 @@
 import 'reflect-metadata';
 
-import { Body, Controller, Get, HttpCode, HttpException, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpException, Param, Post, Query } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { defineApi, defineRoute } from '@arthome/contracts/http';
+import { defineApi, defineErrorModel, defineRoute, routeBuilder } from '@arthome/contracts/http';
+import { ApiErrorCode } from '@arthome/core';
 
 import { declaredResponses, type DeclaredResponses } from './declared-responses.js';
 
@@ -48,10 +49,26 @@ const createThing = defineRoute({
   },
 });
 
+const model = defineErrorModel<string>({
+  standard: {},
+  envelopeOf: (code) => z.object({ error: z.object({ code: z.literal(code) }) }),
+});
+
+const listThings = routeBuilder(model)
+  .version(1)
+  .public()
+  .defineRoute({
+    method: 'get',
+    path: '/catalogue',
+    operationId: 'listThings',
+    errors: [ApiErrorCode.NOT_FOUND],
+    responses: { 200: { description: 'The things.' } },
+  });
+
 const api = defineApi({
   openapi: '3.1.0',
   info: { title: 'things' },
-  routes: { getThing, createThing },
+  routes: { getThing, createThing, listThings },
   components: {},
 });
 
@@ -77,6 +94,11 @@ class ThingsController {
   @Post('v1/things/archive')
   public archive(): object {
     throw refusal(409, 'thing.archived');
+  }
+
+  @Get('v1/catalogue')
+  public catalogue(@Query('refusedWith') refusedWith: string): object {
+    throw refusal(404, refusedWith);
   }
 
   @Get('health')
@@ -137,6 +159,17 @@ describe('declaredResponses', () => {
 
     expect(undeclared).toEqual([
       { operationId: 'createThing', status: 409, code: 'thing.renamed' },
+    ]);
+  });
+
+  it("checks the code of a derived status against the route's declared codes", async () => {
+    const undeclared = await undeclaredAfter(
+      { method: 'GET', url: '/v1/catalogue?refusedWith=api.not_found' },
+      { method: 'GET', url: '/v1/catalogue?refusedWith=api.upstream_unavailable' },
+    );
+
+    expect(undeclared).toEqual([
+      { operationId: 'listThings', status: 404, code: 'api.upstream_unavailable' },
     ]);
   });
 
