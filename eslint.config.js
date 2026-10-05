@@ -83,11 +83,7 @@ export default defineConfig([
   {
     // The files that used a deprecated API when the rule was turned on (2026-10-05). A file leaves
     //   the list with its last deprecated use, and the list must be empty when the fan-out closes.
-    files: [
-      'libs/http-edge/src/endpoint.spec.ts',
-      'libs/http-edge/src/index.ts',
-      'tools/schematics/src/lib/source-file.ts',
-    ],
+    files: ['libs/http-edge/src/endpoint.spec.ts', 'libs/http-edge/src/index.ts'],
     rules: {
       '@typescript-eslint/no-deprecated': 'off',
     },

@@ -155,11 +155,13 @@ function addImport(text: string, { name, from, typeOnly = false }: ImportSpec): 
     namedBindingsOf(declaration)?.elements.some((element) => element.name.text === name) ?? false;
   if (sameModule.some(importsName)) return text;
 
+  const isTypeOnly = (declaration: ts.ImportDeclaration): boolean =>
+    declaration.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
   const valueImport = sameModule.find(
-    (declaration) => declaration.importClause?.isTypeOnly !== true && namedBindingsOf(declaration),
+    (declaration) => !isTypeOnly(declaration) && namedBindingsOf(declaration),
   );
   const typeImport = sameModule.find(
-    (declaration) => declaration.importClause?.isTypeOnly === true && namedBindingsOf(declaration),
+    (declaration) => isTypeOnly(declaration) && namedBindingsOf(declaration),
   );
   if (typeOnly && typeImport !== undefined) {
     return applied(text, [withSpecifier(located(namedBindingsOf(typeImport), 'import'), name)]);

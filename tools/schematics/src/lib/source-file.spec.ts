@@ -68,6 +68,17 @@ describe('addImports', () => {
       "import { a } from './a.js';\nimport { b } from './b.js';\nimport { c } from './c.js';",
     );
   });
+
+  it('adds a type to an `import type` declaration, and turns it into a value import for a value', () => {
+    const text = "import type { EntityManager } from 'typeorm';\n\nexport const x = 1;\n";
+
+    expect(
+      flat(addImports(text, [{ name: 'QueryRunner', from: 'typeorm', typeOnly: true }])),
+    ).toContain("import type { EntityManager, QueryRunner } from 'typeorm';");
+    expect(addImports(text, [{ name: 'DataSource', from: 'typeorm' }])).toContain(
+      "import { DataSource, type EntityManager } from 'typeorm';",
+    );
+  });
 });
 
 describe('addToArrayProperty', () => {
