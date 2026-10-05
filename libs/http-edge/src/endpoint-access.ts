@@ -113,11 +113,6 @@ export class EndpointAccessGuard implements CanActivate {
   }
 }
 
-/**
- * Fails the boot on a route whose identity or rule has no guard, a rule its guard cannot enforce,
- *   or a public route on a service outside its allow-list, so nothing passes by omission (ADR
- *   contract model §4.3), and lists the bound routes still without `access`.
- */
 /** An optional route lets a caller without a token in as surely as a public one does. */
 function exposureOnAServiceOf(route: Route): string[] {
   if (route.access?.kind === 'anyone') return [`${route.operationId} (public on a service)`];
@@ -127,6 +122,11 @@ function exposureOnAServiceOf(route: Route): string[] {
   return [];
 }
 
+/**
+ * Fails the boot on a route whose identity or rule has no guard, a rule its guard cannot enforce,
+ *   or a public or optional route on a service outside its allow-list, so nothing passes by
+ *   omission (ADR contract model §4.3), and lists the bound routes still without `access`.
+ */
 @Injectable()
 export class EndpointGuardsCheck implements OnModuleInit {
   private readonly logger = new Logger('Endpoint access');
