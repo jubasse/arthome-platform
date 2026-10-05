@@ -12,15 +12,16 @@ import {
   STOREFRONT_RELAYED_CODES,
   StorefrontErrorEnvelopeSchema,
 } from '@arthome/contracts/envelope';
-import { DERIVED_ERROR_CODES, errorCodesOf, statusOf, type Route } from '@arthome/contracts/http';
 import {
-  ApiErrorCode,
-  ERROR_CODES,
-  FAILURE_NATURES,
-  FailureNature,
-  memberOr,
-  type ErrorCode,
-} from '@arthome/core';
+  DERIVED_ERROR_CODES,
+  errorCodesOf,
+  natureOf,
+  statusOf,
+  stripping,
+  type Route,
+} from '@arthome/contracts/http';
+import { ApiErrorCode, ERROR_CODES, type ErrorCode } from '@arthome/core';
+import { errorParamsSchemaOf } from '@arthome/core/schema';
 
 import type { Caller, InternalTokenMinter } from '../internal-token.minter.js';
 
@@ -166,15 +167,23 @@ export class ServiceClient {
     const code = envelope.success ? envelope.data.error.code : null;
     if (code === ApiErrorCode.DEADLINE_EXCEEDED) return this.upstreamTimeout();
     const relayedStatus = code === null ? null : relayedStatusOf(code, status, call.route);
-    if (envelope.success && relayedStatus !== null) {
-      const { error } = envelope.data;
-      const refusal: Refusal = {
-        code: error.code,
-        params: error.params,
-        // The contract's declared fallback for a nature this build does not know.
-        nature: memberOr(FAILURE_NATURES, error.nature, FailureNature.UNAVAILABLE),
-      };
-      return new RefusalException(relayedStatus, refusal);
+    if (envelope.success && relayedStatus !== null && isPublishedCode(envelope.data.error.code)) {
+      const relayedCode = envelope.data.error.code;
+      const params = stripping(errorParamsSchemaOf(relayedCode)).safeParse(
+        envelope.data.error.params,
+      );
+      if (params.success) {
+        return new RefusalException(relayedStatus, {
+          code: relayedCode,
+          params: params.data as Refusal['params'],
+          nature: natureOf(relayedCode),
+        });
+      }
+      this.logger.warn(
+        `refused ${path} with ${relayedCode} outside its params (${call.traceparent})`,
+        params.error.issues,
+      );
+      return this.upstreamUnavailable();
     }
     const servedRoute = call.route === undefined ? '' : ` for ${call.route.operationId}`;
     this.logger.warn(

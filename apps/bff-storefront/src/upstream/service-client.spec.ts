@@ -6,7 +6,7 @@ import { DEADLINE_HEADER, RefusalException } from '@arthome-platform/http-edge';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { defineErrorModel, routeBuilder, type Route } from '@arthome/contracts/http';
+import { defineErrorModel, natureOf, routeBuilder, type Route } from '@arthome/contracts/http';
 import { ApiErrorCode, FailureNature, OrderErrorCode, Service, SystemClock } from '@arthome/core';
 
 import { ServiceClient, type ServiceCall } from './service-client.js';
@@ -18,11 +18,15 @@ const PRICE_STALE_PARAMS = {
   currencyCode: 'EUR',
 };
 
-function errorEnvelope(code: string, params: object = {}): string {
+function errorEnvelope(
+  code: string,
+  params: object = {},
+  nature: FailureNature = FailureNature.REFUSED,
+): string {
   return JSON.stringify({
     error: {
       code,
-      nature: FailureNature.REFUSED,
+      nature,
       params,
       traceId: '4bf92f3577b34da6a3ce929d0e0e4736',
     },
@@ -36,6 +40,14 @@ const ANSWERS: Record<string, { status: number; body: string }> = {
   '/price-stale': {
     status: 409,
     body: errorEnvelope(OrderErrorCode.PRICE_STALE, PRICE_STALE_PARAMS),
+  },
+  '/extra-param': {
+    status: 409,
+    body: errorEnvelope(
+      OrderErrorCode.PRICE_STALE,
+      { ...PRICE_STALE_PARAMS, internalOrderId: 'ord-17' },
+      FailureNature.UNAVAILABLE,
+    ),
   },
   '/sold-out': { status: 409, body: errorEnvelope(OrderErrorCode.SOLD_OUT) },
   '/forbidden': { status: 403, body: errorEnvelope(ApiErrorCode.FORBIDDEN) },
@@ -134,6 +146,16 @@ describe('a call to a service', () => {
 });
 
 describe('a service refusal, for a route that declares its errors', () => {
+  it('is relayed with the params and the nature its code has, whatever the service added', async () => {
+    const refusal = await refusalFrom('/extra-param', placeOrder);
+
+    expect(refusal.refusal).toStrictEqual({
+      code: OrderErrorCode.PRICE_STALE,
+      params: PRICE_STALE_PARAMS,
+      nature: natureOf(OrderErrorCode.PRICE_STALE),
+    });
+  });
+
   it('is relayed with its params when the route declares its code', async () => {
     const refusal = await refusalFrom('/price-stale', placeOrder);
 
