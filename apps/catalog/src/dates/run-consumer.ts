@@ -4,6 +4,7 @@ import { PermanentError, header, messageIdOf, type Outcome } from '@arthome-plat
 import { fromBinary } from '@bufbuild/protobuf';
 import type { CommandBus } from '@nestjs/cqrs';
 import type { EachMessagePayload } from 'kafkajs';
+import { z } from 'zod';
 
 import { ApiErrorCode, DomainErrorCode, RunState, isDomainError } from '@arthome/core';
 
@@ -50,8 +51,14 @@ export function applyRunMessage(
     throw new PermanentError(`message ${messageId} does not read as ${type}: ${String(cause)}`);
   }
 
+  if (!z.guid().safeParse(fact.dateId).success) {
+    throw new PermanentError(
+      `message ${messageId} names date ${JSON.stringify(fact.dateId)}, not a UUID`,
+    );
+  }
+
   return commands
-    .execute(new LearnRunFact(messageId, payload.topic, fact))
+    .execute(new LearnRunFact(messageId, payload.topic, fact, header(payload, 'traceparent')))
     .catch((error: unknown) => {
       const reason = refusalReason(error);
       if (reason === null) throw error;

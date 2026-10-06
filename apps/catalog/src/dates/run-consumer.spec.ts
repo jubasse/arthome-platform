@@ -11,16 +11,21 @@ import { DomainError, DomainErrorCode, PublicationState, RunState } from '@artho
 import { LearnRunFact } from './learn-run-fact.command.js';
 import { applyRunMessage } from './run-consumer.js';
 
+const DATE_ID = '01a0e5bb-0000-7000-8000-0000000000d1';
 const MESSAGE_ID = '01a0e5bb-0000-7000-8000-000000000001';
 
-function message(type: string, value: Uint8Array | null) {
+function message(type: string, value: Uint8Array | null, traceparent: string | null = null) {
   return {
     topic: 'arthome.streaming.run',
     partition: 0,
     message: {
       key: Buffer.from('date-1'),
       value: value === null ? null : Buffer.from(value),
-      headers: { 'message-id': Buffer.from(MESSAGE_ID), type: Buffer.from(type) },
+      headers: {
+        'message-id': Buffer.from(MESSAGE_ID),
+        type: Buffer.from(type),
+        ...(traceparent !== null && { traceparent: Buffer.from(traceparent) }),
+      },
     },
   } as unknown as EachMessagePayload;
 }
@@ -36,8 +41,8 @@ function busAnswering(answer: () => Promise<unknown>): { bus: CommandBus; sent: 
   return { bus, sent };
 }
 
-const started = toBinary(RunStartedSchema, create(RunStartedSchema, { dateId: 'date-1' }));
-const ended = toBinary(RunEndedSchema, create(RunEndedSchema, { dateId: 'date-1' }));
+const started = toBinary(RunStartedSchema, create(RunStartedSchema, { dateId: DATE_ID }));
+const ended = toBinary(RunEndedSchema, create(RunEndedSchema, { dateId: DATE_ID }));
 
 describe('applyRunMessage', () => {
   it.each([
@@ -49,7 +54,7 @@ describe('applyRunMessage', () => {
     await expect(applyRunMessage(bus, message(type, value))).resolves.toBe('applied');
 
     expect(sent).toEqual([
-      new LearnRunFact(MESSAGE_ID, 'arthome.streaming.run', { dateId: 'date-1', run }),
+      new LearnRunFact(MESSAGE_ID, 'arthome.streaming.run', { dateId: DATE_ID, run }, null),
     ]);
   });
 
@@ -78,6 +83,32 @@ describe('applyRunMessage', () => {
     ).toThrow(new RegExp(`${MESSAGE_ID} does not read as streaming.run.started.v1`));
   });
 
+  it('carries the inbound traceparent to the command', async () => {
+    const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+    const { bus, sent } = busAnswering(() => Promise.resolve('applied'));
+
+    await applyRunMessage(bus, message('streaming.run.started.v1', started, traceparent));
+
+    expect(sent).toEqual([
+      new LearnRunFact(
+        MESSAGE_ID,
+        'arthome.streaming.run',
+        { dateId: DATE_ID, run: RunState.ON_AIR },
+        traceparent,
+      ),
+    ]);
+  });
+
+  it('refuses a date id that is not a UUID as permanent, before any command', () => {
+    const { bus, sent } = busAnswering(() => Promise.resolve('applied'));
+    const notAUuid = toBinary(RunStartedSchema, create(RunStartedSchema, { dateId: 'date-1' }));
+
+    expect(() => applyRunMessage(bus, message('streaming.run.started.v1', notAUuid))).toThrow(
+      PermanentError,
+    );
+    expect(sent).toEqual([]);
+  });
+
   it('dead-letters a refused transition at once', async () => {
     const refusal = new DomainError({
       code: DomainErrorCode.PUBLICATION_TRANSITION_FORBIDDEN,
@@ -87,7 +118,7 @@ describe('applyRunMessage', () => {
 
     await expect(
       applyRunMessage(bus, message('streaming.run.started.v1', started)),
-    ).rejects.toThrow(/date-1, refused publication.transition_forbidden/);
+    ).rejects.toThrow(new RegExp(`${DATE_ID}, refused publication.transition_forbidden`));
   });
 
   it('dead-letters a date catalog does not know', async () => {

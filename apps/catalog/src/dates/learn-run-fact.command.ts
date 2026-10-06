@@ -15,6 +15,7 @@ export class LearnRunFact extends Command<Outcome> {
     public readonly messageId: string,
     public readonly topic: string,
     public readonly fact: RunFact,
+    public readonly traceparent: string | null,
   ) {
     super();
   }

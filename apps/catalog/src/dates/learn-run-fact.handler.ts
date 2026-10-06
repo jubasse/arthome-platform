@@ -19,7 +19,7 @@ export class LearnRunFactHandler implements ICommandHandler<LearnRunFact> {
     @Inject(PUBLIC_WEB_ORIGIN) private readonly publicWebOrigin: string,
   ) {}
 
-  public execute({ messageId, topic, fact }: LearnRunFact): Promise<Outcome> {
+  public execute({ messageId, topic, fact, traceparent }: LearnRunFact): Promise<Outcome> {
     return this.transactions.run(async (transaction) => {
       const { manager, dates } = transaction;
       if (!(await claimMessage(manager, messageId, topic))) return Outcome.DUPLICATE;
@@ -35,7 +35,7 @@ export class LearnRunFactHandler implements ICommandHandler<LearnRunFact> {
         origin: this.publicWebOrigin,
         show,
         venue,
-        traceparent: null,
+        traceparent,
       });
       return Outcome.APPLIED;
     });

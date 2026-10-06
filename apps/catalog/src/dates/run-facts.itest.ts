@@ -109,6 +109,7 @@ function reported<Desc extends DescMessage>(
   schema: Desc,
   init: MessageInitShape<Desc>,
   messageId = `01a0eaee-0000-7000-8000-${String((messages += 1)).padStart(12, '0')}`,
+  traceparent: string | null = null,
 ): EachMessagePayload {
   return {
     topic,
@@ -116,7 +117,11 @@ function reported<Desc extends DescMessage>(
     message: {
       key: Buffer.from('date'),
       value: Buffer.from(toBinary(schema, create(schema, init))),
-      headers: { 'message-id': Buffer.from(messageId), type: Buffer.from(type) },
+      headers: {
+        'message-id': Buffer.from(messageId),
+        type: Buffer.from(type),
+        ...(traceparent !== null && { traceparent: Buffer.from(traceparent) }),
+      },
     },
   } as unknown as EachMessagePayload;
 }
@@ -124,13 +129,14 @@ function reported<Desc extends DescMessage>(
 const RUN_TOPIC = 'arthome.streaming.run';
 const AT = timestampFromDate(new Date('2026-09-26T09:00:00.000Z'));
 
-function runStarted(dateId: string, messageId?: string): EachMessagePayload {
+function runStarted(dateId: string, messageId?: string, traceparent?: string): EachMessagePayload {
   return reported(
     RUN_TOPIC,
     'streaming.run.started.v1',
     RunStartedSchema,
     { dateId, startedAt: AT },
     messageId,
+    traceparent,
   );
 }
 
@@ -328,6 +334,21 @@ describe('a run started', () => {
         version: 4n,
         irreversible: false,
       });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'puts the inbound traceparent on the outbox row of the move',
+    async () => {
+      const dateId = dateIdOf(6);
+      await underTechnicalCheck(dateId);
+      const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+
+      await consumed(runStarted(dateId, undefined, traceparent)).disposition;
+
+      const changes = await stateChangesOf(dateId);
+      expect(changes.at(-1)?.tracecontext).toBe(traceparent);
     },
     CASE_MS,
   );

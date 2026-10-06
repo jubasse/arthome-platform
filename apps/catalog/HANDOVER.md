@@ -439,7 +439,9 @@ row and the outbox row), all in one transaction at catalog's clock.
 - `dates.http.itest.ts` pushes a `run.started` through `ChecklistConsumerModule`. Measured: without
   `LearnRunFactHandler` in its `providers`, it fails on "No handler found for the command"; in
   production that would read as transient and retry every run fact for about six minutes.
-- The outbox row of a state change carries no `traceparent`: the consumer path extracts none.
+- The outbox row of the move carries the inbound message's `traceparent` header, as received.
+- A `date_id` that is not a UUID is dead-lettered at once beside the decode check; Postgres would
+  otherwise refuse it as `22P02` and the retry schedule would run to its end.
 - `ChecklistConsumerModule` now provides `CLOCK` and `PUBLIC_WEB_ORIGIN`: the consumer process reads
   `PUBLIC_WEB_ORIGIN` like the API (required in production, defaulted in development).
 
