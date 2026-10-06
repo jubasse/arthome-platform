@@ -5,6 +5,7 @@ import {
   DomainConstant,
   DomainError,
   DomainErrorCode,
+  PublicationState,
   assertOutcomeDeclarable,
   type DateOutcome,
   type Instant,
@@ -66,6 +67,24 @@ export function publicFactsOf(date: PublicDateSnapshot): PublicDateFacts {
 
 function assertPublic(date: PerformanceDateSnapshot): asserts date is PublicDateSnapshot {
   if (date.slug === null) throw new Error(`date ${date.id} is public without a slug`);
+}
+
+const RUN_ALREADY_STARTED: ReadonlySet<PublicationState> = new Set([
+  PublicationState.LIVE,
+  PublicationState.ENDED,
+  PublicationState.REPLAY_ONLINE,
+]);
+
+const RUN_ALREADY_ENDED: ReadonlySet<PublicationState> = new Set([
+  PublicationState.ENDED,
+  PublicationState.REPLAY_ONLINE,
+]);
+
+/** Not a refusal: the date's start has not been applied yet, so the end is retried after it. */
+export class RunEndedBeforeStarted extends Error {
+  public constructor(dateId: string) {
+    super(`run of date ${dateId} ended before its start was applied`);
+  }
 }
 
 /** What a draft is created with; the rest waits for its publication or an outcome. */
@@ -178,6 +197,29 @@ export class PerformanceDate extends AggregateRoot<PerformanceDateEvent> {
     this.apply(changed);
     this.apply(new DateScheduled(publicFactsOf(date), context.now));
     this.apply(engaged);
+  }
+
+  /** Whether the date moved: a start already learned, or passed, changes nothing. */
+  public learnRunStarted(now: Instant): boolean {
+    const { state } = this.currentPublication.snapshot;
+    if (RUN_ALREADY_STARTED.has(state)) return false;
+    this.learnPublicationState(PublicationState.LIVE, now);
+    return true;
+  }
+
+  /** Whether the date moved. An end before its start is a reordering, which a retry resolves. */
+  public learnRunEnded(now: Instant): boolean {
+    const { state } = this.currentPublication.snapshot;
+    if (RUN_ALREADY_ENDED.has(state)) return false;
+    if (state === PublicationState.TECHNICAL) throw new RunEndedBeforeStarted(this.snapshot.id);
+    this.learnPublicationState(PublicationState.ENDED, now);
+    return true;
+  }
+
+  private learnPublicationState(to: PublicationState, now: Instant): void {
+    const { publication, changed } = this.currentPublication.learned(to, now);
+    this.currentPublication = publication;
+    this.apply(changed);
   }
 
   /**

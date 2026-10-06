@@ -155,4 +155,44 @@ describe('Publication', () => {
     expect(engaged).toBeNull();
     expect(publication.snapshot.publishedAt).toBe('2026-09-26T10:00:00.000Z');
   });
+
+  describe('learned', () => {
+    function at(state: PublicationState, version = 4): Publication {
+      return Publication.restore({
+        dateId: 'date-1',
+        channelId: 'channel-1',
+        state,
+        version,
+        publishedAt: NOW,
+        pricesLockedAt: NOW,
+        replayOnlineAt: null,
+      });
+    }
+
+    it.each([
+      [PublicationState.TECHNICAL, PublicationState.LIVE],
+      [PublicationState.LIVE, PublicationState.ENDED],
+    ])('moves %s to %s, one version on, reversible', (from, to) => {
+      const { publication, changed } = at(from).learned(to, NOW);
+
+      expect(publication.snapshot).toMatchObject({ state: to, version: 5 });
+      expect(changed).toEqual(
+        new PublicationStateChanged('date-1', 'channel-1', from, to, 5, false, NOW),
+      );
+    });
+
+    it.each([
+      [PublicationState.SCHEDULED, PublicationState.LIVE],
+      [PublicationState.TECHNICAL, PublicationState.ENDED],
+      [PublicationState.LIVE, PublicationState.TECHNICAL],
+      [PublicationState.ENDED, PublicationState.LIVE],
+    ])('refuses %s to %s: no event causes it', (from, to) => {
+      const refusal = refusalOf(() => at(from).learned(to, NOW));
+
+      expect(isDomainError(refusal) && [refusal.code, refusal.params]).toEqual([
+        DomainErrorCode.PUBLICATION_TRANSITION_FORBIDDEN,
+        { from, to },
+      ]);
+    });
+  });
 });

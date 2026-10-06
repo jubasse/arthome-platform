@@ -406,6 +406,43 @@ Known and left as they are:
   `date-sheet.ts`, the sheet's shaping module; moving it beside the aggregate would make the read
   model depend on the write side rather than the reverse.
 
+## 0g. Run facts: `run.started`, `run.ended` and the card's runState (2026-10-06, PC1)
+
+The consumer (`applyRunMessage`, `dates/run-consumer.ts`) reads `streaming.run.started.v1` and
+`streaming.run.ended.v1` on `arthome.streaming.run` and sends every other type to
+`applyChecklistMessage`, unchanged. `LearnRunFact` claims the message, loads the date as every date
+command does (`loadDate`: the publication's row, then the show's `FOR NO KEY UPDATE`), applies the
+aggregate's method, saves on the version-conditional write and records the date's events (the public
+row and the outbox row), all in one transaction at catalog's clock.
+
+- **`technical -> live`** on a start and **`live -> ended`** on an end, through `Publication.learned`,
+  which asserts core's `isEventDriven`. The change is `catalog.publication.state_changed.v1`, not
+  irreversible, with no actor, and counts one more version. Publication learns going on air, it never
+  commands it (data-model.md §2.3).
+- **Ignored**: a start on `live`, `ended` or `replay_online`; an end on `ended` or `replay_online`.
+- **Dead-lettered with the code** (`publication.transition_forbidden`): a start or an end on `draft`,
+  `reserve` or `scheduled`. A start on `scheduled` is the one a studio can cause, moving `technical ->
+  scheduled` within the projection's lag, because goOnAir is refused unless the projected publication
+  is `technical`; the dead-letter check alerts on it.
+- **Retried**: an end on `technical` (`RunEndedBeforeStarted`: a retry topic reordered the two, the
+  start applies first on the next attempt), and a `state.conflict` from the version-conditional save.
+  Both are transient, dead-lettered only at the retry bound.
+- **An unknown date** is dead-lettered ("unknown here"): catalog drafts every date before streaming
+  knows it.
+- **An outcome does not stop them**: a cancelled or interrupted date still goes `live -> ended`.
+- The monotonic order (`technical`, `live`, `ended`) is the ordering guard; no new lock.
+- `ChecklistConsumerModule` now provides `CLOCK` and `PUBLIC_WEB_ORIGIN`: the consumer process reads
+  `PUBLIC_WEB_ORIGIN` like the API (required in production, defaulted in development).
+
+**The card's runState is derived, not stored** (`runStateKnownFrom`, `public/date-card.ts`):
+`scheduled` and `technical` are `idle`, `live` is `on_air`, `ended` and `replay_online` are `ended`,
+`draft` and `reserve` are unknown. Catalog learns the run only through these two events and its
+publication records exactly them, so deriving reaches the date page, the artist page, link resolution
+and the search cards at once (both sources carry `publication_state`), with no column, no index field
+and no search-indexer change. Core's `displayStateOf` does the rest: an on-air date shows `live` before
+`startsAt`; a known idle run keeps its date `room_open` past `startsAt` until it moves; a null run
+keeps the clock.
+
 ## 1. What was built
 
 | File                                                                                      | What it is                                                                                                                                                                                                                                         |
