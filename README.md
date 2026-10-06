@@ -23,22 +23,23 @@ POST /v1/auth/sign-up (BFF)  ->  identity: account + outbox_event in ONE transac
 | --- | --- |
 | `apps/identity` | the storefront session on better-auth (sign-up, sign-in, sessions, the email verification link), the outbox producer |
 | `apps/catalog` | shows, venues, dates and their publication, the checklist consumer, the search over the date index, the public date page from `date_detail_public`, and the artist |
-| `apps/ticketing` | a date's commercial face, `DateSales`: capacity by tiers and its technical provision, prices and their lock, the studio's pane, the public availability read, the facts it takes from catalog, and `availability_changed` at a bounded rate; the seat's quote, purchase and order: holds, orders and their payment through the fake adapter |
+| `apps/ticketing` | a date's commercial face, `DateSales`: capacity by tiers and its technical provision, prices and their lock, the studio's pane, the public availability read, the facts it takes from catalog, and `availability_changed` at a bounded rate; the seat's quote, purchase and order: holds, orders and their payment through the fake adapter; the worker process, which makes every call owed to the provider, refunds and intent cancellations, from BullMQ's queues on Redis, and the refund ledger (`order_refund`, several per order) |
 | `apps/notifications` | the idempotent consumer, with retries and dead-lettering |
 | `apps/bff-storefront` | the storefront's BFF: search, the date and artist pages, link resolution, from catalog; the authentication relay and the viewer context, from identity; an internal token on every call, the deadline, the error mapping, the caps and the cookie's CSRF check |
 | `apps/search-indexer` | the catalog projection into OpenSearch, composed from a read model of its own |
-| `libs/messaging` | the outbox and each service's writer over it (`outboxWriter`), the host a Nest consumer process runs its consumers in (`ConsumerHostModule`, from `@arthome-platform/messaging/nest`, the one entry that loads Nest), the processed-message claim (`claimMessage`, `messageIdOf`: a message-id that is not a UUID is dead-lettered at once), failure classification, retry and its schedule (`nextAttemptAt`, `doublingDelays`, for provider calls too), dead-lettering — shared by every service |
+| `libs/messaging` | the outbox and each service's writer over it (`outboxWriter`), the host a Nest consumer process runs its consumers in (`ConsumerHostModule`, from `@arthome-platform/messaging/nest`, the one entry that loads Nest), the processed-message claim (`claimMessage`, `messageIdOf`: a message-id that is not a UUID is dead-lettered at once), failure classification, retry and its schedule (`nextAttemptAt`, `doublingDelays`, for provider calls too), dead-lettering — shared by every service; `retryDelayAfter`, the same schedule as a queue's backoff |
 | `libs/events` | the Protobuf wire types, generated from arthome-core's `proto/` |
 | `libs/http-edge` | the success and error envelopes and the global providers that bind them (`edgeProviders`), the internal token's verification and its guard, validation refusals, the refusals a handler raises at the status core's error registry gives their code (`refuse(route, code, params)` on a bound route, `refusalOf`, `notFound`, `stateConflict`), the deadline, idempotent commands and their table, JSON as the only body parsed (`JsonBodiesOnly`), a handler bound to its `@arthome/contracts` route (`Endpoint`), with the guards, input, principal and answer shaping its declaration implies (`endpointProviders`) — every HTTP service's edge |
 | `libs/search-index` | the index mappings and document shapes, shared by the indexer and catalog's search |
 | `libs/transactions` | the transaction a CQRS command runs in, its domain events published after the commit, `frozen`, which holds an aggregate's snapshot, and `updateReturning`, which reads an UPDATE's RETURNING rows |
-| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers, boots a service's feature modules over HTTP (`httpApp`) and checks each response a suite provokes against its contract route (`guardDeclaredResponses`) |
+| `libs/config`, `libs/testing` | the environment, and a harness that starts real containers, pauses one for an outage drill (`StartedStack.pause`), registers a service's committed connector (`registerOutboxConnector`), boots a service's feature modules over HTTP (`httpApp`) and checks each response a suite provokes against its contract route (`guardDeclaredResponses`) |
 
 **What is NOT built, said plainly.** `streaming`, `chat` and `payouts` do not exist, and `ticketing`
 sells through its fake payment adapter only, with no Stripe adapter; refunds for an outcome, the
 waiting list and the waiting room come next.
 `notifications` is only its consumer half, and sends no email. Redis holds the storefront BFF's
-authentication caps; ticketing brings its queues and waiting room. There is no MinIO.
+authentication caps and ticketing's provider-call queues; the waiting room comes next. There is no
+MinIO.
 Authentication covers the storefront's session (auth slice A): the studio (B), devices and the
 television (C), and the other sign-in methods (D) come next, and the studio's routes stay refused in
 production until B authorises them.

@@ -133,8 +133,9 @@ NestJS skips them; this block is what makes loading systematic rather than remem
     defect only where it is used; `updateReturning` is in ticketing's payment inbox and messaging's
     `republishOutboxRow`, and `search-indexer`'s artist consumer still destructures its own):
     `updateReturning` (`@arthome-platform/transactions`) reads an UPDATE's or a DELETE's RETURNING rows, and
-    `nextAttemptAt`, `doublingDelays` and `attemptsAllowedBy` (`@arthome-platform/messaging`) are
-    the one retry schedule, consumers and provider calls alike.
+    `nextAttemptAt`, `retryDelayAfter`, `doublingDelays` and `attemptsAllowedBy`
+    (`@arthome-platform/messaging`) are the one retry schedule, consumers and provider calls alike,
+    the provider-call queues' backoff included.
   - **The local plugin's `meta.version` is the SHA-256 of the rule file, computed when the config
     loads**, never bumped by hand: `eslint --cache` keys its results on it, so editing a rule in
     `tools/eslint/` re-checks every file. A new rule file goes into the hash in
@@ -443,7 +444,7 @@ pnpm --filter @arthome-platform/identity      run migration:auth   # better-auth
 pnpm --filter @arthome-platform/notifications run migration:run
 pnpm --filter @arthome-platform/catalog       run migration:run
 pnpm --filter @arthome-platform/search-indexer run migration:run
-pnpm --filter @arthome-platform/ticketing     run migration:run   # its three processes stopped first
+pnpm --filter @arthome-platform/ticketing     run migration:run   # its four processes stopped first
 pnpm run provision:topics          # BEFORE the connectors, and before any consumer
 for c in identity catalog ticketing; do
   curl -s -X POST -H 'Content-Type: application/json' \
@@ -679,11 +680,13 @@ a bare producer script prints it too.
 
 ### The ticketing date sales path
 
-`ticketing` runs three processes from `apps/ticketing`, all on its own database `ticketing`: the API
-(`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`)
-and the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
+`ticketing` runs four processes from `apps/ticketing`, all on its own database `ticketing`: the API
+(`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`),
+the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
 nobody paid, closes each sale thirty minutes after its start (D-089, HANDOVER §0l), and needs
-Postgres alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
+Postgres alone, and the worker (`node dist/worker.js`, `REDIS_URL`), which makes every call owed to
+the payment provider from BullMQ's queues (HANDOVER §0m) and alone holds Redis. Its connector is
+`infra/debezium/ticketing-outbox.json`, registered with the loop above.
 
 A date catalog drafts is opened in ticketing by the consumer; the studio then gives it capacity and
 prices, each with an `Idempotency-Key` and the version the pane served:
@@ -765,8 +768,10 @@ Seats sell until thirty minutes after the live's start (D-089): from the start t
 cutoff, the quote and the purchase answer 409 `order.sales_closed`.
 The provider's webhooks arrive on `POST /v1/payments/webhook`, verified on their raw bytes, recorded
 in `stripe_event_inbox` and answered at once; the API process's payment worker applies them every
-second, refunds at once a payment confirmed after its hold expired with no seat left (D-082), and
-cancels the intents of expired orders (`apps/ticketing/HANDOVER.md` §0j, §0k).
+second. A payment confirmed after its hold expired with no seat left owes its refund (D-082), and an
+expired order its intent's cancellation: rows in Postgres, which the worker process's relay
+enqueues and its queues make, rate-limited and retried, then given up on with a dead row that
+`ops:check ticketing` reports (`apps/ticketing/HANDOVER.md` §0j, §0k, §0m).
 
 The capacity invariant is proven by `orders/capacity.itest.ts` on a real Postgres (adr-ticketing.md
 §3): 300 purchases at once on 100 seats hold exactly 100, never below zero, and all 100 come back at
