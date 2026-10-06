@@ -83,6 +83,17 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
     );
   }
 
+  public releaseSoldSeats(dateId: string, quantity: number): Promise<boolean> {
+    return this.affected(
+      `UPDATE date_sales
+          SET seats_available = seats_available + $2,
+              seats_sold = seats_sold - $2,
+              availability_moves = availability_moves + 1
+        WHERE date_id = $1 AND seats_sold >= $2`,
+      [dateId, quantity],
+    );
+  }
+
   public takeAndSellSeats(dateId: string, quantity: number, now: Instant): Promise<boolean> {
     return this.affected(
       `UPDATE date_sales

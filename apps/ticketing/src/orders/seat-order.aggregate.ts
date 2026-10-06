@@ -3,6 +3,8 @@ import { AggregateRoot } from '@nestjs/cqrs';
 import { v7 as uuidv7 } from 'uuid';
 
 import {
+  DomainError,
+  OrderErrorCode,
   assertRefundWithinRemaining,
   compare,
   type Instant,
@@ -11,16 +13,18 @@ import {
   type RefundReason,
   type OrderQuote as CoreOrderQuote,
   OrderState,
+  type SeatCancelReason,
   SeatState,
   orderStateMovesForward,
   refundIdempotencyKey,
   refundableRemaining,
+  seatStateMayMove,
   sum,
-  type OrderErrorCode,
 } from '@arthome/core';
 
 import { ORDER_STATES_AWAITING_PAYMENT } from './awaiting-payment.js';
 import {
+  SeatCancelled,
   SeatOrderFailed,
   SeatOrderHoldRenewed,
   SeatOrderIntentRecorded,
@@ -28,6 +32,7 @@ import {
   SeatOrderPlaced,
   SeatOrderRefundOwed,
   SeatOrderRefunded,
+  SeatsCredited,
   type SeatOrderEvent,
 } from './seat-order.events.js';
 import { type NextAction } from '../payments/next-action.js';
@@ -59,6 +64,30 @@ export interface SeatSnapshot {
   readonly state: SeatState;
   readonly cancelDeadline: Instant | null;
   readonly activatedAt: Instant;
+  /** When it left `active`. */
+  readonly endedAt: Instant | null;
+  readonly cancelReason: SeatCancelReason | null;
+  /** The refund giving its money back, `refunded` once made; null when nothing was given back. */
+  readonly refundId: string | null;
+  readonly refundAmount: Money | null;
+  readonly creditId: string | null;
+  readonly creditAmount: Money | null;
+}
+
+/**
+ * Seats cancelled at once, PT1's and PT2's one transition: each with its share of `refundId`, or
+ *   with nothing given back when the refund is null or its share is nothing.
+ */
+export interface SeatCancellation {
+  readonly reason: SeatCancelReason;
+  readonly refundId: string | null;
+  readonly seats: readonly { readonly seatId: string; readonly refundAmount: Money | null }[];
+}
+
+/** Seats exchanged for a credit on the account (PT1, an interrupted date). */
+export interface SeatCrediting {
+  readonly creditId: string;
+  readonly seats: readonly { readonly seatId: string; readonly creditAmount: Money }[];
 }
 
 /** A seat about to be created: its id and code drawn by the service, its deadline served. */
@@ -130,6 +159,10 @@ export interface SeatOrderPlacement {
   readonly declaredTaxLocation: DeclaredTaxLocation | null;
   readonly holdId: string;
   readonly expiresAt: Instant;
+}
+
+function withRef(refund: OrderRefund, refundId: string, ref: string): OrderRefund {
+  return refund.id === refundId ? { ...refund, ref } : refund;
 }
 
 function sameRefund(owed: OrderRefund, refund: OwedRefund): boolean {
@@ -306,6 +339,12 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
       state: SeatState.ACTIVE,
       cancelDeadline: issue.cancelDeadline,
       activatedAt: now,
+      endedAt: null,
+      cancelReason: null,
+      refundId: null,
+      refundAmount: null,
+      creditId: null,
+      creditAmount: null,
     }));
     this.advance({
       state: OrderState.PAID,
@@ -399,13 +438,21 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
 
   /**
    * A refund the provider made: `refunded` once the refunds made reach the total,
-   *   `partially_refunded` before, forward only. Nothing for one already made.
+   *   `partially_refunded` before, forward only, and the seats it gives back `refunded`. Nothing
+   *   for one already made but its reference, when it was made before the provider named it.
    */
-  public refundMade(refundId: string, refundRef: string, now: Instant): void {
+  public refundMade(refundId: string, refundRef: string | null, now: Instant): void {
     const current = this.current;
     const refund = current.refunds.find(({ id }) => id === refundId);
     if (refund === undefined) throw new Error(`order ${current.id} owes no refund ${refundId}`);
-    if (refund.refundedAt !== null) return;
+    if (refund.refundedAt !== null) {
+      if (refund.ref === null && refundRef !== null) {
+        this.advance({
+          refunds: current.refunds.map((owed) => withRef(owed, refundId, refundRef)),
+        });
+      }
+      return;
+    }
     const refunds = current.refunds.map((owed) =>
       owed.id === refundId ? { ...owed, ref: refundRef, refundedAt: now } : owed,
     );
@@ -417,6 +464,11 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
       compare(made, current.quote.total) >= 0 ? OrderState.REFUNDED : OrderState.PARTIALLY_REFUNDED;
     this.advance({
       refunds,
+      seats: current.seats.map((seat) =>
+        seat.refundId === refundId && seatStateMayMove(seat.state, SeatState.REFUNDED)
+          ? { ...seat, state: SeatState.REFUNDED }
+          : seat,
+      ),
       ...(orderStateMovesForward(current.state, reached) && { state: reached, failure: null }),
     });
     this.apply(
@@ -430,6 +482,83 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
         now,
       ),
     );
+  }
+
+  /**
+   * Each seat `cancelled` at once with its share of the refund, `refunded` when that refund is
+   *   made; one `SeatCancelled` each. A seat no longer active is refused `seat.not_active`,
+   *   naming its state, and nothing moves.
+   */
+  public cancelSeats({ reason, refundId, seats }: SeatCancellation, now: Instant): void {
+    const current = this.current;
+    if (refundId !== null && !current.refunds.some(({ id }) => id === refundId)) {
+      throw new Error(`order ${current.id} owes no refund ${refundId}`);
+    }
+    if (refundId === null && seats.some(({ refundAmount }) => refundAmount !== null)) {
+      throw new Error(`order ${current.id} cannot give a seat a share of no refund`);
+    }
+    this.assertSeatsMayMove(
+      seats.map(({ seatId }) => seatId),
+      SeatState.CANCELLED,
+    );
+    const shares = new Map(seats.map(({ seatId, refundAmount }) => [seatId, refundAmount]));
+    this.advance({
+      seats: current.seats.map((seat) => {
+        if (!shares.has(seat.id)) return seat;
+        const share = shares.get(seat.id) ?? null;
+        const givenBack = share !== null && share.amountMinor > 0 ? share : null;
+        return {
+          ...seat,
+          state: SeatState.CANCELLED,
+          endedAt: now,
+          cancelReason: reason,
+          refundId: givenBack === null ? null : refundId,
+          refundAmount: givenBack,
+        };
+      }),
+    });
+    for (const { seatId } of seats) {
+      this.apply(
+        new SeatCancelled(current.id, current.dateId, seatId, current.accountId, reason, now),
+      );
+    }
+  }
+
+  /** Each seat `credited` with its share of the credit; `seat.not_active` as `cancelSeats`. */
+  public creditSeats({ creditId, seats }: SeatCrediting, now: Instant): void {
+    const current = this.current;
+    this.assertSeatsMayMove(
+      seats.map(({ seatId }) => seatId),
+      SeatState.CREDITED,
+    );
+    const shares = new Map(seats.map(({ seatId, creditAmount }) => [seatId, creditAmount]));
+    this.advance({
+      seats: current.seats.map((seat) => {
+        const share = shares.get(seat.id);
+        if (share === undefined) return seat;
+        return { ...seat, state: SeatState.CREDITED, endedAt: now, creditId, creditAmount: share };
+      }),
+    });
+    this.apply(
+      new SeatsCredited(
+        current.id,
+        current.dateId,
+        creditId,
+        seats.map(({ seatId }) => seatId),
+        now,
+      ),
+    );
+  }
+
+  /**
+   * The buyer's bank disputed the charge: the provider holds the money, so no refund is owed any
+   *   more, and the seats stay active, "nothing on the viewer's side" (adr-payments.md §9). False
+   *   once disputed.
+   */
+  public dispute(): boolean {
+    if (!orderStateMovesForward(this.current.state, OrderState.DISPUTED)) return false;
+    this.advance({ state: OrderState.DISPUTED, failure: null });
+    return true;
   }
 
   public intentCancelled(): void {
@@ -452,6 +581,24 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
       ),
     );
     return owed;
+  }
+
+  /** Each seat named once, held by the order and allowed to move to `to`: else nothing moves. */
+  private assertSeatsMayMove(seatIds: readonly string[], to: SeatState): void {
+    const current = this.current;
+    if (new Set(seatIds).size !== seatIds.length) {
+      throw new Error(`order ${current.id}: a seat is named twice`);
+    }
+    for (const seatId of seatIds) {
+      const seat = current.seats.find(({ id }) => id === seatId);
+      if (seat === undefined) throw new Error(`order ${current.id} holds no seat ${seatId}`);
+      if (!seatStateMayMove(seat.state, to)) {
+        throw new DomainError({
+          code: OrderErrorCode.SEAT_NOT_ACTIVE,
+          params: { state: seat.state },
+        });
+      }
+    }
   }
 
   private advance(changes: Partial<SeatOrderSnapshot>): void {

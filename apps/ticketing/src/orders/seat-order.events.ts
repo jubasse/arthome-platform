@@ -7,6 +7,7 @@ import {
   type RefundReason,
   type OrderErrorCode,
   type OrderState,
+  type SeatCancelReason,
 } from '@arthome/core';
 
 import type { DeclaredTaxLocation, OrderQuote, SeatSnapshot } from './seat-order.aggregate.js';
@@ -100,8 +101,36 @@ export class SeatOrderRefunded implements IEvent {
     public readonly channelId: string,
     public readonly refundId: string,
     public readonly amount: Money,
-    public readonly refundRef: string,
+    /** Null for a refund a webhook's cumulative amount showed made before the provider named it. */
+    public readonly refundRef: string | null,
     public readonly reason: RefundReason,
+    public readonly occurredAt: Instant,
+  ) {}
+}
+
+/** One seat out of `active`, its refund made later if it has one. */
+export class SeatCancelled implements IEvent {
+  public readonly kind = 'SeatCancelled';
+
+  public constructor(
+    public readonly orderId: string,
+    public readonly dateId: string,
+    public readonly seatId: string,
+    public readonly accountId: string | null,
+    public readonly reason: SeatCancelReason,
+    public readonly occurredAt: Instant,
+  ) {}
+}
+
+/** Seats exchanged for a credit; no wire, since no `SeatCancelReason` member fits (D-092). */
+export class SeatsCredited implements IEvent {
+  public readonly kind = 'SeatsCredited';
+
+  public constructor(
+    public readonly orderId: string,
+    public readonly dateId: string,
+    public readonly creditId: string,
+    public readonly seatIds: readonly string[],
     public readonly occurredAt: Instant,
   ) {}
 }
@@ -117,4 +146,6 @@ export type SeatOrderEvent =
   | SeatOrderPaid
   | SeatOrderFailed
   | SeatOrderRefundOwed
-  | SeatOrderRefunded;
+  | SeatOrderRefunded
+  | SeatCancelled
+  | SeatsCredited;

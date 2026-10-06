@@ -4,19 +4,25 @@ import {
   OrderRefundedSchema,
   SeatActivatedSchema,
   SeatCancelReason as WireSeatCancelReason,
+  SeatCancelledSchema,
   TaxEvidenceKind as WireTaxEvidenceKind,
 } from '@arthome-platform/events';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import type { EntityManager } from 'typeorm';
 
-import { zero, type Money } from '@arthome/core';
+import { seatCancelReasonOf, zero, type Money } from '@arthome/core';
 
 import type { DeclaredTaxLocation } from './seat-order.aggregate.js';
-import type { SeatOrderEvent, SeatOrderPaid, SeatOrderRefunded } from './seat-order.events.js';
+import type {
+  SeatCancelled,
+  SeatOrderEvent,
+  SeatOrderPaid,
+  SeatOrderRefunded,
+} from './seat-order.events.js';
 import { assertNever } from '../assert-never.js';
 import { writeTicketingEvent, type TicketingEvent } from '../ticketing-events.js';
-import { WIRE_PRICE_TIER, WIRE_REFUND_REASON } from '../wire.js';
+import { WIRE_PRICE_TIER, WIRE_REFUND_REASON, WIRE_SEAT_CANCEL_REASON } from '../wire.js';
 
 /** What the wire says beyond the aggregate's facts. */
 export interface SeatOrderWireContext {
@@ -27,7 +33,8 @@ export interface SeatOrderWireContext {
 /**
  * The outbox rows of an order's events, in the order they were applied: `order.paid` keyed by the
  *   order, then one `seat.activated` per seat keyed by the date (events.md §3.1, D-078); one
- *   `order.refunded` per refund made, keyed by the order.
+ *   `seat.cancelled` per seat cancelled, keyed by the date; one `order.refunded` per refund made,
+ *   keyed by the order.
  */
 export async function writeSeatOrderIntegrationEvents(
   manager: EntityManager,
@@ -51,11 +58,14 @@ function integrationEventsOf(
     case 'SeatOrderIntentRecorded':
     case 'SeatOrderFailed':
     case 'SeatOrderRefundOwed':
+    case 'SeatsCredited':
       return [];
     case 'SeatOrderPaid':
       return [orderPaid(event, context), ...seatsActivated(event, context)];
     case 'SeatOrderRefunded':
       return [orderRefunded(event, context)];
+    case 'SeatCancelled':
+      return [seatCancelled(event, context)];
     default:
       return assertNever(event);
   }
@@ -145,8 +155,30 @@ function seatsActivated(event: SeatOrderPaid, context: SeatOrderWireContext): Ti
   }));
 }
 
-/** One per refund made, several per order; `reason`, a seat's cancellation, is unspecified until PT2. */
+function seatCancelled(event: SeatCancelled, context: SeatOrderWireContext): TicketingEvent {
+  return {
+    type: 'ticketing.seat.cancelled.v1',
+    key: event.dateId,
+    payload: toBinary(
+      SeatCancelledSchema,
+      create(SeatCancelledSchema, {
+        seatId: event.seatId,
+        dateId: event.dateId,
+        accountId: event.accountId ?? '',
+        reason: WIRE_SEAT_CANCEL_REASON[event.reason],
+        occurredAt: timestampFromDate(new Date(event.occurredAt)),
+      }),
+    ),
+    traceparent: context.traceparent,
+  };
+}
+
+/**
+ * One per refund made, several per order. `reason` is the seat's cancellation the refund comes
+ *   from, unspecified for one that cancels none (D-082's, `goodwill`, `duplicate`, `dispute`).
+ */
 function orderRefunded(event: SeatOrderRefunded, context: SeatOrderWireContext): TicketingEvent {
+  const seatCancelReason = seatCancelReasonOf(event.reason);
   return {
     type: 'ticketing.order.refunded.v1',
     key: event.orderId,
@@ -156,8 +188,11 @@ function orderRefunded(event: SeatOrderRefunded, context: SeatOrderWireContext):
         orderId: event.orderId,
         channelId: event.channelId,
         amount: wireMoney(event.amount),
-        reason: WireSeatCancelReason.UNSPECIFIED,
-        refundRef: event.refundRef,
+        reason:
+          seatCancelReason === null
+            ? WireSeatCancelReason.UNSPECIFIED
+            : WIRE_SEAT_CANCEL_REASON[seatCancelReason],
+        refundRef: event.refundRef ?? '',
         occurredAt: timestampFromDate(new Date(event.occurredAt)),
         refundReason: WIRE_REFUND_REASON[event.reason],
       }),

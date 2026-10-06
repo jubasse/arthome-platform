@@ -29,6 +29,12 @@ export abstract class DateSalesRepository {
 
   public abstract returnHeldSeats(dateId: string, quantity: number): Promise<void>;
 
+  /**
+   * Sold seats back on sale at once (D-093), counted as a move so a date sold out and back is
+   *   published at once; false, nothing moved, when fewer were sold.
+   */
+  public abstract releaseSoldSeats(dateId: string, quantity: number): Promise<boolean>;
+
   /** A payment whose hold is gone takes and sells its seats in one statement (D-082). */
   public abstract takeAndSellSeats(
     dateId: string,
