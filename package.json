@@ -49,7 +49,7 @@
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/tooling": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.2/arthome-tooling-0.2.0-rc.2.tgz",
+    "@arthome/tooling": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.3/arthome-tooling-0.2.0-rc.3.tgz",
     "@bufbuild/buf": "1.73.0",
     "@bufbuild/protoc-gen-es": "2.15.0",
     "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",

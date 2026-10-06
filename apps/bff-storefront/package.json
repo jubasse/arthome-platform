@@ -14,8 +14,8 @@
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/http-edge": "workspace:*",
-    "@arthome/contracts": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.2/arthome-contracts-0.2.0-rc.2.tgz",
-    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.2/arthome-core-0.2.0-rc.2.tgz",
+    "@arthome/contracts": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.3/arthome-contracts-0.2.0-rc.3.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.3/arthome-core-0.2.0-rc.3.tgz",
     "@fastify/cookie": "11.1.2",
     "@fastify/csrf-protection": "8.0.1",
     "@fastify/static": "10.1.5",
