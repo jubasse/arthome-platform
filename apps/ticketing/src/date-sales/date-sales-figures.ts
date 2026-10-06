@@ -33,6 +33,8 @@ export function gaugeOf(row: GaugeColumns): Gauge {
     seatsSold: row.seats_sold,
     seatsHeld: row.capacity_total - row.seats_sold - row.seats_available,
     waitlistCount: row.waitlist_count,
+    // No priority pool opens before the waiting list's (T5, PT3).
+    priorityPoolSeats: 0,
   };
 }
 

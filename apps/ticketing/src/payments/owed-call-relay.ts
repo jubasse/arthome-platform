@@ -4,7 +4,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { DataSource, type EntityManager } from 'typeorm';
 
-import { type Clock } from '@arthome/core';
+import { type Clock, intentCancelIdempotencyKey } from '@arthome/core';
 
 import {
   FAIL_FAST_CONNECTION,
@@ -12,7 +12,6 @@ import {
   PRODUCER_TIMEOUT_MS,
   PROVIDER_CALL_SCHEDULES,
   REFUND_JOB,
-  intentCancelKeyOf,
   jobIdOf,
   staleAfterMs,
   type IntentCancellationJob,
@@ -185,7 +184,7 @@ export class OwedCallRelay extends SweeperLoop {
         due.map(({ id }) => ({
           name: INTENT_CANCELLATION_JOB,
           data: { orderId: id },
-          opts: { jobId: jobIdOf(intentCancelKeyOf(id)) },
+          opts: { jobId: jobIdOf(intentCancelIdempotencyKey(id)) },
         })),
       );
       return stamp(manager, 'seat_order', 'intent_cancel_enqueued_at', due, nowMs);

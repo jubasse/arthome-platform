@@ -131,7 +131,7 @@ describe('SeatOrder', () => {
     expect(placed().recordIntent(INTENT, OrderState.AWAITING_ACTION, NOW)).toBe(false);
   });
 
-  it('owes back a payment it has no seat for, under the order key, and takes no payment after that (D-082)', () => {
+  it('owes back a payment it has no seat for, under its own key, and takes no payment after that (D-082)', () => {
     const order = placed();
     order.fail({ code: null, declineCode: null }, NOW);
 
@@ -150,7 +150,7 @@ describe('SeatOrder', () => {
         id: refundId,
         amount: PLACEMENT.quote.total,
         reason: RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
-        idempotencyKey: `refund:${ORDER_ID}`,
+        idempotencyKey: `refund:${refundId ?? ''}`,
         seatId: null,
         owedAt: LATER,
         ref: null,
@@ -267,10 +267,15 @@ describe('SeatOrder, its refunds (the ledger PT1 and PT2 owe through)', () => {
     expect(order.refundableLeft).toEqual(money(2400, 'EUR'));
     expect(() => {
       order.oweRefund({ ...SECOND, amount: money(2401, 'EUR') }, LATER);
-    }).toThrow(/2400 EUR is left to refund/);
+    }).toThrow(
+      expect.objectContaining({
+        code: OrderErrorCode.REFUND_AMOUNT_EXCEEDS_REMAINING,
+        params: { remainingMinor: 2400, currencyCode: 'EUR' },
+      }),
+    );
     expect(() => {
       order.oweRefund({ ...SECOND, amount: money(0, 'EUR') }, LATER);
-    }).toThrow(/cannot owe 0 back/);
+    }).toThrow(/a refund of nothing/);
     expect(order.snapshot.refunds).toHaveLength(1);
   });
 

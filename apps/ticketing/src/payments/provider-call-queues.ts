@@ -53,11 +53,6 @@ export const FAIL_FAST_CONNECTION = {
   commandTimeout: PRODUCER_TIMEOUT_MS,
 } as const;
 
-/** `cancel:{orderId}`, C1's `intentCancelIdempotencyKey` from PR C on, in the same format. */
-export function intentCancelKeyOf(orderId: string): string {
-  return `cancel:${orderId}`;
-}
-
 /**
  * The provider's key with its colons made dashes: BullMQ 6 refuses a custom job id holding a colon,
  *   unless it has exactly three segments, which it then files among its repeatable jobs. One key,

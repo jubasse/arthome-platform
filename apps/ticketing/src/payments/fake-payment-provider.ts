@@ -235,6 +235,8 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
       orderId: data.object.metadata.order_id,
       occurredAt: fromEpochMs(created * 1_000),
       declineCode: data.object.last_payment_error?.decline_code ?? null,
+      refundRef: null,
+      amountRefunded: null,
     };
   }
 

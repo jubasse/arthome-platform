@@ -34,6 +34,13 @@ interface InboxRow {
 /** An event that no retry can apply: it names an order this service does not hold. */
 class Unappliable extends Error {}
 
+/** Kept and ignored; a refund made and a dispute are applied from PT2 on (its R15, R16). */
+const KINDS_APPLIED_AS_NOTHING: readonly PaymentEventKind[] = [
+  PaymentEventKind.UNHANDLED,
+  PaymentEventKind.REFUND_SUCCEEDED,
+  PaymentEventKind.DISPUTE_OPENED,
+];
+
 /**
  * adr-ticketing.md §8's worker, each recorded webhook in a transaction of its own (HANDOVER §0j): the
  *   row claimed `SKIP LOCKED`, the order moved forward only, the row marked applied with the effect.
@@ -92,7 +99,7 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
         eventId,
         new Date(now),
       ]);
-    if (row.kind === PaymentEventKind.UNHANDLED || row.order_id === null) {
+    if (KINDS_APPLIED_AS_NOTHING.includes(row.kind) || row.order_id === null) {
       await markApplied();
       return true;
     }
@@ -137,6 +144,8 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
         );
       case PaymentEventKind.INTENT_CANCELLED:
         return failUnpaidOrder(transaction, order, { code: null, declineCode: null }, now);
+      case PaymentEventKind.REFUND_SUCCEEDED:
+      case PaymentEventKind.DISPUTE_OPENED:
       case PaymentEventKind.UNHANDLED:
         return null;
     }

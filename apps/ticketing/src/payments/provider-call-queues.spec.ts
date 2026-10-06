@@ -3,20 +3,18 @@ import type { Logger } from '@nestjs/common';
 import type { Job, Worker } from 'bullmq';
 import { describe, expect, it } from 'vitest';
 
-import { HOUR_MS } from '@arthome/core';
+import { HOUR_MS, intentCancelIdempotencyKey, refundIdempotencyKey } from '@arthome/core';
 
 import { REFUND_RETRY_DELAYS_MS } from './owed-calls.js';
 import {
   DEFAULT_PROVIDER_CALL_SCHEDULES,
   PROVIDER_CALL_BACKOFF,
-  intentCancelKeyOf,
   isLastAttempt,
   jobIdOf,
   providerCallJobOptions,
   runOnSchedule,
   staleAfterMs,
 } from './provider-call-queues.js';
-import { refundKeyOf } from './refund-ledger.js';
 
 const ID = '01a0f900-0000-7000-8000-000000000001';
 
@@ -35,9 +33,9 @@ function backoffOf(worker: Worker): (attemptsMade: number) => number {
 
 describe('the job id of a provider call', () => {
   it.each([
-    ['a refund', `refund:${ID}`, `refund-${ID}`],
-    ['a D-082 refund, under its order', refundKeyOf(ID), `refund-${ID}`],
-    ["an intent's cancellation", intentCancelKeyOf(ID), `cancel-${ID}`],
+    ['a refund', refundIdempotencyKey(ID), `refund-${ID}`],
+    ['a refund owed before PT0, under its order', `refund:${ID}`, `refund-${ID}`],
+    ["an intent's cancellation", intentCancelIdempotencyKey(ID), `cancel-${ID}`],
   ])('is %s key with its colons made dashes: no colon, never an integer', (_, key, jobId) => {
     expect(jobIdOf(key)).toBe(jobId);
     expect(jobIdOf(key)).not.toContain(':');

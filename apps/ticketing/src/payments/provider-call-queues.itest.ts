@@ -30,7 +30,9 @@ import {
   SeatHoldOrigin,
   SeatHoldState,
   Service,
+  intentCancelIdempotencyKey,
   money,
+  refundIdempotencyKey,
 } from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
@@ -58,14 +60,12 @@ import {
   PROVIDER_CALL_MAX_STALLED_COUNT,
   PROVIDER_CALL_SCHEDULES,
   REFUND_QUEUE,
-  intentCancelKeyOf,
   jobIdOf,
   staleAfterMs,
   type ProviderCallSchedules,
   type RefundJob,
 } from './provider-call-queues.js';
 import { ProviderCallQueuesModule } from './provider-call-queues.module.js';
-import { refundKeyOf } from './refund-ledger.js';
 import { RefundProcessor } from './refund.processor.js';
 import { CLOCK } from '../clock.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
@@ -194,7 +194,7 @@ async function paidOrdersOwingRefunds(count: number): Promise<OwedRefundRow[]> {
   );
   const owed = Array.from({ length: count }, (): OwedRefundRow => {
     const refundId = randomUUID();
-    return { orderId: randomUUID(), refundId, key: `refund:${refundId}` };
+    return { orderId: randomUUID(), refundId, key: refundIdempotencyKey(refundId) };
   });
   for (const { orderId } of owed) {
     await fake.createIntent({
@@ -357,7 +357,7 @@ describe('a refund owed by a payment that found no seat (D-082)', () => {
       await relay.relayDue();
 
       expect((await refundOf(refundId)).enqueued_at).toEqual(new Date(clock.nowMs()));
-      expect(callsTo(`refund ${refundKeyOf(orderId)}`)).toBe(1);
+      expect(callsTo(`refund ${refundIdempotencyKey(refundId)}`)).toBe(1);
       expect(fake.refundsMade).toBe(madeBefore + 1);
       const [state] = await dataSource.query<{ state: string }[]>(
         'SELECT state FROM seat_order WHERE id = $1',
@@ -584,8 +584,12 @@ describe('Redis down', () => {
           (await cancellationOf(expiring)).intent_cancel_owed_at === null
         );
       });
-      expect(callsTo(`refund ${refundKeyOf(unseated)}`)).toBe(1);
-      expect(callsTo(`cancelIntent ${intentCancelKeyOf(expiring)}`)).toBe(1);
+      const [unseatedRefund] = await dataSource.query<{ idempotency_key: string }[]>(
+        'SELECT idempotency_key FROM order_refund WHERE order_id = $1',
+        [unseated],
+      );
+      expect(callsTo(`refund ${unseatedRefund?.idempotency_key ?? ''}`)).toBe(1);
+      expect(callsTo(`cancelIntent ${intentCancelIdempotencyKey(expiring)}`)).toBe(1);
       expect(await refundedEventsOf(unseated)).toHaveLength(1);
       expect(await checkProviderCallQueues(stack.redis.url)).toMatchObject({
         status: 'up',
@@ -639,7 +643,7 @@ describe('a worker killed mid-job', () => {
         void checker.startStalledCheckTimer();
         await until(
           'the stalled job back in wait',
-          async () => (await refundQueue().getJobState(jobId)) === 'waiting',
+          async () => (await (await refundQueue().getJob(jobId))?.isWaiting()) === true,
           STALLED_MS,
         );
         await processor.worker.resume();
@@ -803,7 +807,7 @@ describe("an intent's cancellation", () => {
       const orderId = await awaitingOrder(await dateOnSale(4));
       await expireDueHolds();
       const processor = app.get(IntentCancellationProcessor);
-      const jobId = jobIdOf(intentCancelKeyOf(orderId));
+      const jobId = jobIdOf(intentCancelIdempotencyKey(orderId));
       await processor.worker.pause();
       try {
         await relay.relayDue();
@@ -816,7 +820,7 @@ describe("an intent's cancellation", () => {
       }
 
       await until('its job settled', jobGone(cancellationQueue(), jobId));
-      expect(callsTo(`cancelIntent ${intentCancelKeyOf(orderId)}`)).toBe(0);
+      expect(callsTo(`cancelIntent ${intentCancelIdempotencyKey(orderId)}`)).toBe(0);
     },
     CASE_MS,
   );
@@ -827,7 +831,7 @@ describe("an intent's cancellation", () => {
       const orderId = await awaitingOrder(await dateOnSale(2));
       await expireDueHolds();
       const owedAt = (await cancellationOf(orderId)).intent_cancel_owed_at;
-      const jobId = jobIdOf(intentCancelKeyOf(orderId));
+      const jobId = jobIdOf(intentCancelIdempotencyKey(orderId));
       const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
       fake.down = true;
       try {
@@ -841,7 +845,7 @@ describe("an intent's cancellation", () => {
         fake.down = false;
         errors.mockRestore();
       }
-      const call = `cancelIntent ${intentCancelKeyOf(orderId)}`;
+      const call = `cancelIntent ${intentCancelIdempotencyKey(orderId)}`;
       expect(callsTo(call)).toBe(SHORT.intentCancellations.length + 1);
 
       clock.advance(MINUTE_MS);
@@ -876,7 +880,7 @@ describe('a job lost by Redis', () => {
       const refunds = app.get(RefundProcessor);
       const cancellations = app.get(IntentCancellationProcessor);
       const refundJob = jobIdOf(owed.key);
-      const cancelJob = jobIdOf(intentCancelKeyOf(orderId));
+      const cancelJob = jobIdOf(intentCancelIdempotencyKey(orderId));
       await refunds.worker.pause();
       await cancellations.worker.pause();
       const redis = new Redis(stack.redis.url);
@@ -917,7 +921,7 @@ describe('a job lost by Redis', () => {
         async () => (await cancellationOf(orderId)).intent_cancel_owed_at === null,
       );
       expect(callsTo(`refund ${owed.key}`)).toBe(0);
-      expect(callsTo(`cancelIntent ${intentCancelKeyOf(orderId)}`)).toBe(1);
+      expect(callsTo(`cancelIntent ${intentCancelIdempotencyKey(orderId)}`)).toBe(1);
     },
     CASE_MS,
   );
@@ -943,18 +947,14 @@ describe('two relays racing', () => {
           }
         };
         await Promise.all([drain(relay), drain(relayOf())]);
-        expect(await refundQueue().getJobCountByTypes('waiting', 'prioritized', 'delayed')).toBe(
-          1_000,
-        );
+        expect(await refundQueue().getWaitingCount()).toBe(1_000);
 
         // As if both relays' commits were lost after their adds: enqueued again, ignored by id.
         await dataSource.query('UPDATE order_refund SET enqueued_at = NULL WHERE id = ANY($1)', [
           ids,
         ]);
         await Promise.all([drain(relay), drain(relayOf())]);
-        expect(await refundQueue().getJobCountByTypes('waiting', 'prioritized', 'delayed')).toBe(
-          1_000,
-        );
+        expect(await refundQueue().getWaitingCount()).toBe(1_000);
       } finally {
         await processor.worker.resume();
       }

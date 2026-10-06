@@ -357,7 +357,7 @@ adr-payments.md §7.
   LOCKED` in a transaction of its own, then its order before its hold, applies the fact forward only
   (a confirmation settles the payment as tx B does; an action or processing records the intent; a
   failure or a cancellation fails the order and gives its seats back; anything else is kept and
-  ignored), writes the order's events, and marks the row applied in that transaction. A duplicate or
+  ignored, a refund made and a dispute opened included until PT2 applies them), writes the order's events, and marks the row applied in that transaction. A duplicate or
   a fact behind the order's state changes nothing, and an event about no order of this service's
   (no `order_id`, or a kind it does not handle) is marked applied as nothing. A failure is retried
   after the consumers' delays (`RETRY_DELAYS_MS`: 5 s, 30 s, 5 min, with their jitter, in
@@ -403,7 +403,8 @@ by `takeAndSellSeats`: `seats_available - q` and `seats_sold + q` in one stateme
 its owed cancellation dropped.
 
 With none left, the order owes the money back (`SeatOrder.oweUnseatedPaymentBack`,
-`hold_expired_capacity_lost`): one `order_refund` row of the whole total under `refund:{orderId}`,
+`hold_expired_capacity_lost`): one `order_refund` row of the whole total under its own key,
+`refundIdempotencyKey(refundId)`,
 written in the same transaction with the trace it was found under (`recordRefundTraceparent`), no
 seat created, nothing sold, nothing asked of the provider. The worker's relay enqueues it within its
 next second, the refund queue asks the provider under that key outside any transaction, then marks
@@ -508,8 +509,10 @@ to the queue.
 - **Two queues**, `ticketing-refunds` and `ticketing-intent-cancellations`, under the prefix
   `{ticketing}` (one hash slot on a Redis Cluster). Jobs `refund.v1` `{ refundId }` and
   `intent-cancellation.v1` `{ orderId }`: ids only, each attempt reads its row. **The provider keys
-  stay as they were**: `refund:{refundId}` stored as text on the refund's row (`refund:{orderId}`
-  for D-082 until PR C, and for every refund owed before this migration), `cancel:{orderId}`. BullMQ
+  stay as they were**: core's `refundIdempotencyKey`, `refund:{refundId}`, stored as text on the
+  refund's row (`refund:{orderId}` for every D-082 refund owed before PR C's core, those this
+  migration backfilled and those PR B's code owed until then), and
+  `intentCancelIdempotencyKey`, `cancel:{orderId}`. BullMQ
   6 refuses a colon in a custom job id unless it has exactly three segments, which it then files
   among its repeatable jobs, so `jobIdOf(key)` makes the colons dashes: `refund-{refundId}`,
   `refund-{orderId}`, `cancel-{orderId}`. One key, one job id, both stable.
@@ -544,7 +547,8 @@ to the queue.
   and logs. Its lock across the Redis call is the outbox relay's accepted one, bounded by the
   timeout and the batch.
 - **The refund processor.** A row made, given up on or gone ends the job without a call. Otherwise
-  `PaymentPort.refund({ intentRef, amount, idempotencyKey })` outside any transaction, then one
+  `PaymentPort.refund({ intentRef, amount, idempotencyKey, refundApplicationFee: true })` (the
+  commission goes back with the money, adr-payments.md §9) outside any transaction, then one
   transaction: the order under its lock, then its refund row, `SeatOrder.refundMade` (`refunded`
   once the refunds made reach the total, `partially_refunded` before, forward only), and
   `order.refunded` for this refund under the trace its row carries. The last attempt's failure marks
@@ -558,17 +562,22 @@ to the queue.
   holds its `refunds`, several from T4 on, each with its id, amount, reason, key, seat or none, when
   owed, the provider's ref and when made. PT1 and PT2 owe through `SeatOrder.oweRefund({ id, amount,
   reason, idempotencyKey, seatId }, now)`, on an order `paid` or `partially_refunded` alone, refused
-  past `refundableLeft` (the total less every refund owed or made) and for nothing. It is
-  idempotent, since PT1 and PT2 replay their commands: owed again with the same facts it answers
+  past `refundableLeft` (core's `refundableRemaining`: the total less every refund owed or made) with
+  core's `assertRefundWithinRemaining`, 409 `refund.amount_exceeds_remaining`, and for nothing. It
+  is idempotent, since PT1 and PT2 replay their commands: owed again with the same facts it answers
   the refund already owed, and its id or key owed with other facts is refused; the repository
   inserts `ON CONFLICT DO NOTHING` and compares, so no 23505 aborts the caller's transaction. Then,
   once the
   order is saved, `recordRefundTraceparent(manager, refundId, traceparent)` in the same
-  transaction. The key is the caller's, core's `refundIdempotencyKey(refundId)` from C1. D-082's is
+  transaction. The key is the caller's, core's `refundIdempotencyKey(refundId)`. D-082's is
   `oweUnseatedPaymentBack(reason, intentRef, now)` (§0k). The migration moved each order's one
   refund to a row under `refund:{orderId}`, the key the provider may already hold, the owed ones
-  enqueued by the relay's first pass; its `down` puts them back on the order while no order owes a
-  second.
+  enqueued by the relay's first pass. Its `down` puts them back on the order, lossless while no
+  order owes a second, and refuses while an unsettled refund is keyed otherwise than
+  `refund:{orderId}`: the code before it would ask that refund again under a new key (the review's
+  C-S1). One D-082 refund per order is held by the database too, `uq_order_refund_unseated`
+  (`1790441300000`, unique on the order for `hold_expired_capacity_lost`), since its key is no
+  longer the order's; PT1, owing a payment back as `date_cancelled` (D-097), widens it.
 - **Lock order** (§0h): an order before its hold and its refund rows, the date's row last. The relay
   locks refund rows alone, or orders alone for cancellations, `SKIP LOCKED`, and waits on nothing; a
   processor or a payment waits on a relay's row lock until its commit, the Redis call's 2 s at most.
@@ -612,7 +621,7 @@ to the queue.
 | `date-sales.http.itest.ts` | the routes over HTTP through the modules the API boots |
 | `catalog-exchange.itest.ts` | catalog and ticketing read each other's real outbox rows, shaped as the connector routes them: a draft opens the sale, ticketing's capacity and price complete catalog's checklist, catalog publishes, the prices lock |
 | `boot.itest.ts` | the four root modules; the worker's (PT0) on Redis, a refund owed made by its first passes, its shutdown awaiting the provider call in flight before the pool closes |
-| `orders/seat-order.aggregate.spec.ts`, `orders/seat-hold.aggregate.spec.ts` | the order's forward-only states, its seats created at payment, a payment after a failure (D-082), a refund owed under the order's key and no payment taken after it, an intent reaching a failed order owing its cancellation from the instant first owed; the ledger (PT0): two refunds, `partially_refunded` then `refunded`, one past `refundableLeft` or of nothing refused, none owed on an order holding no money, one owed again answered and changing nothing, its id or key with other facts refused; the hold's expiry its intent's, consumed or released once |
+| `orders/seat-order.aggregate.spec.ts`, `orders/seat-hold.aggregate.spec.ts` | the order's forward-only states, its seats created at payment, a payment after a failure (D-082), a refund owed under its own key and no payment taken after it, an intent reaching a failed order owing its cancellation from the instant first owed; the ledger (PT0): two refunds, `partially_refunded` then `refunded`, one past `refundableLeft` or of nothing refused, none owed on an order holding no money, one owed again answered and changing nothing, its id or key with other facts refused; the hold's expiry its intent's, consumed or released once |
 | `date-sales.aggregate.spec.ts` (T3's block) | on sale, the quote through core, a hold that moves the counter and not the version |
 | `orders/purchase.itest.ts` | 23 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, its renewed hold's decrement last (another buyer's does not wait on it), and a renewal finding no seat rolled back and failed sold out for good, the quote; D-089: a purchase before the start without the header, one after it refused unacknowledged with the facts and nothing held then sold acknowledged, one past the cutoff refused `order.sales_closed` holding nothing, the hold's statement refusing past the cutoff on its own, the quote's `lateEntry` only after the start, a purchase resumed after the start asked then sold, and one resumed past the cutoff closed at once and for good |
 | `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry |
@@ -623,7 +632,7 @@ to the queue.
 | `date-sales/postponement-reopen.itest.ts` | the correctness review's case, as written: a sale closed by time, a postponement stated before the old start and applied after it reopening the sale until thirty minutes after the new start |
 | `migrations/seat-sales-cutoff.itest.ts` | the backfill on a database already holding dates: an end thirty minutes after each start, none without one |
 | `orders/capacity.itest.ts` | adr-ticketing.md §3's concurrency test: 300 purchases at once on one date of 100 seats, ten at a time on its row through the pool: exactly 100 held (100 answered 202, 200 sold out), `seats_available` 0 and never below, and all 100 back at expiry; with quantities of one to three, paid or held, every seat accounted for (available + sold + held = capacity, one `seat` row per seat sold). Measured, three runs: the 300 purchases took 574, 634 and 946 ms, fake provider included |
-| `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, the refund owed in the webhook's transaction under `refund:{orderId}` with its trace, nothing asked of the provider); a purchase resumed past its hold answering sold out; a cancellation given up on, owed again by a late webhook from its first instant for a new job, and owed anew once made |
+| `payments/payment-webhooks.itest.ts` | over HTTP with the raw body: a confirmation recorded then applied, its seats and `order.paid` with the webhook's `traceparent`; a duplicate recorded and applied once, facts behind the order moving nothing; a forged signature and unsigned bytes refused, nothing recorded; a failure giving the seats back; an event with no order given up on, its bytes kept; D-082 both ways (seats taken again; none left, the refund owed in the webhook's transaction under its own key with its trace, nothing asked of the provider); a purchase resumed past its hold answering sold out; a cancellation given up on, owed again by a late webhook from its first instant for a new job, and owed anew once made |
 | `orders/expiry-plan.itest.ts` | the correctness review's case, as written: over 20,000 orders, the expiry pass's plan reads no `seat_order` sequentially |
 | `orders/payment-races.itest.ts` | the correctness review's cases, as written: a payment inserting its seats (slowed 1 s) leaves the date's row free, a hold's decrement bounded at 200 ms passing; expiry passes racing late payments on one date, every seat accounted for |
 | `orders/three-d-secure.itest.ts` | the correctness review's cases, as written: a `requires_action` webhook applied before tx B, and one applied after a crash between tx A and tx B then the purchase replayed: 202 with the handoff and its client secret both times |
@@ -632,7 +641,7 @@ to the queue.
 | `payments/owed-calls.spec.ts` | a refund's delays doubling from 5 s to their one-hour cap, adding up to a day; an intent's cancellation on the consumers' bound |
 | `payments/provider-call-queues.spec.ts` | `jobIdOf` over each key, no colon and never an integer; one attempt more than the delays, the custom backoff, nothing kept; each backoff within its schedule's jitter and none after the last; the stale windows |
 | `payments/provider-call-queues.itest.ts` | real Postgres and a Redis of its own: a call owed past a minute and never enqueued turning `provider_calls_waiting` degraded, then up once enqueued; a refund owed twice recorded once, and a key another refund holds refused with the transaction still alive; a D-082 refund owed by a webhook, made once, `order.refunded` under the webhook's trace; the provider down on a shortened schedule, given up with `dead_at` and §0k's error, `provider_calls_dead` degraded, then replayed and made once under the same key; 60 refunds at 20 a second in two seconds at least; Redis paused while a purchase, a webhook and an expiry commit, the relay failing within its timeout with nothing stamped and its locks released, then each call made once, `provider_call_queues` degraded then up; a worker killed mid-call, its stalled job run again, one refund at the fake; a cancellation cleared by a payment, no call; one owed again once given up on, a new job; a job stalled twice run again, one refund, and one stalled past its bound given up with its row dead and the error; jobs lost to `FLUSHDB`: the refund given up past its stale window with the error, never asked again, the cancellation enqueued again and made; two relays racing over 1,000 refunds, enqueued again after their commits were lost, each job completed once and each refund made once |
-| `migrations/provider-call-queues.itest.ts` | the backfill over refunds owed, made and given up on and an owed cancellation: one row each under `refund:{orderId}`, the owed ones due to the relay after; `down` putting them back |
+| `migrations/provider-call-queues.itest.ts` | the backfill over refunds owed, made and given up on and an owed cancellation: one row each under `refund:{orderId}`, the owed ones due to the relay after; a second D-082 refund of one order refused by `uq_order_refund_unseated`; `down` refused while an unsettled refund is keyed by its own id, then putting them back once it is settled |
 | `payments/relay-plan.itest.ts` | over 20,000 refunds made and 20,000 orders, neither claim reads its table sequentially |
 
 **`catalog-exchange.itest.ts` imports fourteen of catalog's internal modules by relative path**, no

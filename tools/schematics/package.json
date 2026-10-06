@@ -12,7 +12,7 @@
   "devDependencies": {
     "@angular-devkit/core": "22.1.8",
     "@angular-devkit/schematics": "22.1.8",
-    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.2/arthome-core-0.2.0-rc.2.tgz",
     "prettier": "3.9.8",
     "typescript": "6.0.3"
   }

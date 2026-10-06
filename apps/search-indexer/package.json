@@ -17,7 +17,7 @@
     "@arthome-platform/events": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome-platform/search-index": "workspace:*",
-    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.2/arthome-core-0.2.0-rc.2.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "@opensearch-project/opensearch": "3.6.0",
     "kafkajs": "2.2.4",

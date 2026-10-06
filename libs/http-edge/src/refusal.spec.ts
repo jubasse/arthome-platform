@@ -87,7 +87,9 @@ describe('refuse(route, code, params)', () => {
 
   it('takes a code the route or its group declares in the list form', () => {
     const refusals = [
-      refuse(cancelOrder, OrderErrorCode.SEAT_CANCEL_DEADLINE_PASSED),
+      refuse(cancelOrder, OrderErrorCode.SEAT_CANCEL_DEADLINE_PASSED, {
+        cancelDeadline: '2026-12-12T18:00:00.000Z',
+      }),
       refuse(cancelOrder, OrderErrorCode.SOLD_OUT),
       // @ts-expect-error -- cancelOrder declares no order.price_stale.
       refuse(cancelOrder, OrderErrorCode.PRICE_STALE, {

@@ -67,8 +67,23 @@ export class ProviderCallQueues1790441200000 implements MigrationInterface {
     );
   }
 
-  /** Each order's first refund back on its row: lossless while no order owes a second. */
+  /**
+   * Each order's first refund back on its row: lossless while no order owes a second. Refused while
+   *   a refund still unsettled is keyed otherwise than by its order: the code before this migration
+   *   keys a refund `refund:{orderId}`, so it would ask that one again under a new key.
+   */
   public async down(queryRunner: QueryRunner): Promise<void> {
+    const [rekeyed] = (await queryRunner.query(
+      `SELECT count(*)::int AS refunds FROM order_refund
+        WHERE refunded_at IS NULL AND idempotency_key <> 'refund:' || order_id`,
+    )) as { refunds: number }[];
+    if ((rekeyed?.refunds ?? 0) > 0) {
+      throw new Error(
+        `${this.name} down refused: ${String(rekeyed?.refunds)} unsettled refund(s) keyed by ` +
+          'their own id, which the code before it would ask again under refund:{orderId}. ' +
+          'Settle them first.',
+      );
+    }
     await queryRunner.query('DROP INDEX idx_seat_order_intent_cancel_due');
     await queryRunner.query(`
       ALTER TABLE seat_order

@@ -284,6 +284,9 @@ export type DateSalesAvailabilityChanged = Message<"arthome.ticketing.v1.DateSal
   channelId: string;
 
   /**
+   * The PUBLIC count: an open priority pool's seats are left out, since only
+   * the notified accounts buy from it (`seatsAvailable` in @arthome/core).
+   *
    * @generated from field: uint32 seats_available = 3;
    */
   seatsAvailable: number;
@@ -491,7 +494,9 @@ export type SeatActivated = Message<"arthome.ticketing.v1.SeatActivated"> & {
 
   /**
    * The cancellation deadline, as an INSTANT. "Up to 1 h before the start" is a
-   * domain rule, not a screen note.
+   * domain rule, not a screen note. A postponement moves it and no event carries
+   * the new one: a consumer recomputes it with `seatCancelDeadline` from
+   * `catalog.date.rescheduled.v1`'s `new_starts_at`.
    *
    * @generated from field: google.protobuf.Timestamp cancel_deadline = 8;
    */
@@ -668,6 +673,9 @@ export type OrderRefunded = Message<"arthome.ticketing.v1.OrderRefunded"> & {
   channelId: string;
 
   /**
+   * This refund's amount, not the order's total refunded: an order refunded in
+   * parts emits one OrderRefunded per refund.
+   *
    * @generated from field: arthome.common.v1.Money amount = 3;
    */
   amount?: Money | undefined;

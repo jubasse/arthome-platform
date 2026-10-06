@@ -9,7 +9,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { UnrecoverableError, type Job } from 'bullmq';
 import { DataSource } from 'typeorm';
 
-import { type Clock, type PaymentPort } from '@arthome/core';
+import { type Clock, intentCancelIdempotencyKey, type PaymentPort } from '@arthome/core';
 
 import { giveUpIntentCancellation, intentCancellationOf } from './owed-calls.js';
 import { PAYMENT_PORT } from './payment-tokens.js';
@@ -21,7 +21,6 @@ import {
   PROVIDER_CALL_CONCURRENCY,
   PROVIDER_CALL_MAX_STALLED_COUNT,
   PROVIDER_CALL_SCHEDULES,
-  intentCancelKeyOf,
   isLastAttempt,
   runOnSchedule,
   stalledPastBound,
@@ -93,7 +92,7 @@ export class IntentCancellationProcessor
   private async cancel(orderId: string): Promise<void> {
     const call = await intentCancellationOf(this.dataSource, orderId);
     if (call?.owed !== true || call.intentRef === null) return;
-    await this.payments.cancelIntent(call.intentRef, intentCancelKeyOf(orderId));
+    await this.payments.cancelIntent(call.intentRef, intentCancelIdempotencyKey(orderId));
     await this.transactions.run(async ({ orders }) => {
       const order = await orders.findById(orderId);
       if (order === null) return;
