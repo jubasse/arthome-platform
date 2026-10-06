@@ -19,6 +19,7 @@ import { SeatSalesCutoff1790440900000 } from './migrations/1790440900000-seat-sa
 import { ProviderCallRetries1790441000000 } from './migrations/1790441000000-provider-call-retries.js';
 import { SeatOrderHold1790441100000 } from './migrations/1790441100000-seat-order-hold.js';
 import { ProviderCallQueues1790441200000 } from './migrations/1790441200000-provider-call-queues.js';
+import { OneUnseatedRefundPerOrder1790441300000 } from './migrations/1790441300000-one-unseated-refund-per-order.js';
 import { OrderRefundRow } from './orders/order-refund.entity.js';
 import { SeatHoldRow } from './orders/seat-hold.entity.js';
 import { SeatOrderRow } from './orders/seat-order.entity.js';
@@ -56,6 +57,7 @@ export const dataSource: DataSource = new DataSource({
     ProviderCallRetries1790441000000,
     SeatOrderHold1790441100000,
     ProviderCallQueues1790441200000,
+    OneUnseatedRefundPerOrder1790441300000,
   ],
   applicationName: Service.TICKETING,
 

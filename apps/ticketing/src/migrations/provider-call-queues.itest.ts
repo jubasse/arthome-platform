@@ -16,7 +16,8 @@ import { DUE_INTENT_CANCELLATIONS_SQL, DUE_REFUNDS_SQL } from '../payments/owed-
 /**
  * `ProviderCallQueues1790441200000` on a database that already owes and made refunds, as the stack
  *   did: one `order_refund` per order that owed one, under the key the provider knows, the owed
- *   ones due to the relay after it; an owed cancellation due too; and `down` putting them back.
+ *   ones due to the relay after it; an owed cancellation due too; one D-082 refund per order;
+ *   and `down` putting them back, refused while a refund keyed by its own id is unsettled.
  */
 
 const STARTUP_MS = 240_000;
@@ -29,6 +30,7 @@ const MADE = '01a0f720-0000-7000-8000-0000000000a2';
 const DEAD = '01a0f720-0000-7000-8000-0000000000a3';
 const CANCEL = '01a0f720-0000-7000-8000-0000000000a4';
 const PAID = '01a0f720-0000-7000-8000-0000000000a5';
+const REKEYED = '01a0f720-0000-7000-8000-0000000000f1';
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 const OWED_AT = new Date('2026-10-01T10:00:00.000Z');
 const LATER = new Date('2026-10-01T10:05:00.000Z');
@@ -110,7 +112,7 @@ describe('the provider-call queues migration', () => {
       if (!Array.isArray(migrations)) throw new Error('the schema lists its migrations');
       const before = await applyMigrations(database, {
         entities,
-        migrations: migrations.filter((migration) => migration !== ProviderCallQueues1790441200000),
+        migrations: migrations.slice(0, migrations.indexOf(ProviderCallQueues1790441200000)),
       });
       try {
         await seed(before);
@@ -191,6 +193,30 @@ describe('the provider-call queues migration', () => {
           expect(dueCancellations).toEqual([{ id: CANCEL }]);
         });
 
+        await expect(
+          after.query(
+            `INSERT INTO order_refund (id, order_id, amount_minor, currency_code, reason,
+                                       idempotency_key, owed_at)
+             VALUES (gen_random_uuid(), $1, 4800, 'EUR', $2, 'refund:second', $3)`,
+            [OWED, RefundReason.HOLD_EXPIRED_CAPACITY_LOST, LATER],
+          ),
+        ).rejects.toThrow(/uq_order_refund_unseated/);
+
+        // A refund owed through core's key, unsettled: the code before would ask it again.
+        await after.query(
+          `INSERT INTO order_refund (id, order_id, amount_minor, currency_code, reason,
+                                     idempotency_key, owed_at)
+           VALUES ($1, $2, 2400, 'EUR', $3, $4, $5)`,
+          [REKEYED, PAID, RefundReason.GOODWILL, `refund:${REKEYED}`, LATER],
+        );
+        await after.undoLastMigration({ transaction: 'each' });
+        await expect(after.undoLastMigration({ transaction: 'each' })).rejects.toThrow(
+          /down refused: 1 unsettled refund\(s\) keyed by their own id/,
+        );
+        await after.query(
+          "UPDATE order_refund SET refund_ref = 're_fake_rekeyed', refunded_at = $2 WHERE id = $1",
+          [REKEYED, LATER],
+        );
         await after.undoLastMigration({ transaction: 'each' });
         const restored = await after.query<Record<string, unknown>[]>(
           `SELECT id, refund_reason, refund_owed_at, refund_ref, refunded_at, refund_dead_at,
@@ -240,10 +266,10 @@ describe('the provider-call queues migration', () => {
           },
           {
             id: PAID,
-            refund_reason: null,
-            refund_owed_at: null,
-            refund_ref: null,
-            refunded_at: null,
+            refund_reason: RefundReason.GOODWILL,
+            refund_owed_at: LATER,
+            refund_ref: 're_fake_rekeyed',
+            refunded_at: LATER,
             refund_dead_at: null,
             refund_traceparent: null,
             intent_cancel_owed_at: null,

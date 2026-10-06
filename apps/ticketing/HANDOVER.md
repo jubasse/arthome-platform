@@ -510,7 +510,8 @@ to the queue.
   `{ticketing}` (one hash slot on a Redis Cluster). Jobs `refund.v1` `{ refundId }` and
   `intent-cancellation.v1` `{ orderId }`: ids only, each attempt reads its row. **The provider keys
   stay as they were**: core's `refundIdempotencyKey`, `refund:{refundId}`, stored as text on the
-  refund's row (`refund:{orderId}` for every refund owed before this migration), and
+  refund's row (`refund:{orderId}` for every D-082 refund owed before PR C's core, those this
+  migration backfilled and those PR B's code owed until then), and
   `intentCancelIdempotencyKey`, `cancel:{orderId}`. BullMQ
   6 refuses a colon in a custom job id unless it has exactly three segments, which it then files
   among its repeatable jobs, so `jobIdOf(key)` makes the colons dashes: `refund-{refundId}`,
@@ -571,8 +572,12 @@ to the queue.
   transaction. The key is the caller's, core's `refundIdempotencyKey(refundId)`. D-082's is
   `oweUnseatedPaymentBack(reason, intentRef, now)` (§0k). The migration moved each order's one
   refund to a row under `refund:{orderId}`, the key the provider may already hold, the owed ones
-  enqueued by the relay's first pass; its `down` puts them back on the order while no order owes a
-  second.
+  enqueued by the relay's first pass. Its `down` puts them back on the order, lossless while no
+  order owes a second, and refuses while an unsettled refund is keyed otherwise than
+  `refund:{orderId}`: the code before it would ask that refund again under a new key (the review's
+  C-S1). One D-082 refund per order is held by the database too, `uq_order_refund_unseated`
+  (`1790441300000`, unique on the order for `hold_expired_capacity_lost`), since its key is no
+  longer the order's; PT1, owing a payment back as `date_cancelled` (D-097), widens it.
 - **Lock order** (§0h): an order before its hold and its refund rows, the date's row last. The relay
   locks refund rows alone, or orders alone for cancellations, `SKIP LOCKED`, and waits on nothing; a
   processor or a payment waits on a relay's row lock until its commit, the Redis call's 2 s at most.
@@ -636,7 +641,7 @@ to the queue.
 | `payments/owed-calls.spec.ts` | a refund's delays doubling from 5 s to their one-hour cap, adding up to a day; an intent's cancellation on the consumers' bound |
 | `payments/provider-call-queues.spec.ts` | `jobIdOf` over each key, no colon and never an integer; one attempt more than the delays, the custom backoff, nothing kept; each backoff within its schedule's jitter and none after the last; the stale windows |
 | `payments/provider-call-queues.itest.ts` | real Postgres and a Redis of its own: a call owed past a minute and never enqueued turning `provider_calls_waiting` degraded, then up once enqueued; a refund owed twice recorded once, and a key another refund holds refused with the transaction still alive; a D-082 refund owed by a webhook, made once, `order.refunded` under the webhook's trace; the provider down on a shortened schedule, given up with `dead_at` and §0k's error, `provider_calls_dead` degraded, then replayed and made once under the same key; 60 refunds at 20 a second in two seconds at least; Redis paused while a purchase, a webhook and an expiry commit, the relay failing within its timeout with nothing stamped and its locks released, then each call made once, `provider_call_queues` degraded then up; a worker killed mid-call, its stalled job run again, one refund at the fake; a cancellation cleared by a payment, no call; one owed again once given up on, a new job; a job stalled twice run again, one refund, and one stalled past its bound given up with its row dead and the error; jobs lost to `FLUSHDB`: the refund given up past its stale window with the error, never asked again, the cancellation enqueued again and made; two relays racing over 1,000 refunds, enqueued again after their commits were lost, each job completed once and each refund made once |
-| `migrations/provider-call-queues.itest.ts` | the backfill over refunds owed, made and given up on and an owed cancellation: one row each under `refund:{orderId}`, the owed ones due to the relay after; `down` putting them back |
+| `migrations/provider-call-queues.itest.ts` | the backfill over refunds owed, made and given up on and an owed cancellation: one row each under `refund:{orderId}`, the owed ones due to the relay after; a second D-082 refund of one order refused by `uq_order_refund_unseated`; `down` refused while an unsettled refund is keyed by its own id, then putting them back once it is settled |
 | `payments/relay-plan.itest.ts` | over 20,000 refunds made and 20,000 orders, neither claim reads its table sequentially |
 
 **`catalog-exchange.itest.ts` imports fourteen of catalog's internal modules by relative path**, no
