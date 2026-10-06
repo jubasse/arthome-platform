@@ -13,6 +13,7 @@ import {
   StorefrontErrorEnvelopeSchema,
 } from '@arthome/contracts/envelope';
 import {
+  ActorSurfaceParameter,
   DERIVED_ERROR_CODES,
   errorCodesOf,
   statusOf,
@@ -32,6 +33,8 @@ export interface ServiceCall {
   readonly callerLeft: AbortSignal;
   /** Null for an anonymous visitor: the token then names no account. */
   readonly caller: Caller | null;
+  /** The surface the request came from, sent on every write as its actor's (transport.md §5.2). */
+  readonly actorSurface?: string;
   /** The BFF route the call serves: the service refusals relayed are the codes it declares. */
   readonly route?: Route;
 }
@@ -123,12 +126,14 @@ export class ServiceClient {
     try {
       const response = await fetch(url, {
         method: request.method,
-        // The relayed headers first, so none of them can replace the token or the deadline.
+        // The relayed headers first, so none of them can replace the token, the deadline or the actor.
         headers: {
           ...request.headers,
           authorization: `Bearer ${await this.minter.mint(this.service, call.caller)}`,
           traceparent: call.traceparent,
           [DEADLINE_HEADER]: call.deadline.toISOString(),
+          ...(request.method !== 'GET' &&
+            call.actorSurface !== undefined && { [ActorSurfaceParameter.name]: call.actorSurface }),
           ...(request.body !== undefined && { 'content-type': 'application/json' }),
         },
         ...(request.body !== undefined && { body: JSON.stringify(request.body) }),

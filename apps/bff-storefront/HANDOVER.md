@@ -12,8 +12,8 @@ Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10
 | File | What it is |
 | --- | --- |
 | `src/search/search.controller.ts` | the route, bound to `storefrontApi.routes.search` with `@Endpoint`: deadline, the call, the public cache headers |
-| `src/upstream/service-client.ts` | the one way this BFF calls a service: a fresh internal token, the deadline, the trace, the answer validated, the refusal relayed or mapped |
-| `src/internal-token.minter.ts` | the token each call carries: ES256, this BFF as issuer, the service as audience, 60 s |
+| `src/upstream/service-client.ts` | the one way this BFF calls a service: a fresh internal token, the deadline, the trace, the actor's surface on a write, the answer validated, the refusal relayed or mapped |
+| `src/internal-token.minter.ts` | the token each call carries: ES256, this BFF as issuer, the service as audience, the account, its device and its profile (`pro`) when the caller names one, 60 s |
 | `src/catalog/catalog.client.ts` | catalog's adapter on `ServiceClient`, always anonymous: the public reads serve every caller one body |
 | `src/identity/identity.client.ts` | identity's adapter: the relayed authentication calls and the session's resolution |
 | `src/auth/auth.controller.ts` | `/v1/auth/*`, bound to the contract's routes: its bodies and headers, the delivery mode |
@@ -170,9 +170,11 @@ The architecture review's P2 to P5, in order:
 1. **Record the actor of every write.** `libs/messaging`'s `outboxWriter` still writes
    `actorId: null`, on the premise that no actor was verified, which slice A made false. identity's
    `writeOutboxEvent` sets it; catalog and ticketing do not. Feed `ServiceEvent.actorId` from the
-   principal, and have `ServiceClient` send `x-arthome-actor-surface` on every human write
-   (transport.md §5.2); it sends neither today. An actor not recorded cannot be rebuilt (events.md),
-   so every purchase written before this loses its buyer as actor.
+   principal. The surface half is done (PS0): `serviceCallFor` carries the request's
+   `X-Arthome-Surface`, and `ServiceClient` sends it as `x-arthome-actor-surface` on every call
+   that is not a GET (transport.md §5.2), which the services that bind no service API ignore. An
+   actor not recorded cannot be rebuilt (events.md), so every purchase written before this loses
+   its buyer as actor.
 2. **Make an account route require an account by default.** `CurrentPrincipal` hands any handler
    an anonymous principal, and each must remember `accountOf`. The studio commands pass a nullable
    `principal.accountId` into the idempotency scope (catalog's dates and artists controllers,
