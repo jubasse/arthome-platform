@@ -4,8 +4,9 @@ import { SeatState } from '@arthome/core';
 
 /**
  * A seat leaves `active` (PT2): cancelled with the refund it is owed, refunded once that refund is
- *   made, or credited (PT1, whose `credit` table takes `credit_id`'s foreign key). No backfill:
- *   every seat is active. The inbox keeps what a refund webhook reports, the provider's reference
+ *   made, or credited (PT1, whose `credit` table takes `credit_id`'s foreign key), its share of the
+ *   credit nothing when the money left is below the seats credited. No backfill: every seat is
+ *   active. The inbox keeps what a refund webhook reports, the provider's reference
  *   and everything refunded on the payment so far.
  */
 export class SeatStates1790441350000 implements MigrationInterface {
@@ -19,7 +20,7 @@ export class SeatStates1790441350000 implements MigrationInterface {
         ADD COLUMN refund_id           uuid        NULL REFERENCES order_refund (id),
         ADD COLUMN refund_amount_minor bigint      NULL CHECK (refund_amount_minor > 0),
         ADD COLUMN credit_id           uuid        NULL,
-        ADD COLUMN credit_amount_minor bigint      NULL CHECK (credit_amount_minor > 0),
+        ADD COLUMN credit_amount_minor bigint      NULL CHECK (credit_amount_minor >= 0),
         ADD CONSTRAINT seat_ended_unless_active
           CHECK ((state = '${SeatState.ACTIVE}') = (ended_at IS NULL)),
         ADD CONSTRAINT seat_refund_amount_with_refund

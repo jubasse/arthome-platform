@@ -506,6 +506,27 @@ describe('SeatOrder, its seats leaving active (S1 to S3)', () => {
     expect(statesOf(order)[SECOND_SEAT]).toBe(SeatState.ACTIVE);
   });
 
+  it('credits a seat whose share of the credit is nothing, as its order’s other seats', () => {
+    const order = paidForThree();
+
+    order.creditSeats(
+      {
+        creditId: '01a0f700-0000-7000-8000-0000000000c2',
+        seats: [
+          { seatId: FIRST_SEAT, creditAmount: money(1, 'EUR') },
+          { seatId: SECOND_SEAT, creditAmount: money(1, 'EUR') },
+          { seatId: THIRD_SEAT, creditAmount: money(0, 'EUR') },
+        ],
+      },
+      LATER,
+    );
+
+    expect(order.snapshot.seats[2]).toMatchObject({
+      state: SeatState.CREDITED,
+      creditAmount: money(0, 'EUR'),
+    });
+  });
+
   it('credits seats with their shares, with no event for the wire', () => {
     const order = paidForThree();
     const creditId = '01a0f700-0000-7000-8000-0000000000c1';

@@ -620,7 +620,8 @@ to the queue.
   processor's answer or a refund webhook, whichever comes first); `credited` with its credit and
   share (`credit_id`, `credit_amount_minor`; PT1, whose `credit` table takes the foreign key). A
   seat no longer active is refused 409 `seat.not_active` with its `state`. CHECKs: `ended_at` null
-  exactly while active, each amount with its id and above zero.
+  exactly while active, each amount with its id, a refund's share above zero and a credit's at
+  zero or more (a credit split over more seats than its minor units still credits each seat).
 - **The seam PT1 calls**: `SeatOrder.cancelSeats({ reason, refundId, seats: [{ seatId,
   refundAmount }] }, now)` and `creditSeats({ creditId, seats: [{ seatId, creditAmount }] }, now)`.
   The refund is one the order owes, a share of nothing is recorded as nothing given back (the seat

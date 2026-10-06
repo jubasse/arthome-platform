@@ -76,6 +76,7 @@ import {
 } from '../payments/provider-call-queues.js';
 import { ProviderCallQueuesModule } from '../payments/provider-call-queues.module.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
+import { TicketingTransactions } from '../ticketing-transactions.js';
 
 /**
  * A viewer's `cancelSeat` through the buses, against a real Postgres and a Redis of the file's
@@ -592,6 +593,56 @@ describe('the hot row under a cancellation (adr-ticketing.md §2, §3)', () => {
         await dataSource.query('DROP TRIGGER pt2_slow_outbox_insert ON outbox_event');
         await dataSource.query('DROP FUNCTION pt2_slow_outbox_insert()');
       }
+    },
+    CASE_MS,
+  );
+});
+
+describe('a credited seat, as PT1 credits an interrupted date', () => {
+  it(
+    'is saved with its credit and its share, a share of nothing included',
+    async () => {
+      const dateId = await dateOnSale(3);
+      const { order, tickets } = await bought(dateId, 2);
+      const creditId = '01a0f8cc-0000-7000-8000-000000000001';
+
+      await app.get(TicketingTransactions).run(async ({ orders }) => {
+        const loaded = await orders.findById(order.id);
+        if (loaded === null) throw new Error(`no order ${order.id}`);
+        loaded.creditSeats(
+          {
+            creditId,
+            seats: [
+              { seatId: tickets[0]?.seatId ?? '', creditAmount: money(1, 'EUR') },
+              { seatId: tickets[1]?.seatId ?? '', creditAmount: money(0, 'EUR') },
+            ],
+          },
+          clock.now(),
+        );
+        await orders.save(loaded);
+      });
+
+      const credited = await dataSource.query<
+        { state: string; credit_id: string; credit_amount_minor: string; ended_at: Date }[]
+      >(
+        `SELECT state, credit_id, credit_amount_minor, ended_at
+           FROM seat WHERE order_id = $1 ORDER BY credit_amount_minor DESC`,
+        [order.id],
+      );
+      expect(credited).toEqual([
+        {
+          state: SeatState.CREDITED,
+          credit_id: creditId,
+          credit_amount_minor: '1',
+          ended_at: new Date(clock.now()),
+        },
+        {
+          state: SeatState.CREDITED,
+          credit_id: creditId,
+          credit_amount_minor: '0',
+          ended_at: new Date(clock.now()),
+        },
+      ]);
     },
     CASE_MS,
   );
