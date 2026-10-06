@@ -263,11 +263,29 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
     });
   }
 
+  /**
+   * An intent another instance created is known by its reference, its order's: the worker's fake
+   *   is asked about the API's intents, confirmed as the running fake confirms every one.
+   */
   private intentByRef(intentRef: string): FakeIntent {
     for (const found of this.intentsByOrder.values()) {
       if (found.intent.ref === intentRef) return found;
     }
-    throw new Error(`fake provider: no intent ${intentRef}`);
+    const orderId = orderIdOfIntentRef(intentRef);
+    if (orderId === null) throw new Error(`fake provider: no intent ${intentRef}`);
+    const confirmed: FakeIntent = {
+      orderId,
+      intent: {
+        ref: intentRef,
+        status: IntentStatus.SUCCEEDED,
+        clientSecret: `${intentRef}_secret`,
+        nextAction: null,
+        declineCode: null,
+      },
+      canceled: false,
+    };
+    this.intentsByOrder.set(orderId, confirmed);
+    return confirmed;
   }
 
   private mac(seconds: string, body: Uint8Array): Buffer {
@@ -285,6 +303,13 @@ const STATUS_OF_SCENARIO: Readonly<
 
 export function intentRefOf(orderId: string): string {
   return `pi_fake_${orderId.replaceAll('-', '')}`;
+}
+
+const INTENT_REF = /^pi_fake_([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/;
+
+function orderIdOfIntentRef(intentRef: string): string | null {
+  const parts = INTENT_REF.exec(intentRef);
+  return parts === null ? null : parts.slice(1).join('-');
 }
 
 function digest(value: string): string {

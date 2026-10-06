@@ -804,6 +804,26 @@ started ten minutes before and one thirty-one minutes before, each opened by cat
 | a purchase there, without then with `X-Arthome-Late-Entry-Acknowledged: true` | 409 `order.late_entry_unacknowledged` with the three facts, no hold nor order left; then 201 |
 | the date past its cutoff | closed by the sweeper at its end, its last availability published; purchase and quote 409 `order.sales_closed` with `salesEndAt` |
 
+The worker beside the three (HANDOVER §0m) was proven on 2026-10-06 at PT0's PR B, on an isolated
+copy of this stack: compose's own services under `docker compose -p pt0-proof` with an override
+publishing Postgres, Kafka and Redis on ports of their own, the migrations to `1790441200000` run on
+an empty `ticketing`, the topics provisioned (`COMPOSE_PROJECT_NAME=pt0-proof pnpm run
+provision:topics`: the tool runs `docker compose exec kafka`, so without it the shared stack's
+broker is the one provisioned), the four processes started from that build. Two failed orders whose
+holds had expired were seeded on a date with no seat left, then the fake's signed
+`payment_intent.succeeded` was posted for each:
+
+| Check | Result |
+| --- | --- |
+| the first confirmation | 200; applied by the API's payment worker, its refund owed under `refund:{orderId}` with the webhook's `traceparent`; made by the worker 1.1 s after the webhook was answered, the order `refunded`, one `order.refunded` under that trace |
+| Redis paused 28 s, the second confirmation posted | 200, readiness unchanged; the refund owed and not enqueued; each relay pass failed on `Command timed out` within its 2 s, nine in all; `ops:check ticketing` answered `provider_call_queues` degraded, `provider_calls_dead` up |
+| Redis resumed | the second refund made 37 ms later, once, one `order.refunded`; `provider_call_queues` up, every count 0 |
+| SIGTERM to the four | all exited, no ticketing connection left in `pg_stat_activity`; then `down -v` |
+
+The second refund ran from the job its failed pass had sent: the commands sat on the socket during
+the pause and ran when Redis came back, so the row was made without ever being stamped, which is the
+crash between the add and the commit the job ids absorb.
+
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
 instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` to

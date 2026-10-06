@@ -82,6 +82,25 @@ describe('the fake payment provider', () => {
     ).rejects.toThrow(/no money/);
   });
 
+  it("refunds an intent another instance created, as the worker's fake is asked the API's", async () => {
+    const api = provider();
+    const worker = provider();
+    const { ref } = await api.createIntent(request());
+
+    const { refundRef } = await worker.refund({
+      intentRef: ref,
+      amount: money(4800, 'EUR'),
+      idempotencyKey: `refund:${ORDER}`,
+    });
+
+    expect(refundRef).toMatch(/^re_fake_/);
+    await worker.cancelIntent(ref, `cancel:${ORDER}`);
+    expect(worker.isCanceled(ref)).toBe(false);
+    await expect(
+      worker.refund({ intentRef: 'pi_other', amount: money(1, 'EUR'), idempotencyKey: 'x' }),
+    ).rejects.toThrow(/no intent pi_other/);
+  });
+
   it('cancels an intent still waiting, and leaves a succeeded one succeeded', async () => {
     const fake = provider();
     fake.scenarioOf = () => FakePaymentScenario.REQUIRE_ACTION;

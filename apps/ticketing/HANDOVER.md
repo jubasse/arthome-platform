@@ -224,7 +224,10 @@ instance, since a webhook speaks of the intents it created. Deterministic: an in
 derived from its order id, event ids are counted, and each intent plays `scenarioOf(request)`:
 `confirm` (the default, confirmed synchronously), `require_action` (then `completeAction` or
 `failAction` hands back the signed webhook saying how it ended), `decline`, `unavailable`. `down`
-makes every call fail, the provider-down drill. Its signature is Stripe's scheme on its own header,
+makes every call fail, the provider-down drill. Each process binds an instance of its own:
+the worker's, asked to refund or cancel an intent the API's created, knows it by its reference,
+its order's, as confirmed, which is what the running fake makes of every intent (PT0, since the
+refunds left the API process). Its signature is Stripe's scheme on its own header,
 `x-fake-payment-signature: t=<seconds>,v1=<HMAC-SHA256 of "t.body">`, refused past core's
 `PAYMENT_WEBHOOK_TOLERANCE_SECONDS`, adr-payments.md §7.1's five minutes. The secret is `PAYMENT_WEBHOOK_SECRET` (`@arthome-platform/config`'s
 `readPaymentWebhookSecret`), defaulted outside production only, 32 characters at least.
@@ -597,7 +600,7 @@ to the queue.
 | `orders/payment-races.itest.ts` | the correctness review's cases, as written: a payment inserting its seats (slowed 1 s) leaves the date's row free, a hold's decrement bounded at 200 ms passing; expiry passes racing late payments on one date, every seat accounted for |
 | `orders/three-d-secure.itest.ts` | the correctness review's cases, as written: a `requires_action` webhook applied before tx B, and one applied after a crash between tx A and tx B then the purchase replayed: 202 with the handoff and its client secret both times |
 | `payments/payment-worker.itest.ts` | the correctness review's cases, as written: a webhook retried after a transient failure then applied once, backed off by `RETRY_DELAYS_MS` and given up on after the last; an event about no order kept and ignored (its owed-refund cases are the queues' now) |
-| `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, a signature over the exact bytes and its tolerance |
+| `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, an intent another instance created refunded by its reference, a signature over the exact bytes and its tolerance |
 | `payments/owed-calls.spec.ts` | a refund's delays doubling from 5 s to their one-hour cap, adding up to a day; an intent's cancellation on the consumers' bound |
 | `payments/provider-call-queues.spec.ts` | `jobIdOf` over each key, no colon and never an integer; one attempt more than the delays, the custom backoff, nothing kept; each backoff within its schedule's jitter and none after the last; the stale windows |
 | `payments/provider-call-queues.itest.ts` | real Postgres and a Redis of its own: a D-082 refund owed by a webhook, made once, `order.refunded` under the webhook's trace; the provider down on a shortened schedule, given up with `dead_at` and §0k's error, `provider_calls_dead` degraded, then replayed and made once under the same key; 60 refunds at 20 a second in two seconds at least; Redis paused while a purchase, a webhook and an expiry commit, the relay failing within its timeout with nothing stamped and its locks released, then each call made once, `provider_call_queues` degraded then up; a worker killed mid-call, its stalled job run again, one refund at the fake; a cancellation cleared by a payment, no call; one owed again once given up on, a new job; a job lost to `FLUSHDB`, enqueued again past the stale window; two relays racing over 1,000 refunds, enqueued again after their commits were lost, each job completed once and each refund made once |
