@@ -55,6 +55,11 @@
       "file": "apps/ticketing/src/payments/provider-call-queues.ts",
       "value": "failed",
       "reason": "BullMQ's worker event for a failed job, the name `@OnWorkerEvent` listens under (`WorkerListener`). ORDER_STATES' `failed` is an order that took no payment; importing OrderState.FAILED to name a queue event would be the NavigationEntry.JOURNAL mistake again."
+    },
+    {
+      "file": "apps/ticketing/src/payments/provider-call-checks.ts",
+      "value": "ready",
+      "reason": "ioredis's connection status, the word its client reports once it answers commands. REPLAY_ASSET_STATES' `ready` is a replay that can be watched; importing ReplayAssetState.READY to read a Redis connection would be the NavigationEntry.JOURNAL mistake again."
     }
   ]
 }
