@@ -2,11 +2,6 @@ import type { DataSource, EntityManager } from 'typeorm';
 
 import { money, type Money } from '@arthome/core';
 
-/** D-082's key, the order's: `refundIdempotencyKey(refundId)` from core's C1 replaces it in PR C. */
-export function refundKeyOf(orderId: string): string {
-  return `refund:${orderId}`;
-}
-
 /**
  * The trace a refund was owed under, for the `order.refunded` the worker writes later: in the
  *   owing transaction, after the order's save inserted the refund's row.

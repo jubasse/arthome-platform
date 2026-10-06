@@ -69,6 +69,7 @@ describe('the fake payment provider', () => {
       intentRef: ref,
       amount: money(4800, 'EUR'),
       idempotencyKey: `refund:${ORDER}`,
+      refundApplicationFee: true,
     };
 
     const first = await fake.refund(refund);
@@ -91,6 +92,7 @@ describe('the fake payment provider', () => {
       intentRef: ref,
       amount: money(4800, 'EUR'),
       idempotencyKey: `refund:${ORDER}`,
+      refundApplicationFee: true,
     });
 
     expect(refundRef).toMatch(/^re_fake_/);
@@ -100,7 +102,12 @@ describe('the fake payment provider', () => {
     expect(() => worker.isCanceled(neverAsked)).toThrow(/no intent/);
     expect(() => worker.completeAction(neverAsked)).toThrow(/no intent/);
     await expect(
-      worker.refund({ intentRef: 'pi_other', amount: money(1, 'EUR'), idempotencyKey: 'x' }),
+      worker.refund({
+        intentRef: 'pi_other',
+        amount: money(1, 'EUR'),
+        idempotencyKey: 'x',
+        refundApplicationFee: true,
+      }),
     ).rejects.toThrow(/no intent pi_other/);
   });
 
@@ -133,6 +140,8 @@ describe('the fake payment provider', () => {
       orderId: ORDER,
       occurredAt: NOW,
       declineCode: null,
+      refundRef: null,
+      amountRefunded: null,
     });
   });
 

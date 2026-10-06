@@ -18,7 +18,7 @@
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.1.0/arthome-core-0.1.0.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.2/arthome-core-0.2.0-rc.2.tgz",
     "@opensearch-project/opensearch": "3.6.0"
   }
 }

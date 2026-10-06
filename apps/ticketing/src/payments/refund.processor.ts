@@ -102,6 +102,7 @@ export class RefundProcessor
       intentRef: call.intentRef,
       amount: call.amount,
       idempotencyKey: call.idempotencyKey,
+      refundApplicationFee: true,
     });
     await this.transactions.run(async ({ manager, orders }) => {
       const order = await orders.findById(call.orderId);

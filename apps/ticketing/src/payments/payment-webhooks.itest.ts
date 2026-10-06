@@ -21,6 +21,7 @@ import {
   PriceTier,
   RefundReason,
   Service,
+  refundIdempotencyKey,
 } from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
@@ -33,7 +34,6 @@ import {
 import { PaymentWebhooksModule } from './payment-webhooks.module.js';
 import { PaymentWorker } from './payment-worker.js';
 import { PaymentWorkerModule } from './payment-worker.module.js';
-import { refundKeyOf } from './refund-ledger.js';
 import { CLOCK } from '../clock.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
 import { DateSalesModule } from '../date-sales/date-sales.module.js';
@@ -368,6 +368,7 @@ describe('a payment confirmed after its hold expired (D-082)', () => {
       expect(await countersOf(dateId)).toEqual({ seats_available: 0, seats_sold: 2 });
       const refunds = await dataSource.query<
         {
+          id: string;
           amount_minor: string;
           reason: string;
           idempotency_key: string;
@@ -376,15 +377,17 @@ describe('a payment confirmed after its hold expired (D-082)', () => {
           refunded_at: Date | null;
         }[]
       >(
-        `SELECT amount_minor, reason, idempotency_key, traceparent, enqueued_at, refunded_at
+        `SELECT id, amount_minor, reason, idempotency_key, traceparent, enqueued_at, refunded_at
            FROM order_refund WHERE order_id = $1`,
         [orderId],
       );
+      const [refund] = refunds;
       expect(refunds).toEqual([
         {
+          id: refund?.id,
           amount_minor: String(FULL_PRICE_MINOR * 2),
           reason: RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
-          idempotency_key: refundKeyOf(orderId),
+          idempotency_key: refundIdempotencyKey(refund?.id ?? ''),
           traceparent: TRACEPARENT,
           enqueued_at: null,
           refunded_at: null,

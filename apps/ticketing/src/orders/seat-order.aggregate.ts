@@ -3,6 +3,7 @@ import { AggregateRoot } from '@nestjs/cqrs';
 import { v7 as uuidv7 } from 'uuid';
 
 import {
+  assertRefundWithinRemaining,
   compare,
   type Instant,
   type Money,
@@ -12,7 +13,8 @@ import {
   OrderState,
   SeatState,
   orderStateMovesForward,
-  subtract,
+  refundIdempotencyKey,
+  refundableRemaining,
   sum,
   type OrderErrorCode,
 } from '@arthome/core';
@@ -29,7 +31,6 @@ import {
   type SeatOrderEvent,
 } from './seat-order.events.js';
 import { type NextAction } from '../payments/next-action.js';
-import { refundKeyOf } from '../payments/refund-ledger.js';
 
 /** Core's four lines, and the unit price they were composed from, frozen at placement. */
 export interface OrderQuote extends CoreOrderQuote {
@@ -73,7 +74,7 @@ export interface OrderFailure {
   readonly declineCode: string | null;
 }
 
-/** A refund its caller decided; the key is the caller's too, `refundIdempotencyKey(id)` (C1). */
+/** A refund its caller decided; the key is the caller's too, core's `refundIdempotencyKey(id)`. */
 export interface OwedRefund {
   readonly id: string;
   readonly amount: Money;
@@ -244,11 +245,13 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
   /** The total less every refund owed or made. */
   public get refundableLeft(): Money {
     const { quote, refunds } = this.current;
-    const owed = sum(
-      refunds.map(({ amount }) => amount),
-      quote.total.currencyCode,
+    return refundableRemaining(
+      quote.total,
+      sum(
+        refunds.map(({ amount }) => amount),
+        quote.total.currencyCode,
+      ),
     );
-    return subtract(quote.total, owed);
   }
 
   /** The hold it resumes on, its first one given back while the provider did not answer. */
@@ -358,19 +361,16 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
     if (!STATES_OWING_REFUNDS.includes(current.state)) {
       throw new Error(`order ${current.id} is ${current.state}: it holds no money to refund`);
     }
-    const left = this.refundableLeft;
-    if (refund.amount.amountMinor <= 0 || compare(refund.amount, left) > 0) {
-      throw new Error(
-        `order ${current.id} cannot owe ${String(refund.amount.amountMinor)} back: ` +
-          `${String(left.amountMinor)} ${left.currencyCode} is left to refund`,
-      );
+    if (refund.amount.amountMinor <= 0) {
+      throw new Error(`order ${current.id} cannot owe a refund of nothing`);
     }
+    assertRefundWithinRemaining(refund.amount, this.refundableLeft);
     return this.owe(refund, now, {});
   }
 
   /**
-   * The provider took the money and no seat can be given: all of it goes back (D-082), under the
-   *   order's key. The refund's id, or null when the order takes no payment any more.
+   * The provider took the money and no seat can be given: all of it goes back (D-082). The refund's
+   *   id, or null when the order takes no payment any more.
    */
   public oweUnseatedPaymentBack(
     reason: RefundReason,
@@ -385,7 +385,7 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
         id,
         amount: current.quote.total,
         reason,
-        idempotencyKey: refundKeyOf(current.id),
+        idempotencyKey: refundIdempotencyKey(id),
         seatId: null,
       },
       now,
