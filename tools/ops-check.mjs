@@ -71,9 +71,10 @@ try {
 
   if (service === 'ticketing') {
     // From ticketing's build, which carries bullmq: the worker's queues (HANDOVER §0m).
-    const { checkProviderCallQueues, checkProviderCallsDead } =
+    const { checkProviderCallQueues, checkProviderCallsDead, checkProviderCallsWaiting } =
       await import('../apps/ticketing/dist/payments/provider-call-checks.js');
     results.push(await checkProviderCallsDead(dataSource));
+    results.push(await checkProviderCallsWaiting(dataSource));
     results.push(await checkProviderCallQueues(readRedisUrl()));
   }
 } finally {

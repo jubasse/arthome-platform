@@ -2,6 +2,8 @@ import { boundedCheck, type CheckResult } from '@arthome-platform/messaging';
 import { Queue } from 'bullmq';
 import type { DataSource } from 'typeorm';
 
+import { MINUTE_MS, SystemClock, type Clock } from '@arthome/core';
+
 import {
   FAIL_FAST_CONNECTION,
   INTENT_CANCELLATION_QUEUE,
@@ -35,6 +37,42 @@ export function checkProviderCallsDead(dataSource: DataSource): Promise<CheckRes
         intentCancellations,
         refundReplay: REFUND_REPLAY,
         intentCancellationReplay: INTENT_CANCELLATION_REPLAY,
+      },
+    };
+  });
+}
+
+/**
+ * The relay enqueues a call owed within its next second: one owed a minute and never enqueued
+ *   means no relay is running, or none can reach Redis (the worker down, crash-looping, or its
+ *   producer's connection broken).
+ */
+export const PROVIDER_CALL_ENQUEUE_BOUND_MS = MINUTE_MS;
+
+/** The calls owed longer than the bound and never enqueued: the worker is not doing its job. */
+export function checkProviderCallsWaiting(
+  dataSource: DataSource,
+  clock: Clock = new SystemClock(),
+): Promise<CheckResult> {
+  return boundedCheck('provider_calls_waiting', 'degraded', async () => {
+    const [waiting] = await dataSource.query<{ refunds: number; intent_cancellations: number }[]>(
+      `SELECT (SELECT count(*)::int FROM order_refund
+                WHERE refunded_at IS NULL AND dead_at IS NULL
+                  AND enqueued_at IS NULL AND owed_at < $1) AS refunds,
+              (SELECT count(*)::int FROM seat_order
+                WHERE intent_cancel_owed_at IS NOT NULL AND intent_cancel_dead_at IS NULL
+                  AND intent_cancel_enqueued_at IS NULL
+                  AND intent_cancel_owed_at < $1) AS intent_cancellations`,
+      [new Date(clock.nowMs() - PROVIDER_CALL_ENQUEUE_BOUND_MS)],
+    );
+    const refunds = waiting?.refunds ?? 0;
+    const intentCancellations = waiting?.intent_cancellations ?? 0;
+    return {
+      status: refunds + intentCancellations > 0 ? 'degraded' : 'up',
+      detail: {
+        refunds,
+        intentCancellations,
+        boundSeconds: PROVIDER_CALL_ENQUEUE_BOUND_MS / 1_000,
       },
     };
   });

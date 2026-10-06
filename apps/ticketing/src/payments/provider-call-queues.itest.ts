@@ -46,9 +46,11 @@ import { PaymentWebhooksModule } from './payment-webhooks.module.js';
 import { PaymentWorker } from './payment-worker.js';
 import { PaymentWorkerModule } from './payment-worker.module.js';
 import {
+  PROVIDER_CALL_ENQUEUE_BOUND_MS,
   REFUND_REPLAY,
   checkProviderCallQueues,
   checkProviderCallsDead,
+  checkProviderCallsWaiting,
 } from './provider-call-checks.js';
 import {
   INTENT_CANCELLATION_QUEUE,
@@ -485,6 +487,33 @@ describe('the limiter', () => {
       await until('the 60 refunds made', async () => (await madeCount(ids)) === 60, 30_000);
 
       expect(performance.now() - started).toBeGreaterThanOrEqual(2_000);
+    },
+    CASE_MS,
+  );
+});
+
+describe('a call owed and never enqueued', () => {
+  it(
+    'turns provider_calls_waiting degraded past its bound, and up once the relay enqueues it',
+    async () => {
+      await relay.relayDue();
+      const [owed] = await paidOrdersOwingRefunds(1);
+      if (owed === undefined) throw new Error('no refund owed');
+      expect((await checkProviderCallsWaiting(dataSource, clock)).status).toBe('up');
+
+      clock.advance(PROVIDER_CALL_ENQUEUE_BOUND_MS + 1);
+      expect(await checkProviderCallsWaiting(dataSource, clock)).toMatchObject({
+        name: 'provider_calls_waiting',
+        status: 'degraded',
+        detail: { refunds: 1, boundSeconds: 60 },
+      });
+
+      await relay.relayDue();
+      expect((await checkProviderCallsWaiting(dataSource, clock)).status).toBe('up');
+      await until(
+        'the refund made',
+        async () => (await refundOf(owed.refundId)).refunded_at !== null,
+      );
     },
     CASE_MS,
   );
