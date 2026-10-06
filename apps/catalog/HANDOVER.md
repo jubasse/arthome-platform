@@ -431,6 +431,10 @@ row and the outbox row), all in one transaction at catalog's clock.
   knows it.
 - **An outcome does not stop them**: a cancelled or interrupted date still goes `live -> ended`.
 - The monotonic order (`technical`, `live`, `ended`) is the ordering guard; no new lock.
+- `dates.http.itest.ts` pushes a `run.started` through `ChecklistConsumerModule`. Measured: without
+  `LearnRunFactHandler` in its `providers`, it fails on "No handler found for the command"; in
+  production that would read as transient and retry every run fact for about six minutes.
+- The outbox row of a state change carries no `traceparent`: the consumer path extracts none.
 - `ChecklistConsumerModule` now provides `CLOCK` and `PUBLIC_WEB_ORIGIN`: the consumer process reads
   `PUBLIC_WEB_ORIGIN` like the API (required in production, defaulted in development).
 
