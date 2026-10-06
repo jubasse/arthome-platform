@@ -530,7 +530,9 @@ to the queue.
   never enqueued; for a cancellation, also enqueued longer ago than its schedule's span with its
   jitter plus an hour (about 1.1 h), which only a job Redis lost leaves. A refund enqueued that
   long ago (about 23.1 h) and unsettled is given up instead, its row dead and §0k's error logged:
-  enqueued again, it would be asked past the provider's key (the review's S4). BullMQ
+  enqueued again, it would be asked past the provider's key. This amends PT0's R5 for refunds
+  (the review's S4, the lead's ruling): enqueuing a lost job again is an automatic retry, and no
+  automatic refund attempt falls past the key. BullMQ
   ignores an id it already holds, so two relays racing, or a crash between the add and the commit,
   enqueue once (proven over 1,000 refunds, each job completed once). Each claim reads its partial
   index (`idx_order_refund_due`, `idx_seat_order_intent_cancel_due`; `relay-plan.itest.ts` over

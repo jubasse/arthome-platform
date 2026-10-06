@@ -827,8 +827,9 @@ crash between the add and the commit the job ids absorb.
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
 instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` to
-`1790440900000` with the three processes stopped, as for every ticketing migration; the last one
-writes each scheduled sale's end, and the sweeper closes those already past it on its first pass.
+`1790440900000` with the processes stopped (four since the worker), as for every ticketing
+migration; the last one writes each scheduled sale's end, and the sweeper closes those already past
+it on its first pass.
 
 ### Search, the date page and link resolution, from the storefront BFF
 
