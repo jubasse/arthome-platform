@@ -59,7 +59,8 @@ import { ProviderCallQueuesModule } from '../payments/provider-call-queues.modul
  */
 
 const STARTUP_MS = 240_000;
-const CASE_MS = 60_000;
+// 1,200 orders settled take about 20 s alone, three times that beside the other suites.
+const SETTLE_MS = 180_000;
 const DRAIN_MS = 180_000;
 
 const PREFIX = '{ticketing-cancelled-date-itest}';
@@ -280,7 +281,7 @@ describe('a cancelled date', () => {
       }
       expect(await countersOf(DATE_ID)).toEqual(countersBefore);
     },
-    CASE_MS,
+    SETTLE_MS,
   );
 
   it(

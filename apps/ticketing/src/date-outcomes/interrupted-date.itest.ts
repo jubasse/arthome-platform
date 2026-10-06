@@ -49,7 +49,7 @@ import { TicketingTransactions } from '../ticketing-transactions.js';
  */
 
 const STARTUP_MS = 240_000;
-const CASE_MS = 90_000;
+const CASE_MS = 180_000;
 
 const NOW = '2026-10-03T20:00:00.000Z';
 const STARTS_AT = '2026-10-03T19:00:00.000Z';
@@ -291,6 +291,51 @@ describe('an interrupted date', () => {
           WHERE type = 'ticketing.credit.issued.v1'`,
       );
       expect(issued?.events).toBe(ORDERS);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'credits a seat a share of nothing when the credit has fewer minor units than seats',
+    async () => {
+      const dateId = '01a0e400-0000-7000-8000-000000000002';
+      await putOnSale(commands, { dateId, channelId: CHANNEL, capacity: 10 }, NOW);
+      const [orderId] = await seedPaidOrders(dataSource, {
+        dateId,
+        channelId: CHANNEL,
+        series: '01a0e404',
+        quantities: [3],
+        accountId: ACCOUNT,
+        cancelDeadline: null,
+        paidAt: NOW,
+      });
+      await dataSource.query(
+        `INSERT INTO order_refund (id, order_id, amount_minor, currency_code, reason,
+                                   idempotency_key, owed_at, refund_ref, refunded_at)
+         VALUES ('01a0e4ff-0000-7000-8000-000000000002', $1, $2, 'EUR', $3,
+                 'refund:01a0e4ff-0000-7000-8000-000000000002', $4, 're_goodwill', $4)`,
+        [orderId, 3 * FULL_PRICE_MINOR - 2, RefundReason.GOODWILL, new Date(NOW)],
+      );
+      await dataSource.query('UPDATE seat_order SET state = $2 WHERE id = $1', [
+        orderId,
+        OrderState.PARTIALLY_REFUNDED,
+      ]);
+      await applyCatalogDateMessage(
+        commands,
+        delivered(outcomeDeclared(dateId, WireDateOutcome.INTERRUPTED, NOW)),
+      );
+
+      expect(await settle()).toBe(1);
+      const seats = await dataSource.query<{ state: string; credited: string }[]>(
+        `SELECT state, credit_amount_minor AS credited FROM seat WHERE order_id = $1
+          ORDER BY id`,
+        [orderId],
+      );
+      expect(seats).toEqual([
+        { state: SeatState.CREDITED, credited: '1' },
+        { state: SeatState.CREDITED, credited: '1' },
+        { state: SeatState.CREDITED, credited: '0' },
+      ]);
     },
     CASE_MS,
   );

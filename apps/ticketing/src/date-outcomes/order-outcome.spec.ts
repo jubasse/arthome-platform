@@ -199,6 +199,18 @@ describe('an interrupted date, per order', () => {
     });
   });
 
+  it('gives a seat a share of nothing when the credit has fewer minor units than seats', () => {
+    const settled = interruptedDateSettlementOf(
+      paidOrder({ refunded: money(7198, 'EUR') }),
+      CREDIT_ID,
+    );
+
+    expect(
+      settled.kind === 'credit_owed' &&
+        settled.crediting.seats.map(({ creditAmount }) => creditAmount.amountMinor),
+    ).toEqual([1, 1, 0]);
+  });
+
   it('leaves an order with nothing left, or disputed', () => {
     const disputed = paidOrder();
     disputed.dispute();
