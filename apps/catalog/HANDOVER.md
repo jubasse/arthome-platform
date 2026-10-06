@@ -441,7 +441,8 @@ publication records exactly them, so deriving reaches the date page, the artist 
 and the search cards at once (both sources carry `publication_state`), with no column, no index field
 and no search-indexer change. Core's `displayStateOf` does the rest: an on-air date shows `live` before
 `startsAt`; a known idle run keeps its date `room_open` past `startsAt` until it moves; a null run
-keeps the clock.
+keeps the clock. An ended run shows `ended` at once, so no card shows `replay` until the replay slice
+learns the asset.
 
 ## 1. What was built
 
