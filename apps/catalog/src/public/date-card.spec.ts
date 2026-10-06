@@ -42,7 +42,10 @@ describe('dateCardOf', () => {
   });
 
   it('holds the state of a date fully over until an event, with no instant to re-run it at', () => {
-    const card = dateCardOf(publicDate(), '2026-11-08T00:00:00.000Z');
+    const card = dateCardOf(
+      publicDate({ publication_state: PublicationState.ENDED }),
+      '2026-11-08T00:00:00.000Z',
+    );
 
     expect(card).toMatchObject({ displayState: DisplayState.ENDED, displayStateValidUntil: null });
     expect(DateCardSchema.safeParse(card).success).toBe(true);
@@ -73,7 +76,13 @@ describe('dateCardOf, from the run the publication records', () => {
     expect(card.displayState).toBe(DisplayState.LIVE);
   });
 
-  it.skip('shows a date ended once its run ended, whatever the clock says (core rc.3)', () => {
+  it('keeps a date room_open past its end while its run is known idle, until it moves', () => {
+    const card = dateCardOf(publicDate(), '2026-11-08T00:00:00.000Z');
+
+    expect(card.displayState).toBe(DisplayState.ROOM_OPEN);
+  });
+
+  it('shows a date ended once its run ended, whatever the clock says', () => {
     const card = dateCardOf(
       publicDate({ publication_state: PublicationState.ENDED }),
       '2026-11-04T19:40:00.000Z',
@@ -82,7 +91,7 @@ describe('dateCardOf, from the run the publication records', () => {
     expect(card).toMatchObject({ displayState: DisplayState.ENDED, displayStateValidUntil: null });
   });
 
-  it.skip('keeps a known idle run past its start room_open until it is on air (core rc.3)', () => {
+  it('keeps a known idle run past its start room_open until it is on air', () => {
     const card = dateCardOf(
       publicDate({ publication_state: PublicationState.TECHNICAL }),
       '2026-11-04T19:40:00.000Z',
