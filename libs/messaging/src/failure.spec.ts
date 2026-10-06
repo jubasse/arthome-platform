@@ -8,6 +8,7 @@ import {
   deadLetterTopic,
   doublingDelays,
   nextAttemptAt,
+  retryDelayAfter,
   retryTopic,
   routeFailure,
 } from './failure.js';
@@ -95,5 +96,16 @@ describe('the retry schedule', () => {
     );
     expect(nextAttemptAt(3, 0, delays)).toBeNull();
     expect(attemptsAllowedBy(delays)).toBe(3);
+  });
+
+  it('gives the jittered wait alone, the one a queue backs off by, and null after the last', () => {
+    const delays = [1_000, 2_000];
+    expect(retryDelayAfter(1, delays, () => 0)).toBe(1_000);
+    expect(retryDelayAfter(2, delays, () => 1)).toBe(2_000 * (1 + JITTER_RATIO));
+    expect(retryDelayAfter(2, delays, () => 0.5)).toBe(
+      nextAttemptAt(2, 0, delays, () => 0.5)?.getTime(),
+    );
+    expect(retryDelayAfter(3, delays)).toBeNull();
+    expect(retryDelayAfter(0, delays)).toBeNull();
   });
 });

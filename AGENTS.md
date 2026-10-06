@@ -33,7 +33,8 @@ debugging NestJS code, load `nestjs-how-to` and the skills it routes to.** Alway
   `apps/ticketing`, `libs/transactions`, `libs/testing`'s `httpApp` and
   `@arthome-platform/messaging/nest`'s `ConsumerHostModule`, whose conventions are
   `apps/catalog/HANDOVER.md` §0f) ·
-  `nestjs-ddd` (catalog's aggregates and repository ports, which `nestjs-cqrs` routes to)
+  `nestjs-ddd` (catalog's aggregates and repository ports, which `nestjs-cqrs` routes to) ·
+  `nestjs-queues` (bullmq, @nestjs/bullmq, ticketing's worker)
 
 Project decisions — the ADRs and `DECISIONS.md` in arthome-core — take precedence over these
 community defaults, and a recorded decision is never reopened.
@@ -429,8 +430,8 @@ condition, i.e. `dist/` — absent in a fresh worktree, which used to fail lint 
 
 The event path is three containers: Postgres 18 with `wal_level=logical`, Kafka in KRaft mode, and
 Kafka Connect carrying Debezium. OpenSearch serves the search, and Redis 8.8 holds the storefront
-BFF's authentication caps and waits for ticketing's queues and waiting room, with no eviction and an
-append-only file (`nestjs-queues` rule 6). **Postgres publishes on 55432, not 5432, and Redis on 56379, not 6379** — the
+BFF's authentication caps and the queues of ticketing's worker, the one process that queues there
+(the waiting room, T6, is to come), with no eviction and an append-only file (`nestjs-queues` rule 6). **Postgres publishes on 55432, not 5432, and Redis on 56379, not 6379** — the
 conventional port was taken by another project, and a development stack that fights for well-known
 ports is one you cannot run beside anything else.
 

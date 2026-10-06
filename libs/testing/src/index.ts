@@ -20,9 +20,11 @@ export type {
   ConnectEndpoint,
   KafkaEndpoint,
   OpenSearchEndpoint,
+  Pausable,
   PostgresEndpoint,
   RedisEndpoint,
   StackRequest,
+  StackService,
   StartedConnect,
   StartedKafka,
   StartedOpenSearch,
@@ -37,6 +39,8 @@ export {
   provideRedisForRun,
   workerRedisUrl,
 } from './redis.js';
+
+export { registerOutboxConnector } from './connector.js';
 
 export { createTopics, headersOf, waitForMessage } from './kafka.js';
 export type { ObservedMessage, TopicSpec, WaitForMessageOptions } from './kafka.js';
