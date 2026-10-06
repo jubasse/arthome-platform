@@ -685,8 +685,9 @@ a bare producer script prints it too.
 `ticketing` runs four processes from `apps/ticketing`, all on its own database `ticketing`: the API
 (`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`),
 the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
-nobody paid, closes each sale thirty minutes after its start (D-089, HANDOVER §0l), and needs
-Postgres alone, and the worker (`node dist/worker.js`, `REDIS_URL`), which makes every call owed to
+nobody paid, closes each sale thirty minutes after its start (D-089, HANDOVER §0l), settles a
+cancelled date's refunds and an interrupted one's credits (HANDOVER §0n), and needs Postgres
+alone, and the worker (`node dist/worker.js`, `REDIS_URL`), which makes every call owed to
 the payment provider from BullMQ's queues (HANDOVER §0m) and alone holds Redis. Its connector is
 `infra/debezium/ticketing-outbox.json`, registered with the loop above.
 
