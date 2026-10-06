@@ -867,38 +867,57 @@ describe("an intent's cancellation", () => {
 
 describe('a job lost by Redis', () => {
   it(
-    'is enqueued again once its row is past the stale window, and made once',
+    'leaves its refund given up past the stale window, and its cancellation enqueued again',
     async () => {
       const [owed] = await paidOrdersOwingRefunds(1);
       if (owed === undefined) throw new Error('no refund owed');
-      const processor = app.get(RefundProcessor);
-      const jobId = jobIdOf(owed.key);
-      await processor.worker.pause();
+      const orderId = await awaitingOrder(await dateOnSale(2));
+      await expireDueHolds();
+      const refunds = app.get(RefundProcessor);
+      const cancellations = app.get(IntentCancellationProcessor);
+      const refundJob = jobIdOf(owed.key);
+      const cancelJob = jobIdOf(intentCancelKeyOf(orderId));
+      await refunds.worker.pause();
+      await cancellations.worker.pause();
       const redis = new Redis(stack.redis.url);
+      const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
       try {
         await relay.relayDue();
         const enqueuedAt = (await refundOf(owed.refundId)).enqueued_at;
-        expect(await refundQueue().getJob(jobId)).toBeDefined();
+        expect(await refundQueue().getJob(refundJob)).toBeDefined();
+        expect(await cancellationQueue().getJob(cancelJob)).toBeDefined();
 
         await redis.flushdb();
         await relay.relayDue();
-        expect(await refundQueue().getJob(jobId)).toBeUndefined();
+        expect(await refundQueue().getJob(refundJob)).toBeUndefined();
         expect((await refundOf(owed.refundId)).enqueued_at).toEqual(enqueuedAt);
 
-        clock.advance(staleAfterMs(SHORT.refunds) + 1);
+        clock.advance(
+          Math.max(staleAfterMs(SHORT.refunds), staleAfterMs(SHORT.intentCancellations)) + 1,
+        );
         await relay.relayDue();
-        expect(await refundQueue().getJob(jobId)).toBeDefined();
-        expect((await refundOf(owed.refundId)).enqueued_at).toEqual(new Date(clock.nowMs()));
+        expect(await refundQueue().getJob(refundJob)).toBeUndefined();
+        expect((await refundOf(owed.refundId)).dead_at).toEqual(new Date(clock.nowMs()));
+        expect(
+          errors.mock.calls.filter(([message]) => String(message).includes(owed.refundId)),
+        ).toEqual([[expect.stringContaining("its job lost: the buyer's money is held")]]);
+        expect(await cancellationQueue().getJob(cancelJob)).toBeDefined();
+        expect((await cancellationOf(orderId)).intent_cancel_enqueued_at).toEqual(
+          new Date(clock.nowMs()),
+        );
       } finally {
-        await processor.worker.resume();
+        errors.mockRestore();
+        await refunds.worker.resume();
+        await cancellations.worker.resume();
         redis.disconnect();
       }
 
       await until(
-        'the refund made',
-        async () => (await refundOf(owed.refundId)).refunded_at !== null,
+        'the cancellation made',
+        async () => (await cancellationOf(orderId)).intent_cancel_owed_at === null,
       );
-      expect(callsTo(`refund ${owed.key}`)).toBe(1);
+      expect(callsTo(`refund ${owed.key}`)).toBe(0);
+      expect(callsTo(`cancelIntent ${intentCancelKeyOf(orderId)}`)).toBe(1);
     },
     CASE_MS,
   );

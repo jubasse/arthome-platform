@@ -1,21 +1,28 @@
-import { RETRY_DELAYS_MS, doublingDelays } from '@arthome-platform/messaging';
+import { JITTER_RATIO, RETRY_DELAYS_MS, doublingDelays } from '@arthome-platform/messaging';
 import type { DataSource, EntityManager } from 'typeorm';
 
 import { DAY_MS, HOUR_MS } from '@arthome/core';
 
 /**
+ * Stripe keeps an idempotency key 24 hours: a refund asked again past it, under the same key, may
+ *   be made twice. So every automatic attempt lands an hour inside it, the jitter included; then
+ *   the refund is given up, and an operator looks it up at the provider before replaying it (§0k).
+ */
+export const PROVIDER_KEY_RETENTION_MS = DAY_MS;
+export const REFUND_RETRIES_WITHIN_MS = PROVIDER_KEY_RETENTION_MS - HOUR_MS;
+
+/**
  * A refund owed is money held without a seat, so its attempts outlast a provider's incident: the
- *   delay doubles from the first up to the cap, until about a day has passed (up to a fifth more
- *   with the jitter). Idempotent under its key, the long tail costs nothing.
+ *   delay doubles from the first up to the cap, and the doubling stops a cap short of the bound
+ *   with each delay's jitter, so the last attempt lands under it.
  */
 export const REFUND_FIRST_RETRY_DELAY_MS = 5_000;
 export const REFUND_RETRY_DELAY_CAP_MS = HOUR_MS;
-export const REFUND_GIVE_UP_AFTER_MS = DAY_MS;
 
 export const REFUND_RETRY_DELAYS_MS: readonly number[] = doublingDelays(
   REFUND_FIRST_RETRY_DELAY_MS,
   REFUND_RETRY_DELAY_CAP_MS,
-  REFUND_GIVE_UP_AFTER_MS,
+  REFUND_RETRIES_WITHIN_MS / (1 + JITTER_RATIO) - REFUND_RETRY_DELAY_CAP_MS,
 );
 
 /** Best effort (adr-ticketing.md §6): the consumers' bound is enough. */

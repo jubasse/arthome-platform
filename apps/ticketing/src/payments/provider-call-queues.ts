@@ -98,8 +98,8 @@ export function providerCallJobOptions(delaysMs: readonly number[]): DefaultJobO
 
 /**
  * When a row enqueued and still unsettled is enqueued again: past its whole schedule with the
- *   jitter, and an hour more, which only a Redis that lost the job leaves (refunds about 30.3 h,
- *   cancellations about 1.1 h).
+ *   jitter, and an hour more, which only a Redis that lost the job leaves (refunds about 23.1 h,
+ *   given up then rather than enqueued again; cancellations about 1.1 h).
  */
 export function staleAfterMs(delaysMs: readonly number[]): number {
   const schedule = delaysMs.reduce((total, delay) => total + delay, 0);

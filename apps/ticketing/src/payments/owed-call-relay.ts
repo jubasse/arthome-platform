@@ -1,3 +1,4 @@
+import { updateReturning } from '@arthome-platform/transactions';
 import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
@@ -73,15 +74,25 @@ export class ProviderCallProducer implements OnApplicationShutdown {
   }
 }
 
-/** Due: owed, neither made nor given up on, and never enqueued or enqueued before `$1`. */
+/** Due: owed, neither made nor given up on, never enqueued. */
 export const DUE_REFUNDS_SQL = `
   SELECT id, idempotency_key FROM order_refund
-   WHERE refunded_at IS NULL AND dead_at IS NULL
-     AND (enqueued_at IS NULL OR enqueued_at < $1)
-   ORDER BY enqueued_at NULLS FIRST, owed_at
-   LIMIT $2
+   WHERE refunded_at IS NULL AND dead_at IS NULL AND enqueued_at IS NULL
+   ORDER BY owed_at
+   LIMIT $1
      FOR UPDATE SKIP LOCKED`;
 
+/** Lost: enqueued before `$1` and still unsettled, given up at `$2`. */
+export const LOST_REFUNDS_SQL = `
+  UPDATE order_refund SET dead_at = $2
+   WHERE id IN (SELECT id FROM order_refund
+                 WHERE refunded_at IS NULL AND dead_at IS NULL AND enqueued_at < $1
+                 ORDER BY enqueued_at
+                 LIMIT $3
+                   FOR UPDATE SKIP LOCKED)
+  RETURNING id`;
+
+/** Due: owed, neither made nor given up on, and never enqueued or enqueued before `$1`. */
 export const DUE_INTENT_CANCELLATIONS_SQL = `
   SELECT id FROM seat_order
    WHERE intent_cancel_owed_at IS NOT NULL AND intent_cancel_dead_at IS NULL
@@ -109,12 +120,35 @@ export class OwedCallRelay extends SweeperLoop {
     super(RELAY_EVERY_MS, RELAY_BATCH);
   }
 
-  /** One pass, the larger of the two batches it enqueued. */
+  /** One pass, the largest of the batches it settled. */
   public async relayDue(): Promise<number> {
+    const lost = await this.giveUpLostRefunds();
     await this.producer.ready();
     const refunds = await this.relayRefunds();
     const cancellations = await this.relayIntentCancellations();
-    return Math.max(refunds, cancellations);
+    return Math.max(lost, refunds, cancellations);
+  }
+
+  /**
+   * A refund enqueued longer ago than its whole schedule and still unsettled: its job was lost by
+   *   Redis, or failed with its dead mark unwritten. Enqueued again, it would be asked past the
+   *   provider's key retention (`REFUND_RETRIES_WITHIN_MS`), so it is given up instead, for an
+   *   operator to replay once looked up at the provider (§0k). A cancellation is enqueued again.
+   */
+  private async giveUpLostRefunds(): Promise<number> {
+    const nowMs = this.clock.nowMs();
+    const lost = await updateReturning<{ id: string }>(this.dataSource, LOST_REFUNDS_SQL, [
+      new Date(nowMs - staleAfterMs(this.schedules.refunds)),
+      new Date(nowMs),
+      RELAY_BATCH,
+    ]);
+    for (const { id } of lost) {
+      this.logger.error(
+        `refund ${id} given up, its job lost: the buyer's money is held without a seat ` +
+          'until an operator replays the refund (apps/ticketing/HANDOVER.md §0k)',
+      );
+    }
+    return lost.length;
   }
 
   protected pass(): Promise<number> {
@@ -125,7 +159,6 @@ export class OwedCallRelay extends SweeperLoop {
     const nowMs = this.clock.nowMs();
     return this.dataSource.transaction(async (manager) => {
       const due = await manager.query<{ id: string; idempotency_key: string }[]>(DUE_REFUNDS_SQL, [
-        new Date(nowMs - staleAfterMs(this.schedules.refunds)),
         RELAY_BATCH,
       ]);
       if (due.length === 0) return 0;

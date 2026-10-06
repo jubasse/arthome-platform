@@ -177,10 +177,10 @@ describe('the provider-call queues migration', () => {
         ]);
 
         await after.transaction(async (manager) => {
-          const dueRefunds = await manager.query<{ idempotency_key: string }[]>(DUE_REFUNDS_SQL, [
-            LATER,
-            500,
-          ]);
+          const dueRefunds = await manager.query<{ idempotency_key: string }[]>(
+            DUE_REFUNDS_SQL,
+            [500],
+          );
           expect(dueRefunds.map(({ idempotency_key }) => idempotency_key)).toEqual([
             `refund:${OWED}`,
           ]);

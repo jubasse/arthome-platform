@@ -9,7 +9,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { OrderState, PriceTier, RefundReason, SeatHoldOrigin, SeatHoldState } from '@arthome/core';
 
-import { DUE_INTENT_CANCELLATIONS_SQL, DUE_REFUNDS_SQL, RELAY_BATCH } from './owed-call-relay.js';
+import {
+  DUE_INTENT_CANCELLATIONS_SQL,
+  DUE_REFUNDS_SQL,
+  LOST_REFUNDS_SQL,
+  RELAY_BATCH,
+} from './owed-call-relay.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 
 /**
@@ -28,11 +33,8 @@ const NOW = new Date('2026-10-06T10:00:00.000Z');
 let stack: StartedStack;
 let dataSource: DataSource;
 
-async function planOf(sql: string): Promise<string> {
-  const plan = await dataSource.query<{ 'QUERY PLAN': string }[]>(`EXPLAIN ${sql}`, [
-    NOW,
-    RELAY_BATCH,
-  ]);
+async function planOf(sql: string, parameters: unknown[]): Promise<string> {
+  const plan = await dataSource.query<{ 'QUERY PLAN': string }[]>(`EXPLAIN ${sql}`, parameters);
   return plan.map((line) => line['QUERY PLAN']).join('\n');
 }
 
@@ -93,10 +95,13 @@ describe("the relay's claims", () => {
   it(
     `read no order_refund sequentially over ${String(HISTORY)} refunds made`,
     async () => {
-      const plan = await planOf(DUE_REFUNDS_SQL);
-
-      expect(plan).not.toMatch(/Seq Scan on order_refund/);
-      expect(plan).toMatch(/idx_order_refund_due/);
+      for (const plan of [
+        await planOf(DUE_REFUNDS_SQL, [RELAY_BATCH]),
+        await planOf(LOST_REFUNDS_SQL, [NOW, NOW, RELAY_BATCH]),
+      ]) {
+        expect(plan).not.toMatch(/Seq Scan on order_refund/);
+        expect(plan).toMatch(/idx_order_refund_due/);
+      }
     },
     CASE_MS,
   );
@@ -104,7 +109,7 @@ describe("the relay's claims", () => {
   it(
     `read no seat_order sequentially over ${String(HISTORY)} orders owing no cancellation`,
     async () => {
-      const plan = await planOf(DUE_INTENT_CANCELLATIONS_SQL);
+      const plan = await planOf(DUE_INTENT_CANCELLATIONS_SQL, [NOW, RELAY_BATCH]);
 
       expect(plan).not.toMatch(/Seq Scan on seat_order/);
       expect(plan).toMatch(/idx_seat_order_intent_cancel_due/);

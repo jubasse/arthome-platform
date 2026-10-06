@@ -49,7 +49,7 @@ describe('the job id of a provider call', () => {
 describe('the job options of a provider call', () => {
   it('allow one attempt more than its delays, on the custom backoff, and keep no job settled', () => {
     expect(providerCallJobOptions(REFUND_RETRY_DELAYS_MS)).toEqual({
-      attempts: 34,
+      attempts: 28,
       backoff: { type: PROVIDER_CALL_BACKOFF },
       removeOnComplete: true,
       removeOnFail: true,
@@ -96,7 +96,7 @@ describe('the backoff a worker runs on', () => {
 
 describe('the stale window', () => {
   it('outlasts each whole schedule with its jitter by an hour', () => {
-    expect(staleAfterMs(REFUND_RETRY_DELAYS_MS) / HOUR_MS).toBeCloseTo(30.3, 1);
+    expect(staleAfterMs(REFUND_RETRY_DELAYS_MS) / HOUR_MS).toBeCloseTo(23.1, 1);
     expect(staleAfterMs(RETRY_DELAYS_MS) / HOUR_MS).toBeCloseTo(1.11, 2);
   });
 });
