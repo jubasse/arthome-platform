@@ -7,6 +7,7 @@ import { DataSource } from 'typeorm';
 
 import {
   OrderErrorCode,
+  money,
   type Clock,
   type Instant,
   OrderState,
@@ -29,23 +30,22 @@ interface InboxRow {
   readonly order_id: string | null;
   readonly decline_code: string | null;
   readonly traceparent: string | null;
+  readonly refund_ref: string | null;
+  readonly amount_refunded_minor: string | null;
+  readonly amount_refunded_currency_code: string | null;
 }
 
 /** An event that no retry can apply: it names an order this service does not hold. */
 class Unappliable extends Error {}
 
-/** Kept and ignored; a refund made and a dispute are applied from PT2 on (its R15, R16). */
-const KINDS_APPLIED_AS_NOTHING: readonly PaymentEventKind[] = [
-  PaymentEventKind.UNHANDLED,
-  PaymentEventKind.REFUND_SUCCEEDED,
-  PaymentEventKind.DISPUTE_OPENED,
-];
+const KINDS_APPLIED_AS_NOTHING: readonly PaymentEventKind[] = [PaymentEventKind.UNHANDLED];
 
 /**
  * adr-ticketing.md §8's worker, each recorded webhook in a transaction of its own (HANDOVER §0j): the
  *   row claimed `SKIP LOCKED`, the order moved forward only, the row marked applied with the effect.
  *   A failure is retried after the consumers' delays, then given up on as its own dead letter. A
- *   refund the event owes (D-082) is a row of that transaction, made by the worker's queue.
+ *   refund the event owes (D-082) is a row of that transaction, made by the worker's queue; a
+ *   refund the provider reports made, and a dispute, are applied here too (HANDOVER §0o).
  */
 @CommandHandler(ApplyPaymentEvents)
 export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEvents> {
@@ -86,7 +86,8 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
   private async applyIn(transaction: TicketingTransaction, eventId: string): Promise<boolean> {
     const { manager, orders } = transaction;
     const [row] = await manager.query<InboxRow[]>(
-      `SELECT event_id, kind, intent_ref, order_id, decline_code, traceparent
+      `SELECT event_id, kind, intent_ref, order_id, decline_code, traceparent, refund_ref,
+              amount_refunded_minor, amount_refunded_currency_code
          FROM stripe_event_inbox
         WHERE event_id = $1 AND applied_at IS NULL AND dead_at IS NULL
           FOR UPDATE SKIP LOCKED`,
@@ -145,10 +146,52 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
       case PaymentEventKind.INTENT_CANCELLED:
         return failUnpaidOrder(transaction, order, { code: null, declineCode: null }, now);
       case PaymentEventKind.REFUND_SUCCEEDED:
+        this.applyRefundsReported(order, row, now);
+        return null;
       case PaymentEventKind.DISPUTE_OPENED:
+        return this.applyDispute(transaction, order, row, now);
       case PaymentEventKind.UNHANDLED:
         return null;
     }
+  }
+
+  /** The refunds the provider's cumulative amount shows made, their seats refunded with them. */
+  private applyRefundsReported(order: SeatOrder, row: InboxRow, now: Instant): void {
+    const { amount_refunded_minor: minor, amount_refunded_currency_code: currencyCode } = row;
+    if (minor === null || currencyCode === null) {
+      throw new Unappliable('a refund made carries no amount refunded');
+    }
+    const amountRefunded = money(Number(minor), currencyCode);
+    if (!order.refundsReported(row.refund_ref, amountRefunded, now)) {
+      this.logger.warn(
+        `payment event ${row.event_id}: ${String(amountRefunded.amountMinor)} ${currencyCode} ` +
+          `refunded on order ${order.snapshot.id}, more than every refund it holds; a refund ` +
+          'made outside the platform, kept and ignored',
+      );
+    }
+  }
+
+  /**
+   * The order `disputed`, its seats left active and nothing asked of anyone (adr-payments.md §9).
+   *   A dispute reaching an order not yet paid settles its payment first, as a confirmation would:
+   *   a disputed charge is a charge that was taken.
+   */
+  private async applyDispute(
+    transaction: TicketingTransaction,
+    order: SeatOrder,
+    row: InboxRow,
+    now: Instant,
+  ): Promise<PendingCounterMove | null> {
+    if (row.intent_ref === null) throw new Unappliable('a dispute names no intent');
+    const pending = await settleConfirmedPayment(
+      transaction,
+      order,
+      row.intent_ref,
+      now,
+      row.traceparent,
+    );
+    order.dispute();
+    return pending;
   }
 
   /** True when given up on: the event is settled, as a dead letter (adr-payments.md §7.4). */

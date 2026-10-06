@@ -1,5 +1,5 @@
 import {
-  compare,
+  min,
   seatCancelReasonOf,
   seatSharesOf,
   type Money,
@@ -27,7 +27,7 @@ export function seatShareWithin(
   const seatIds = order.seats.map(({ id }) => id).sort();
   const share = seatSharesOf(order.quote.total, order.quantity)[seatIds.indexOf(seatId)];
   if (share === undefined) throw new Error(`order ${order.id} holds no seat ${seatId}`);
-  return compare(share, refundableLeft) > 0 ? refundableLeft : share;
+  return min(share, refundableLeft);
 }
 
 /** For a refund that cancels its seat (D-095): a viewer's, a cancelled date's. */

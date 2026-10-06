@@ -568,3 +568,77 @@ describe('SeatOrder, its seats leaving active (S1 to S3)', () => {
     ).toHaveLength(1);
   });
 });
+
+describe('SeatOrder, the refunds a webhook reports made', () => {
+  const owe = (order: SeatOrder, id: string, amountMinor: number): void => {
+    order.oweRefund(
+      {
+        id,
+        amount: money(amountMinor, 'EUR'),
+        reason: RefundReason.GOODWILL,
+        idempotencyKey: `refund:${id}`,
+        seatId: null,
+      },
+      NOW,
+    );
+  };
+  const FIRST = '01a0f700-0000-7000-8000-0000000000e1';
+  const SECOND = '01a0f700-0000-7000-8000-0000000000e2';
+  const paidOwingTwo = (): SeatOrder => {
+    const order = placed();
+    order.pay(INTENT.ref, ISSUES, NOW);
+    owe(order, FIRST, 1000);
+    owe(order, SECOND, 500);
+    return order;
+  };
+  const made = (order: SeatOrder) =>
+    order.snapshot.refunds.map(({ ref, refundedAt }) => [ref, refundedAt]);
+  const refundedEvents = (order: SeatOrder) =>
+    order.getUncommittedEvents().filter(({ kind }) => kind === 'SeatOrderRefunded');
+
+  it('makes the refunds the cumulative covers, oldest first, the newest taking the reference', () => {
+    const order = paidOwingTwo();
+
+    expect(order.refundsReported('re_1', money(1000, 'EUR'), LATER)).toBe(true);
+    expect(made(order)).toEqual([
+      ['re_1', LATER],
+      [null, null],
+    ]);
+    expect(order.refundsReported('re_1', money(1000, 'EUR'), LATER)).toBe(true);
+    expect(order.refundsReported('re_2', money(1500, 'EUR'), LATER)).toBe(true);
+    expect(made(order)).toEqual([
+      ['re_1', LATER],
+      ['re_2', LATER],
+    ]);
+    expect(refundedEvents(order)).toHaveLength(2);
+    expect(order.snapshot.state).toBe(OrderState.PARTIALLY_REFUNDED);
+  });
+
+  it('makes both when the later one is reported first, then names the earlier one', () => {
+    const order = paidOwingTwo();
+
+    order.refundsReported('re_2', money(1500, 'EUR'), LATER);
+    expect(made(order)).toEqual([
+      [null, LATER],
+      ['re_2', LATER],
+    ]);
+    order.refundsReported('re_1', money(1000, 'EUR'), LATER);
+    expect(made(order)).toEqual([
+      ['re_1', LATER],
+      ['re_2', LATER],
+    ]);
+    expect(refundedEvents(order)).toHaveLength(2);
+  });
+
+  it('ignores a cumulative past every refund it holds, and makes none a partial sum leaves out', () => {
+    const order = paidOwingTwo();
+
+    expect(order.refundsReported('re_outside', money(1501, 'EUR'), LATER)).toBe(false);
+    expect(order.refundsReported('re_small', money(999, 'EUR'), LATER)).toBe(true);
+    expect(made(order)).toEqual([
+      [null, null],
+      [null, null],
+    ]);
+    expect(refundedEvents(order)).toEqual([]);
+  });
+});

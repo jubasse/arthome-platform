@@ -176,4 +176,74 @@ describe('the fake payment provider', () => {
     );
     expect(fake.calls).toEqual([`createIntent ${ORDER}`, 'cancelIntent cancel:x']);
   });
+
+  it('signs a refund webhook carrying the refund and what its charge refunded up to it', async () => {
+    const fake = provider();
+    const { ref } = await fake.createIntent(request());
+    const refundOf = async (key: string, amountMinor: number) =>
+      (
+        await fake.refund({
+          intentRef: ref,
+          amount: money(amountMinor, 'EUR'),
+          idempotencyKey: key,
+          refundApplicationFee: true,
+        })
+      ).refundRef;
+    const first = await refundOf('refund:first', 2400);
+    const second = await refundOf('refund:second', 1000);
+
+    const late = fake.refundSucceededWebhookOf(second);
+    const early = fake.refundSucceededWebhookOf(first);
+
+    expect(fake.verifySignature(late.body, late.signature, NOW)).toBe(true);
+    expect(fake.parse(late.body)).toMatchObject({
+      kind: PaymentEventKind.REFUND_SUCCEEDED,
+      intentRef: ref,
+      orderId: ORDER,
+      refundRef: second,
+      amountRefunded: money(3400, 'EUR'),
+    });
+    expect(fake.parse(early.body)).toMatchObject({
+      refundRef: first,
+      amountRefunded: money(2400, 'EUR'),
+    });
+  });
+
+  it('signs a dispute, confirming the charge, and refuses its refunds as a refusal, not an outage', async () => {
+    const fake = provider();
+    fake.scenarioOf = () => FakePaymentScenario.REQUIRE_ACTION;
+    const { ref } = await fake.createIntent(request());
+    const made = await fake
+      .refund({
+        intentRef: ref,
+        amount: money(100, 'EUR'),
+        idempotencyKey: 'refund:before',
+        refundApplicationFee: true,
+      })
+      .catch((error: unknown) => error);
+    expect(made).toBeInstanceOf(Error);
+
+    const dispute = fake.disputeOpened(ref);
+
+    expect(fake.verifySignature(dispute.body, dispute.signature, NOW)).toBe(true);
+    expect(fake.parse(dispute.body)).toMatchObject({
+      kind: PaymentEventKind.DISPUTE_OPENED,
+      intentRef: ref,
+      orderId: ORDER,
+      refundRef: null,
+      amountRefunded: null,
+    });
+    const refused = await fake
+      .refund({
+        intentRef: ref,
+        amount: money(100, 'EUR'),
+        idempotencyKey: 'refund:after',
+        refundApplicationFee: true,
+      })
+      .catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(Error);
+    expect(refused).not.toBeInstanceOf(PaymentProviderUnavailable);
+    expect(String(refused)).toMatch(/is disputed/);
+    expect(fake.refundsMade).toBe(0);
+  });
 });

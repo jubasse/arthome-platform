@@ -5,6 +5,7 @@ import { v7 as uuidv7 } from 'uuid';
 import {
   DomainError,
   OrderErrorCode,
+  add,
   assertRefundWithinRemaining,
   compare,
   type Instant,
@@ -20,6 +21,7 @@ import {
   refundableRemaining,
   seatStateMayMove,
   sum,
+  zero,
 } from '@arthome/core';
 
 import { ORDER_STATES_AWAITING_PAYMENT } from './awaiting-payment.js';
@@ -482,6 +484,40 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
         now,
       ),
     );
+  }
+
+  /**
+   * A refund webhook: the provider has refunded `amountRefunded` on the payment in all. The refunds,
+   *   oldest first, whose running sum fits within it are made, each with its `SeatOrderRefunded`
+   *   once (the processor's call may have timed out after the provider made it); the newest of
+   *   them takes `refundRef` unless a refund already holds it. False, nothing applied, past every
+   *   refund the order holds: one made outside the platform.
+   */
+  public refundsReported(refundRef: string | null, amountRefunded: Money, now: Instant): boolean {
+    const { refunds, quote } = this.current;
+    const currencyCode = quote.total.currencyCode;
+    const ledger = sum(
+      refunds.map(({ amount }) => amount),
+      currencyCode,
+    );
+    if (compare(amountRefunded, ledger) > 0) return false;
+    const fitting: OrderRefund[] = [];
+    let running = zero(currencyCode);
+    for (const refund of refunds) {
+      running = add(running, refund.amount);
+      if (compare(running, amountRefunded) > 0) break;
+      fitting.push(refund);
+    }
+    const unmade = fitting.filter(({ refundedAt }) => refundedAt === null);
+    const refAlreadyHeld = refundRef === null || refunds.some(({ ref }) => ref === refundRef);
+    const reported = refAlreadyHeld
+      ? undefined
+      : (unmade.at(-1) ?? fitting.filter(({ ref }) => ref === null).at(-1));
+    for (const refund of unmade) {
+      if (refund !== reported) this.refundMade(refund.id, null, now);
+    }
+    if (reported !== undefined) this.refundMade(reported.id, refundRef, now);
+    return true;
   }
 
   /**
