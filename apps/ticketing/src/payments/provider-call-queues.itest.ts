@@ -82,6 +82,7 @@ import { HoldExpirySweeper } from '../orders/hold-expiry-sweeper.js';
 import { HoldExpiryModule } from '../orders/hold-expiry.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
+import { TicketingTransactions } from '../ticketing-transactions.js';
 
 /**
  * The provider calls on BullMQ (HANDOVER §0m), against a real Postgres and a Redis of the file's
@@ -422,6 +423,51 @@ describe('a refund the provider keeps refusing', () => {
       expect((await checkProviderCallsDead(dataSource)).detail.refunds).toBe(
         Number(dead.detail.refunds) - 1,
       );
+    },
+    CASE_MS,
+  );
+});
+
+describe('the refund ledger', () => {
+  it(
+    'records a refund owed twice once, and refuses a key another refund holds without a 23505',
+    async () => {
+      const [held, other] = await paidOrdersOwingRefunds(2);
+      if (held === undefined || other === undefined) throw new Error('no refunds owed');
+      await dataSource.query('DELETE FROM order_refund WHERE id = $1', [other.refundId]);
+      const transactions = app.get(TicketingTransactions);
+      const refundOwedBy = ({ refundId, key }: OwedRefundRow) => ({
+        id: refundId,
+        amount: money(FULL_PRICE_MINOR, 'EUR'),
+        reason: RefundReason.GOODWILL,
+        idempotencyKey: key,
+        seatId: null,
+      });
+
+      await transactions.run(async ({ orders }) => {
+        const order = await orders.findById(held.orderId);
+        if (order === null) throw new Error('no order');
+        order.oweRefund(refundOwedBy(held), clock.now());
+        await orders.save(order);
+      });
+      const [rows] = await dataSource.query<{ refunds: number }[]>(
+        'SELECT count(*)::int AS refunds FROM order_refund WHERE order_id = $1',
+        [held.orderId],
+      );
+      expect(rows?.refunds).toBe(1);
+
+      const rolledBack = new Error('the suite rolls back');
+      await expect(
+        transactions.run(async ({ manager, orders }) => {
+          const order = await orders.findById(other.orderId);
+          if (order === null) throw new Error('no order');
+          order.oweRefund({ ...refundOwedBy(held), id: randomUUID() }, clock.now());
+          await expect(orders.save(order)).rejects.toThrow(/is another refund's/);
+          // A 23505 would have aborted the transaction, and this statement with it.
+          expect(await manager.query('SELECT 1 AS alive')).toEqual([{ alive: 1 }]);
+          throw rolledBack;
+        }),
+      ).rejects.toBe(rolledBack);
     },
     CASE_MS,
   );

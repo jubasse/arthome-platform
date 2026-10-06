@@ -131,6 +131,17 @@ export interface SeatOrderPlacement {
   readonly expiresAt: Instant;
 }
 
+function sameRefund(owed: OrderRefund, refund: OwedRefund): boolean {
+  return (
+    owed.id === refund.id &&
+    owed.idempotencyKey === refund.idempotencyKey &&
+    owed.reason === refund.reason &&
+    owed.seatId === refund.seatId &&
+    owed.amount.currencyCode === refund.amount.currencyCode &&
+    owed.amount.amountMinor === refund.amount.amountMinor
+  );
+}
+
 /** The money was taken and is still held, in part at least. */
 const STATES_OWING_REFUNDS: readonly OrderState[] = [
   OrderState.PAID,
@@ -327,9 +338,23 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
     return true;
   }
 
-  /** Money taken and still held, owed back in part or in whole; the worker's queue makes it. */
-  public oweRefund(refund: OwedRefund, now: Instant): void {
+  /**
+   * Money taken and still held, owed back in part or in whole; the worker's queue makes it. Owed
+   *   again with the same facts, a replay, it answers the refund already owed and changes nothing;
+   *   its id or its key already owed with other facts is refused.
+   */
+  public oweRefund(refund: OwedRefund, now: Instant): OrderRefund {
     const current = this.current;
+    const owed = current.refunds.find(
+      ({ id, idempotencyKey }) => id === refund.id || idempotencyKey === refund.idempotencyKey,
+    );
+    if (owed !== undefined) {
+      if (sameRefund(owed, refund)) return owed;
+      throw new Error(
+        `order ${current.id} already owes refund ${owed.id} under ${owed.idempotencyKey}, ` +
+          `not refund ${refund.id} under ${refund.idempotencyKey}`,
+      );
+    }
     if (!STATES_OWING_REFUNDS.includes(current.state)) {
       throw new Error(`order ${current.id} is ${current.state}: it holds no money to refund`);
     }
@@ -340,7 +365,7 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
           `${String(left.amountMinor)} ${left.currencyCode} is left to refund`,
       );
     }
-    this.owe(refund, now, {});
+    return this.owe(refund, now, {});
   }
 
   /**
@@ -412,12 +437,10 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
     this.advance({ intentCancelOwedAt: null });
   }
 
-  private owe(refund: OwedRefund, now: Instant, changes: Partial<SeatOrderSnapshot>): void {
+  private owe(refund: OwedRefund, now: Instant, changes: Partial<SeatOrderSnapshot>): OrderRefund {
     const current = this.current;
-    this.advance({
-      ...changes,
-      refunds: [...current.refunds, { ...refund, owedAt: now, ref: null, refundedAt: null }],
-    });
+    const owed: OrderRefund = { ...refund, owedAt: now, ref: null, refundedAt: null };
+    this.advance({ ...changes, refunds: [...current.refunds, owed] });
     this.apply(
       new SeatOrderRefundOwed(
         current.id,
@@ -428,6 +451,7 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
         now,
       ),
     );
+    return owed;
   }
 
   private advance(changes: Partial<SeatOrderSnapshot>): void {

@@ -140,12 +140,7 @@ export class TypeOrmSeatOrderRepository extends SeatOrderRepository {
     const current = order.snapshot;
     const stored = this.storedRefunds.get(order) ?? new Map<string, OrderRefund>();
     const added = current.refunds.filter(({ id }) => !stored.has(id));
-    if (added.length > 0) {
-      await this.manager.insert(
-        OrderRefundRow,
-        added.map((refund) => refundRowOf(current.id, refund)),
-      );
-    }
+    if (added.length > 0) await this.insertRefunds(current.id, added);
     for (const refund of current.refunds) {
       const before = stored.get(refund.id);
       if (before === undefined || before.refundedAt === refund.refundedAt) continue;
@@ -156,6 +151,35 @@ export class TypeOrmSeatOrderRepository extends SeatOrderRepository {
       );
     }
     this.storedRefunds.set(order, refundsById(current.refunds));
+  }
+
+  /**
+   * `ON CONFLICT DO NOTHING`, never a 23505 that would abort the caller's transaction: a row
+   *   already there is the same refund, kept, or another one holding its id or key, refused.
+   */
+  private async insertRefunds(orderId: string, refunds: readonly OrderRefund[]): Promise<void> {
+    const inserted = await this.manager
+      .createQueryBuilder()
+      .insert()
+      .into(OrderRefundRow)
+      .values(refunds.map((refund) => refundRowOf(orderId, refund)))
+      .orIgnore()
+      .returning('id')
+      .execute();
+    const insertedIds = new Set((inserted.raw as { id: string }[]).map(({ id }) => id));
+    for (const refund of refunds.filter(({ id }) => !insertedIds.has(id))) {
+      const held = await this.manager.findOneBy(OrderRefundRow, { id: refund.id });
+      const same =
+        held?.order_id === orderId &&
+        held.idempotency_key === refund.idempotencyKey &&
+        held.amount_minor === String(refund.amount.amountMinor);
+      if (!same) {
+        throw new Error(
+          `refund ${refund.id} of order ${orderId} not recorded: its id or its key ` +
+            `${refund.idempotencyKey} is another refund's`,
+        );
+      }
+    }
   }
 }
 

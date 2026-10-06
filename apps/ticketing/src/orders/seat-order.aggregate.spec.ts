@@ -287,6 +287,28 @@ describe('SeatOrder, its refunds (the ledger PT1 and PT2 owe through)', () => {
     }).toThrow(/is failed/);
   });
 
+  it('answers a refund owed again with the same facts, and refuses its id or key with others', () => {
+    const order = paid();
+    const first = order.oweRefund(FIRST, LATER);
+    const version = order.snapshot.version;
+
+    expect(order.oweRefund(FIRST, LATER)).toEqual(first);
+    expect(order.snapshot.refunds).toHaveLength(1);
+    expect(order.snapshot.version).toBe(version);
+    expect(() => {
+      order.oweRefund({ ...FIRST, amount: money(100, 'EUR') }, LATER);
+    }).toThrow(/already owes refund/);
+    expect(() => {
+      order.oweRefund({ ...SECOND, idempotencyKey: FIRST.idempotencyKey }, LATER);
+    }).toThrow(/already owes refund/);
+
+    order.refundMade(FIRST.id, 're_fake_1', LATER);
+    expect(order.oweRefund(FIRST, LATER)).toMatchObject({ id: FIRST.id, ref: 're_fake_1' });
+    expect(
+      order.getUncommittedEvents().filter(({ kind }) => kind === 'SeatOrderRefundOwed'),
+    ).toHaveLength(1);
+  });
+
   it('refuses to mark made a refund it does not owe', () => {
     expect(() => {
       paid().refundMade(FIRST.id, 're_fake_1', LATER);
