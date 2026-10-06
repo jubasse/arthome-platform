@@ -72,8 +72,7 @@ function startsWithin(query: SearchQuery): Query[] {
  */
 export function filtersOf(query: SearchQuery, now: Instant): Query[] {
   return [
-    // Fully over, replay included: `publicDisplayStateOf` would say `ended`, with no instant
-    // for `displayStateValidUntil`, which a DateCard requires.
+    // Fully over, replay included, by the clock: a date past it has nothing left to search for.
     { range: { over_at: { gt: now } } },
     ...CARD_FIELDS.map((field): Query => ({ exists: { field } })),
     ...tabFilter(query.tab, now),

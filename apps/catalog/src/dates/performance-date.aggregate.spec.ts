@@ -13,7 +13,11 @@ import {
   worldwideRights,
 } from '@arthome/core';
 
-import { PerformanceDate, type PerformanceDateSnapshot } from './performance-date.aggregate.js';
+import {
+  PerformanceDate,
+  RunEndedBeforeStarted,
+  type PerformanceDateSnapshot,
+} from './performance-date.aggregate.js';
 import {
   DateDrafted,
   DateOutcomeDeclared,
@@ -341,4 +345,92 @@ describe('PerformanceDate', () => {
     ]);
     expect(date.getUncommittedEvents()).toEqual([]);
   });
+});
+
+describe('PerformanceDate, learning the run', () => {
+  function dateAt(state: PublicationState, version = 3): PerformanceDate {
+    return PerformanceDate.restore(PUBLISHED, { ...SCHEDULED_AT_2, state, version });
+  }
+
+  it('goes live on the start, counting one more change and raising it reversible', () => {
+    const date = dateAt(PublicationState.TECHNICAL);
+
+    expect(date.learnRunStarted(NOW)).toBe(true);
+
+    expect(date.publication).toMatchObject({ state: PublicationState.LIVE, version: 4 });
+    expect(date.getUncommittedEvents()).toEqual([
+      new PublicationStateChanged(
+        'date-1',
+        'channel-1',
+        PublicationState.TECHNICAL,
+        PublicationState.LIVE,
+        4,
+        false,
+        NOW,
+      ),
+    ]);
+  });
+
+  it.each([PublicationState.LIVE, PublicationState.ENDED, PublicationState.REPLAY_ONLINE])(
+    'ignores a start on a date already %s',
+    (state) => {
+      const date = dateAt(state);
+
+      expect(date.learnRunStarted(NOW)).toBe(false);
+      expect(date.publication.version).toBe(3);
+      expect(date.getUncommittedEvents()).toEqual([]);
+    },
+  );
+
+  it.each([PublicationState.DRAFT, PublicationState.RESERVE, PublicationState.SCHEDULED])(
+    'refuses a start on a date still %s',
+    (state) => {
+      const refusal = refusalOf(() => dateAt(state).learnRunStarted(NOW));
+
+      expect(isDomainError(refusal) && refusal.code).toBe(
+        DomainErrorCode.PUBLICATION_TRANSITION_FORBIDDEN,
+      );
+    },
+  );
+
+  it('ends a live date', () => {
+    const date = dateAt(PublicationState.LIVE);
+
+    expect(date.learnRunEnded(NOW)).toBe(true);
+    expect(date.publication).toMatchObject({ state: PublicationState.ENDED, version: 4 });
+  });
+
+  it('ends a live date whose outcome is declared: the outcome outranks the display only', () => {
+    const date = PerformanceDate.restore(
+      { ...PUBLISHED, outcome: DateOutcome.CANCELLED },
+      { ...SCHEDULED_AT_2, state: PublicationState.LIVE },
+    );
+
+    expect(date.learnRunEnded(NOW)).toBe(true);
+    expect(date.publication.state).toBe(PublicationState.ENDED);
+  });
+
+  it.each([PublicationState.ENDED, PublicationState.REPLAY_ONLINE])(
+    'ignores an end on a date already %s',
+    (state) => {
+      expect(dateAt(state).learnRunEnded(NOW)).toBe(false);
+    },
+  );
+
+  it('waits for the start when the end came first, as a retry resolves', () => {
+    expect(() => dateAt(PublicationState.TECHNICAL).learnRunEnded(NOW)).toThrow(
+      RunEndedBeforeStarted,
+    );
+  });
+
+  it.each([PublicationState.DRAFT, PublicationState.RESERVE, PublicationState.SCHEDULED])(
+    'refuses an end on a date still %s',
+    (state) => {
+      const refusal = refusalOf(() => dateAt(state).learnRunEnded(NOW));
+
+      expect(isDomainError(refusal) && refusal.code).toBe(
+        DomainErrorCode.PUBLICATION_TRANSITION_FORBIDDEN,
+      );
+    },
+  );
 });
