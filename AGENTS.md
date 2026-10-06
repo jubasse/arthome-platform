@@ -588,7 +588,8 @@ What should then be true, and what is worth checking because each step can fail 
 ### The catalog date path
 
 `catalog` runs two processes from `apps/catalog`: the API (`node dist/main.js`, on `PORT`) and the
-checklist consumer (`node dist/consumer.js`). A date goes from draft to published through the
+consumer (`node dist/consumer.js`), which projects the checklist facts and, from `streaming.run.started.v1`
+and `streaming.run.ended.v1`, takes a date `technical -> live -> ended`. A date goes from draft to published through the
 studio's commands, each carrying an `Idempotency-Key`:
 
 ```
@@ -603,7 +604,8 @@ PATCH /v1/channels/:channelId/identity        { expectedVersion, publicName, slu
 Publishing answers `publication.checklist_incomplete` until ticketing, streaming and chat have
 reported their four facts. None of those services exists yet, so in development send the facts by
 hand on `arthome.ticketing.date_sales`, `arthome.streaming.run` and `arthome.chat.date`, keyed by the
-date id, with a `message-id` and a `type` header.
+date id, with a `message-id` and a `type` header. A `streaming.run.started.v1` sent the same way on a
+date under technical check makes its card `live`; `streaming.run.ended.v1` ends it.
 
 Proven on the running stack on 2026-09-26:
 

@@ -9,7 +9,7 @@ import { dataSource } from './data-source.js';
 import { ChecklistConsumerModule } from './dates/checklist-consumer.module.js';
 import { applyRunMessage } from './dates/run-consumer.js';
 
-/** The facts the publication checklist projects (data-model.md §2.3), all keyed by date id. */
+/** The facts the publication checklist projects and the run facts that move it (data-model.md §2.3), all keyed by date id. */
 export const SOURCE_TOPICS = [
   'arthome.ticketing.date_sales',
   'arthome.streaming.run',
