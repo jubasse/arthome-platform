@@ -96,6 +96,9 @@ describe('the fake payment provider', () => {
     expect(refundRef).toMatch(/^re_fake_/);
     await worker.cancelIntent(ref, `cancel:${ORDER}`);
     expect(worker.isCanceled(ref)).toBe(false);
+    const neverAsked = (await api.createIntent(request(ORDER.replace(/1$/, '9')))).ref;
+    expect(() => worker.isCanceled(neverAsked)).toThrow(/no intent/);
+    expect(() => worker.completeAction(neverAsked)).toThrow(/no intent/);
     await expect(
       worker.refund({ intentRef: 'pi_other', amount: money(1, 'EUR'), idempotencyKey: 'x' }),
     ).rejects.toThrow(/no intent pi_other/);

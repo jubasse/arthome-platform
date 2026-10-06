@@ -227,7 +227,10 @@ derived from its order id, event ids are counted, and each intent plays `scenari
 makes every call fail, the provider-down drill. Each process binds an instance of its own:
 the worker's, asked to refund or cancel an intent the API's created, knows it by its reference,
 its order's, as confirmed, which is what the running fake makes of every intent (PT0, since the
-refunds left the API process). Its signature is Stripe's scheme on its own header,
+refunds left the API process); its test helpers stay strict. **For PT4's drills on a running
+stack**: a cancellation there does nothing the API's fake sees (an intent known as confirmed is
+not cancelled), and a refund there skips the "has taken no money" refusal. Prove those in a
+suite, where one fake serves every port. Its signature is Stripe's scheme on its own header,
 `x-fake-payment-signature: t=<seconds>,v1=<HMAC-SHA256 of "t.body">`, refused past core's
 `PAYMENT_WEBHOOK_TOLERANCE_SECONDS`, adr-payments.md §7.1's five minutes. The secret is `PAYMENT_WEBHOOK_SECRET` (`@arthome-platform/config`'s
 `readPaymentWebhookSecret`), defaulted outside production only, 32 characters at least.

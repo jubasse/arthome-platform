@@ -139,14 +139,14 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
 
   public cancelIntent(intentRef: string, idempotencyKey: string): Promise<void> {
     return this.answer(`cancelIntent ${idempotencyKey}`, () => {
-      const found = this.intentByRef(intentRef);
+      const found = this.intentAskedOf(intentRef);
       if (found.intent.status !== IntentStatus.SUCCEEDED) found.canceled = true;
     });
   }
 
   public refund({ intentRef, idempotencyKey }: RefundRequest): Promise<{ refundRef: string }> {
     return this.answer(`refund ${idempotencyKey}`, () => {
-      if (this.intentByRef(intentRef).intent.status !== IntentStatus.SUCCEEDED) {
+      if (this.intentAskedOf(intentRef).intent.status !== IntentStatus.SUCCEEDED) {
         throw new Error(`fake provider: intent ${intentRef} has taken no money to refund`);
       }
       const refundRef =
@@ -263,14 +263,21 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
     });
   }
 
-  /**
-   * An intent another instance created is known by its reference, its order's: the worker's fake
-   *   is asked about the API's intents, confirmed as the running fake confirms every one.
-   */
   private intentByRef(intentRef: string): FakeIntent {
     for (const found of this.intentsByOrder.values()) {
       if (found.intent.ref === intentRef) return found;
     }
+    throw new Error(`fake provider: no intent ${intentRef}`);
+  }
+
+  /**
+   * For the two calls a worker makes, `refund` and `cancelIntent`: an intent another instance
+   *   created, the API's, is known by its reference, its order's, as confirmed, which is what the
+   *   running fake makes of every intent. The test helpers stay strict.
+   */
+  private intentAskedOf(intentRef: string): FakeIntent {
+    const known = [...this.intentsByOrder.values()].find(({ intent }) => intent.ref === intentRef);
+    if (known !== undefined) return known;
     const orderId = orderIdOfIntentRef(intentRef);
     if (orderId === null) throw new Error(`fake provider: no intent ${intentRef}`);
     const confirmed: FakeIntent = {
