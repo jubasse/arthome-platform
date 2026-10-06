@@ -1,3 +1,4 @@
+import { serveEndpoints } from '@arthome-platform/http-edge';
 import { retryTopic } from '@arthome-platform/messaging';
 import {
   applyMigrations,
@@ -45,13 +46,16 @@ afterAll(async () => {
 
 describe('the API process', () => {
   it(
-    'boots AppModule and answers its split probes',
+    'boots AppModule and answers its split probes and its development docs',
     async () => {
       const { AppModule } = await import('./app.module.js');
+      const { mountStreamingDocs } = await import('./streaming-docs.js');
       const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
       const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
         logger: false,
       });
+      serveEndpoints(app);
+      mountStreamingDocs(app);
       await app.init();
       await app.getHttpAdapter().getInstance().ready();
       try {
@@ -60,6 +64,7 @@ describe('the API process', () => {
         const readiness = await app.inject({ method: 'GET', url: '/health/readiness' });
         expect(readiness.statusCode).toBe(200);
         expect(readiness.json()).toMatchObject({ data: { status: 'degraded' } });
+        expect((await app.inject({ method: 'GET', url: '/docs-json' })).statusCode).toBe(200);
       } finally {
         await app.close();
       }

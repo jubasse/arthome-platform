@@ -290,7 +290,9 @@ export class DatesController {
   the route. `refusalOf(code, params)` stays for code no route reaches.
 - **Only the storefront BFF binds the public contract.** Catalog and ticketing keep their own
   routes until their INTERNAL contracts exist (their paths and headers differ); they are not bound
-  here and serve no Swagger UI.
+  here and serve no Swagger UI. Streaming is born on its internal one,
+  `@arthome/contracts/streaming-service-api` (D-121): its routes bind it, and it mounts that
+  contract's Swagger UI (`mountStreamingDocs`).
 - **Access comes from the route** (ADR contract model §4.5). A route declared through the builder
   with `.identity(...)`, `.public()` or `.optionalAuth()` and its `requires` is guarded by
   `EndpointAccessGuard`: the identity's guard first, bound under the identity's name, then each
@@ -363,6 +365,7 @@ export class DatesController {
 | Process | Development port | Swagger UI | Operations |
 | --- | --- | --- | --- |
 | `bff-storefront` | 3003 | `http://localhost:3003/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink, signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification, getViewerContext |
+| `streaming` | 3005 | `http://localhost:3005/docs` | none yet: the run desk, playback and progress bind theirs (`apps/streaming/HANDOVER.md`) |
 
 `@nestjs/swagger` is a peer of `libs/http-edge`; `@fastify/static` serves the UI on Fastify, and
 `@scarf/scarf` (swagger-ui-dist's telemetry install script) is denied in `pnpm-workspace.yaml`.
