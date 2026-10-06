@@ -17,11 +17,14 @@ import {
   INTENT_CANCELLATION_JOB,
   INTENT_CANCELLATION_QUEUE,
   INTENT_CANCELLATION_RATE_LIMIT,
+  JOB_FAILED,
   PROVIDER_CALL_CONCURRENCY,
+  PROVIDER_CALL_MAX_STALLED_COUNT,
   PROVIDER_CALL_SCHEDULES,
   intentCancelKeyOf,
   isLastAttempt,
   runOnSchedule,
+  stalledPastBound,
   type IntentCancellationJob,
   type ProviderCallSchedules,
 } from './provider-call-queues.js';
@@ -36,6 +39,7 @@ import { TicketingTransactions } from '../ticketing-transactions.js';
 @Processor(INTENT_CANCELLATION_QUEUE, {
   concurrency: PROVIDER_CALL_CONCURRENCY,
   limiter: INTENT_CANCELLATION_RATE_LIMIT,
+  maxStalledCount: PROVIDER_CALL_MAX_STALLED_COUNT,
   autorun: false,
 })
 export class IntentCancellationProcessor
@@ -79,6 +83,13 @@ export class IntentCancellationProcessor
     this.logger.warn(`intent-cancellation queue: ${error.message}`);
   }
 
+  /** The one failure written from here: the others are marked in `process()`. */
+  @OnWorkerEvent(JOB_FAILED)
+  public async onFailed(job: Job<IntentCancellationJob> | undefined, error: Error): Promise<void> {
+    if (job === undefined || !stalledPastBound(job)) return;
+    await this.giveUp(job.data.orderId, `stalled ${String(job.stalledCounter)} times`, error.stack);
+  }
+
   private async cancel(orderId: string): Promise<void> {
     const call = await intentCancellationOf(this.dataSource, orderId);
     if (call?.owed !== true || call.intentRef === null) return;
@@ -99,6 +110,10 @@ export class IntentCancellationProcessor
       this.logger.warn(`intent of order ${orderId} not cancelled, ${attempt}`, stack);
       return;
     }
+    await this.giveUp(orderId, `after ${attempt}`, stack);
+  }
+
+  private async giveUp(orderId: string, why: string, stack: string | undefined): Promise<void> {
     await giveUpIntentCancellation(this.dataSource, orderId, new Date(this.clock.nowMs())).catch(
       (cause: unknown) => {
         this.logger.error(
@@ -107,6 +122,6 @@ export class IntentCancellationProcessor
         );
       },
     );
-    this.logger.error(`intent of order ${orderId} given up after ${attempt}`, stack);
+    this.logger.error(`intent of order ${orderId} given up ${why}`, stack);
   }
 }

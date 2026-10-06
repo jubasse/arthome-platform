@@ -13,13 +13,16 @@ import { type Clock, type PaymentPort } from '@arthome/core';
 
 import { PAYMENT_PORT } from './payment-tokens.js';
 import {
+  JOB_FAILED,
   PROVIDER_CALL_CONCURRENCY,
+  PROVIDER_CALL_MAX_STALLED_COUNT,
   PROVIDER_CALL_SCHEDULES,
   REFUND_JOB,
   REFUND_QUEUE,
   REFUND_RATE_LIMIT,
   isLastAttempt,
   runOnSchedule,
+  stalledPastBound,
   type ProviderCallSchedules,
   type RefundJob,
 } from './provider-call-queues.js';
@@ -36,6 +39,7 @@ import { TicketingTransactions } from '../ticketing-transactions.js';
 @Processor(REFUND_QUEUE, {
   concurrency: PROVIDER_CALL_CONCURRENCY,
   limiter: REFUND_RATE_LIMIT,
+  maxStalledCount: PROVIDER_CALL_MAX_STALLED_COUNT,
   autorun: false,
 })
 export class RefundProcessor
@@ -78,6 +82,17 @@ export class RefundProcessor
     this.logger.warn(`refund queue: ${error.message}`);
   }
 
+  /** The one failure written from here: the others are marked in `process()`. */
+  @OnWorkerEvent(JOB_FAILED)
+  public async onFailed(job: Job<RefundJob> | undefined, error: Error): Promise<void> {
+    if (job === undefined || !stalledPastBound(job)) return;
+    await this.giveUp(
+      job.data.refundId,
+      `stalled ${String(job.stalledCounter)} times`,
+      error.stack,
+    );
+  }
+
   /** A refund made, given up on or unknown here settles the job without a call. */
   private async refund(refundId: string): Promise<void> {
     const call = await refundCallOf(this.dataSource, refundId);
@@ -107,13 +122,17 @@ export class RefundProcessor
       this.logger.warn(`refund ${refundId} not made, ${attempt}`, stack);
       return;
     }
+    await this.giveUp(refundId, `after ${attempt}`, stack);
+  }
+
+  private async giveUp(refundId: string, why: string, stack: string | undefined): Promise<void> {
     await giveUpRefund(this.dataSource, refundId, new Date(this.clock.nowMs())).catch(
       (cause: unknown) => {
         this.logger.error(`refund ${refundId} not marked given up`, String(cause));
       },
     );
     this.logger.error(
-      `refund ${refundId} given up after ${attempt}: the buyer's money is held without a seat ` +
+      `refund ${refundId} given up ${why}: the buyer's money is held without a seat ` +
         'until an operator replays the refund (apps/ticketing/HANDOVER.md §0k)',
       stack,
     );

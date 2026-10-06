@@ -50,6 +50,11 @@
       "file": "libs/search-index/src/settings.ts",
       "value": "custom",
       "reason": "OpenSearch's normalizer type: a `custom` normalizer is one this index assembles from its own filters, a word of the OpenSearch settings API. SCHEMA_ISSUE_RULES' `custom` is the rule of a failed refinement in `api.schema_invalid`; importing it to configure an index would name the wrong concept."
+    },
+    {
+      "file": "apps/ticketing/src/payments/provider-call-queues.ts",
+      "value": "failed",
+      "reason": "BullMQ's worker event for a failed job, the name `@OnWorkerEvent` listens under (`WorkerListener`). ORDER_STATES' `failed` is an order that took no payment; importing OrderState.FAILED to name a queue event would be the NavigationEntry.JOURNAL mistake again."
     }
   ]
 }

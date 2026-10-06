@@ -53,6 +53,7 @@ import {
 import {
   INTENT_CANCELLATION_QUEUE,
   PRODUCER_TIMEOUT_MS,
+  PROVIDER_CALL_MAX_STALLED_COUNT,
   PROVIDER_CALL_SCHEDULES,
   REFUND_QUEUE,
   intentCancelKeyOf,
@@ -549,6 +550,7 @@ describe('a worker killed mid-job', () => {
         prefix: PREFIX,
         autorun: false,
         stalledInterval: 500,
+        maxStalledCount: PROVIDER_CALL_MAX_STALLED_COUNT,
       });
       const madeBefore = fake.refundsMade;
       const jobId = jobIdOf(owed.key);
@@ -581,6 +583,139 @@ describe('a worker killed mid-job', () => {
       expect(callsTo(`refund ${owed.key}`)).toBe(2);
       expect(fake.refundsMade).toBe(madeBefore + 1);
       expect(await refundedEventsOf(owed.orderId)).toHaveLength(1);
+    },
+    STALLED_MS + CASE_MS,
+  );
+});
+
+describe('a job stalled again and again', () => {
+  // The app's worker stays paused: each time a doomed worker takes the job, reaches the provider
+  //   and is killed, and a checker with a short interval moves the job back to wait.
+  const connection = () => ({ url: stack.redis.url });
+  let checker: Worker;
+  let refund: FakePaymentProvider['refund'];
+
+  beforeAll(async () => {
+    await app.get(RefundProcessor).worker.pause();
+    refund = fake.refund.bind(fake);
+    checker = new Worker(REFUND_QUEUE, null, {
+      connection: connection(),
+      prefix: PREFIX,
+      autorun: false,
+      stalledInterval: 500,
+      maxStalledCount: PROVIDER_CALL_MAX_STALLED_COUNT,
+    });
+    void checker.startStalledCheckTimer();
+  });
+
+  afterAll(async () => {
+    fake.refund = refund;
+    await checker.close();
+    await app.get(RefundProcessor).worker.resume();
+  });
+
+  async function stallOnce(jobId: string): Promise<void> {
+    let reachedProvider: () => void = () => undefined;
+    const atProvider = new Promise<void>((resolve) => {
+      reachedProvider = resolve;
+    });
+    fake.refund = async (request) => {
+      await refund(request);
+      reachedProvider();
+      return new Promise<never>(() => undefined);
+    };
+    const doomed = new Worker<RefundJob>(
+      REFUND_QUEUE,
+      (job: Job<RefundJob>) => app.get(RefundProcessor).process(job),
+      { connection: connection(), prefix: PREFIX, lockDuration: 1_000 },
+    );
+    try {
+      await atProvider;
+    } finally {
+      await doomed.close(true);
+      fake.refund = refund;
+    }
+    await until(
+      'the stalled job back in wait',
+      async () => (await (await refundQueue().getJob(jobId))?.isWaiting()) === true,
+      STALLED_MS,
+    );
+  }
+
+  /** A worker as the processor's, which a test can stop. */
+  function healthyWorker(): Worker<RefundJob> {
+    const processor = app.get(RefundProcessor);
+    const healthy = new Worker<RefundJob>(
+      REFUND_QUEUE,
+      (job: Job<RefundJob>) => processor.process(job),
+      { connection: connection(), prefix: PREFIX },
+    );
+    healthy.on('failed', (job, error) => {
+      void processor.onFailed(job, error);
+    });
+    return healthy;
+  }
+
+  it(
+    'runs twice stalled under its key again: one refund at the fake',
+    async () => {
+      const [owed] = await paidOrdersOwingRefunds(1);
+      if (owed === undefined) throw new Error('no refund owed');
+      const madeBefore = fake.refundsMade;
+      await relay.relayDue();
+      await stallOnce(jobIdOf(owed.key));
+      await stallOnce(jobIdOf(owed.key));
+
+      const healthy = healthyWorker();
+      try {
+        await until(
+          'the refund made',
+          async () => (await refundOf(owed.refundId)).refunded_at !== null,
+        );
+      } finally {
+        await healthy.close();
+      }
+
+      expect(callsTo(`refund ${owed.key}`)).toBe(3);
+      expect(fake.refundsMade).toBe(madeBefore + 1);
+      expect((await refundOf(owed.refundId)).dead_at).toBeNull();
+      expect(await refundedEventsOf(owed.orderId)).toHaveLength(1);
+    },
+    STALLED_MS + CASE_MS,
+  );
+
+  it(
+    'is given up past its bound: its row dead, the error logged, ops:check degraded',
+    async () => {
+      const [owed] = await paidOrdersOwingRefunds(1);
+      if (owed === undefined) throw new Error('no refund owed');
+      await relay.relayDue();
+      for (let stall = 0; stall <= PROVIDER_CALL_MAX_STALLED_COUNT; stall += 1) {
+        await stallOnce(jobIdOf(owed.key));
+      }
+      const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const healthy = healthyWorker();
+      try {
+        await until(
+          'the refund given up',
+          async () => (await refundOf(owed.refundId)).dead_at !== null,
+        );
+        expect(
+          errors.mock.calls.filter(([message]) => String(message).includes(owed.refundId)),
+        ).toEqual([
+          [
+            expect.stringContaining(`stalled ${String(PROVIDER_CALL_MAX_STALLED_COUNT + 1)} times`),
+            expect.anything(),
+          ],
+        ]);
+      } finally {
+        await healthy.close();
+        errors.mockRestore();
+      }
+
+      expect(callsTo(`refund ${owed.key}`)).toBe(PROVIDER_CALL_MAX_STALLED_COUNT + 1);
+      expect((await refundOf(owed.refundId)).refunded_at).toBeNull();
+      expect(await checkProviderCallsDead(dataSource)).toMatchObject({ status: 'degraded' });
     },
     STALLED_MS + CASE_MS,
   );

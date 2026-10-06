@@ -1,6 +1,6 @@
 import { JITTER_RATIO, attemptsAllowedBy, retryDelayAfter } from '@arthome-platform/messaging';
 import type { Logger } from '@nestjs/common';
-import type { DefaultJobOptions, Job, Worker } from 'bullmq';
+import type { DefaultJobOptions, Job, Worker, WorkerListener } from 'bullmq';
 
 import { HOUR_MS } from '@arthome/core';
 
@@ -35,6 +35,13 @@ export interface IntentCancellationJob {
 export const REFUND_RATE_LIMIT = { max: 20, duration: 1_000 } as const;
 export const INTENT_CANCELLATION_RATE_LIMIT = { max: 5, duration: 1_000 } as const;
 export const PROVIDER_CALL_CONCURRENCY = 5;
+
+/**
+ * How often a job may lose its worker mid-call and run again: under its key the provider makes the
+ *   call once, so five reruns cover deploys or a node lost during an incident, and the bound stops a
+ *   job that kills its worker from looping. BullMQ's default, one, failed the second in silence.
+ */
+export const PROVIDER_CALL_MAX_STALLED_COUNT = 5;
 
 /** What a producer waits on Redis at most, for a command or for a connection never made. */
 export const PRODUCER_TIMEOUT_MS = 2_000;
@@ -101,6 +108,18 @@ export function staleAfterMs(delaysMs: readonly number[]): number {
 
 export function isLastAttempt(job: Job): boolean {
   return job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+}
+
+/** BullMQ's worker event for a failed job: a job's state, not an order's. */
+export const JOB_FAILED: keyof WorkerListener = 'failed';
+
+/**
+ * Failed by BullMQ before any attempt ran, stalled past its bound: `process()` never sees it. The
+ *   bound is the stalled check's, whichever worker runs it: every worker on a queue carries ours.
+ */
+export function stalledPastBound(job: Job): boolean {
+  // Typed a string, absent unless BullMQ deferred the failure, which only a stall past its bound does.
+  return (job.deferredFailure as string | undefined) !== undefined;
 }
 
 /**

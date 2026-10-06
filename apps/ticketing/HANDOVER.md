@@ -536,8 +536,9 @@ to the queue.
   transaction: the order under its lock, then its refund row, `SeatOrder.refundMade` (`refunded`
   once the refunds made reach the total, `partially_refunded` before, forward only), and
   `order.refunded` for this refund under the trace its row carries. The last attempt's failure marks
-  the row `dead_at` and logs §0k's error, in `process()` before rethrowing; nothing is written from
-  a worker event.
+  the row `dead_at` and logs §0k's error, in `process()` before rethrowing. The one failure written
+  from the worker's `failed` event is the one `process()` never sees, a job stalled past its bound
+  (below): best effort, its row `dead_at` and the same error.
 - **The intent-cancellation processor.** Nothing owed, a payment having cleared it, ends the job
   without a call. Otherwise `cancelIntent(ref, cancel:{orderId})`, then `SeatOrder.intentCancelled()`
   saved; the last failure marks `intent_cancel_dead_at` and logs.
@@ -558,7 +559,12 @@ to the queue.
 - **A stalled job runs again under the same key.** A worker killed mid-call leaves its job active
   with a lock nobody renews; BullMQ moves it back to wait (one stalled check per 30 s across the
   workers), and another worker asks the provider again under the same key, which refunds once
-  (proven: two calls, one refund). §2's provider timeout below a claim's lease goes: a job's lock is
+  (proven: two calls, one refund; stalled twice, three calls, one refund). Up to
+  `PROVIDER_CALL_MAX_STALLED_COUNT` (5) times: BullMQ's default of one failed a second stall before
+  any attempt ran, so no `process()` marked the row, which waited the stale window in silence (the
+  review's B1). Past the bound, the next worker fails the job unrun, and its `failed` event marks
+  the row dead and logs the error, so `provider_calls_dead` and §0k's replay see it (proven with six
+  stalls). §2's provider timeout below a claim's lease goes: a job's lock is
   renewed while its worker lives, the timeout bounds a job and the grace period covers it.
 - **Shutdown** (`nestjs-queues` rule 7): each processor closes its worker in
   `beforeApplicationShutdown`, waiting for the jobs in flight, where the relay's pass in flight is
@@ -603,7 +609,7 @@ to the queue.
 | `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, an intent another instance created refunded by its reference, a signature over the exact bytes and its tolerance |
 | `payments/owed-calls.spec.ts` | a refund's delays doubling from 5 s to their one-hour cap, adding up to a day; an intent's cancellation on the consumers' bound |
 | `payments/provider-call-queues.spec.ts` | `jobIdOf` over each key, no colon and never an integer; one attempt more than the delays, the custom backoff, nothing kept; each backoff within its schedule's jitter and none after the last; the stale windows |
-| `payments/provider-call-queues.itest.ts` | real Postgres and a Redis of its own: a D-082 refund owed by a webhook, made once, `order.refunded` under the webhook's trace; the provider down on a shortened schedule, given up with `dead_at` and §0k's error, `provider_calls_dead` degraded, then replayed and made once under the same key; 60 refunds at 20 a second in two seconds at least; Redis paused while a purchase, a webhook and an expiry commit, the relay failing within its timeout with nothing stamped and its locks released, then each call made once, `provider_call_queues` degraded then up; a worker killed mid-call, its stalled job run again, one refund at the fake; a cancellation cleared by a payment, no call; one owed again once given up on, a new job; a job lost to `FLUSHDB`, enqueued again past the stale window; two relays racing over 1,000 refunds, enqueued again after their commits were lost, each job completed once and each refund made once |
+| `payments/provider-call-queues.itest.ts` | real Postgres and a Redis of its own: a D-082 refund owed by a webhook, made once, `order.refunded` under the webhook's trace; the provider down on a shortened schedule, given up with `dead_at` and §0k's error, `provider_calls_dead` degraded, then replayed and made once under the same key; 60 refunds at 20 a second in two seconds at least; Redis paused while a purchase, a webhook and an expiry commit, the relay failing within its timeout with nothing stamped and its locks released, then each call made once, `provider_call_queues` degraded then up; a worker killed mid-call, its stalled job run again, one refund at the fake; a cancellation cleared by a payment, no call; one owed again once given up on, a new job; a job stalled twice run again, one refund, and one stalled past its bound given up with its row dead and the error; a job lost to `FLUSHDB`, enqueued again past the stale window; two relays racing over 1,000 refunds, enqueued again after their commits were lost, each job completed once and each refund made once |
 | `migrations/provider-call-queues.itest.ts` | the backfill over refunds owed, made and given up on and an owed cancellation: one row each under `refund:{orderId}`, the owed ones due to the relay after; `down` putting them back |
 | `payments/relay-plan.itest.ts` | over 20,000 refunds made and 20,000 orders, neither claim reads its table sequentially |
 
