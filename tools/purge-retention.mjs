@@ -16,8 +16,8 @@ import {
   purgeProcessedMessages,
 } from '@arthome-platform/messaging';
 
-const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing']);
-const CONSUMERS = new Set(['catalog', 'notifications', 'search-indexer', 'ticketing']);
+const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing', 'streaming']);
+const CONSUMERS = new Set(['catalog', 'notifications', 'search-indexer', 'ticketing', 'streaming']);
 // The services whose commands are idempotent (transport.md §5.4): identity's record held a sign-up's
 //   session until the security review's M1, and still holds every first answer for a day.
 const IDEMPOTENT = new Set(['catalog', 'identity', 'ticketing']);

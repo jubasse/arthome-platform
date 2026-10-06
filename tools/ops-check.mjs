@@ -20,7 +20,7 @@ import {
   readPublishedMessageIds,
 } from '@arthome-platform/messaging';
 
-const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing']);
+const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing', 'streaming']);
 // The search indexer's topics are `arthome.search.*`, not `arthome.search-indexer.*`: its
 // consumer group is named for the index, and main.ts records why.
 const CONSUMERS = new Map([
@@ -28,6 +28,7 @@ const CONSUMERS = new Map([
   ['notifications', 'notifications'],
   ['search-indexer', 'search'],
   ['ticketing', 'ticketing'],
+  ['streaming', 'streaming'],
 ]);
 
 const [service] = process.argv.slice(2);

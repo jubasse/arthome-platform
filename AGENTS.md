@@ -222,8 +222,8 @@ README, this file or a tool is a warning to act on, not a failure. Nothing is ev
 renamed, and a file that exists is refused. So is a service name used anywhere: an app directory, a
 database, a topic (its retry and dead-letter ones included), a connector's name, slot or
 publication, a consumer group. The one exception is a topic declared before its service, as
-`arthome.streaming.run` is for catalog to consume: `--topics run:12` owns it, at exactly its
-declared partitions.
+`arthome.chat.date` is for catalog to consume: `--topics date:12` owns it, at exactly its
+declared partitions (`streaming` was generated that way, owning `arthome.streaming.run`).
 
 The collection is ESM TypeScript loaded without a build: the engine's `require()` reaches it
 through Node's `require(esm)` and type stripping, so its code stays erasable (no enum, no parameter
@@ -445,8 +445,9 @@ pnpm --filter @arthome-platform/notifications run migration:run
 pnpm --filter @arthome-platform/catalog       run migration:run
 pnpm --filter @arthome-platform/search-indexer run migration:run
 pnpm --filter @arthome-platform/ticketing     run migration:run   # its four processes stopped first
+pnpm --filter @arthome-platform/streaming     run migration:run
 pnpm run provision:topics          # BEFORE the connectors, and before any consumer
-for c in identity catalog ticketing; do
+for c in identity catalog ticketing streaming; do
   curl -s -X POST -H 'Content-Type: application/json' \
     --data @infra/debezium/$c-outbox.json http://localhost:8083/connectors
 done
@@ -602,10 +603,11 @@ PATCH /v1/channels/:channelId/identity        { expectedVersion, publicName, slu
 ```
 
 Publishing answers `publication.checklist_incomplete` until ticketing, streaming and chat have
-reported their four facts. None of those services exists yet, so in development send the facts by
-hand on `arthome.ticketing.date_sales`, `arthome.streaming.run` and `arthome.chat.date`, keyed by the
-date id, with a `message-id` and a `type` header. A `streaming.run.started.v1` sent the same way on a
-date under technical check makes its card `live`; `streaming.run.ended.v1` ends it.
+reported their four facts. Chat does not exist yet and streaming publishes nothing until its run
+desk (PS1), so in development send the facts by hand on `arthome.ticketing.date_sales`,
+`arthome.streaming.run` and `arthome.chat.date`, keyed by the date id, with a `message-id` and a
+`type` header. A `streaming.run.started.v1` sent the same way on a date under technical check makes
+its card `live`; `streaming.run.ended.v1` ends it.
 
 Proven on the running stack on 2026-09-26:
 
