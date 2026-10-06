@@ -10,6 +10,9 @@ import { OpenCapacityTier } from '../date-sales/open-capacity-tier.command.js';
 import { SetDatePrices } from '../date-sales/set-date-prices.command.js';
 import { PurchaseSeat } from '../orders/purchase-seat.command.js';
 import type { PurchaseSeatBody } from '../orders/purchase-seat.schema.js';
+import { CancelSeat } from '../seats/cancel-seat.command.js';
+import { RefundSeat } from '../seats/refund-seat.command.js';
+import type { RefundSeatBody } from '../seats/refund-seat.schema.js';
 
 /** The full price every date on sale here sells at. */
 export const FULL_PRICE_MINOR = 2400;
@@ -109,5 +112,36 @@ export function purchaseOf(
     traceparent,
     idempotentRequestOf('POST', '/v1/orders/seats', body, 201, key, ITEST_BUYER_ACCOUNT_ID),
     lateEntryAcknowledged,
+  );
+}
+
+/** The buyer's `cancelSeat` of one seat, under `key`, as the storefront's route sends it. */
+export function seatCancellationOf(
+  seatId: string,
+  key: string = nextKey(),
+  accountId: string = ITEST_BUYER_ACCOUNT_ID,
+  traceparent: string | null = null,
+): CancelSeat {
+  return new CancelSeat(
+    seatId,
+    accountId,
+    traceparent,
+    idempotentRequestOf('POST', `/v1/seats/${seatId}/cancel`, {}, 200, key, accountId),
+  );
+}
+
+/** The studio's `refundSeat` of one seat, under `key`, its operator unnamed until auth slice B. */
+export function seatRefundOf(
+  seatId: string,
+  body: RefundSeatBody,
+  key: string = nextKey(),
+  traceparent: string | null = null,
+): RefundSeat {
+  return new RefundSeat(
+    seatId,
+    body,
+    null,
+    traceparent,
+    idempotentRequestOf('POST', `/v1/seats/${seatId}/refund`, body, 200, key, null),
   );
 }
