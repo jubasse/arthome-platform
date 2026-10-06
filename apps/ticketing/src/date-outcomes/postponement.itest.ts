@@ -1,3 +1,4 @@
+import { DateOutcome as WireDateOutcome } from '@arthome-platform/events';
 import { Outcome } from '@arthome-platform/messaging';
 import {
   applyMigrations,
@@ -18,12 +19,15 @@ import {
   seatCancelDeadline,
 } from '@arthome/core';
 
+import { SettleDateOutcomes } from './settle-date-outcomes.command.js';
+import { SettleDateOutcomesHandler } from './settle-date-outcomes.handler.js';
+import { WaitlistOutcomeHook } from './waitlist-outcome-hook.js';
 import { CLOCK } from '../clock.js';
 import { ApplyCatalogDateFactHandler } from '../date-sales/apply-catalog-date-fact.handler.js';
 import { applyCatalogDateMessage } from '../date-sales/catalog-date-messages.js';
 import { OpenCapacityTierHandler } from '../date-sales/open-capacity-tier.handler.js';
 import { SetDatePricesHandler } from '../date-sales/set-date-prices.handler.js';
-import { delivered, rescheduled } from '../itest/catalog-messages.js';
+import { delivered, outcomeDeclared, rescheduled } from '../itest/catalog-messages.js';
 import { seedPaidOrders } from '../itest/paid-orders.js';
 import { putOnSale } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
@@ -48,6 +52,14 @@ let dataSource: DataSource;
 let cqrs: TestingModule;
 let commands: CommandBus;
 let dates = 0;
+const waitlistEndedFor: string[] = [];
+
+class RecordingWaitlistOutcomeHook extends WaitlistOutcomeHook {
+  public endWaitlist(_transaction: unknown, dateId: string): Promise<void> {
+    waitlistEndedFor.push(dateId);
+    return Promise.resolve();
+  }
+}
 
 async function dateWithSeats(quantities: readonly number[]): Promise<string> {
   dates += 1;
@@ -105,6 +117,8 @@ beforeAll(async () => {
       ApplyCatalogDateFactHandler,
       OpenCapacityTierHandler,
       SetDatePricesHandler,
+      SettleDateOutcomesHandler,
+      { provide: WaitlistOutcomeHook, useClass: RecordingWaitlistOutcomeHook },
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: new FixedClock(NOW) },
     ],
@@ -273,6 +287,36 @@ describe('a postponement', () => {
       expect(await deadlinesOf(dateId)).toEqual({
         [`${SeatState.ACTIVE} ${seatCancelDeadline(STARTS_AT)}`]: 3,
       });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'leaves the waiting list as it is: no settlement, the hook never called (D-096)',
+    async () => {
+      const dateId = await dateWithSeats([1, 2]);
+      expect(
+        await applyCatalogDateMessage(
+          commands,
+          delivered(outcomeDeclared(dateId, WireDateOutcome.POSTPONED, plusMinutes(NOW, 1))),
+        ),
+      ).toBe(Outcome.APPLIED);
+      await applyCatalogDateMessage(
+        commands,
+        postponed(dateId, '2026-12-19T19:00:00.000Z', plusMinutes(NOW, 1)),
+      );
+
+      await commands.execute(new SettleDateOutcomes());
+
+      expect(waitlistEndedFor).toEqual([]);
+      const settlements = await dataSource.query<unknown[]>(
+        'SELECT 1 FROM date_outcome_settlement WHERE date_id = $1',
+        [dateId],
+      );
+      expect(settlements).toEqual([]);
+      expect(Object.keys(await deadlinesOf(dateId))).toEqual([
+        `${SeatState.ACTIVE} ${seatCancelDeadline('2026-12-19T19:00:00.000Z')}`,
+      ]);
     },
     CASE_MS,
   );

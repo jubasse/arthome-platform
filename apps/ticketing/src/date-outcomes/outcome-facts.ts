@@ -22,6 +22,12 @@ export async function recordOutcomeToSettle(
   );
 }
 
+export const MOVE_SEAT_CANCEL_DEADLINES = `
+  UPDATE seat SET cancel_deadline = $2
+   WHERE date_id = $1 AND state = $4 AND cancel_deadline IS DISTINCT FROM $2
+     AND NOT EXISTS (SELECT 1 FROM date_sales WHERE date_id = $1 AND schedule_stated_at > $3)
+`;
+
 /**
  * The date's active seats follow a start that moved (adr-ticketing.md §8): one statement through
  *   `idx_seat_date_active`, run before the date's row is locked, so no hold waits behind it. It
@@ -33,12 +39,11 @@ export async function moveSeatCancelDeadlines(
   startsAt: Instant,
   statedAt: Instant,
 ): Promise<number> {
-  const [, moved] = await manager.query<[unknown[], number]>(
-    `UPDATE seat SET cancel_deadline = $2
-      WHERE date_id = $1 AND state = $4 AND cancel_deadline IS DISTINCT FROM $2
-        AND NOT EXISTS (SELECT 1 FROM date_sales
-                         WHERE date_id = $1 AND schedule_stated_at > $3)`,
-    [dateId, new Date(seatCancelDeadline(startsAt)), new Date(statedAt), SeatState.ACTIVE],
-  );
+  const [, moved] = await manager.query<[unknown[], number]>(MOVE_SEAT_CANCEL_DEADLINES, [
+    dateId,
+    new Date(seatCancelDeadline(startsAt)),
+    new Date(statedAt),
+    SeatState.ACTIVE,
+  ]);
   return moved;
 }
