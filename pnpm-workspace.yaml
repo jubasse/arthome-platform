@@ -83,6 +83,12 @@ allowBuilds:
   # which `node-gyp-build` loads at runtime. identity hashes passwords with it (argon2id).
   argon2: false
 
+  # msgpackr-extract — DENIED, for argon2's reason: its install script compiles the binding only
+  # when no prebuilt one fits, and the platform packages it ships (linux-x64, linux-arm64,
+  # darwin-arm64...) are loaded at runtime. It arrives under bullmq, through msgpackr, which falls
+  # back to plain JavaScript without it.
+  msgpackr-extract: false
+
   # cpu-features — DENIED. ssh2's optional companion, compiled to detect CPU
   # crypto extensions for the native binding we just declined. Nothing uses it.
   cpu-features: false
