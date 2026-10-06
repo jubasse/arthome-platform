@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { DateCardSchema } from '@arthome/contracts/catalog';
-import { DisplayState, PublicationState } from '@arthome/core';
+import { DisplayState, PublicationState, RunState } from '@arthome/core';
 
-import { dateCardOf } from './date-card.js';
+import { dateCardOf, runStateKnownFrom } from './date-card.js';
 import { publicDate } from './public-fixtures.js';
 
 const BEFORE_THE_ROOM_OPENS = '2026-11-04T18:00:00.000Z';
@@ -46,5 +46,48 @@ describe('dateCardOf', () => {
 
     expect(card).toMatchObject({ displayState: DisplayState.ENDED, displayStateValidUntil: null });
     expect(DateCardSchema.safeParse(card).success).toBe(true);
+  });
+});
+
+describe('runStateKnownFrom', () => {
+  it.each([
+    [PublicationState.DRAFT, null],
+    [PublicationState.RESERVE, null],
+    [PublicationState.SCHEDULED, RunState.IDLE],
+    [PublicationState.TECHNICAL, RunState.IDLE],
+    [PublicationState.LIVE, RunState.ON_AIR],
+    [PublicationState.ENDED, RunState.ENDED],
+    [PublicationState.REPLAY_ONLINE, RunState.ENDED],
+  ])('reads %s as %s', (state, run) => {
+    expect(runStateKnownFrom(state)).toBe(run);
+  });
+});
+
+describe('dateCardOf, from the run the publication records', () => {
+  it('shows a date live from the on-air switch, before its start by the clock', () => {
+    const card = dateCardOf(
+      publicDate({ publication_state: PublicationState.LIVE }),
+      BEFORE_THE_ROOM_OPENS,
+    );
+
+    expect(card.displayState).toBe(DisplayState.LIVE);
+  });
+
+  it.skip('shows a date ended once its run ended, whatever the clock says (core rc.3)', () => {
+    const card = dateCardOf(
+      publicDate({ publication_state: PublicationState.ENDED }),
+      '2026-11-04T19:40:00.000Z',
+    );
+
+    expect(card).toMatchObject({ displayState: DisplayState.ENDED, displayStateValidUntil: null });
+  });
+
+  it.skip('keeps a known idle run past its start room_open until it is on air (core rc.3)', () => {
+    const card = dateCardOf(
+      publicDate({ publication_state: PublicationState.TECHNICAL }),
+      '2026-11-04T19:40:00.000Z',
+    );
+
+    expect(card.displayState).toBe(DisplayState.ROOM_OPEN);
   });
 });

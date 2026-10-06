@@ -4,6 +4,8 @@ import type { DateCardSchema } from '@arthome/contracts/catalog';
 import {
   DomainConstant,
   Locale,
+  PublicationState,
+  RunState,
   publicDisplayStateOf,
   replayEndsAt,
   roomOpensAt,
@@ -12,7 +14,6 @@ import {
   type Instant,
   type LanguageDependency,
   type MediaSet,
-  type PublicationState,
   type ReplayPolicy,
   type RightsScope,
 } from '@arthome/core';
@@ -73,15 +74,34 @@ export function servedInFrench(date: PublicDate): boolean {
 }
 
 /**
+ * Catalog learns the run only through `run.started` and `run.ended`, and its publication records
+ *   exactly them: a published date is idle until the start arrives. Draft and reserve say nothing.
+ */
+export function runStateKnownFrom(publicationState: PublicationState): RunState | null {
+  switch (publicationState) {
+    case PublicationState.SCHEDULED:
+    case PublicationState.TECHNICAL:
+      return RunState.IDLE;
+    case PublicationState.LIVE:
+      return RunState.ON_AIR;
+    case PublicationState.ENDED:
+    case PublicationState.REPLAY_ONLINE:
+      return RunState.ENDED;
+    case PublicationState.DRAFT:
+    case PublicationState.RESERVE:
+      return null;
+  }
+}
+
+/**
  * The public card, anonymous: no per-viewer overlay, and the title in its own language, because a
  *   public read has no viewer language to choose another.
- * The run state is passed as unknown: `streaming` does not publish yet.
  */
 export function dateCardOf(date: PublicDate, now: Instant): DateCard {
   const timing = timingOf(date);
   const display = publicDisplayStateOf({
     publicationState: date.publication_state,
-    runState: null,
+    runState: runStateKnownFrom(date.publication_state),
     outcome: date.outcome,
     timing,
     now,
