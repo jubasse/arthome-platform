@@ -5,10 +5,11 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { ApiErrorCode, DomainError, type Clock, type Instant } from '@arthome/core';
 
 import { ApplyCatalogDateFact, type CatalogDateFact } from './apply-catalog-date-fact.command.js';
-import { DateSales } from './date-sales.aggregate.js';
+import { DateSales, OUTCOMES_CLOSING_SALES } from './date-sales.aggregate.js';
 import { recordDateSalesEvents } from './record-date-sales-events.js';
 import { assertNever } from '../assert-never.js';
 import { CLOCK } from '../clock.js';
+import { moveSeatCancelDeadlines, recordOutcomeToSettle } from '../date-outcomes/outcome-facts.js';
 import { TicketingTransactions, type TicketingTransaction } from '../ticketing-transactions.js';
 
 type LaterFact = Exclude<CatalogDateFact, { readonly kind: 'drafted' }>;
@@ -50,6 +51,15 @@ export class ApplyCatalogDateFactHandler implements ICommandHandler<ApplyCatalog
       await recordDateSalesEvents(transaction.manager, sales.getUncommittedEvents(), {
         traceparent,
       });
+      if (fact.kind === 'outcome' && OUTCOMES_CLOSING_SALES.includes(fact.outcome)) {
+        await recordOutcomeToSettle(
+          transaction.manager,
+          fact.dateId,
+          fact.outcome,
+          this.clock.now(),
+          traceparent,
+        );
+      }
       return Outcome.APPLIED;
     });
   }
@@ -63,15 +73,30 @@ export class ApplyCatalogDateFactHandler implements ICommandHandler<ApplyCatalog
     return DateSales.open(fact.dateId, fact.channelId, this.clock.now());
   }
 
-  /** Null when a newer fact of the same kind was applied first. */
+  /**
+   * Null when a newer fact of the same kind was applied first. A start moves the seats' deadlines
+   *   before the date's row is locked (HANDOVER §0n); found stale under the lock after moving some,
+   *   it throws, so they roll back with the rest, and its redelivery moves none and is superseded.
+   */
   private async moved(
-    { dateSales }: TicketingTransaction,
+    { manager, dateSales }: TicketingTransaction,
     fact: LaterFact,
   ): Promise<DateSales | null> {
+    const seatsMoved =
+      fact.kind === 'start'
+        ? await moveSeatCancelDeadlines(manager, fact.dateId, fact.startsAt, fact.statedAt)
+        : 0;
     const sales = await dateSales.findById(fact.dateId);
     if (sales === null) {
       throw new DomainError({ code: ApiErrorCode.NOT_FOUND });
     }
-    return applied(sales, fact, this.clock.now()) ? sales : null;
+    if (applied(sales, fact, this.clock.now())) return sales;
+    if (seatsMoved > 0) {
+      throw new Error(
+        `the start of date ${fact.dateId} stated at ${fact.statedAt} was overtaken while its ` +
+          `${String(seatsMoved)} seats moved: rolled back, to be answered superseded`,
+      );
+    }
+    return null;
   }
 }

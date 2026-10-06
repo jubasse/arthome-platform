@@ -1,6 +1,7 @@
 // Aliased because `@arthome-platform/events` is a flat barrel: a wire enum and core's
 // vocabulary share each name, and they are a number and a string.
 import {
+  CreditOrigin as WireCreditOrigin,
   DateOutcome as WireDateOutcome,
   PriceTier as WirePriceTier,
   RefundReason as WireRefundReason,
@@ -8,6 +9,7 @@ import {
 } from '@arthome-platform/events';
 
 import {
+  CreditOrigin,
   DATE_OUTCOMES,
   DateOutcome,
   PriceTier,
@@ -41,6 +43,11 @@ export const WIRE_SEAT_CANCEL_REASON = {
   [SeatCancelReason.DATE_CANCELLED]: WireSeatCancelReason.DATE_CANCELLED,
   [SeatCancelReason.ACCOUNT_DELETION]: WireSeatCancelReason.ACCOUNT_DELETION,
 } satisfies Record<SeatCancelReason, WireSeatCancelReason>;
+
+export const WIRE_CREDIT_ORIGIN = {
+  [CreditOrigin.INTERRUPTED_DATE]: WireCreditOrigin.INTERRUPTED_DATE,
+  [CreditOrigin.GOODWILL]: WireCreditOrigin.GOODWILL,
+} satisfies Record<CreditOrigin, WireCreditOrigin>;
 
 const WIRE_DATE_OUTCOME = {
   [DateOutcome.POSTPONED]: WireDateOutcome.POSTPONED,

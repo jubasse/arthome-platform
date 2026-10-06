@@ -8,6 +8,8 @@ import { EventPublisher } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, type EntityManager } from 'typeorm';
 
+import type { CreditRepository } from './credits/credit.repository.js';
+import { TypeOrmCreditRepository } from './credits/credit.typeorm-repository.js';
 import type { DateSalesRepository } from './date-sales/date-sales.repository.js';
 import { TypeOrmDateSalesRepository } from './date-sales/date-sales.typeorm-repository.js';
 import type { SeatHoldRepository } from './orders/seat-hold.repository.js';
@@ -16,6 +18,7 @@ import type { SeatOrderRepository } from './orders/seat-order.repository.js';
 import { TypeOrmSeatOrderRepository } from './orders/seat-order.typeorm-repository.js';
 
 export interface TicketingTransaction extends TransactionScope {
+  readonly credits: CreditRepository;
   readonly dateSales: DateSalesRepository;
   readonly holds: SeatHoldRepository;
   readonly orders: SeatOrderRepository;
@@ -23,6 +26,7 @@ export interface TicketingTransaction extends TransactionScope {
 
 function ticketingTransactionOf(manager: EntityManager, track: Track): TicketingTransaction {
   return {
+    credits: new TypeOrmCreditRepository(manager, track),
     dateSales: new TypeOrmDateSalesRepository(manager, track),
     holds: new TypeOrmSeatHoldRepository(manager, track),
     orders: new TypeOrmSeatOrderRepository(manager, track),

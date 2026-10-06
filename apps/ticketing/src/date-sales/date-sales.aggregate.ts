@@ -67,7 +67,7 @@ export interface DateSalesSnapshot {
   readonly version: number;
 }
 
-const OUTCOMES_CLOSING_SALES: readonly DateOutcome[] = [
+export const OUTCOMES_CLOSING_SALES: readonly DateOutcome[] = [
   DateOutcome.CANCELLED,
   DateOutcome.INTERRUPTED,
 ];
