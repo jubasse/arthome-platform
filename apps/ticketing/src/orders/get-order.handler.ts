@@ -7,6 +7,7 @@ import { DataSource } from 'typeorm';
 import { OrderState, paymentReturnPath } from '@arthome/core';
 
 import { GetOrder } from './get-order.query.js';
+import { OrderRefundRow } from './order-refund.entity.js';
 import { handoffOf, orderViewOf, ticketViewsOf, type OrderDetail } from './order-views.js';
 import { SeatOrderRow } from './seat-order.entity.js';
 import { seatOrderSnapshotOf } from './seat-order.typeorm-repository.js';
@@ -14,7 +15,7 @@ import { SeatRow } from './seat.entity.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 
 /**
- * The order's two tables in one snapshot, so the tickets served are the paid order's. The handoff
+ * The order's three tables in one snapshot, so the tickets served are the paid order's. The handoff
  *   rides along while strong authentication is awaited, which is what lets an abandoned one resume.
  *   Someone else's order is a 404, as one that does not exist: a 403 would say it does.
  */
@@ -33,7 +34,11 @@ export class GetOrderHandler implements IQueryHandler<GetOrder> {
         where: { order_id: orderId },
         order: { seat_code: 'ASC' },
       });
-      return seatOrderSnapshotOf(row, seats);
+      const refunds = await manager.find(OrderRefundRow, {
+        where: { order_id: orderId },
+        order: { owed_at: 'ASC', id: 'ASC' },
+      });
+      return seatOrderSnapshotOf(row, seats, refunds);
     });
     if (snapshot === null) throw notFound();
     const handoff =

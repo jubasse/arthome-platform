@@ -14,7 +14,6 @@ import {
 } from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
-import { OwedRefunds } from './owed-refunds.js';
 import { CLOCK } from '../clock.js';
 import { failUnpaidOrder } from '../orders/fail-unpaid-order.js';
 import { recordWaitingIntent } from '../orders/record-waiting-intent.js';
@@ -35,16 +34,11 @@ interface InboxRow {
 /** An event that no retry can apply: it names an order this service does not hold. */
 class Unappliable extends Error {}
 
-/** What an applied event leaves to do after its transaction. */
-interface Applied {
-  readonly orderId: string;
-  readonly owesRefund: boolean;
-}
-
 /**
  * adr-ticketing.md §8's worker, each recorded webhook in a transaction of its own (HANDOVER §0j): the
  *   row claimed `SKIP LOCKED`, the order moved forward only, the row marked applied with the effect.
- *   A failure is retried after the consumers' delays, then given up on as its own dead letter.
+ *   A failure is retried after the consumers' delays, then given up on as its own dead letter. A
+ *   refund the event owes (D-082) is a row of that transaction, made by the worker's queue.
  */
 @CommandHandler(ApplyPaymentEvents)
 export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEvents> {
@@ -52,7 +46,6 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
 
   public constructor(
     private readonly transactions: TicketingTransactions,
-    private readonly refunds: OwedRefunds,
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
@@ -68,27 +61,22 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
     );
     let settled = 0;
     for (const { event_id } of due) {
-      let applied: Applied | null | undefined;
       try {
-        applied = await this.transactions.run((transaction) => this.applyIn(transaction, event_id));
+        if (await this.transactions.run((transaction) => this.applyIn(transaction, event_id))) {
+          settled += 1;
+        }
       } catch (error) {
         if (await this.failed(event_id, error)) settled += 1;
-        continue;
       }
-      if (applied !== undefined) settled += 1;
-      if (applied?.owesRefund === true) await this.refundAtOnce(applied.orderId);
     }
     return settled;
   }
 
   /**
-   * What the event did to its order, null for an event about no order of this service's (kept,
-   *   applied as nothing), undefined when another pass holds the row or already applied it.
+   * True once applied, an event about no order of this service's included (kept, applied as
+   *   nothing); false when another pass holds the row or already applied it.
    */
-  private async applyIn(
-    transaction: TicketingTransaction,
-    eventId: string,
-  ): Promise<Applied | null | undefined> {
+  private async applyIn(transaction: TicketingTransaction, eventId: string): Promise<boolean> {
     const { manager, orders } = transaction;
     const [row] = await manager.query<InboxRow[]>(
       `SELECT event_id, kind, intent_ref, order_id, decline_code, traceparent
@@ -97,7 +85,7 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
           FOR UPDATE SKIP LOCKED`,
       [eventId],
     );
-    if (row === undefined) return undefined;
+    if (row === undefined) return false;
     const now = this.clock.now();
     const markApplied = () =>
       manager.query('UPDATE stripe_event_inbox SET applied_at = $2 WHERE event_id = $1', [
@@ -106,7 +94,7 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
       ]);
     if (row.kind === PaymentEventKind.UNHANDLED || row.order_id === null) {
       await markApplied();
-      return null;
+      return true;
     }
     const order = await orders.findById(row.order_id);
     if (order === null) throw new Unappliable(`no order for payment event ${eventId}`);
@@ -118,7 +106,7 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
     });
     await markApplied();
     await pending?.();
-    return { orderId: order.snapshot.id, owesRefund: order.owesRefund };
+    return true;
   }
 
   /** The counter move to run last, if the event moved seats. */
@@ -151,18 +139,6 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
         return failUnpaidOrder(transaction, order, { code: null, declineCode: null }, now);
       case PaymentEventKind.UNHANDLED:
         return null;
-    }
-  }
-
-  /** Outside the transaction that found the debt (D-082); the worker's claimed attempts follow. */
-  private async refundAtOnce(orderId: string): Promise<void> {
-    try {
-      await this.refunds.refund(orderId);
-    } catch (error) {
-      this.logger.error(
-        `refund owed by order ${orderId} not made yet`,
-        error instanceof Error ? error.stack : String(error),
-      );
     }
   }
 

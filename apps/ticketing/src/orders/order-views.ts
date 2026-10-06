@@ -9,7 +9,7 @@ import {
 } from '@arthome/core';
 
 import { ORDER_STATES_AWAITING_PAYMENT } from './awaiting-payment.js';
-import type { SeatOrderSnapshot } from './seat-order.aggregate.js';
+import type { OrderRefund, SeatOrderSnapshot } from './seat-order.aggregate.js';
 import { type NextAction } from '../payments/next-action.js';
 
 /**
@@ -63,6 +63,7 @@ export interface OrderDetail {
 }
 
 export function orderViewOf(order: SeatOrderSnapshot): OrderView {
+  const refunded = order.state === OrderState.REFUNDED ? latestRefundMade(order) : undefined;
   return {
     id: order.id,
     reference: order.reference,
@@ -71,9 +72,20 @@ export function orderViewOf(order: SeatOrderSnapshot): OrderView {
     state: order.state,
     total: order.quote.total,
     placedAt: order.placedAt,
-    ...(order.state === OrderState.REFUNDED &&
-      order.refund !== null && { refundReasonCode: order.refund.reason }),
+    ...(refunded !== undefined && { refundReasonCode: refunded.reason }),
   };
+}
+
+function latestRefundMade({ refunds }: SeatOrderSnapshot): OrderRefund | undefined {
+  return refunds
+    .filter(({ refundedAt }) => refundedAt !== null)
+    .reduce<OrderRefund | undefined>(
+      (latest, refund) =>
+        latest === undefined || (refund.refundedAt ?? '') > (latest.refundedAt ?? '')
+          ? refund
+          : latest,
+      undefined,
+    );
 }
 
 /** In the order of their codes, as every read serves them. */

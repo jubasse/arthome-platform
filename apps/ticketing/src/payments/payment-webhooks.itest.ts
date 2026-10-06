@@ -1,5 +1,4 @@
-import { OrderRefundedSchema, RefundReason as WireRefundReason } from '@arthome-platform/events';
-import { OutboxEvent, RETRY_DELAYS_MS } from '@arthome-platform/messaging';
+import { OutboxEvent } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
@@ -7,12 +6,10 @@ import {
   startStack,
   type StartedStack,
 } from '@arthome-platform/testing';
-import { fromBinary } from '@bufbuild/protobuf';
-import { Logger } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { DataSource } from 'typeorm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
@@ -27,30 +24,21 @@ import {
 } from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
-import { CancelOwedIntents } from './cancel-owed-intents.command.js';
 import {
   FakePaymentProvider,
   FakePaymentScenario,
   intentRefOf,
   type SignedWebhook,
 } from './fake-payment-provider.js';
-import { OWED_REFUND, REFUND_GIVE_UP_AFTER_MS, attemptsMaxOf } from './owed-calls.js';
-import { refundKeyOf } from './owed-refunds.js';
 import { PaymentWebhooksModule } from './payment-webhooks.module.js';
 import { PaymentWorker } from './payment-worker.js';
 import { PaymentWorkerModule } from './payment-worker.module.js';
-import { RefundOwedPayments } from './refund-owed-payments.command.js';
+import { refundKeyOf } from './refund-ledger.js';
 import { CLOCK } from '../clock.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
 import { DateSalesModule } from '../date-sales/date-sales.module.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
-import {
-  FULL_PRICE_MINOR,
-  nextKey,
-  purchaseOf,
-  putOnSale,
-  ITEST_BUYER_ACCOUNT_ID,
-} from '../itest/sales.js';
+import { FULL_PRICE_MINOR, nextKey, putOnSale, ITEST_BUYER_ACCOUNT_ID } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { ExpireDueHolds } from '../orders/expire-due-holds.command.js';
 import { HoldExpirySweeper } from '../orders/hold-expiry-sweeper.js';
@@ -61,8 +49,9 @@ import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 /**
  * adr-ticketing.md §7 and §8 over HTTP and against a real Postgres: a webhook verified on its bytes,
  *   recorded once, applied forward only by the payment worker's commands, run here by hand; and a
- *   payment confirmed after its hold expired, which takes the seats again or is refunded at once.
- *   Both loops are stubbed, so each pass is the suite's.
+ *   payment confirmed after its hold expired, which takes the seats again or owes the money back,
+ *   a refund the worker process's queue makes (`provider-call-queues.itest.ts`). Both loops are
+ *   stubbed, so each pass is the suite's.
  */
 
 const STARTUP_MS = 240_000;
@@ -349,7 +338,7 @@ describe('a payment confirmed after its hold expired (D-082)', () => {
   );
 
   it(
-    'is refunded at once with none left: never oversold, never money kept without a seat',
+    'owes the money back in its transaction with none left: never oversold, nothing asked here',
     async () => {
       const dateId = await dateOnSale(2);
       const orderId = await awaitingOrder(dateId);
@@ -366,69 +355,46 @@ describe('a payment confirmed after its hold expired (D-082)', () => {
         },
       });
       expect(other.statusCode).toBe(201);
-      const refundsBefore = fake.refundsMade;
+      const calls = fake.calls.length;
 
       await deliver(fake.completeAction(intentRefOf(orderId)));
       await applyEvents();
 
-      const refunded = await orderOf(orderId);
-      expect(refunded.order).toMatchObject({
-        state: OrderState.REFUNDED,
-        refundReasonCode: RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
-      });
-      expect(refunded.tickets).toEqual([]);
-      expect(fake.refundsMade).toBe(refundsBefore + 1);
-      expect(fake.calls).toContain(`refund ${refundKeyOf(orderId)}`);
+      const owing = await orderOf(orderId);
+      expect(owing.order.state).toBe(OrderState.FAILED);
+      expect(owing.order.refundReasonCode).toBeUndefined();
+      expect(owing.tickets).toEqual([]);
+      expect(fake.calls).toHaveLength(calls);
       expect(await countersOf(dateId)).toEqual({ seats_available: 0, seats_sold: 2 });
-      const [row] = await dataSource
-        .getRepository(OutboxEvent)
-        .findBy({ aggregateid: orderId, type: 'ticketing.order.refunded.v1' });
-      expect(fromBinary(OrderRefundedSchema, row?.payload ?? new Uint8Array())).toMatchObject({
-        orderId,
-        amount: { amountMinor: 4800n, currencyCode: 'EUR' },
-        refundReason: WireRefundReason.HOLD_EXPIRED_CAPACITY_LOST,
-      });
-    },
-    CASE_MS,
-  );
-
-  it(
-    'keeps the refund owed while the provider is down, and makes it once on a later pass',
-    async () => {
-      const dateId = await dateOnSale(2);
-      const orderId = await awaitingOrder(dateId);
-      await expireDueHolds();
-      fake.scenarioOf = () => FakePaymentScenario.CONFIRM;
-      await commands().execute(purchaseOf(dateId, 2));
-      const confirmation = fake.completeAction(intentRefOf(orderId));
-      await deliver(confirmation);
-      fake.down = true;
-
-      await applyEvents();
-
-      const [owed] = await dataSource.query<
-        { state: string; refund_owed_at: Date | null; applied: boolean }[]
+      const refunds = await dataSource.query<
+        {
+          amount_minor: string;
+          reason: string;
+          idempotency_key: string;
+          traceparent: string | null;
+          enqueued_at: Date | null;
+          refunded_at: Date | null;
+        }[]
       >(
-        `SELECT placed.state, placed.refund_owed_at, inbox.applied_at IS NOT NULL AS applied
-           FROM seat_order AS placed JOIN stripe_event_inbox AS inbox ON inbox.order_id = placed.id
-          WHERE placed.id = $1`,
+        `SELECT amount_minor, reason, idempotency_key, traceparent, enqueued_at, refunded_at
+           FROM order_refund WHERE order_id = $1`,
         [orderId],
       );
-      expect(owed).toMatchObject({ state: OrderState.FAILED, applied: true });
-      expect(owed?.refund_owed_at).not.toBeNull();
-
-      fake.down = false;
-      const refundsBefore = fake.refundsMade;
-      await commands().execute(new RefundOwedPayments(100));
-      await commands().execute(new RefundOwedPayments(100));
-
-      expect((await orderOf(orderId)).order.state).toBe(OrderState.REFUNDED);
-      expect(fake.refundsMade).toBe(refundsBefore + 1);
+      expect(refunds).toEqual([
+        {
+          amount_minor: String(FULL_PRICE_MINOR * 2),
+          reason: RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
+          idempotency_key: refundKeyOf(orderId),
+          traceparent: TRACEPARENT,
+          enqueued_at: null,
+          refunded_at: null,
+        },
+      ]);
       expect(
         await dataSource
           .getRepository(OutboxEvent)
           .countBy({ aggregateid: orderId, type: 'ticketing.order.refunded.v1' }),
-      ).toBe(1);
+      ).toBe(0);
     },
     CASE_MS,
   );
@@ -472,42 +438,7 @@ describe('a payment confirmed after its hold expired (D-082)', () => {
 
 describe('the intent of an order whose hold expired (adr-ticketing.md §6)', () => {
   it(
-    'is cancelled at the provider, best effort, and asked again while the provider is down',
-    async () => {
-      const dateId = await dateOnSale();
-      const orderId = await awaitingOrder(dateId);
-      await expireDueHolds();
-      fake.down = true;
-
-      await commands().execute(new CancelOwedIntents(100));
-
-      const [stillOwed] = await dataSource.query<
-        { intent_cancel_owed_at: Date | null; intent_cancel_next_attempt_at: Date }[]
-      >(
-        'SELECT intent_cancel_owed_at, intent_cancel_next_attempt_at FROM seat_order WHERE id = $1',
-        [orderId],
-      );
-      expect(stillOwed?.intent_cancel_owed_at).toEqual(new Date(clock.nowMs()));
-      const nextAttempt = stillOwed?.intent_cancel_next_attempt_at.getTime() ?? 0;
-      expect(nextAttempt).toBeGreaterThanOrEqual(clock.nowMs() + 5_000);
-      expect(nextAttempt).toBeLessThanOrEqual(clock.nowMs() + 6_000);
-
-      fake.down = false;
-      clock.advance(30_000);
-      await commands().execute(new CancelOwedIntents(100));
-
-      expect(fake.isCanceled(intentRefOf(orderId))).toBe(true);
-      const [cancelled] = await dataSource.query<{ intent_cancel_owed_at: Date | null }[]>(
-        'SELECT intent_cancel_owed_at FROM seat_order WHERE id = $1',
-        [orderId],
-      );
-      expect(cancelled?.intent_cancel_owed_at).toBeNull();
-    },
-    CASE_MS,
-  );
-
-  it(
-    'is owed again from its first instant when the provider says the intent still waits, its attempts started over',
+    'is owed again from its first instant when the provider says it still waits, for a new job',
     async () => {
       const dateId = await dateOnSale();
       const orderId = await awaitingOrder(dateId);
@@ -517,132 +448,46 @@ describe('the intent of an order whose hold expired (adr-ticketing.md §6)', () 
         const [row] = await dataSource.query<
           {
             intent_cancel_owed_at: Date | null;
-            intent_cancel_attempts: number;
-            intent_cancel_next_attempt_at: Date | null;
+            intent_cancel_enqueued_at: Date | null;
             intent_cancel_dead_at: Date | null;
           }[]
         >(
-          `SELECT intent_cancel_owed_at, intent_cancel_attempts, intent_cancel_next_attempt_at,
-                  intent_cancel_dead_at
+          `SELECT intent_cancel_owed_at, intent_cancel_enqueued_at, intent_cancel_dead_at
              FROM seat_order WHERE id = $1`,
           [orderId],
         );
         if (row === undefined) throw new Error(`no order ${orderId}`);
         return row;
       };
-      const restarted = {
-        intent_cancel_attempts: 0,
-        intent_cancel_next_attempt_at: null,
-        intent_cancel_dead_at: null,
-      };
-      fake.down = true;
-      const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-      try {
-        for (let pass = 0; pass <= RETRY_DELAYS_MS.length; pass += 1) {
-          await commands().execute(new CancelOwedIntents(100));
-          const next = (await cancellationOf()).intent_cancel_next_attempt_at;
-          if (next !== null) clock.advance(next.getTime() - clock.nowMs());
-        }
-      } finally {
-        errors.mockRestore();
-        fake.down = false;
-      }
-      expect((await cancellationOf()).intent_cancel_dead_at).not.toBeNull();
+      const anew = { intent_cancel_enqueued_at: null, intent_cancel_dead_at: null };
+      expect(await cancellationOf()).toEqual({ intent_cancel_owed_at: owedAt, ...anew });
 
+      // Enqueued by the relay, then given up on by its job.
+      await dataSource.query(
+        `UPDATE seat_order SET intent_cancel_enqueued_at = $2, intent_cancel_dead_at = $2
+          WHERE id = $1`,
+        [orderId, owedAt],
+      );
       clock.advance(MINUTE_MS);
       await deliver(fake.webhookOf(intentRefOf(orderId), PaymentEventKind.INTENT_REQUIRES_ACTION));
       await applyEvents();
 
-      expect(await cancellationOf()).toEqual({ intent_cancel_owed_at: owedAt, ...restarted });
+      expect(await cancellationOf()).toEqual({ intent_cancel_owed_at: owedAt, ...anew });
 
-      await commands().execute(new CancelOwedIntents(100));
-      expect(fake.isCanceled(intentRefOf(orderId))).toBe(true);
-      expect(await cancellationOf()).toMatchObject({
-        intent_cancel_owed_at: null,
-        intent_cancel_attempts: 1,
-      });
-
+      // Made by its job.
+      await dataSource.query(
+        `UPDATE seat_order SET intent_cancel_owed_at = NULL, intent_cancel_enqueued_at = $2
+          WHERE id = $1`,
+        [orderId, owedAt],
+      );
       clock.advance(MINUTE_MS);
       await deliver(fake.webhookOf(intentRefOf(orderId), PaymentEventKind.INTENT_PROCESSING));
       await applyEvents();
 
       expect(await cancellationOf()).toEqual({
         intent_cancel_owed_at: new Date(clock.nowMs()),
-        ...restarted,
+        ...anew,
       });
-    },
-    CASE_MS,
-  );
-});
-
-describe('a refund owed through a provider outage of hours (D-082, adr-ticketing.md §8)', () => {
-  it(
-    'is asked again for about a day, then given up on loudly, and made once an operator replays it',
-    async () => {
-      const dateId = await dateOnSale(2);
-      const orderId = await awaitingOrder(dateId);
-      await expireDueHolds();
-      await commands().execute(purchaseOf(dateId, 2));
-      await deliver(fake.completeAction(intentRefOf(orderId)));
-      fake.down = true;
-      await applyEvents();
-      const owedAtMs = clock.nowMs();
-      const scheduleOf = async () => {
-        const [row] = await dataSource.query<
-          {
-            refund_attempts: number;
-            refund_next_attempt_at: Date | null;
-            refund_dead_at: Date | null;
-          }[]
-        >(
-          `SELECT refund_attempts, refund_next_attempt_at, refund_dead_at FROM seat_order
-            WHERE id = $1`,
-          [orderId],
-        );
-        if (row === undefined) throw new Error(`no order ${orderId}`);
-        return row;
-      };
-      const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-      try {
-        let passes = 0;
-        for (;;) {
-          await commands().execute(new RefundOwedPayments(100));
-          passes += 1;
-          const { refund_next_attempt_at: next, refund_dead_at: dead } = await scheduleOf();
-          if (dead !== null || next === null || passes > attemptsMaxOf(OWED_REFUND)) break;
-          clock.advance(next.getTime() - clock.nowMs());
-        }
-
-        const given = await scheduleOf();
-        expect(passes).toBe(attemptsMaxOf(OWED_REFUND));
-        expect(given.refund_attempts).toBe(attemptsMaxOf(OWED_REFUND));
-        expect(given.refund_dead_at?.getTime()).toBeGreaterThanOrEqual(
-          owedAtMs + REFUND_GIVE_UP_AFTER_MS,
-        );
-        expect((await orderOf(orderId)).order.state).toBe(OrderState.FAILED);
-        expect(
-          errors.mock.calls.filter(([message]) =>
-            String(message).includes(`order ${orderId} given up`),
-          ),
-        ).toEqual([[expect.stringContaining('money is held without a seat'), expect.anything()]]);
-      } finally {
-        errors.mockRestore();
-        fake.down = false;
-      }
-
-      // HANDOVER §0k's replay, as an operator runs it.
-      await dataSource.query(
-        `UPDATE seat_order
-            SET refund_dead_at = NULL, refund_attempts = 0, refund_next_attempt_at = NULL
-          WHERE id = $1 AND refund_dead_at IS NOT NULL`,
-        [orderId],
-      );
-      const refundsBefore = fake.refundsMade;
-      await commands().execute(new RefundOwedPayments(100));
-      await commands().execute(new RefundOwedPayments(100));
-
-      expect((await orderOf(orderId)).order.state).toBe(OrderState.REFUNDED);
-      expect(fake.refundsMade).toBe(refundsBefore + 1);
     },
     CASE_MS,
   );

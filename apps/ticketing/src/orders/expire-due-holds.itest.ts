@@ -25,7 +25,6 @@ import { SetDatePricesHandler } from '../date-sales/set-date-prices.handler.js';
 import { purchaseOf, putOnSale, ITEST_BUYER_ACCOUNT_ID } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { FakePaymentProvider, FakePaymentScenario } from '../payments/fake-payment-provider.js';
-import { OwedRefunds } from '../payments/owed-refunds.js';
 import { PAYMENT_PORT } from '../payments/payment-tokens.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
@@ -107,7 +106,6 @@ beforeAll(async () => {
       ExpireDueHoldsHandler,
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: clock },
-      OwedRefunds,
       { provide: PAYMENT_PORT, useValue: fake },
       { provide: PUBLIC_WEB_ORIGIN, useValue: 'http://storefront.test' },
     ],

@@ -77,23 +77,28 @@ export class SeatOrderFailed implements IEvent {
   ) {}
 }
 
-/** Paid at the provider with no seat to give (D-082): the money goes back before anything else. */
+/** A refund owed, made by the worker's queue; D-082's is the whole payment, with no seat to give. */
 export class SeatOrderRefundOwed implements IEvent {
   public readonly kind = 'SeatOrderRefundOwed';
 
   public constructor(
     public readonly orderId: string,
+    public readonly refundId: string,
+    public readonly amount: Money,
     public readonly reason: RefundReason,
+    public readonly seatId: string | null,
     public readonly occurredAt: Instant,
   ) {}
 }
 
+/** One refund made, of several an order may owe. */
 export class SeatOrderRefunded implements IEvent {
   public readonly kind = 'SeatOrderRefunded';
 
   public constructor(
     public readonly orderId: string,
     public readonly channelId: string,
+    public readonly refundId: string,
     public readonly amount: Money,
     public readonly refundRef: string,
     public readonly reason: RefundReason,

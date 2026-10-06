@@ -7,7 +7,7 @@
 
 import { Kafka } from 'kafkajs';
 
-import { readKafkaBrokers } from '@arthome-platform/config';
+import { readKafkaBrokers, readRedisUrl } from '@arthome-platform/config';
 import {
   checkDeadLetterDepth,
   checkOutboxRetention,
@@ -67,6 +67,14 @@ try {
     } finally {
       await admin.disconnect();
     }
+  }
+
+  if (service === 'ticketing') {
+    // From ticketing's build, which carries bullmq: the worker's queues (HANDOVER §0m).
+    const { checkProviderCallQueues, checkProviderCallsDead } =
+      await import('../apps/ticketing/dist/payments/provider-call-checks.js');
+    results.push(await checkProviderCallsDead(dataSource));
+    results.push(await checkProviderCallQueues(readRedisUrl()));
   }
 } finally {
   await dataSource.destroy();

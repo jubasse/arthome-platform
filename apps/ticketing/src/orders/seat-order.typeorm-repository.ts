@@ -3,7 +3,13 @@ import type { EntityManager } from 'typeorm';
 
 import { money, orderReference, type Instant, OrderState } from '@arthome/core';
 
-import { SeatOrder, type SeatOrderSnapshot, type SeatSnapshot } from './seat-order.aggregate.js';
+import { OrderRefundRow } from './order-refund.entity.js';
+import {
+  SeatOrder,
+  type OrderRefund,
+  type SeatOrderSnapshot,
+  type SeatSnapshot,
+} from './seat-order.aggregate.js';
 import { SeatOrderRow } from './seat-order.entity.js';
 import {
   SeatOrderRepository,
@@ -16,6 +22,8 @@ export class TypeOrmSeatOrderRepository extends SeatOrderRepository {
   private readonly tracker: AggregateTracker<SeatOrder>;
   /** The seats each order held as last read or written: only the new ones are inserted. */
   private readonly storedSeats = new WeakMap<SeatOrder, ReadonlySet<string>>();
+  /** Its refunds as last read or written: new ones inserted, those made since updated. */
+  private readonly storedRefunds = new WeakMap<SeatOrder, ReadonlyMap<string, OrderRefund>>();
 
   public constructor(
     private readonly manager: EntityManager,
@@ -35,8 +43,13 @@ export class TypeOrmSeatOrderRepository extends SeatOrderRepository {
       where: { order_id: orderId },
       order: { seat_code: 'ASC' },
     });
-    const order = SeatOrder.restore(seatOrderSnapshotOf(row, seats));
+    const refunds = await this.manager.find(OrderRefundRow, {
+      where: { order_id: orderId },
+      order: { owed_at: 'ASC', id: 'ASC' },
+    });
+    const order = SeatOrder.restore(seatOrderSnapshotOf(row, seats, refunds));
     this.storedSeats.set(order, new Set(seats.map(({ id }) => id)));
+    this.storedRefunds.set(order, refundsById(order.snapshot.refunds));
     return this.tracker.loaded(order, row.version);
   }
 
@@ -90,6 +103,7 @@ export class TypeOrmSeatOrderRepository extends SeatOrderRepository {
       .execute();
     if ((inserted.raw as unknown[]).length === 0) return false;
     this.storedSeats.set(order, new Set());
+    this.storedRefunds.set(order, new Map());
     this.tracker.written(order, current.version);
     return true;
   }
@@ -117,8 +131,36 @@ export class TypeOrmSeatOrderRepository extends SeatOrderRepository {
       );
     }
     this.storedSeats.set(order, new Set(current.seats.map(({ id }) => id)));
+    await this.saveRefunds(order);
     this.tracker.written(order, current.version);
   }
+
+  /** After the order's row, under its lock: an order before its refund rows (HANDOVER §0m). */
+  private async saveRefunds(order: SeatOrder): Promise<void> {
+    const current = order.snapshot;
+    const stored = this.storedRefunds.get(order) ?? new Map<string, OrderRefund>();
+    const added = current.refunds.filter(({ id }) => !stored.has(id));
+    if (added.length > 0) {
+      await this.manager.insert(
+        OrderRefundRow,
+        added.map((refund) => refundRowOf(current.id, refund)),
+      );
+    }
+    for (const refund of current.refunds) {
+      const before = stored.get(refund.id);
+      if (before === undefined || before.refundedAt === refund.refundedAt) continue;
+      await this.manager.update(
+        OrderRefundRow,
+        { id: refund.id },
+        { refund_ref: refund.ref, refunded_at: dateOf(refund.refundedAt) },
+      );
+    }
+    this.storedRefunds.set(order, refundsById(current.refunds));
+  }
+}
+
+function refundsById(refunds: readonly OrderRefund[]): ReadonlyMap<string, OrderRefund> {
+  return new Map(refunds.map((refund) => [refund.id, refund]));
 }
 
 const dateOf = (instant: Instant | null): Date | null =>
@@ -137,10 +179,6 @@ function orderStateColumnsOf(order: SeatOrderSnapshot) {
     next_action: order.intent?.nextAction ?? null,
     failure_code: order.failure?.code ?? null,
     decline_code: order.failure?.declineCode ?? null,
-    refund_reason: order.refund?.reason ?? null,
-    refund_owed_at: dateOf(order.refund?.owedAt ?? null),
-    refund_ref: order.refund?.ref ?? null,
-    refunded_at: dateOf(order.refund?.refundedAt ?? null),
     intent_cancel_owed_at: dateOf(order.intentCancelOwedAt),
     paid_at: dateOf(order.paidAt),
     version: order.version,
@@ -162,6 +200,37 @@ function seatRowOf(order: SeatOrderSnapshot, seat: SeatSnapshot): Omit<SeatRow, 
   };
 }
 
+function refundRowOf(
+  orderId: string,
+  refund: OrderRefund,
+): Omit<OrderRefundRow, 'traceparent' | 'enqueued_at' | 'dead_at' | 'created_at'> {
+  return {
+    id: refund.id,
+    order_id: orderId,
+    seat_id: refund.seatId,
+    amount_minor: String(refund.amount.amountMinor),
+    currency_code: refund.amount.currencyCode,
+    reason: refund.reason,
+    idempotency_key: refund.idempotencyKey,
+    owed_at: new Date(refund.owedAt),
+    refund_ref: refund.ref,
+    refunded_at: dateOf(refund.refundedAt),
+  };
+}
+
+function refundOf(row: OrderRefundRow): OrderRefund {
+  return {
+    id: row.id,
+    amount: money(Number(row.amount_minor), row.currency_code),
+    reason: row.reason,
+    idempotencyKey: row.idempotency_key,
+    seatId: row.seat_id,
+    owedAt: row.owed_at.toISOString(),
+    ref: row.refund_ref,
+    refundedAt: instantOf(row.refunded_at),
+  };
+}
+
 export function seatSnapshotOf(row: SeatRow): SeatSnapshot {
   return {
     id: row.id,
@@ -176,6 +245,7 @@ export function seatSnapshotOf(row: SeatRow): SeatSnapshot {
 export function seatOrderSnapshotOf(
   row: SeatOrderRow,
   seats: readonly SeatRow[],
+  refunds: readonly OrderRefundRow[],
 ): SeatOrderSnapshot {
   const amount = (minor: string) => money(Number(minor), row.currency_code);
   return {
@@ -210,15 +280,7 @@ export function seatOrderSnapshotOf(
       row.state === OrderState.FAILED
         ? { code: row.failure_code, declineCode: row.decline_code }
         : null,
-    refund:
-      row.refund_reason === null || row.refund_owed_at === null
-        ? null
-        : {
-            reason: row.refund_reason,
-            owedAt: row.refund_owed_at.toISOString(),
-            ref: row.refund_ref,
-            refundedAt: instantOf(row.refunded_at),
-          },
+    refunds: refunds.map(refundOf),
     intentCancelOwedAt: instantOf(row.intent_cancel_owed_at),
     placedAt: row.placed_at.toISOString(),
     paidAt: instantOf(row.paid_at),
