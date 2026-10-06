@@ -1,5 +1,12 @@
+import { generateKeyPairSync } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
+import {
+  DEVELOPMENT_PLAYBACK_KEY_ID,
+  DEVELOPMENT_PLAYBACK_PRIVATE_JWK,
+} from './development-playback-key.js';
+import { DEVELOPMENT_TOKEN_PRIVATE_JWK } from './development-token-key.js';
 import {
   isProductionEnvironment,
   readKafkaBrokers,
@@ -7,7 +14,9 @@ import {
   readOpenSearchUrl,
   readPublicWebOrigin,
   readPaymentWebhookSecret,
+  readPlaybackSigningKey,
   readRedisUrl,
+  readStreamKeySecret,
   readConsumerEnv,
   readHttpServiceEnv,
   readSearchIndexerEnv,
@@ -211,5 +220,78 @@ describe('readPaymentWebhookSecret', () => {
     expect(() =>
       readPaymentWebhookSecret({ NODE_ENV: 'production', PAYMENT_WEBHOOK_SECRET: 'short' }),
     ).toThrow(/PAYMENT_WEBHOOK_SECRET/);
+  });
+});
+
+describe('readPlaybackSigningKey', () => {
+  const productionKey = JSON.stringify({
+    ...generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ format: 'jwk' }),
+    kid: 'play-2026-10-06',
+  });
+
+  it('is the development playback key outside production, so the fake signs on a fresh clone', () => {
+    expect(readPlaybackSigningKey({ NODE_ENV: 'development' }).keyId).toBe(
+      DEVELOPMENT_PLAYBACK_KEY_ID,
+    );
+  });
+
+  it('is never the internal token development key: the playback and session sets differ', () => {
+    const playback = readPlaybackSigningKey({ NODE_ENV: 'test' }).privateJwk;
+
+    expect(playback.x).not.toBe(DEVELOPMENT_TOKEN_PRIVATE_JWK.x);
+    expect(playback.d).not.toBe(DEVELOPMENT_TOKEN_PRIVATE_JWK.d);
+    expect(playback.kid).not.toBe(DEVELOPMENT_TOKEN_PRIVATE_JWK.kid);
+  });
+
+  it('is required in production, and both development keys are refused there under any kid', () => {
+    expect(() => readPlaybackSigningKey({ NODE_ENV: 'production' })).toThrow(
+      /PLAYBACK_SIGNING_KEY/,
+    );
+    for (const development of [DEVELOPMENT_PLAYBACK_PRIVATE_JWK, DEVELOPMENT_TOKEN_PRIVATE_JWK]) {
+      expect(() =>
+        readPlaybackSigningKey({
+          NODE_ENV: 'production',
+          PLAYBACK_SIGNING_KEY: JSON.stringify({ ...development, kid: 'play-2026-10-06' }),
+        }),
+      ).toThrow(/development key/);
+    }
+    expect(
+      readPlaybackSigningKey({ NODE_ENV: 'production', PLAYBACK_SIGNING_KEY: productionKey }).keyId,
+    ).toBe('play-2026-10-06');
+  });
+
+  it('refuses a key that is not a private P-256 JWK', () => {
+    const { d: _private, ...publicHalf } = DEVELOPMENT_PLAYBACK_PRIVATE_JWK;
+
+    expect(() =>
+      readPlaybackSigningKey({
+        NODE_ENV: 'test',
+        PLAYBACK_SIGNING_KEY: JSON.stringify(publicHalf),
+      }),
+    ).toThrow();
+    expect(() =>
+      readPlaybackSigningKey({ NODE_ENV: 'test', PLAYBACK_SIGNING_KEY: 'not json' }),
+    ).toThrow(/PLAYBACK_SIGNING_KEY is not JSON/);
+  });
+});
+
+describe('readStreamKeySecret', () => {
+  it('defaults outside production, so a stream key is derived on a fresh clone', () => {
+    expect(readStreamKeySecret({ NODE_ENV: 'development' }).length).toBeGreaterThanOrEqual(32);
+  });
+
+  it('refuses in production no secret, a short one, and the development default', () => {
+    const development = readStreamKeySecret({ NODE_ENV: 'development' });
+
+    expect(() => readStreamKeySecret({ NODE_ENV: 'production' })).toThrow(/STREAM_KEY_SECRET/);
+    expect(() =>
+      readStreamKeySecret({ NODE_ENV: 'production', STREAM_KEY_SECRET: 'short' }),
+    ).toThrow(/STREAM_KEY_SECRET/);
+    expect(() =>
+      readStreamKeySecret({ NODE_ENV: 'production', STREAM_KEY_SECRET: development }),
+    ).toThrow(/development value/);
+    expect(
+      readStreamKeySecret({ NODE_ENV: 'production', STREAM_KEY_SECRET: 'x'.repeat(32) }),
+    ).toHaveLength(32);
   });
 });

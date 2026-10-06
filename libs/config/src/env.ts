@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+import {
+  DEVELOPMENT_PLAYBACK_PRIVATE_JWK,
+  isDevelopmentPlaybackKey,
+} from './development-playback-key.js';
 import { DEVELOPMENT_TOKEN_PRIVATE_JWK, isDevelopmentTokenKey } from './development-token-key.js';
 
 export type NodeEnv = 'development' | 'test' | 'production';
@@ -284,6 +288,28 @@ export function readInternalTokenSigningKey(
   return { keyId: jwk.kid, privateJwk: jwk };
 }
 
+/**
+ * The key playback is signed with (`adr-stream-entitlement.md` §3.2, `adr-auth.md` §8.1):
+ * `PLAYBACK_SIGNING_KEY`, a JSON P-256 private JWK whose `kid` the CDN's key set publishes. Outside
+ * production the published development playback key; in production it and the internal token's
+ * development key are both refused by their coordinates, so no published key signs playback there.
+ */
+export function readPlaybackSigningKey(
+  source: Record<string, string | undefined> = process.env,
+): SigningKey {
+  const production = readNodeEnv(source) === 'production';
+  const raw = stripEmpty(source).PLAYBACK_SIGNING_KEY;
+  const jwk = privateEcJwk.parse(
+    raw === undefined && !production
+      ? DEVELOPMENT_PLAYBACK_PRIVATE_JWK
+      : parseJson(raw, 'PLAYBACK_SIGNING_KEY'),
+  );
+  if (production && (isDevelopmentPlaybackKey(jwk) || isDevelopmentTokenKey(jwk))) {
+    throw new Error('PLAYBACK_SIGNING_KEY: a development key cannot sign in production');
+  }
+  return { keyId: jwk.kid, privateJwk: jwk };
+}
+
 /** Where a service reads the public keys of the internal token's issuers. */
 export type JwksSource =
   | { readonly kind: 'remote'; readonly url: string }
@@ -346,6 +372,21 @@ export function readCsrfSecret(source: Record<string, string | undefined> = proc
   return z
     .object({ CSRF_SECRET: secretOutside(DEVELOPMENT_CSRF_SECRET, source) })
     .parse(withDefault).CSRF_SECRET;
+}
+
+const DEVELOPMENT_STREAM_KEY_SECRET = 'development-stream-key-secret-not-for-production';
+
+/** The secret a run's stream key is derived from: whoever holds it can publish on any date. */
+export function readStreamKeySecret(
+  source: Record<string, string | undefined> = process.env,
+): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { STREAM_KEY_SECRET: DEVELOPMENT_STREAM_KEY_SECRET, ...stripEmpty(source) };
+  return z
+    .object({ STREAM_KEY_SECRET: secretOutside(DEVELOPMENT_STREAM_KEY_SECRET, source) })
+    .parse(withDefault).STREAM_KEY_SECRET;
 }
 
 /**

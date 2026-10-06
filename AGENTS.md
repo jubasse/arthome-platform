@@ -459,7 +459,8 @@ done
 **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
 anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`, `PUBLIC_WEB_ORIGIN`,
 `OPENSEARCH_URL`, `REDIS_URL`, `PAYMENT_WEBHOOK_SECRET`, `IDENTITY_URL`, `JWKS_URL`,
-`INTERNAL_TOKEN_SIGNING_KEY`, `BETTER_AUTH_SECRET`, `CSRF_SECRET` — is filled from a local default
+`INTERNAL_TOKEN_SIGNING_KEY`, `BETTER_AUTH_SECRET`, `CSRF_SECRET`, `PLAYBACK_SIGNING_KEY`,
+`STREAM_KEY_SECRET` — is filled from a local default
 **only outside production**, and `NODE_ENV` is
 what selects that. Defaulting it to `development` would make an unset variable open the
 production-guarded write routes and point a migration at localhost; both fail loudly instead, naming
