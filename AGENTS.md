@@ -303,7 +303,10 @@ export class DatesController {
   counts nothing and fails the boot on a bucket with no cap, the global `AuthThrottlerGuard` counts
   the caps of the buckets the route's contract declares); every service binds `service` (`ServiceIdentity`: the internal token,
   verified as `InternalTokenGuard` does, which leaves a route declaring an access to it; the
-  principal is core's `{ callingService, userId }`, from the token's issuer and subject). On a
+  principal is core's `{ callingService, userId, profileId?, deviceId? }`, from the token's `iss`,
+  `sub`, `pro` and `did`, a claim the token lacks absent, never null) and `callerService`
+  (`CallerServiceRule`: a calling BFF the rule does not name is refused 403 `api.forbidden`, and a
+  rule naming no issuer, or one no BFF mints as, fails the boot). On a
   service, a route the contract declares public, or optional (which lets a call without a token
   in as well), fails the boot unless `edgeProviders`' `publicRoutes` names it (empty today):
   reached in the cluster without TLS, a service has the token as its only authorisation

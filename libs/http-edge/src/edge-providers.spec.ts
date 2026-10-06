@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import { Service, SystemClock } from '@arthome/core';
 
+import { CallerServiceRule } from './caller-service.rule.js';
 import { edgeProviders } from './edge-providers.js';
 import { ENDPOINT_GUARDS, EndpointGuardsCheck } from './endpoint-access.js';
 import { ServiceIdentity } from './internal-token.guard.js';
@@ -42,6 +43,7 @@ describe('edgeProviders', () => {
       MetadataScanner,
       EndpointGuardsCheck,
       ServiceIdentity,
+      CallerServiceRule,
       APP_PIPE,
       APP_FILTER,
       APP_INTERCEPTOR,
