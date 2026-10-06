@@ -4,6 +4,7 @@ import { RefundReason, seatCancelDeadline, type Instant } from '@arthome/core';
 
 import { drawFreeSeatCodes } from './seat-codes.js';
 import type { SeatOrder } from './seat-order.aggregate.js';
+import { recordRefundTraceparent } from '../payments/refund-ledger.js';
 import type { TicketingTransaction } from '../ticketing-transactions.js';
 
 /**
@@ -17,10 +18,11 @@ export type PendingCounterMove = () => Promise<void>;
  *   are created from the hold, taken again when the hold is gone, or, none left, the money is owed
  *   back. The order is loaded, under its lock, before its hold; the caller saves it, writes its
  *   events, and runs the counter move it is handed last. Only D-082's retake runs at once, since
- *   whether it takes decides between paying and refunding.
+ *   whether it takes decides between paying and refunding; owing the money back saves the order
+ *   here, so its refund's row exists to take the trace.
  */
 export async function settleConfirmedPayment(
-  { manager, holds, dateSales }: TicketingTransaction,
+  { manager, holds, orders, dateSales }: TicketingTransaction,
   order: SeatOrder,
   intentRef: string,
   now: Instant,
@@ -35,12 +37,15 @@ export async function settleConfirmedPayment(
     await holds.save(hold);
     pending = () => dateSales.sellHeldSeats(dateId, quantity);
   } else if (!(await dateSales.takeAndSellSeats(dateId, quantity, now))) {
-    order.oweRefund(RefundReason.HOLD_EXPIRED_CAPACITY_LOST, intentRef, now);
-    // Its `order.refunded` is written later, maybe by another process: the trace goes with the debt.
-    await manager.query('UPDATE seat_order SET refund_traceparent = $2 WHERE id = $1', [
-      order.snapshot.id,
-      traceparent,
-    ]);
+    const refundId = order.oweUnseatedPaymentBack(
+      RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
+      intentRef,
+      now,
+    );
+    if (refundId !== null) {
+      await orders.save(order);
+      await recordRefundTraceparent(manager, refundId, traceparent);
+    }
     return null;
   }
   const sales = await dateSales.findUnlocked(dateId);

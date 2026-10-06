@@ -25,18 +25,21 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   ApiErrorCode,
   PriceTier,
+  RefundReason,
   Service,
   SystemClock,
   OrderState,
   SeatHoldOrigin,
   SeatHoldState,
+  money,
 } from '@arthome/core';
 
 /**
- * The three processes' root modules, booted as `main.ts`, `consumer.ts` and `sweeper.ts` boot them,
- * against a real Postgres: a module the root graph misses, or its `CqrsModule.forRoot()` dropped,
- * fails here rather than at a deploy. Kafka is stubbed. The service's modules are imported only
- * once `DATABASE_URL` names the container, since `env.ts` reads it at import.
+ * The four processes' root modules, booted as `main.ts`, `consumer.ts`, `sweeper.ts` and
+ * `worker.ts` boot them, against a real Postgres and, for the worker, a real Redis: a module the
+ * root graph misses, or its `CqrsModule.forRoot()` dropped, fails here rather than at a deploy.
+ * Kafka is stubbed. The service's modules are imported only once `DATABASE_URL` and `REDIS_URL`
+ * name the containers, since `env.ts` reads the first at import.
  */
 
 const STARTUP_MS = 240_000;
@@ -46,14 +49,21 @@ const DATE_ID = '01a0f100-0000-7000-8000-000000000001';
 const HELD_DATE_ID = '01a0f100-0000-7000-8000-000000000002';
 const HOLD_ID = '01a0f100-0000-7000-8000-0000000000b1';
 const ORDER_ID = '01a0f100-0000-7000-8000-0000000000a1';
+const WORKER_DATE_ID = '01a0f100-0000-7000-8000-000000000003';
+const WORKER_HOLD_ID = '01a0f100-0000-7000-8000-0000000000b3';
+const WORKER_ORDER_ID = '01a0f100-0000-7000-8000-0000000000a3';
+const WORKER_REFUND_ID = '01a0f100-0000-7000-8000-0000000000f3';
+/** Long enough for the shutdown to start while the provider call is in flight. */
+const PROVIDER_CALL_MS = 1_000;
 
 let stack: StartedStack;
 let databaseUrl: string;
 
 beforeAll(async () => {
-  stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
+  stack = await startStack({ postgres: true, redis: true, startupTimeoutMs: STARTUP_MS });
   const database = await createDatabase(stack.postgres, 'ticketing_boot_itest');
   process.env.DATABASE_URL = database.url;
+  process.env.REDIS_URL = stack.redis.url;
   databaseUrl = database.url;
   const { TICKETING_SCHEMA } = await import('./itest/schema.js');
   await (await applyMigrations(database, TICKETING_SCHEMA)).destroy();
@@ -293,6 +303,111 @@ describe('the sweeper process', () => {
           [ORDER_ID],
         );
         expect(row).toEqual({ seats_available: 10, state: OrderState.FAILED });
+      } finally {
+        await seed.destroy();
+      }
+    },
+    CASE_MS,
+  );
+});
+
+describe('the worker process', () => {
+  it(
+    'boots on Redis, makes a refund owed, and lets the job in flight commit before the pool closes',
+    async () => {
+      const seed = new DataSource({ type: 'postgres', url: databaseUrl });
+      await seed.initialize();
+      try {
+        await seed.query(
+          `INSERT INTO date_sales (date_id, channel_id, capacity_total, capacity_tiers,
+                                   seats_available, seats_sold, waitlist_count, price_tiers,
+                                   prices_locked_at, version)
+           VALUES ($1, 'channel-boot', 10, '[]', 8, 2, 0, '[]', now(), 2)`,
+          [WORKER_DATE_ID],
+        );
+        await seed.query(
+          `INSERT INTO seat_hold (id, date_id, tier, quantity, origin, origin_ref, expires_at,
+                                  state, version)
+           VALUES ($1, $2, $4, 2, $5, $3, now(), $6, 2)`,
+          [
+            WORKER_HOLD_ID,
+            WORKER_DATE_ID,
+            WORKER_ORDER_ID,
+            PriceTier.FULL,
+            SeatHoldOrigin.CHECKOUT,
+            SeatHoldState.CONSUMED,
+          ],
+        );
+        const { FakePaymentProvider, intentRefOf } =
+          await import('./payments/fake-payment-provider.js');
+        await seed.query(
+          `INSERT INTO seat_order (id, reference, idempotency_key, fingerprint, date_id, channel_id,
+                                   tier, quantity, currency_code, unit_price_minor,
+                                   tier_total_minor, service_fee_minor, discount_minor,
+                                   total_minor, hold_id, expires_at, state, placed_at, paid_at,
+                                   version, payment_intent_ref)
+           VALUES ($1, 'ATH-2026-99998', $1, 'boot', $2, 'channel-boot', $4, 2, 'EUR', 2400,
+                   4800, 0, 0, 4800, $3, now(), $5, now(), now(), 2, $6)`,
+          [
+            WORKER_ORDER_ID,
+            WORKER_DATE_ID,
+            WORKER_HOLD_ID,
+            PriceTier.FULL,
+            OrderState.PAID,
+            intentRefOf(WORKER_ORDER_ID),
+          ],
+        );
+        await seed.query(
+          `INSERT INTO order_refund (id, order_id, amount_minor, currency_code, reason,
+                                     idempotency_key, owed_at)
+           VALUES ($1, $2, 4800, 'EUR', $3, $4, now())`,
+          [WORKER_REFUND_ID, WORKER_ORDER_ID, RefundReason.GOODWILL, `refund:${WORKER_REFUND_ID}`],
+        );
+        const fake = new FakePaymentProvider('a'.repeat(32), new SystemClock());
+        await fake.createIntent({
+          orderId: WORKER_ORDER_ID,
+          amount: money(4800, 'EUR'),
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          returnUrl: 'http://storefront.test/orders/boot',
+        });
+        const refund = fake.refund.bind(fake);
+        let inFlight: () => void = () => undefined;
+        const asked = new Promise<void>((resolve) => {
+          inFlight = resolve;
+        });
+        fake.refund = async (request) => {
+          inFlight();
+          await new Promise((resolve) => setTimeout(resolve, PROVIDER_CALL_MS));
+          return refund(request);
+        };
+
+        const { WorkerModule } = await import('./worker.module.js');
+        const context = await Test.createTestingModule({ imports: [WorkerModule] })
+          .overrideProvider(FakePaymentProvider)
+          .useValue(fake)
+          .compile();
+        await context.init();
+        const pool = context.get(DataSource);
+        try {
+          await Promise.race([
+            asked,
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('no refund asked within 10 s')), 10_000),
+            ),
+          ]);
+        } finally {
+          await context.close();
+        }
+
+        expect(pool.isInitialized).toBe(false);
+        const [made] = await seed.query<{ refund_ref: string | null; state: string }[]>(
+          `SELECT refund.refund_ref, placed.state
+             FROM order_refund AS refund JOIN seat_order AS placed ON placed.id = refund.order_id
+            WHERE refund.id = $1`,
+          [WORKER_REFUND_ID],
+        );
+        expect(made?.refund_ref).not.toBeNull();
+        expect(made?.state).toBe(OrderState.REFUNDED);
       } finally {
         await seed.destroy();
       }

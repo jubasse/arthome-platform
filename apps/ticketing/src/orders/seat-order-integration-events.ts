@@ -26,7 +26,8 @@ export interface SeatOrderWireContext {
 
 /**
  * The outbox rows of an order's events, in the order they were applied: `order.paid` keyed by the
- *   order, then one `seat.activated` per seat keyed by the date (events.md §3.1, D-078).
+ *   order, then one `seat.activated` per seat keyed by the date (events.md §3.1, D-078); one
+ *   `order.refunded` per refund made, keyed by the order.
  */
 export async function writeSeatOrderIntegrationEvents(
   manager: EntityManager,
@@ -144,7 +145,7 @@ function seatsActivated(event: SeatOrderPaid, context: SeatOrderWireContext): Ti
   }));
 }
 
-/** No seat was ever created for it, so `reason`, the seat's cancellation, stays unspecified. */
+/** One per refund made, several per order; `reason`, a seat's cancellation, is unspecified until PT2. */
 function orderRefunded(event: SeatOrderRefunded, context: SeatOrderWireContext): TicketingEvent {
   return {
     type: 'ticketing.order.refunded.v1',

@@ -133,8 +133,9 @@ NestJS skips them; this block is what makes loading systematic rather than remem
     defect only where it is used; `updateReturning` is in ticketing's payment inbox and messaging's
     `republishOutboxRow`, and `search-indexer`'s artist consumer still destructures its own):
     `updateReturning` (`@arthome-platform/transactions`) reads an UPDATE's or a DELETE's RETURNING rows, and
-    `nextAttemptAt`, `doublingDelays` and `attemptsAllowedBy` (`@arthome-platform/messaging`) are
-    the one retry schedule, consumers and provider calls alike.
+    `nextAttemptAt`, `retryDelayAfter`, `doublingDelays` and `attemptsAllowedBy`
+    (`@arthome-platform/messaging`) are the one retry schedule, consumers and provider calls alike,
+    the provider-call queues' backoff included.
   - **The local plugin's `meta.version` is the SHA-256 of the rule file, computed when the config
     loads**, never bumped by hand: `eslint --cache` keys its results on it, so editing a rule in
     `tools/eslint/` re-checks every file. A new rule file goes into the hash in
@@ -443,7 +444,7 @@ pnpm --filter @arthome-platform/identity      run migration:auth   # better-auth
 pnpm --filter @arthome-platform/notifications run migration:run
 pnpm --filter @arthome-platform/catalog       run migration:run
 pnpm --filter @arthome-platform/search-indexer run migration:run
-pnpm --filter @arthome-platform/ticketing     run migration:run   # its three processes stopped first
+pnpm --filter @arthome-platform/ticketing     run migration:run   # its four processes stopped first
 pnpm run provision:topics          # BEFORE the connectors, and before any consumer
 for c in identity catalog ticketing; do
   curl -s -X POST -H 'Content-Type: application/json' \
@@ -679,11 +680,13 @@ a bare producer script prints it too.
 
 ### The ticketing date sales path
 
-`ticketing` runs three processes from `apps/ticketing`, all on its own database `ticketing`: the API
-(`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`)
-and the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
+`ticketing` runs four processes from `apps/ticketing`, all on its own database `ticketing`: the API
+(`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`),
+the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
 nobody paid, closes each sale thirty minutes after its start (D-089, HANDOVER §0l), and needs
-Postgres alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
+Postgres alone, and the worker (`node dist/worker.js`, `REDIS_URL`), which makes every call owed to
+the payment provider from BullMQ's queues (HANDOVER §0m) and alone holds Redis. Its connector is
+`infra/debezium/ticketing-outbox.json`, registered with the loop above.
 
 A date catalog drafts is opened in ticketing by the consumer; the studio then gives it capacity and
 prices, each with an `Idempotency-Key` and the version the pane served:
@@ -765,8 +768,10 @@ Seats sell until thirty minutes after the live's start (D-089): from the start t
 cutoff, the quote and the purchase answer 409 `order.sales_closed`.
 The provider's webhooks arrive on `POST /v1/payments/webhook`, verified on their raw bytes, recorded
 in `stripe_event_inbox` and answered at once; the API process's payment worker applies them every
-second, refunds at once a payment confirmed after its hold expired with no seat left (D-082), and
-cancels the intents of expired orders (`apps/ticketing/HANDOVER.md` §0j, §0k).
+second. A payment confirmed after its hold expired with no seat left owes its refund (D-082), and an
+expired order its intent's cancellation: rows in Postgres, which the worker process's relay
+enqueues and its queues make, rate-limited and retried, then given up on with a dead row that
+`ops:check ticketing` reports (`apps/ticketing/HANDOVER.md` §0j, §0k, §0m).
 
 The capacity invariant is proven by `orders/capacity.itest.ts` on a real Postgres (adr-ticketing.md
 §3): 300 purchases at once on 100 seats hold exactly 100, never below zero, and all 100 come back at
@@ -799,11 +804,32 @@ started ten minutes before and one thirty-one minutes before, each opened by cat
 | a purchase there, without then with `X-Arthome-Late-Entry-Acknowledged: true` | 409 `order.late_entry_unacknowledged` with the three facts, no hold nor order left; then 201 |
 | the date past its cutoff | closed by the sweeper at its end, its last availability published; purchase and quote 409 `order.sales_closed` with `salesEndAt` |
 
+The worker beside the three (HANDOVER §0m) was proven on 2026-10-06 at PT0's PR B, on an isolated
+copy of this stack: compose's own services under `docker compose -p pt0-proof` with an override
+publishing Postgres, Kafka and Redis on ports of their own, the migrations to `1790441200000` run on
+an empty `ticketing`, the topics provisioned (`COMPOSE_PROJECT_NAME=pt0-proof pnpm run
+provision:topics`: the tool runs `docker compose exec kafka`, so without it the shared stack's
+broker is the one provisioned), the four processes started from that build. Two failed orders whose
+holds had expired were seeded on a date with no seat left, then the fake's signed
+`payment_intent.succeeded` was posted for each:
+
+| Check | Result |
+| --- | --- |
+| the first confirmation | 200; applied by the API's payment worker, its refund owed under `refund:{orderId}` with the webhook's `traceparent`; made by the worker 1.1 s after the webhook was answered, the order `refunded`, one `order.refunded` under that trace |
+| Redis paused 28 s, the second confirmation posted | 200, readiness unchanged; the refund owed and not enqueued; each relay pass failed on `Command timed out` within its 2 s, nine in all; `ops:check ticketing` answered `provider_call_queues` degraded, `provider_calls_dead` up |
+| Redis resumed | the second refund made 37 ms later, once, one `order.refunded`; `provider_call_queues` up, every count 0 |
+| SIGTERM to the four | all exited, no ticketing connection left in `pg_stat_activity`; then `down -v` |
+
+The second refund ran from the job its failed pass had sent: the commands sat on the socket during
+the pause and ran when Redis came back, so the row was made without ever being stamped, which is the
+crash between the add and the commit the job ids absorb.
+
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
 instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` to
-`1790440900000` with the three processes stopped, as for every ticketing migration; the last one
-writes each scheduled sale's end, and the sweeper closes those already past it on its first pass.
+`1790440900000` with the processes stopped (four since the worker), as for every ticketing
+migration; the last one writes each scheduled sale's end, and the sweeper closes those already past
+it on its first pass.
 
 ### Search, the date page and link resolution, from the storefront BFF
 

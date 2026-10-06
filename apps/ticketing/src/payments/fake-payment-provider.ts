@@ -139,14 +139,14 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
 
   public cancelIntent(intentRef: string, idempotencyKey: string): Promise<void> {
     return this.answer(`cancelIntent ${idempotencyKey}`, () => {
-      const found = this.intentByRef(intentRef);
+      const found = this.intentAskedOf(intentRef);
       if (found.intent.status !== IntentStatus.SUCCEEDED) found.canceled = true;
     });
   }
 
   public refund({ intentRef, idempotencyKey }: RefundRequest): Promise<{ refundRef: string }> {
     return this.answer(`refund ${idempotencyKey}`, () => {
-      if (this.intentByRef(intentRef).intent.status !== IntentStatus.SUCCEEDED) {
+      if (this.intentAskedOf(intentRef).intent.status !== IntentStatus.SUCCEEDED) {
         throw new Error(`fake provider: intent ${intentRef} has taken no money to refund`);
       }
       const refundRef =
@@ -270,6 +270,31 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
     throw new Error(`fake provider: no intent ${intentRef}`);
   }
 
+  /**
+   * For the two calls a worker makes, `refund` and `cancelIntent`: an intent another instance
+   *   created, the API's, is known by its reference, its order's, as confirmed, which is what the
+   *   running fake makes of every intent. The test helpers stay strict.
+   */
+  private intentAskedOf(intentRef: string): FakeIntent {
+    const known = [...this.intentsByOrder.values()].find(({ intent }) => intent.ref === intentRef);
+    if (known !== undefined) return known;
+    const orderId = orderIdOfIntentRef(intentRef);
+    if (orderId === null) throw new Error(`fake provider: no intent ${intentRef}`);
+    const confirmed: FakeIntent = {
+      orderId,
+      intent: {
+        ref: intentRef,
+        status: IntentStatus.SUCCEEDED,
+        clientSecret: `${intentRef}_secret`,
+        nextAction: null,
+        declineCode: null,
+      },
+      canceled: false,
+    };
+    this.intentsByOrder.set(orderId, confirmed);
+    return confirmed;
+  }
+
   private mac(seconds: string, body: Uint8Array): Buffer {
     return createHmac('sha256', this.webhookSecret).update(`${seconds}.`).update(body).digest();
   }
@@ -285,6 +310,13 @@ const STATUS_OF_SCENARIO: Readonly<
 
 export function intentRefOf(orderId: string): string {
   return `pi_fake_${orderId.replaceAll('-', '')}`;
+}
+
+const INTENT_REF = /^pi_fake_([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/;
+
+function orderIdOfIntentRef(intentRef: string): string | null {
+  const parts = INTENT_REF.exec(intentRef);
+  return parts === null ? null : parts.slice(1).join('-');
 }
 
 function digest(value: string): string {

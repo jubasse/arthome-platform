@@ -9,7 +9,12 @@ import {
   SeatState,
 } from '@arthome/core';
 
-import { SeatOrder, type SeatIssue, type SeatOrderPlacement } from './seat-order.aggregate.js';
+import {
+  SeatOrder,
+  type OwedRefund,
+  type SeatIssue,
+  type SeatOrderPlacement,
+} from './seat-order.aggregate.js';
 import { NextActionKind } from '../payments/next-action.js';
 
 const NOW = '2026-09-28T10:00:00.000Z';
@@ -126,25 +131,41 @@ describe('SeatOrder', () => {
     expect(placed().recordIntent(INTENT, OrderState.AWAITING_ACTION, NOW)).toBe(false);
   });
 
-  it('owes back a payment it has no seat for, and takes no payment after that', () => {
+  it('owes back a payment it has no seat for, under the order key, and takes no payment after that (D-082)', () => {
     const order = placed();
     order.fail({ code: null, declineCode: null }, NOW);
 
-    order.oweRefund(RefundReason.HOLD_EXPIRED_CAPACITY_LOST, INTENT.ref, LATER);
+    const refundId = order.oweUnseatedPaymentBack(
+      RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
+      INTENT.ref,
+      LATER,
+    );
     order.pay(INTENT.ref, ISSUES, LATER);
 
     expect(order.owesRefund).toBe(true);
+    expect(order.acceptsPayment).toBe(false);
     expect(order.snapshot.seats).toEqual([]);
+    expect(order.snapshot.refunds).toEqual([
+      {
+        id: refundId,
+        amount: PLACEMENT.quote.total,
+        reason: RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
+        idempotencyKey: `refund:${ORDER_ID}`,
+        seatId: null,
+        owedAt: LATER,
+        ref: null,
+        refundedAt: null,
+      },
+    ]);
+    expect(
+      order.oweUnseatedPaymentBack(RefundReason.HOLD_EXPIRED_CAPACITY_LOST, INTENT.ref, LATER),
+    ).toBeNull();
 
-    order.markRefunded('re_fake_1', LATER);
+    order.refundMade(refundId ?? '', 're_fake_1', LATER);
 
     expect(order.snapshot).toMatchObject({
       state: OrderState.REFUNDED,
-      refund: {
-        reason: RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
-        ref: 're_fake_1',
-        refundedAt: LATER,
-      },
+      refunds: [{ ref: 're_fake_1', refundedAt: LATER }],
     });
     expect(order.owesRefund).toBe(false);
     expect(order.getUncommittedEvents().map(({ kind }) => kind)).toEqual([
@@ -192,5 +213,105 @@ describe('SeatOrder, its intent told in either order (review M4)', () => {
     order.recordIntent({ ...told, ref: 'pi_other' }, OrderState.AWAITING_ACTION, LATER);
 
     expect(order.snapshot).toMatchObject({ intent: told, version });
+  });
+});
+
+describe('SeatOrder, its refunds (the ledger PT1 and PT2 owe through)', () => {
+  const paid = (): SeatOrder => {
+    const order = placed();
+    order.pay(INTENT.ref, ISSUES, NOW);
+    return order;
+  };
+  const refundOf = (id: string, amountMinor: number, seatId: string | null): OwedRefund => ({
+    id,
+    amount: money(amountMinor, 'EUR'),
+    reason: RefundReason.VIEWER_REQUEST,
+    idempotencyKey: `refund:${id}`,
+    seatId,
+  });
+  const FIRST = refundOf('01a0f700-0000-7000-8000-0000000000f1', 2400, ISSUES[0]?.id ?? null);
+  const SECOND = refundOf('01a0f700-0000-7000-8000-0000000000f2', 2400, ISSUES[1]?.id ?? null);
+
+  it('is partially refunded by a first refund made, then refunded once they reach the total', () => {
+    const order = paid();
+
+    order.oweRefund(FIRST, LATER);
+    order.oweRefund(SECOND, LATER);
+    expect(order.refundableLeft).toEqual(money(0, 'EUR'));
+
+    order.refundMade(FIRST.id, 're_fake_1', LATER);
+    expect(order.snapshot.state).toBe(OrderState.PARTIALLY_REFUNDED);
+    expect(order.owesRefund).toBe(true);
+
+    order.refundMade(SECOND.id, 're_fake_2', LATER);
+    order.refundMade(SECOND.id, 're_fake_2', LATER);
+    expect(order.snapshot.state).toBe(OrderState.REFUNDED);
+    expect(order.owesRefund).toBe(false);
+
+    const events = order.getUncommittedEvents();
+    expect(events.map(({ kind }) => kind)).toEqual([
+      'SeatOrderPlaced',
+      'SeatOrderPaid',
+      'SeatOrderRefundOwed',
+      'SeatOrderRefundOwed',
+      'SeatOrderRefunded',
+      'SeatOrderRefunded',
+    ]);
+    expect(events.at(-1)).toMatchObject({ refundId: SECOND.id, amount: SECOND.amount });
+  });
+
+  it('refuses a refund past what is left, and one of nothing', () => {
+    const order = paid();
+    order.oweRefund(FIRST, LATER);
+
+    expect(order.refundableLeft).toEqual(money(2400, 'EUR'));
+    expect(() => {
+      order.oweRefund({ ...SECOND, amount: money(2401, 'EUR') }, LATER);
+    }).toThrow(/2400 EUR is left to refund/);
+    expect(() => {
+      order.oweRefund({ ...SECOND, amount: money(0, 'EUR') }, LATER);
+    }).toThrow(/cannot owe 0 back/);
+    expect(order.snapshot.refunds).toHaveLength(1);
+  });
+
+  it('owes no refund on an order that holds no money, nor accepts a payment once one is owed', () => {
+    expect(() => {
+      placed().oweRefund(FIRST, LATER);
+    }).toThrow(/is pending: it holds no money to refund/);
+
+    const order = placed();
+    order.fail({ code: null, declineCode: null }, NOW);
+    order.oweUnseatedPaymentBack(RefundReason.HOLD_EXPIRED_CAPACITY_LOST, INTENT.ref, LATER);
+    expect(() => {
+      order.oweRefund(FIRST, LATER);
+    }).toThrow(/is failed/);
+  });
+
+  it('answers a refund owed again with the same facts, and refuses its id or key with others', () => {
+    const order = paid();
+    const first = order.oweRefund(FIRST, LATER);
+    const version = order.snapshot.version;
+
+    expect(order.oweRefund(FIRST, LATER)).toEqual(first);
+    expect(order.snapshot.refunds).toHaveLength(1);
+    expect(order.snapshot.version).toBe(version);
+    expect(() => {
+      order.oweRefund({ ...FIRST, amount: money(100, 'EUR') }, LATER);
+    }).toThrow(/already owes refund/);
+    expect(() => {
+      order.oweRefund({ ...SECOND, idempotencyKey: FIRST.idempotencyKey }, LATER);
+    }).toThrow(/already owes refund/);
+
+    order.refundMade(FIRST.id, 're_fake_1', LATER);
+    expect(order.oweRefund(FIRST, LATER)).toMatchObject({ id: FIRST.id, ref: 're_fake_1' });
+    expect(
+      order.getUncommittedEvents().filter(({ kind }) => kind === 'SeatOrderRefundOwed'),
+    ).toHaveLength(1);
+  });
+
+  it('refuses to mark made a refund it does not owe', () => {
+    expect(() => {
+      paid().refundMade(FIRST.id, 're_fake_1', LATER);
+    }).toThrow(/owes no refund/);
   });
 });

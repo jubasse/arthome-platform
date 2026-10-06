@@ -1,5 +1,5 @@
 import { MemorisedResponse } from '@arthome-platform/http-edge';
-import { Inject, Logger } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -42,7 +42,6 @@ import { SeatOrder } from './seat-order.aggregate.js';
 import { settleConfirmedPayment, type PendingCounterMove } from './settle-payment.js';
 import { CLOCK } from '../clock.js';
 import type { DateSales } from '../date-sales/date-sales.aggregate.js';
-import { OwedRefunds } from '../payments/owed-refunds.js';
 import { PAYMENT_PORT } from '../payments/payment-tokens.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactions, type TicketingTransaction } from '../ticketing-transactions.js';
@@ -80,12 +79,9 @@ type Resumption =
  */
 @CommandHandler(PurchaseSeat)
 export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
-  private readonly logger = new Logger(PurchaseSeatHandler.name);
-
   public constructor(
     private readonly transactions: TicketingTransactions,
     @Inject(PAYMENT_PORT) private readonly payments: PaymentPort,
-    private readonly refunds: OwedRefunds,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(PUBLIC_WEB_ORIGIN) private readonly publicWebOrigin: string,
   ) {}
@@ -111,10 +107,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     const recorded = await this.transactions.run((transaction) =>
       this.recordIntentIn(transaction, orderId, intent, command),
     );
-    if (recorded.kind === 'refusal') {
-      await this.refundIfOwed(orderId);
-      throw recorded.refusal;
-    }
+    if (recorded.kind === 'refusal') throw recorded.refusal;
     if (recorded.kind === 'create_intent') throw new Error(`order ${orderId} lost its intent`);
     return recorded.answer;
   }
@@ -400,21 +393,6 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     const answer = await this.answerOf(transaction, order);
     await pending?.();
     return answer;
-  }
-
-  /**
-   * A confirmation with no seat left to take (D-082), refunded at once; the payment worker asks
-   *   again should the provider not answer now.
-   */
-  private async refundIfOwed(orderId: string): Promise<void> {
-    try {
-      await this.refunds.refund(orderId);
-    } catch (error) {
-      this.logger.error(
-        `refund owed by order ${orderId} not made yet`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    }
   }
 
   /** The provider did not answer: the hold goes back (adr-ticketing.md §12), the order waits. */

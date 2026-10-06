@@ -18,12 +18,14 @@ import { SalesEnd1790440800000 } from './migrations/1790440800000-sales-end.js';
 import { SeatSalesCutoff1790440900000 } from './migrations/1790440900000-seat-sales-cutoff.js';
 import { ProviderCallRetries1790441000000 } from './migrations/1790441000000-provider-call-retries.js';
 import { SeatOrderHold1790441100000 } from './migrations/1790441100000-seat-order-hold.js';
+import { ProviderCallQueues1790441200000 } from './migrations/1790441200000-provider-call-queues.js';
+import { OrderRefundRow } from './orders/order-refund.entity.js';
 import { SeatHoldRow } from './orders/seat-hold.entity.js';
 import { SeatOrderRow } from './orders/seat-order.entity.js';
 import { SeatRow } from './orders/seat.entity.js';
 
 /**
- * Used by the three processes AND by the migration CLI. `synchronize` stays false: it would drop
+ * Used by the four processes AND by the migration CLI. `synchronize` stays false: it would drop
  *   and recreate columns to match the entities, breaking the connector with no migration to
  *   review (data-model.md §7.4).
  */
@@ -36,6 +38,7 @@ export const dataSource: DataSource = new DataSource({
     SeatHoldRow,
     SeatOrderRow,
     SeatRow,
+    OrderRefundRow,
     ProcessedMessage,
     OutboxEvent,
   ],
@@ -52,6 +55,7 @@ export const dataSource: DataSource = new DataSource({
     SeatSalesCutoff1790440900000,
     ProviderCallRetries1790441000000,
     SeatOrderHold1790441100000,
+    ProviderCallQueues1790441200000,
   ],
   applicationName: Service.TICKETING,
 
