@@ -759,7 +759,12 @@ POST /v1/dates/:dateId/seat-quote   { tier, quantity }                 x-arthome
 POST /v1/orders/seats               { dateId, tier, quantity, expectedTotal }   Idempotency-Key required,
                                                     X-Arthome-Late-Entry-Acknowledged after the start
 GET  /v1/orders/:orderId                                                x-arthome-deadline required
+POST /v1/seats/:seatId/cancel       { cancelReasonCode? }               Idempotency-Key required
+POST /v1/seats/:seatId/refund       { refundReasonCode, partialAmountMinor? }   the studio's; Idempotency-Key
 ```
+
+A seat's cancellation and its refund, and the provider's refund and dispute webhooks, are
+`apps/ticketing/HANDOVER.md` §0o.
 
 `purchaseSeat` answers 201 with the tickets and the order once paid, 202 with the payment handoff
 while the buyer has to act, 409 `order.sold_out`, `order.price_stale` or `order.payment_declined`,
