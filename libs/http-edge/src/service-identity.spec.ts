@@ -1,7 +1,5 @@
-import { readInternalTokenSigningKey } from '@arthome-platform/config';
-import { httpApp } from '@arthome-platform/testing';
+import { httpApp, mintInternalToken } from '@arthome-platform/testing';
 import { Controller, Module, type ExecutionContext } from '@nestjs/common';
-import { SignJWT, importJWK } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -12,15 +10,7 @@ import {
   type HandlerInput,
   type HandlerOutput,
 } from '@arthome/contracts/http';
-import {
-  ApiErrorCode,
-  FixedClock,
-  INTERNAL_TOKEN_ALGORITHM,
-  INTERNAL_TOKEN_LIFETIME_SECONDS,
-  InternalTokenIssuer,
-  Service,
-  audienceOf,
-} from '@arthome/core';
+import { ApiErrorCode, FixedClock, InternalTokenIssuer, Service } from '@arthome/core';
 
 import { DEADLINE_HEADER } from './deadline.js';
 import { edgeProviders } from './edge-providers.js';
@@ -144,18 +134,6 @@ class AllowedOptionalModule {}
 
 const clock = new FixedClock(Date.now());
 
-/** A storefront BFF token carrying claims `mintInternalToken` does not set, `pro` among them. */
-async function tokenNaming(claims: Readonly<Record<string, string>>): Promise<string> {
-  const { keyId, privateJwk } = readInternalTokenSigningKey({ NODE_ENV: 'test' });
-  const issuedAt = Math.floor(clock.nowMs() / 1000);
-  return new SignJWT({ ...claims })
-    .setProtectedHeader({ alg: INTERNAL_TOKEN_ALGORITHM, kid: keyId })
-    .setIssuer(InternalTokenIssuer.STOREFRONT_BFF)
-    .setAudience(audienceOf(Service.CATALOG))
-    .setIssuedAt(issuedAt)
-    .setExpirationTime(issuedAt + INTERNAL_TOKEN_LIFETIME_SECONDS)
-    .sign(await importJWK({ ...privateJwk }, INTERNAL_TOKEN_ALGORITHM));
-}
 let app: Awaited<ReturnType<typeof httpApp>>;
 let anonymous: Awaited<ReturnType<typeof httpApp>>;
 
@@ -194,7 +172,13 @@ describe('the service identity', () => {
       method: 'GET',
       url: '/v1/overlay',
       headers: {
-        authorization: `Bearer ${await tokenNaming({ sub: ACCOUNT, pro: PROFILE, did: DEVICE })}`,
+        authorization: `Bearer ${await mintInternalToken({
+          service: Service.CATALOG,
+          clock,
+          accountId: ACCOUNT,
+          profileId: PROFILE,
+          deviceId: DEVICE,
+        })}`,
         [DEADLINE_HEADER]: new Date(clock.nowMs() + 60_000).toISOString(),
       },
     });

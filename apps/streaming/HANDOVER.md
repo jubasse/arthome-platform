@@ -145,7 +145,7 @@ anything a later PRD logs goes through `redactSensitive`.
 | `streaming-docs.spec.ts` | the service contract's page in development, nothing in production |
 | `boot.itest.ts` | the API (with `MediaModule`, its probes and its docs), the consumer and the sweeper boot and stop on a real Postgres, Kafka stubbed |
 | `libs/config/src/env.spec.ts` | both readers, their defaults outside production, the development keys refused in production, the two development keys distinct |
-| `libs/http-edge/src/service-identity.spec.ts`, `caller-service.rule.spec.ts` | the profile and the device reach the principal, absent without them; an issuer listed passes, another 403 `api.forbidden`, a rule with no issuer or an unknown one fails the boot |
+| `libs/http-edge/src/service-identity.spec.ts`, `caller-service.rule.spec.ts` | the profile and the device reach the principal, absent without them (the token from `@arthome-platform/testing`'s `mintInternalToken`, whose `profileId` and `deviceId` PS3 and PS4's suites use too); an issuer listed passes, another 403 `api.forbidden`, a rule with no issuer or an unknown one fails the boot |
 | `apps/bff-storefront/src/internal-token.minter.spec.ts` | `pro` minted with a profile, absent without |
 
 **Gaps**
@@ -155,8 +155,6 @@ anything a later PRD logs goes through `redactSensitive`.
   the HTTP route a media server calls to authorise ingest (pass 2's inbound webhooks).
 - The fake is in process: no development route drives it (D-121), so a script cannot reach it. The
   suites drive it on the real Postgres, Kafka and Debezium of `@arthome-platform/testing`.
-- `@arthome-platform/testing`'s `mintInternalToken` mints no `pro`: the identity spec signs its
-  own token. PS3 and PS4, whose routes refuse a token without a profile, will want the option there.
 - No viewer names a profile yet, so the storefront BFF mints no `pro` on any call today.
 
 ## 0b. Run desk (PS1)
