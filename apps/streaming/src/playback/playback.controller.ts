@@ -6,7 +6,6 @@ import {
   refusalOf,
   refuse,
   remainingBeforeDeadline,
-  type Principal,
 } from '@arthome-platform/http-edge';
 import { Controller, Inject, Logger, Res } from '@nestjs/common';
 
@@ -16,7 +15,6 @@ import {
   ApiErrorCode,
   ChatMode,
   DisplayState,
-  InternalTokenIssuer,
   WatchDenialReason,
   WatchScope,
   type Clock,
@@ -34,29 +32,12 @@ import { setCookieHeadersOf } from './playback-format.js';
 import { CLOCK } from '../clock.js';
 import { PlaybackSigningUnavailable } from '../media/media-ports.js';
 import type { RunIncidentFacts } from '../run/run-facts.js';
+import { accountOf, callerOf, type ServicePrincipal } from '../service-caller.js';
 
 const { openPlayback, renewPlaybackTicket, releasePlayback } = streamingServiceApi.routes;
 
-type ServicePrincipal = HandlerInput<typeof openPlayback>['principal'];
-
 interface CookieReply {
   header(name: 'set-cookie', value: string[]): unknown;
-}
-
-/** A 403 without a user: playback is always an account's, as the run desk is an operator's. */
-function accountOf(principal: ServicePrincipal): string {
-  if (principal.userId === null) throw refusalOf(ApiErrorCode.FORBIDDEN);
-  return principal.userId;
-}
-
-/** http-edge's caller, a claim the token lacks read as null. */
-function callerOf(principal: ServicePrincipal): Principal {
-  return {
-    accountId: principal.userId,
-    profileId: principal.profileId ?? null,
-    deviceId: principal.deviceId ?? null,
-    issuer: InternalTokenIssuer.STOREFRONT_BFF,
-  };
 }
 
 /** The account, the token's profile (403 without one) and its device (403 without one). */

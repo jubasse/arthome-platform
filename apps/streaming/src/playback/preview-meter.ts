@@ -1,4 +1,3 @@
-import { Injectable } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 
 import type { Instant } from '@arthome/core';
@@ -23,16 +22,4 @@ export interface PreviewMeter {
     dateId: string,
     now: Instant,
   ): Promise<Instant | null>;
-}
-
-/** Until PS4: a non-holder gets no preview, so no unmetered preview ever ships. */
-@Injectable()
-export class NoPreviewMeter implements PreviewMeter {
-  public secondsLeft(): Promise<number> {
-    return Promise.resolve(0);
-  }
-
-  public cover(): Promise<Instant | null> {
-    return Promise.resolve(null);
-  }
 }

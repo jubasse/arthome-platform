@@ -13,6 +13,7 @@ import {
   PLAYBACK_LEASE_SECONDS,
   PLAYBACK_RENEWAL_INTERVAL_SECONDS,
   PLAYBACK_TOKEN_LIFETIME_SECONDS,
+  PREVIEW_BUDGET_SECONDS,
   RunState,
   Surface,
   WatchDenialReason,
@@ -135,20 +136,19 @@ describe('openPlayback', () => {
   );
 
   it(
-    'gives a non-holder no preview while the meter is not bound: the verdict, then nothing written',
+    'gives a non-holder the preview on air: a token of 120 s, the budget counted on the server',
     async () => {
       const viewer = newViewer();
       const dateId = await liveDate(playback);
+      const now = playback.clock.now();
 
-      const refused = await openCall(playback, viewer, dateId);
+      const opened = ticketOf(await openCall(playback, viewer, dateId));
 
-      expect(refused.statusCode).toBe(403);
-      expect(errorOf(refused).code).toBe(WatchDenialReason.PREVIEW_EXHAUSTED);
-      expect(
-        await playback.dataSource.query('SELECT 1 FROM playback_session WHERE account_id = $1', [
-          viewer.accountId,
-        ]),
-      ).toEqual([]);
+      expect(opened).toMatchObject({
+        scope: WatchScope.PREVIEW,
+        previewSecondsLeft: PREVIEW_BUDGET_SECONDS,
+        expiresAt: plusSeconds(now, PLAYBACK_TOKEN_LIFETIME_SECONDS),
+      });
     },
     CASE_MS,
   );
