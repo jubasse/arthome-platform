@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 
 import { env } from './env.js';
 import { Initial1791287654242 } from './migrations/1791287654242-initial.js';
+import { EntitlementProjection1791636545325 } from './migrations/1791636545325-entitlement-projection.js';
 import { SERVICE } from './service.js';
 
 /**
@@ -14,7 +15,7 @@ export const dataSource: DataSource = new DataSource({
   type: 'postgres',
   url: env.DATABASE_URL,
   entities: [ProcessedMessage, OutboxEvent],
-  migrations: [Initial1791287654242],
+  migrations: [Initial1791287654242, EntitlementProjection1791636545325],
   applicationName: SERVICE,
 
   // `poolSize` × replicas × processes, plus the connector's replication connection, must stay
