@@ -499,6 +499,44 @@ describe('SeatOrder, its seats leaving active (S1 to S3)', () => {
     ]);
   });
 
+  it('bounds the shares across calls under one refund, refuses a negative share, moves nothing', () => {
+    const order = paidForThree();
+    oweFor(order, null, 4800);
+    const cancel = (seatId: string, shareMinor: number, second?: [string, number]) => {
+      order.cancelSeats(
+        {
+          reason: SeatCancelReason.DATE_CANCELLED,
+          refundId: REFUND_ID,
+          seats: [
+            { seatId, refundAmount: money(shareMinor, 'EUR') },
+            ...(second === undefined
+              ? []
+              : [{ seatId: second[0], refundAmount: money(second[1], 'EUR') }]),
+          ],
+        },
+        LATER,
+      );
+    };
+    cancel(FIRST_SEAT, 2400);
+    const version = order.snapshot.version;
+
+    expect(() => {
+      cancel(SECOND_SEAT, 2401);
+    }).toThrow(/shares exceed refund/);
+    expect(() => {
+      cancel(SECOND_SEAT, 2600, [THIRD_SEAT, -200]);
+    }).toThrow(/cannot be negative/);
+    expect(order.snapshot.version).toBe(version);
+    expect(statesOf(order)[SECOND_SEAT]).toBe(SeatState.ACTIVE);
+
+    cancel(SECOND_SEAT, 2400);
+    expect(order.snapshot.seats[1]).toMatchObject({
+      state: SeatState.CANCELLED,
+      refundId: REFUND_ID,
+      refundAmount: money(2400, 'EUR'),
+    });
+  });
+
   it('refuses a seat named twice, and moves nothing', () => {
     const order = paidForThree();
     oweFor(order, null, 4800);
@@ -690,5 +728,12 @@ describe('SeatOrder, the refunds a webhook may report made', () => {
       [null, null],
     ]);
     expect(refundedEvents(order)).toHaveLength(1);
+  });
+
+  it('never names a refund already made, even one the unexplained amount would cover', () => {
+    const order = paidOwing(500, 1000);
+    order.refundMade(FIRST, 're_1', LATER);
+
+    expect(order.refundsTheProviderMayHaveMade(money(1000, 'EUR'))).toEqual([]);
   });
 });

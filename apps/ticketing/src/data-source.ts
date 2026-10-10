@@ -4,6 +4,8 @@ import { DataSource } from 'typeorm';
 import { Service } from '@arthome/core';
 
 import { DateAvailabilityPublicationRow } from './availability/date-availability-publication.entity.js';
+import { CreditRow } from './credits/credit.entity.js';
+import { DateOutcomeSettlementRow } from './date-outcomes/date-outcome-settlement.entity.js';
 import { DateSalesRow } from './date-sales/date-sales.entity.js';
 import { env } from './env.js';
 import { Initial1790440000000 } from './migrations/1790440000000-initial.js';
@@ -21,6 +23,7 @@ import { SeatOrderHold1790441100000 } from './migrations/1790441100000-seat-orde
 import { ProviderCallQueues1790441200000 } from './migrations/1790441200000-provider-call-queues.js';
 import { OneUnseatedRefundPerOrder1790441300000 } from './migrations/1790441300000-one-unseated-refund-per-order.js';
 import { SeatStates1790441350000 } from './migrations/1790441350000-seat-states.js';
+import { DateOutcomes1790441400000 } from './migrations/1790441400000-date-outcomes.js';
 import { OrderRefundRow } from './orders/order-refund.entity.js';
 import { SeatHoldRow } from './orders/seat-hold.entity.js';
 import { SeatOrderRow } from './orders/seat-order.entity.js';
@@ -41,6 +44,8 @@ export const dataSource: DataSource = new DataSource({
     SeatOrderRow,
     SeatRow,
     OrderRefundRow,
+    CreditRow,
+    DateOutcomeSettlementRow,
     ProcessedMessage,
     OutboxEvent,
   ],
@@ -60,6 +65,7 @@ export const dataSource: DataSource = new DataSource({
     ProviderCallQueues1790441200000,
     OneUnseatedRefundPerOrder1790441300000,
     SeatStates1790441350000,
+    DateOutcomes1790441400000,
   ],
   applicationName: Service.TICKETING,
 

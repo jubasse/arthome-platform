@@ -15,6 +15,7 @@ import {
   LOST_REFUNDS_SQL,
   RERUN_ASKED_REFUNDS_SQL,
   RELAY_BATCH,
+  RERUN_BATCH,
 } from './owed-call-relay.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 
@@ -103,7 +104,7 @@ describe("the relay's claims", () => {
         expect(plan).not.toMatch(/Seq Scan on order_refund/);
         expect(plan).toMatch(/idx_order_refund_due/);
       }
-      const reruns = await planOf(RERUN_ASKED_REFUNDS_SQL, [RELAY_BATCH]);
+      const reruns = await planOf(RERUN_ASKED_REFUNDS_SQL, [RERUN_BATCH]);
       expect(reruns).not.toMatch(/Seq Scan on order_refund/);
       expect(reruns).toMatch(/idx_order_refund_rerun_asked/);
     },

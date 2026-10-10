@@ -102,6 +102,10 @@ export class SeatOrderRow {
   @Column('timestamptz', { nullable: true })
   paid_at!: Date | null;
 
+  /** When its date's outcome was settled on it, whatever that gave it: the pass's mark, never the aggregate's. */
+  @Column('timestamptz', { nullable: true })
+  outcome_settled_at!: Date | null;
+
   /** What the purchase answered, replayed as it was under its key (transport.md §5.4). */
   @Column('integer', { nullable: true })
   answer_status!: number | null;

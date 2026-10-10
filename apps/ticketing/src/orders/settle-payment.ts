@@ -1,6 +1,12 @@
 import { v7 as uuidv7 } from 'uuid';
 
-import { RefundReason, seatCancelDeadline, type Instant } from '@arthome/core';
+import {
+  DateOutcome,
+  RefundReason,
+  refundReasonOnDate,
+  seatCancelDeadline,
+  type Instant,
+} from '@arthome/core';
 
 import { drawFreeSeatCodes } from './seat-codes.js';
 import type { SeatOrder } from './seat-order.aggregate.js';
@@ -14,48 +20,76 @@ import type { TicketingTransaction } from '../ticketing-transactions.js';
 export type PendingCounterMove = () => Promise<void>;
 
 /**
- * A payment the provider confirmed, from tx B or from its webhook (HANDOVER §0h, §0k): the seats
- *   are created from the hold, taken again when the hold is gone, or, none left, the money is owed
- *   back. The order is loaded, under its lock, before its hold; the caller saves it, writes its
- *   events, and runs the counter move it is handed last. Only D-082's retake runs at once, since
- *   whether it takes decides between paying and refunding; owing the money back saves the order
- *   here, so its refund's row exists to take the trace.
+ * A payment the provider confirmed, from tx B or from its webhook (HANDOVER §0h, §0k, §0n): the
+ *   seats are created from the hold, taken again when the hold is gone, or, none left, the money is
+ *   owed back. On a date a cancellation closed no seat is given: the hold goes back and the money
+ *   is owed back `date_cancelled` (D-097). The order is loaded, under its lock, before its hold; the
+ *   caller saves it, writes its events, and runs the counter move it is handed last. Only D-082's
+ *   retake runs at once, since whether it takes decides between paying and refunding.
  */
 export async function settleConfirmedPayment(
-  { manager, holds, orders, dateSales }: TicketingTransaction,
+  transaction: TicketingTransaction,
   order: SeatOrder,
   intentRef: string,
   now: Instant,
   traceparent: string | null,
 ): Promise<PendingCounterMove | null> {
   if (!order.acceptsPayment) return null;
+  const { holds, dateSales } = transaction;
   const { holdId, dateId, quantity } = order.snapshot;
+  const sales = await dateSales.findUnlocked(dateId);
+  const outcome = sales?.snapshot.outcome ?? null;
   const hold = await holds.findById(holdId);
+  if (outcome === DateOutcome.CANCELLED) {
+    let returned: PendingCounterMove | null = null;
+    if (hold?.isActive === true) {
+      hold.release(now);
+      await holds.save(hold);
+      returned = () => dateSales.returnHeldSeats(dateId, quantity);
+    }
+    await owePaymentBack(transaction, order, outcome, intentRef, now, traceparent);
+    return returned;
+  }
   let pending: PendingCounterMove | null = null;
   if (hold?.isActive === true) {
     hold.consume(now);
     await holds.save(hold);
     pending = () => dateSales.sellHeldSeats(dateId, quantity);
   } else if (!(await dateSales.takeAndSellSeats(dateId, quantity, now))) {
-    const refundId = order.oweUnseatedPaymentBack(
-      RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
-      intentRef,
-      now,
-    );
-    if (refundId !== null) {
-      await orders.save(order);
-      await recordRefundTraceparent(manager, refundId, traceparent);
-    }
+    // Read again: a cancellation committed since the first read is what refused the statement.
+    const outcomeNow = (await dateSales.findUnlocked(dateId))?.snapshot.outcome ?? null;
+    await owePaymentBack(transaction, order, outcomeNow, intentRef, now, traceparent);
     return null;
   }
-  const sales = await dateSales.findUnlocked(dateId);
   const startsAt = sales?.snapshot.startsAt ?? null;
   const cancelDeadline = startsAt === null ? null : seatCancelDeadline(startsAt);
-  const codes = await drawFreeSeatCodes(manager, quantity);
+  const codes = await drawFreeSeatCodes(transaction.manager, quantity);
   order.pay(
     intentRef,
     codes.map((code) => ({ id: uuidv7(), code, cancelDeadline })),
     now,
   );
   return pending;
+}
+
+/**
+ * All of it, with no seat: D-082's capacity lost, or `date_cancelled` on a cancelled date. The
+ *   order is saved here, so its refund's row exists to take the trace.
+ */
+async function owePaymentBack(
+  { manager, orders }: TicketingTransaction,
+  order: SeatOrder,
+  outcome: DateOutcome | null,
+  intentRef: string,
+  now: Instant,
+  traceparent: string | null,
+): Promise<void> {
+  const refundId = order.oweUnseatedPaymentBack(
+    refundReasonOnDate(outcome, RefundReason.HOLD_EXPIRED_CAPACITY_LOST),
+    intentRef,
+    now,
+  );
+  if (refundId === null) return;
+  await orders.save(order);
+  await recordRefundTraceparent(manager, refundId, traceparent);
 }

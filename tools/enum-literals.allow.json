@@ -57,6 +57,11 @@
       "reason": "BullMQ's worker event for a failed job, the name `@OnWorkerEvent` listens under (`WorkerListener`). ORDER_STATES' `failed` is an order that took no payment; importing OrderState.FAILED to name a queue event would be the NavigationEntry.JOURNAL mistake again."
     },
     {
+      "file": "apps/ticketing/src/payments/provider-call-queues.ts",
+      "value": "active",
+      "reason": "BullMQ's state of a job a worker is running (`JobState`), which the refund webhook's rerun pass reads. SEAT_STATES', SEAT_HOLD_STATES', SUBSCRIPTION_STATES', ACCOUNT_STATUSES' and PLAYBACK_SESSION_STATES' `active` are about a seat, a hold, a subscription, an account and a playback; importing any of them to read a queue's job would be the NavigationEntry.JOURNAL mistake again."
+    },
+    {
       "file": "apps/ticketing/src/payments/provider-call-checks.ts",
       "value": "ready",
       "reason": "ioredis's connection status, the word its client reports once it answers commands. REPLAY_ASSET_STATES' `ready` is a replay that can be watched; importing ReplayAssetState.READY to read a Redis connection would be the NavigationEntry.JOURNAL mistake again."

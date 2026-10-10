@@ -30,6 +30,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
+  CreditOrigin,
   FixedClock,
   OrderErrorCode,
   OrderState,
@@ -51,6 +52,7 @@ import { AvailabilityPublisher } from '../availability/availability-publisher.js
 import { AvailabilityPublisherModule } from '../availability/availability-publisher.module.js';
 import { PublishDueAvailability } from '../availability/publish-due-availability.command.js';
 import { CLOCK } from '../clock.js';
+import { Credit } from '../credits/credit.aggregate.js';
 import { applyCatalogDateMessage } from '../date-sales/catalog-date-messages.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
 import { DateSalesModule } from '../date-sales/date-sales.module.js';
@@ -606,9 +608,25 @@ describe('a credited seat, as PT1 credits an interrupted date', () => {
       const { order, tickets } = await bought(dateId, 2);
       const creditId = '01a0f8cc-0000-7000-8000-000000000001';
 
-      await app.get(TicketingTransactions).run(async ({ orders }) => {
+      await app.get(TicketingTransactions).run(async ({ orders, credits }) => {
         const loaded = await orders.findById(order.id);
         if (loaded === null) throw new Error(`no order ${order.id}`);
+        const { accountId, channelId } = loaded.snapshot;
+        if (accountId === null) throw new Error(`order ${order.id} has no account`);
+        await credits.issue(
+          Credit.issue(
+            {
+              id: creditId,
+              accountId,
+              channelId,
+              orderId: order.id,
+              amount: money(1, 'EUR'),
+              origin: CreditOrigin.INTERRUPTED_DATE,
+              originRef: dateId,
+            },
+            clock.now(),
+          ),
+        );
         loaded.creditSeats(
           {
             creditId,
