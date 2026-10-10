@@ -61,22 +61,21 @@ describe('identity.device.revoked.v1', () => {
       expect(await playback.apply(message)).toBe(Outcome.APPLIED);
       expect(await playback.apply(message)).toBe(Outcome.DUPLICATE);
 
-      const sessions = await sessionsOf(playback, tv.accountId);
-      expect(sessions.filter(({ device_id }) => device_id === tv.deviceId)).toEqual([
-        expect.objectContaining({
-          id: onFirst.sessionId,
-          state: PlaybackSessionState.REVOKED,
-          revoke_reason: IdentityErrorCode.SIGNED_OUT_ELSEWHERE,
-        }),
-        expect.objectContaining({
-          id: onSecond.sessionId,
-          state: PlaybackSessionState.REVOKED,
-          revoke_reason: IdentityErrorCode.SIGNED_OUT_ELSEWHERE,
-        }),
-      ]);
-      expect(sessions.find(({ id }) => id === onPhone.sessionId)?.state).toBe(
-        PlaybackSessionState.ACTIVE,
+      const outcomes = Object.fromEntries(
+        (await sessionsOf(playback, tv.accountId)).map(({ id, state, revoke_reason }) => [
+          id,
+          { state, revoke_reason },
+        ]),
       );
+      const revoked = {
+        state: PlaybackSessionState.REVOKED,
+        revoke_reason: IdentityErrorCode.SIGNED_OUT_ELSEWHERE,
+      };
+      expect(outcomes).toEqual({
+        [onFirst.sessionId]: revoked,
+        [onSecond.sessionId]: revoked,
+        [onPhone.sessionId]: { state: PlaybackSessionState.ACTIVE, revoke_reason: null },
+      });
 
       const refused = await renewCall(playback, tv, onFirst.sessionId);
       expect(refused.statusCode).toBe(403);
@@ -132,6 +131,27 @@ describe('identity.device_session.closed.v1', () => {
       expect(errorOf(await renewCall(playback, tv, opened.sessionId)).code).toBe(
         IdentityErrorCode.SIGNED_OUT_ELSEWHERE,
       );
+    },
+    CASE_MS,
+  );
+
+  it(
+    'spares a lease the profile resumed on the same date after the close',
+    async () => {
+      const tv = newViewer();
+      const dateId = await seatedDate(tv);
+      const opened = ticketOf(await openCall(playback, tv, dateId));
+      const closedAt = plusSeconds(playback.clock.now(), 5);
+      playback.clock.advance(10_000);
+      const resumed = ticketOf(await openCall(playback, tv, dateId));
+      expect(resumed).toMatchObject({ sessionId: opened.sessionId, resumedExistingSession: true });
+
+      expect(await playback.apply(deviceSessionClosed(tv, closedAt))).toBe(Outcome.APPLIED);
+
+      expect(await sessionsOf(playback, tv.accountId)).toEqual([
+        expect.objectContaining({ id: opened.sessionId, state: PlaybackSessionState.ACTIVE }),
+      ]);
+      expect((await renewCall(playback, tv, opened.sessionId)).statusCode).toBe(200);
     },
     CASE_MS,
   );

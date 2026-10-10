@@ -241,14 +241,17 @@ export class PlaybackSessions {
     return inserted.length === 1;
   }
 
-  /** The device's lease taken over by its own opening: same id, a new token and lease. */
+  /**
+   * The device's lease taken over by its own opening: same id, a new token and lease, opened now,
+   *   so a profile close older than the resumption spares it and the renewal ranks it newest.
+   */
   public async reopen(id: string, reopening: Reopening): Promise<PlaybackSession | null> {
     const [row] = await updateReturning<SessionRow>(
       this.manager,
       `UPDATE playback_session
           SET profile_id = $2, scope = $3, protocol = $4, drm_system = $5, quality_cap = $6,
               edge_renewal_mode = $7, surface = $8, token_id = $9, token_expires_at = $10,
-              lease_expires_at = $11, last_renewed_at = $12
+              lease_expires_at = $11, opened_at = $12, last_renewed_at = $12
         WHERE id = $1 AND state = ${ACTIVE}
         RETURNING *`,
       [
