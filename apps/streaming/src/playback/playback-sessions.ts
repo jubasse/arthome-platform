@@ -161,7 +161,7 @@ export const EXPIRE_LAPSED_SQL = `
   RETURNING id`;
 
 /** The device's active leases of the account, locked by id, then revoked: $5 and $6 narrow to a profile's. */
-const REVOKE_DEVICE_SQL = `
+export const REVOKE_DEVICE_SQL = `
   UPDATE playback_session
      SET state = '${PlaybackSessionState.REVOKED}', revoke_reason = $3, closed_at = $4
    WHERE state = ${ACTIVE}
