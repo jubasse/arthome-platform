@@ -18,6 +18,7 @@ import { DataSource } from 'typeorm';
 import { dataSource } from './data-source.js';
 import { EDGE_PROVIDERS } from './edge-providers.js';
 import { MediaModule } from './media/media.module.js';
+import { PlaybackModule } from './playback/playback.module.js';
 import { RunModule } from './run/run.module.js';
 import { SERVICE } from './service.js';
 
@@ -33,6 +34,7 @@ import { SERVICE } from './service.js';
     CqrsModule.forRoot(),
     MediaModule,
     RunModule,
+    PlaybackModule,
   ],
   providers: [
     ...EDGE_PROVIDERS,

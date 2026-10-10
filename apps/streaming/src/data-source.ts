@@ -6,6 +6,7 @@ import { Initial1791287654242 } from './migrations/1791287654242-initial.js';
 import { EntitlementProjection1791636545325 } from './migrations/1791636545325-entitlement-projection.js';
 import { Run1791636564435 } from './migrations/1791636564435-run.js';
 import { ReplayAsset1791700000000 } from './migrations/1791700000000-replay-asset.js';
+import { PlaybackSession1791722400000 } from './migrations/1791722400000-playback-session.js';
 import { IncidentRow, RunRow } from './run/run.entity.js';
 import { SERVICE } from './service.js';
 
@@ -23,6 +24,7 @@ export const dataSource: DataSource = new DataSource({
     EntitlementProjection1791636545325,
     Run1791636564435,
     ReplayAsset1791700000000,
+    PlaybackSession1791722400000,
   ],
   applicationName: SERVICE,
 
