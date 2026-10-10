@@ -57,10 +57,10 @@ export const STREAM_KEY_TEST_SECRET = 'the-run-desk-suites-stream-key-secret';
  * No studio BFF mints yet, so the development key set names the storefront's key alone: the
  *   suites verify the studio's tokens against that key under a studio `kid`.
  */
-const STUDIO_KEY_ID = 'bff-st-run-desk-suites';
+export const STUDIO_KEY_ID = 'bff-st-run-desk-suites';
 const DEVELOPMENT_KEY = readInternalTokenSigningKey({ NODE_ENV: 'test' });
 
-function studioTokenVerifier(clock: FixedClock): InternalTokenVerifier {
+export function studioTokenVerifier(clock: FixedClock): InternalTokenVerifier {
   const { d: _private, kid: _kid, ...publicHalf } = DEVELOPMENT_KEY.privateJwk;
   return new InternalTokenVerifier(
     Service.STREAMING,

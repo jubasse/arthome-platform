@@ -55,7 +55,7 @@ export function wireMessage<Desc extends DescMessage>(
   };
 }
 
-function payloadOf(message: WireMessage): EachMessagePayload {
+export function payloadOf(message: WireMessage): EachMessagePayload {
   const headers = Object.fromEntries(
     Object.entries(message.headers).map(([name, value]) => [name, Buffer.from(String(value))]),
   );

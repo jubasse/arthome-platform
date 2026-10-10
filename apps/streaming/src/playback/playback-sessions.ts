@@ -9,6 +9,7 @@ import type {
 } from '@arthome/contracts/streaming';
 import {
   PlaybackSessionState,
+  toEpochMs,
   type IdentityErrorCode,
   type Instant,
   type StorefrontSurface,
@@ -122,12 +123,15 @@ export interface ActiveScreen {
   readonly openedAt: Instant;
 }
 
-/** What a refusal lists of the screens: never a token, a scope or a cookie. */
+/** What a refusal lists of the screens, in the order they opened: never a token, a scope or a cookie. */
 export function activeScreensOf(
   screens: readonly PlaybackSession[],
   deviceId: string,
 ): ActiveScreen[] {
-  return screens.map((screen) => ({
+  const byOpening = [...screens].sort(
+    (left, right) => toEpochMs(left.openedAt) - toEpochMs(right.openedAt),
+  );
+  return byOpening.map((screen) => ({
     sessionId: screen.id,
     deviceId: screen.deviceId,
     isCurrentDevice: screen.deviceId === deviceId,
