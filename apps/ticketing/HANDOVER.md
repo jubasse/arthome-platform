@@ -711,7 +711,8 @@ to the queue.
   the consumer only inserts the settlement row, which nobody holds yet. A payment takes its order,
   its hold, then the date's row last (§0h): one on a cancelled date waits for a batch holding its
   order, then is given no seat. PT3's paths (§0p): a join, a leave and a tier opening take their
-  `idempotency_record`, then the date's row, then the entries; the window's end takes the date's
+  `idempotency_record`, then the date's row, then the entries (a tier opening ending a window past
+  its end takes the date's row by that claim, waiting); the window's end takes the date's
   row (`SKIP LOCKED`), then the entries, reading `seat_order` unlocked; a purchase from the pool
   reads its entry unlocked and locks no entry.
 - **Exactly once**: `claimMessage` in the fact's transaction; `outcome_settled_at` stamped in the
@@ -872,13 +873,19 @@ stopped). adr-ticketing.md §9, D-083, D-093, D-094, D-096; core's `ticketing/wa
   here, not at payment** (PRD §13): the payment path takes no entry lock, so its lock order stays
   §0h's; an entry that bought stays `notified` until then. The paid order is found per entry through
   `seat_order_idempotency`'s leading `account_id`, a lateral `LIMIT 1` (`CONVERT_NOTIFIED_ENTRIES`).
+  On a date a cancellation or an interruption ended before its settlement ran, the entries are
+  `closed`, not `lapsed`, as D-096 makes them. A tier opened on a window past its end the sweeper
+  has not reached yet ends it first, in its transaction under the date's row
+  (`endDuePriorityWindow`): extended, it would carry the old pool and its lapsed entries, their
+  first `notified_at` kept, into the new window.
   Measured (`window-end-plan.itest.ts`, three runs): 10,000 entries ended over 20,000 orders in
   133 to 173 ms, the date's row held for that long; no `seat_order` read sequentially.
 - **D-096** (`WaitlistEndingHook`, bound in `DateOutcomesModule` in place of PT1's no-op, which
   PT1's interrupted-date suite still binds): in the settlement pass's own transaction, the date's row,
   then `notified` entries `converted` by the rule above or `closed`, `waiting` ones `closed`, the pool
   on sale (the sale is closed), `priority_until` cleared and `waitlist_count` 0. A rerun moves
-  nothing; a window ended by the sweeper first leaves only the waiting entries. No event: nobody is
+  nothing; a window ended by the sweeper first, its entries already `closed`, leaves only the
+  waiting ones. No event: nobody is
   told beyond the date's card. A postponement ends nothing.
 - **`waitlist.notified`** (`ticketing.waitlist.notified.v1` on `arthome.ticketing.date_sales`, key
   `date_id`, in `TICKETING_EVENT_TOPICS`): one row per 500 accounts at a tier opening, one per join
@@ -940,7 +947,7 @@ stopped). adr-ticketing.md §9, D-083, D-093, D-094, D-096; core's `ticketing/wa
 | `waitlist/waitlist.itest.ts` | PT3, through the buses: refused not sold out, joined sold out with the count moved and the version not, two keys one registration and a key replayed, a join into an open window notified with its one event, a re-join after a lapse on the same row, the 404s, a leave twice writing nothing the second time |
 | `waitlist/capacity-tier-notification.itest.ts` | PT3: 1,201 entries notified in rows of 500, 500 and 201 by account id, the pool the tier's size, the public sold out; `false` and an empty list selling publicly; a second tier extending the window, notifying the list again, the first notice's instant kept |
 | `waitlist/pool-purchase.itest.ts` | PT3: a notified buyer sold from the pool while the public gets `order.sold_out`; pool then public; more than both refused; the quote's `priorityUntil` and `validUntil`; a pool hold expired back to the pool, then one to public sale after the window; D-082's retake from the pool; available, pool, held and sold adding up to the capacity |
-| `waitlist/priority-window-end.itest.ts` | PT3: the rest on public sale and published at once, `converted` and `lapsed` (an order paid before the notice not counting), the count, no event; a window extended left alone; a row held skipped, then ended |
+| `waitlist/priority-window-end.itest.ts` | PT3: the rest on public sale and published at once, `converted` and `lapsed` (an order paid before the notice not counting), the count, no event; a window extended left alone; a row held skipped, then ended; a tier opened past the end ending it first, its pool on sale and its entries lapsed, or the tier on sale with nobody left waiting; `closed`, not `lapsed`, on a date cancelled or interrupted before its settlement |
 | `waitlist/waitlist-ending.itest.ts` | PT3: a cancellation and an interruption, applied then settled by PT1's pass, closing every entry and the pool, a buyer converted, no event, then a join `order.sales_closed`; the hook run twice moving nothing; a postponement ending nothing |
 | `waitlist/waitlist.http.itest.ts` | PT3: the three routes over HTTP with several accounts' tokens, parsed by the contract's schemas, the tier's answer by `openCapacityTier`'s; 409, 404, 401 and 400 |
 | `waitlist/waitlist-races.itest.ts` | PT3: 200 joins racing a tier opening, none waiting, the count the entries; joins racing the window's end, none notified after it; 300 notified buyers on a pool of 100, exactly 100 sold; 100 leaves racing a tier opening, no deadlock |

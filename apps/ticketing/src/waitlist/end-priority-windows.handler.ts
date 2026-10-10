@@ -3,17 +3,17 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { WaitlistEntryState, type Clock, type Instant } from '@arthome/core';
+import type { Clock, Instant } from '@arthome/core';
 
 import { EndPriorityWindows } from './end-priority-windows.command.js';
+import { endDuePriorityWindow } from './priority-window-end.js';
 import { CLOCK } from '../clock.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 
 /**
- * D-083's window's end (HANDOVER §0p): each window due, read through its partial index, then taken
- *   in a transaction of its own under the date's row, `SKIP LOCKED`, and left alone when a tier
- *   opening extended it since. The pool's rest goes on public sale in one move, each notified entry
- *   is `converted` or `lapsed`, and the count drops by them. No event.
+ * D-083's window's end (HANDOVER §0p): each window due, read through its partial index, then ended
+ *   in a transaction of its own, `SKIP LOCKED`, and left alone when a tier opening extended it
+ *   since. No event.
  */
 @CommandHandler(EndPriorityWindows)
 export class EndPriorityWindowsHandler implements ICommandHandler<EndPriorityWindows> {
@@ -50,21 +50,8 @@ export class EndPriorityWindowsHandler implements ICommandHandler<EndPriorityWin
   }
 
   private endWindow(dateId: string, now: Instant): Promise<boolean> {
-    return this.transactions.run(async ({ manager, dateSales, waitlistEntries }) => {
-      const claimed = await manager.query<unknown[]>(
-        `SELECT date_id FROM date_sales
-          WHERE date_id = $1 AND priority_until <= $2
-            FOR UPDATE SKIP LOCKED`,
-        [dateId, new Date(now)],
-      );
-      if (claimed.length === 0) return false;
-      const entriesEnded = await waitlistEntries.endNotified(
-        dateId,
-        WaitlistEntryState.LAPSED,
-        now,
-      );
-      await dateSales.endPriorityWindow(dateId, entriesEnded);
-      return true;
-    });
+    return this.transactions.run((transaction) =>
+      endDuePriorityWindow(transaction, dateId, now, { skipLocked: true }),
+    );
   }
 }

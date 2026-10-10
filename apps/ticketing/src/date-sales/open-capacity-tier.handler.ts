@@ -13,12 +13,15 @@ import { readDateSalesPane } from './read-date-sales-pane.js';
 import { recordDateSalesEvents } from './record-date-sales-events.js';
 import { CLOCK } from '../clock.js';
 import { TicketingTransactions, type TicketingTransaction } from '../ticketing-transactions.js';
+import { endDuePriorityWindow } from '../waitlist/priority-window-end.js';
 import { writeWaitlistNotified } from '../waitlist/waitlist-notified.js';
 
 /**
  * One transaction (adr-ticketing.md §9): the date's row locked first, the tier, then, when it opens
  *   or extends a window, every entry on the list notified and named in `waitlist.notified` rows. A
- *   join waits on the date's row, so it commits before the marking or sees the window after it.
+ *   join waits on the date's row, so it commits before the marking or sees the window after it. A
+ *   window past its end that the sweeper has not reached yet is ended first: extended, it would
+ *   carry its pool and its lapsed entries into the new one.
  */
 @CommandHandler(OpenCapacityTier)
 export class OpenCapacityTierHandler implements ICommandHandler<OpenCapacityTier> {
@@ -36,13 +39,15 @@ export class OpenCapacityTierHandler implements ICommandHandler<OpenCapacityTier
   }
 
   private async openIn(
-    { manager, dateSales, waitlistEntries }: TicketingTransaction,
+    transaction: TicketingTransaction,
     { dateId, body, traceparent }: OpenCapacityTier,
   ): Promise<{ readonly data: OpenedCapacityTier; readonly version: number }> {
+    const { manager, dateSales, waitlistEntries } = transaction;
+    const now = this.clock.now();
+    await endDuePriorityWindow(transaction, dateId, now, { skipLocked: false });
     const sales = await dateSales.findById(dateId);
     if (sales === null) throw notFound();
 
-    const now = this.clock.now();
     const priorityUntil = sales.openCapacityTier(
       body.expectedVersion,
       body.additionalCapacity,
