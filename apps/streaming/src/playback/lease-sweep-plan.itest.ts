@@ -76,7 +76,10 @@ describe('the lease statements on a filled table', () => {
   it(
     'sweeps the lapsed leases through playback_session_lease_due',
     async () => {
-      const plan = await planOf(EXPIRE_LAPSED_SQL, [new Date(), LEASE_SWEEP_BATCH]);
+      const plan = await planOf(EXPIRE_LAPSED_SQL, [
+        new Date('2026-12-12T19:00:00.000Z'),
+        LEASE_SWEEP_BATCH,
+      ]);
       expect(plan).toContain('"Index Name":"playback_session_lease_due"');
       expect(plan).not.toContain('"Seq Scan"');
     },
@@ -90,7 +93,7 @@ describe('the lease statements on a filled table', () => {
         '01a0f700-0000-7000-8000-000000000001',
         '01a0f701-0000-7000-8000-000000000001',
         IdentityErrorCode.SIGNED_OUT_ELSEWHERE,
-        new Date(),
+        new Date('2026-12-12T19:00:00.000Z'),
         null,
         null,
       ]);
