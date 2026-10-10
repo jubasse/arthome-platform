@@ -247,6 +247,7 @@ export class PlaybackDesk {
         }
         return refusalFor<RevokeReason>(current.revokeReason, listed);
       }
+      assertHeldByCaller(lease);
       if (!holdsAScreen(lease, now)) {
         await sessions.expire([lease.id], now);
         return NOT_FOUND;

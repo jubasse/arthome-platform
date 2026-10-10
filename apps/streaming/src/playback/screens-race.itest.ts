@@ -1,25 +1,30 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { PlaybackSessionState, WatchDenialReason } from '@arthome/core';
+import { ApiErrorCode, PlaybackSessionState, WatchDenialReason } from '@arthome/core';
 
 import { untilBlockedOrSettled } from '../itest/lock-waits.js';
 import {
   CASE_MS,
   STARTUP_MS,
+  errorOf,
   grantSeat,
+  identityId,
   liveDate,
   newViewer,
   onAnotherDevice,
   openCall,
+  renewCall,
   sessionsOf,
   startPlayback,
   stopPlayback,
+  ticketOf,
   type Playback,
 } from '../itest/playback.js';
 
 /**
  * Two devices of one account opening at once on a ceiling of one: the screens' advisory lock
- *   serialises them, so the second takes the first over rather than both playing.
+ *   serialises them, so the second takes the first over rather than both playing. A renewal
+ *   waiting on that lock judges its caller on the row it then locks.
  */
 
 let playback: Playback;
@@ -99,6 +104,43 @@ describe('two openings at once on a ceiling of one', () => {
       const states = (await sessionsOf(playback, tv.accountId)).map(({ state }) => state);
       expect(states.filter((state) => state === PlaybackSessionState.ACTIVE)).toHaveLength(1);
       expect(states.filter((state) => state === PlaybackSessionState.REVOKED)).toHaveLength(3);
+    },
+    CASE_MS,
+  );
+});
+
+describe('a renewal racing a resumption by another profile of the device', () => {
+  it(
+    'answers 403 on the locked row, not on the one it read before the lock',
+    async () => {
+      const tv = newViewer();
+      const dateId = await liveDate(playback);
+      await grantSeat(playback, tv.accountId, dateId);
+      const { sessionId } = ticketOf(await openCall(playback, tv, dateId));
+
+      const holder = playback.dataSource.createQueryRunner();
+      await holder.connect();
+      await holder.startTransaction();
+      await holder.query(
+        `SELECT pg_advisory_xact_lock(hashtext('screens:' || $1::text || ':' || $2::text))`,
+        [tv.accountId, dateId],
+      );
+      const renewal = renewCall(playback, tv, sessionId);
+      try {
+        await untilBlockedOrSettled(playback.dataSource, renewal);
+        expect(await advisoryWaiters()).toBeGreaterThan(0);
+        await holder.query('UPDATE playback_session SET profile_id = $2 WHERE id = $1', [
+          sessionId,
+          identityId(),
+        ]);
+      } finally {
+        await holder.commitTransaction();
+        await holder.release();
+      }
+      const answer = await renewal;
+
+      expect(answer.statusCode).toBe(403);
+      expect(errorOf(answer).code).toBe(ApiErrorCode.FORBIDDEN);
     },
     CASE_MS,
   );
