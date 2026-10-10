@@ -52,7 +52,7 @@ behind it (`docs/review-checklist.md`).
 | PS2 | none: each fact writes one row of one table (`entitlement_seat`, `entitlement_date` or `entitlement_subscription`) plus its `processed_message`, by upsert; the reads take no lock | `entitlement/seats.itest.ts`, `date-facts.itest.ts`, `subscription.itest.ts` |
 | PS3 | not built yet | |
 | PS4 | not built yet | |
-| PS5 | the asset's row alone, in every pass and every call outcome (`FOR UPDATE SKIP LOCKED`); the run and the date's facts are read in the same transaction without a lock; a provider call is made outside any transaction | `replay-asset/asset-deletion.itest.ts` (the passes and the calls on the same assets), `asset-passes-plan.itest.ts` |
+| PS5 | the asset's row alone: every pass and the calls' claim `FOR UPDATE SKIP LOCKED`; a call's outcome and its give-up `FOR UPDATE`, waiting, since every holder is a short transaction with no provider call; the run and the date's facts are read in the same transaction without a lock; a provider call is made outside any transaction | `replay-asset/asset-deletion.itest.ts` (the passes and the calls on the same assets), `asset-passes-plan.itest.ts` |
 
 ## 0a. Media ports and the fake (PS0)
 
@@ -392,8 +392,9 @@ PS2's tables. The provider stores and deletes, `streaming` decides (`adr-replay.
   - *Request*: a run `on_air` or `interrupted` with no asset (`run_live`), when
     `readDateFacts` says the date has a replay mode (`hasReplayPolicy`) and no outcome that withdraws
     it, gets its asset `recording`, `recorded_from` the run's `started_at`,
-    `ON CONFLICT (date_id) DO NOTHING`. A date with no mode gets no row; one whose timing is not
-    projected is looked at again on the next pass. An `interrupted` run keeps recording.
+    `ON CONFLICT (date_id) DO NOTHING`, one statement with no transaction around it: a date with
+    no mode gets no row and so comes back every pass, at the cost of one read. One whose timing is
+    not projected is looked at again on the next pass. An `interrupted` run keeps recording.
   - *Close*: a `recording` asset whose provider started it and whose run has an `ended_at` (D-115's
     automatic end included) becomes `processing`, `recorded_until` that instant.
   - *Withdraw*: an asset `recording`, `processing` or `ready` whose date's outcome is one core's
@@ -407,11 +408,21 @@ PS2's tables. The provider stores and deletes, `streaming` decides (`adr-replay.
   stopped stops, then is polled with `status`; `deleting` is stopped first when it never was, then
   deleted (with no reference, nothing is called). A pass claims the assets due `FOR UPDATE SKIP
   LOCKED` in a short transaction that counts the attempt and moves `call_next_attempt_at` out by
-  the backoff before the call; the call runs outside any transaction and its outcome is written in
-  one of its own, deciding again on the locked row. The backoff doubles from 5 s to 5 min with up
-  to a fifth of jitter, for about an hour: `RECORDING_ATTEMPTS_MAX` attempts, then the asset is
-  `failed`, `failed_call` the call's name, `call_dead_at` set, one error log with the date. A
-  recording the provider no longer knows (`RecordingNotFound` on `status`) is given up at once.
+  the backoff before the call; the call runs outside any transaction, bounded by
+  `RECORDING_CALL_TIMEOUT_MS` (4 s, below the shortest lease, so no replica claims it again while in
+  flight), and its outcome is written in one of its own, locking the row `FOR UPDATE` and deciding
+  again on it. The backoff doubles from 5 s to 5 min with up to a fifth of jitter, for about an
+  hour: `RECORDING_ATTEMPTS_MAX` attempts, then the asset is `failed`, `failed_call` the call's
+  name, `call_dead_at` set, one error log with the date. Each failed attempt (a timeout included)
+  logs a warning with the date, the call, the attempt and the error's name. A recording the
+  provider no longer knows (`RecordingNotFound` on `status`) is given up at once. Only a failed
+  provider call counts toward the give-up: when the outcome cannot be written, the call is asked
+  again at the end of its lease, never `failed` for it.
+- **A recording started that the asset does not keep** (its outcome not written, another start won
+  meanwhile, or a start answering after its timeout) is deleted at the provider once the
+  transaction has committed, never inside it, up to `ORPHAN_DELETE_ATTEMPTS` (3) times; an error
+  log names the date. If all three fail, the error log says it is left at the provider: the
+  reference is in no row then, and only the provider's listing finds it.
   A poll that answers not ready is not a failed call: the attempts restart and the next poll is
   `READINESS_POLL_EVERY_MS` (30 s) away, until `READINESS_GIVE_UP_AFTER_MS` (6 h) after the run's
   end. The `RecordingRef` stays in its column: no event, log or answer carries it.
@@ -419,7 +430,8 @@ PS2's tables. The provider stores and deletes, `streaming` decides (`adr-replay.
   on the outbox through `writeStreamingEvent` on the transaction's manager, then `ready`,
   `duration_sec`, `available_from` (the instant observed) and `expires_at` =
   `replayClosesAt(run.ended_at, replay_window_hours)`, the run's real end: an overrun cannot give two
-  closings. If the date's outcome withdraws the replay by then, the asset goes to `deleting` with no event.
+  closings. If the date's outcome withdraws the replay by then, or its window has already closed
+  (a readiness later than the window), the asset goes to `deleting` with no event.
 - **Events** on `arthome.streaming.run`, key `date_id`, through `replay-asset-wire.ts`:
   `streaming.replay.asset_ready.v1` and `streaming.replay.expired.v1`.
 - **The query an operator runs for `failed` assets:**
@@ -429,7 +441,8 @@ PS2's tables. The provider stores and deletes, `streaming` decides (`adr-replay.
     FROM replay_asset WHERE state = 'failed' ORDER BY call_dead_at;
   ```
 
-  To retry one, once the provider is back: `UPDATE replay_asset SET state = 'deleting',
+  No alert is wired yet: the give-up's error log is the only signal. To retry one, once the
+  provider is back: `UPDATE replay_asset SET state = 'deleting',
   call_attempts = 0, call_next_attempt_at = NULL, call_dead_at = NULL, failed_call = NULL WHERE
   date_id = $1` for a file to remove; a `ready` replay is never rebuilt by hand.
 - **Until the replay slice** the closing is computed here with `replayClosesAt` from the run's end
@@ -450,10 +463,10 @@ requested by the first pass.
 
 | Suite | What |
 | --- | --- |
-| `replay-asset/replay-asset.spec.ts` | a recording requested only with a mode and no withdrawing outcome; closed with its run; the readiness opening now and closing from the run's end, withdrawn when the outcome says so; a withdrawal from each state; the expiry at the instant; `expired` only for an announced asset |
-| `replay-asset/recording-calls.spec.ts` | the call read from each state; the attempts bounded by `attemptsAllowedBy`, the delays doubling to a cap |
-| `replay-asset/recording.itest.ts` | a recording started on the fake from the run's start; no row and no call without a mode or when withdrawn; a date not projected yet looked at again; one asset through interrupted and back on air; closed by D-115's automatic end |
-| `replay-asset/asset-ready.itest.ts` | `asset_ready.v1` with the duration, `available_from` now and `expires_at` from the run's end, an overrun included; polling uncounted; a rolled-back readiness leaves no outbox row; a withdrawal at readiness deletes with no event |
+| `replay-asset/replay-asset.spec.ts` | a recording requested only with a mode and no withdrawing outcome; closed with its run; the readiness opening now and closing from the run's end, withdrawn when the outcome says so or the window has closed; a withdrawal from each state; the expiry at the instant; `expired` only for an announced asset |
+| `replay-asset/recording-calls.spec.ts` | the call read from each state; the attempts bounded by `attemptsAllowedBy`, the delays doubling to a cap; the call timeout below the shortest lease |
+| `replay-asset/recording.itest.ts` | a recording started on the fake from the run's start; no row and no call without a mode or when withdrawn; a date not projected yet looked at again; one asset through interrupted and back on air; closed by D-115's automatic end; a start whose outcome is not written deleted at the provider, not `failed` on its last attempt, started again after its lease; a start losing to another deleted after the commit, the delete retried; a start answering after its timeout a failed attempt, its recording deleted when it answers; no transaction for a date without a mode |
+| `replay-asset/asset-ready.itest.ts` | `asset_ready.v1` with the duration, `available_from` now and `expires_at` from the run's end, an overrun included; polling uncounted; a rolled-back readiness leaves no outbox row; a withdrawal at readiness, or a readiness after the window closed, deletes with no event |
 | `replay-asset/asset-deletion.itest.ts` | deletion at `expires_at` with `expired.v1`; deleted final; a withdrawal from recording (stop then delete, no event) and from ready (event); postponed untouched; a call failing twice retried on its backoff; one always failing `failed` after its bound with one error log; a recording unknown to the provider given up at once |
 | `replay-asset/asset-passes-plan.itest.ts` | the five reads on their index over 50,000 deleted assets |
 
