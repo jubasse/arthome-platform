@@ -5,8 +5,6 @@
 //
 //   Usage: NODE_ENV=development node tools/ops-check.mjs <service>
 
-import { Kafka } from 'kafkajs';
-
 import { readKafkaBrokers, readRedisUrl } from '@arthome-platform/config';
 import {
   checkDeadLetterDepth,
@@ -19,6 +17,7 @@ import {
   outboxSlotName,
   readPublishedMessageIds,
 } from '@arthome-platform/messaging';
+import { Kafka } from 'kafkajs';
 
 const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing', 'streaming']);
 // The search indexer's topics are `arthome.search.*`, not `arthome.search-indexer.*`: its

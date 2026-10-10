@@ -7,14 +7,13 @@
 // Safe even when a row did arrive after all: the id is kept, so it is the same message-id, and
 // every consumer's deduplication absorbs it.
 
-import { Kafka } from 'kafkajs';
-
 import { readKafkaBrokers } from '@arthome-platform/config';
 import {
   findUnpublishedOutboxRows,
   readPublishedMessageIds,
   republishOutboxRow,
 } from '@arthome-platform/messaging';
+import { Kafka } from 'kafkajs';
 
 const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing', 'streaming']);
 

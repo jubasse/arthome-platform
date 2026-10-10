@@ -3,6 +3,7 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { dataSource } from './data-source.js';
+import { ReplayAssetSweeperModule } from './replay-asset/replay-asset-sweeper.module.js';
 import { RunSweeperModule } from './run/run-sweeper.module.js';
 
 /**
@@ -11,6 +12,11 @@ import { RunSweeperModule } from './run/run-sweeper.module.js';
  *   which is why it is not the consumer's process.
  */
 @Module({
-  imports: [TypeOrmModule.forRoot(dataSource.options), CqrsModule.forRoot(), RunSweeperModule],
+  imports: [
+    TypeOrmModule.forRoot(dataSource.options),
+    CqrsModule.forRoot(),
+    RunSweeperModule,
+    ReplayAssetSweeperModule,
+  ],
 })
 export class SweeperModule {}

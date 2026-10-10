@@ -6,7 +6,7 @@ type StreamingTopic = 'streaming.run';
 /**
  * The topic of every event streaming publishes, named by its aggregate type. A caller names the
  *   type, never the topic. An incident is a facet of its run, so it rides the run's topic and key
- *   (events.md §3.1).
+ *   (events.md §3.1), and so does its replay asset.
  */
 export const STREAMING_EVENT_TOPICS = {
   'streaming.run.technical_check_passed.v1': 'streaming.run',
@@ -15,6 +15,8 @@ export const STREAMING_EVENT_TOPICS = {
   'streaming.run.state_changed.v1': 'streaming.run',
   'streaming.incident.raised.v1': 'streaming.run',
   'streaming.incident.resolved.v1': 'streaming.run',
+  'streaming.replay.asset_ready.v1': 'streaming.run',
+  'streaming.replay.expired.v1': 'streaming.run',
 } as const satisfies Record<string, StreamingTopic>;
 
 export type StreamingEventType = keyof typeof STREAMING_EVENT_TOPICS;
