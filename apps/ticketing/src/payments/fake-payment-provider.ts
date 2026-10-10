@@ -195,6 +195,11 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
     return this.refundsByKey.size;
   }
 
+  /** What the refund made under `idempotencyKey` gave back, null when none was made under it. */
+  public refundedUnder(idempotencyKey: string): Money | null {
+    return this.refundsByKey.get(idempotencyKey)?.amount ?? null;
+  }
+
   public isCanceled(intentRef: string): boolean {
     return this.intentByRef(intentRef).canceled;
   }

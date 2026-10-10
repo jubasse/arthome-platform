@@ -4,6 +4,7 @@ import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import { v7 as uuidv7 } from 'uuid';
 
 import {
+  DateOutcome,
   OrderState,
   RefundReason,
   assertSeatCancellable,
@@ -24,6 +25,12 @@ import type { PendingCounterMove } from '../orders/settle-payment.js';
 import { recordRefundTraceparent } from '../payments/refund-ledger.js';
 import { TicketingTransactions, type TicketingTransaction } from '../ticketing-transactions.js';
 
+/**
+ * The date was cancelled after the cancellation read it: its seat must not go back on sale, and
+ *   its refund is `date_cancelled` (D-097), so the whole transaction runs again.
+ */
+class DateCancelledMeanwhile extends Error {}
+
 interface Cancelled {
   readonly answer: SeatCancellationView;
   readonly release: PendingCounterMove | null;
@@ -34,7 +41,8 @@ interface Cancelled {
  *   the seat back on sale at once (D-093). The order is locked before its seats and refund rows,
  *   the date's outcome read unlocked, and the seat's return to sale is the transaction's last
  *   statement, after the outbox rows and the kept answer, so the hot row is held for the commit
- *   alone. Nothing calls the provider: the worker's queue makes the refund.
+ *   alone; it refuses a date cancelled since that read, and the cancellation runs again from the
+ *   start. Nothing calls the provider: the worker's queue makes the refund.
  */
 @CommandHandler(CancelSeat)
 export class CancelSeatHandler implements ICommandHandler<CancelSeat> {
@@ -43,7 +51,17 @@ export class CancelSeatHandler implements ICommandHandler<CancelSeat> {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  public execute(command: CancelSeat): Promise<MemorisedResponse<SeatCancellationView>> {
+  public async execute(command: CancelSeat): Promise<MemorisedResponse<SeatCancellationView>> {
+    try {
+      return await this.cancelOnce(command);
+    } catch (error) {
+      if (!(error instanceof DateCancelledMeanwhile)) throw error;
+      // Rolled back whole: run again, it reads the cancellation and refunds `date_cancelled`.
+      return this.cancelOnce(command);
+    }
+  }
+
+  private cancelOnce(command: CancelSeat): Promise<MemorisedResponse<SeatCancellationView>> {
     return this.transactions.run(async (transaction) => {
       const releases: PendingCounterMove[] = [];
       const response = await runIdempotently(
@@ -97,9 +115,11 @@ export class CancelSeatHandler implements ICommandHandler<CancelSeat> {
       release: onCancelledDate
         ? null
         : async () => {
-            if (!(await dateSales.releaseSoldSeats(dateId, 1))) {
-              throw new Error(`date ${dateId} sold no seat to give back for seat ${seatId}`);
-            }
+            if (await dateSales.releaseSoldSeats(dateId, 1)) return;
+            // Read again: a cancellation committed since the first read is what refused it.
+            const outcomeNow = (await dateSales.findUnlocked(dateId))?.snapshot.outcome ?? null;
+            if (outcomeNow === DateOutcome.CANCELLED) throw new DateCancelledMeanwhile();
+            throw new Error(`date ${dateId} sold no seat to give back for seat ${seatId}`);
           },
     };
   }
