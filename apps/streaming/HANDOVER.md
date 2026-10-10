@@ -489,9 +489,10 @@ refused for another reason.
 
 **Gaps**
 
-- The storefront BFF mints no `pro` today, so every opening is refused 403 until its playback
-  slice mints the profile: a route reading the profile calls `profileOfPrincipal` (the lead's
-  security rule), where the PRD's R8 allowed the account as `sub`. `profile_id` is NOT NULL.
+- **The storefront BFF must mint `pro` (and `did`) on its playback calls.** It mints no `pro`
+  today, so every opening is refused 403 until its playback slice does: a token without a profile
+  is refused (the lead's ruling, strict), where the PRD's R8 allowed the account as `sub`.
+  `profile_id` is NOT NULL.
 - `deviceLabel` is the opening's surface and `city` null until identity's device names and a geo
   source reach streaming. The `playback:stop` push (D-020's courtesy) is the realtime lane's.
 - Signed cookies reach the browser only through the BFF relaying `Set-Cookie` (its slice); the
