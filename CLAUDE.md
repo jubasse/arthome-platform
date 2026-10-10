@@ -2,8 +2,10 @@
 
 ## Load the NestJS router before writing NestJS code — every session, without exception
 
-**`nestjs-how-to`.** Load it at the start of any task that writes, reviews or debugs code in this
-repository, and load the skills it routes to. This includes the first task after a context
+**`nestjs-how-to`.** Load it, and the skills it routes to, as the very first action of any task that
+touches NestJS even remotely: code, review, QA, docs, CI, PRDs. Never defer it to a later step. The
+session loads it, and so does every agent the session spawns, as the first line of that agent's
+prompt. A review also loads `nestjs-review`. This includes the first task after a context
 compaction: a compacted session keeps the conclusions and loses the reflex.
 
 **Follow those skills to the letter.** They are the project's chosen best practices, not
