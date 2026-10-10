@@ -18,6 +18,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   FixedClock,
+  HOUR_MS,
   OrderState,
   PriceTier,
   SeatState,
@@ -37,7 +38,12 @@ import { OwedCallRelay, ProviderCallProducer } from './owed-call-relay.js';
 import { PaymentWebhooksModule } from './payment-webhooks.module.js';
 import { PaymentWorker } from './payment-worker.js';
 import { PaymentWorkerModule } from './payment-worker.module.js';
-import { PROVIDER_CALL_SCHEDULES, type ProviderCallSchedules } from './provider-call-queues.js';
+import {
+  PROVIDER_CALL_SCHEDULES,
+  REFUND_JOB,
+  jobIdOf,
+  type ProviderCallSchedules,
+} from './provider-call-queues.js';
 import { ProviderCallQueuesModule } from './provider-call-queues.module.js';
 import { CLOCK } from '../clock.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
@@ -60,8 +66,8 @@ import { SeatsModule } from '../seats/seats.module.js';
 
 /**
  * The provider's refund and dispute webhooks (HANDOVER §0o) over HTTP with the raw body, applied by
- *   the payment worker, the worker's queues on a Redis of the file's own: a refund the provider
- *   made while its call timed out marked made once, one made outside the platform ignored, a
+ *   the payment worker, the worker's queues on a Redis of the file's own: a refund webhook marking
+ *   nothing made but re-running the calls it may cover, one made outside the platform ignored, a
  *   dispute on a paid order and one before its confirmation, a refund on a disputed charge given
  *   up on, and duplicates applied once.
  */
@@ -143,12 +149,13 @@ interface RefundRow {
   readonly amount_minor: string;
   readonly refund_ref: string | null;
   readonly refunded_at: Date | null;
+  readonly rerun_asked_at: Date | null;
   readonly dead_at: Date | null;
 }
 
 function refundsOf(orderId: string): Promise<RefundRow[]> {
   return dataSource.query(
-    `SELECT id, idempotency_key, amount_minor, refund_ref, refunded_at, dead_at
+    `SELECT id, idempotency_key, amount_minor, refund_ref, refunded_at, rerun_asked_at, dead_at
        FROM order_refund WHERE order_id = $1 ORDER BY owed_at, id`,
     [orderId],
   );
@@ -205,6 +212,21 @@ async function madeAtTheProvider(orderId: string, refund: RefundRow): Promise<st
   return refundRef;
 }
 
+/** Enqueued, its first call failed: its job waits an hour's backoff. */
+async function waitingItsBackoff(refund: RefundRow): Promise<void> {
+  await app
+    .get(ProviderCallProducer)
+    .refunds.add(
+      REFUND_JOB,
+      { refundId: refund.id },
+      { jobId: jobIdOf(refund.idempotency_key), delay: HOUR_MS },
+    );
+  await dataSource.query('UPDATE order_refund SET enqueued_at = $2 WHERE id = $1', [
+    refund.id,
+    new Date(NOW),
+  ]);
+}
+
 beforeAll(async () => {
   stack = await startStack({ postgres: true, redis: true, startupTimeoutMs: STARTUP_MS });
   const database = await createDatabase(stack.postgres, 'ticketing_refund_dispute_itest');
@@ -249,40 +271,91 @@ afterAll(async () => {
 
 describe('a refund the provider reports made (refund_succeeded)', () => {
   it(
-    'marks a refund whose call timed out made, once, its seat refunded, and asks nothing again',
+    'marks nothing made, re-runs the call, and the processor marks it made with the answer, once',
     async () => {
       const dateId = await dateOnSale();
       const { order, tickets } = await bought(dateId, 2);
       await commands().execute(seatCancellationOf(tickets[0]?.seatId ?? ''));
       const [owed] = await refundsOf(order.id);
       if (owed === undefined) throw new Error('no refund owed');
+      const madeBefore = fake.refundsMade;
       const refundRef = await madeAtTheProvider(order.id, owed);
       const webhook = fake.refundSucceededWebhookOf(refundRef);
 
       expect((await deliver(webhook)).statusCode).toBe(200);
       expect(await deliver(webhook)).toMatchObject({ statusCode: 200 });
       await applyEvents();
-      await deliver(fake.refundSucceededWebhookOf(refundRef));
-      await applyEvents();
 
       expect(await refundsOf(order.id)).toMatchObject([
-        { refund_ref: refundRef, refunded_at: new Date(NOW), dead_at: null },
+        { refund_ref: null, refunded_at: null, rerun_asked_at: new Date(NOW) },
+      ]);
+      expect(await outboxOf(order.id, 'ticketing.order.refunded.v1')).toEqual([]);
+
+      await relay.relayDue();
+      await until('the refund made', async () =>
+        (await refundsOf(order.id)).every(({ refunded_at }) => refunded_at !== null),
+      );
+      await deliver(fake.refundSucceededWebhookOf(refundRef));
+      await applyEvents();
+      await relay.relayDue();
+
+      expect(await refundsOf(order.id)).toMatchObject([
+        { refund_ref: refundRef, rerun_asked_at: null, dead_at: null },
       ]);
       expect(await orderOf(order.id)).toMatchObject({ state: OrderState.PARTIALLY_REFUNDED });
       expect((await seatStatesOf(order.id)).map(({ state }) => state).sort()).toEqual(
         [SeatState.ACTIVE, SeatState.REFUNDED].sort(),
       );
-      const refunded = (await outboxOf(order.id, 'ticketing.order.refunded.v1')).map((row) => ({
-        event: fromBinary(OrderRefundedSchema, row.payload),
-        trace: row.tracecontext,
-      }));
-      expect(refunded).toMatchObject([{ event: { refundRef }, trace: TRACEPARENT }]);
+      const refunded = (await outboxOf(order.id, 'ticketing.order.refunded.v1')).map((row) =>
+        fromBinary(OrderRefundedSchema, row.payload),
+      );
+      expect(refunded).toMatchObject([{ refundRef }]);
       expect(await inboxOf(order.id)).toHaveLength(2);
       expect((await inboxOf(order.id)).every(({ applied_at }) => applied_at !== null)).toBe(true);
+      expect(providerCallsFor(owed.idempotency_key)).toHaveLength(2);
+      expect(fake.refundsMade).toBe(madeBefore + 1);
+    },
+    CASE_MS,
+  );
 
-      expect(await relay.relayDue()).toBe(0);
-      expect(providerCallsFor(owed.idempotency_key)).toEqual([`refund ${owed.idempotency_key}`]);
-      expect(await outboxOf(order.id, 'ticketing.order.refunded.v1')).toHaveLength(1);
+  it(
+    'marks nothing the provider did not make: two equal refunds, the newer made, the older run now',
+    async () => {
+      const dateId = await dateOnSale();
+      const { order, tickets } = await bought(dateId, 2);
+      await commands().execute(seatCancellationOf(tickets[0]?.seatId ?? ''));
+      await commands().execute(seatCancellationOf(tickets[1]?.seatId ?? ''));
+      const [older, newer] = await refundsOf(order.id);
+      if (older === undefined || newer === undefined) throw new Error('two refunds not owed');
+      expect(older.amount_minor).toBe(newer.amount_minor);
+      await waitingItsBackoff(older);
+      await waitingItsBackoff(newer);
+      const madeBefore = fake.refundsMade;
+      const newerRef = await madeAtTheProvider(order.id, newer);
+
+      await deliver(fake.refundSucceededWebhookOf(newerRef));
+      await applyEvents();
+
+      expect(await refundsOf(order.id)).toMatchObject([
+        { refunded_at: null, rerun_asked_at: new Date(NOW) },
+        { refunded_at: null, rerun_asked_at: new Date(NOW) },
+      ]);
+      expect(await outboxOf(order.id, 'ticketing.order.refunded.v1')).toEqual([]);
+
+      await relay.relayDue();
+      await until('both refunds made, their backoff cleared', async () =>
+        (await refundsOf(order.id)).every(({ refunded_at }) => refunded_at !== null),
+      );
+
+      const [olderMade, newerMade] = await refundsOf(order.id);
+      expect(newerMade?.refund_ref).toBe(newerRef);
+      expect(olderMade?.refund_ref).not.toBe(newerRef);
+      expect(olderMade?.refund_ref).not.toBeNull();
+      expect(providerCallsFor(older.idempotency_key)).toHaveLength(1);
+      expect(providerCallsFor(newer.idempotency_key)).toHaveLength(2);
+      expect(fake.refundsMade).toBe(madeBefore + 2);
+      expect(await outboxOf(order.id, 'ticketing.order.refunded.v1')).toHaveLength(2);
+      expect((await orderOf(order.id)).state).toBe(OrderState.REFUNDED);
     },
     CASE_MS,
   );

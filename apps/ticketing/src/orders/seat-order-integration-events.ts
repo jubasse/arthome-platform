@@ -192,7 +192,7 @@ function orderRefunded(event: SeatOrderRefunded, context: SeatOrderWireContext):
           seatCancelReason === null
             ? WireSeatCancelReason.UNSPECIFIED
             : WIRE_SEAT_CANCEL_REASON[seatCancelReason],
-        refundRef: event.refundRef ?? '',
+        refundRef: event.refundRef,
         occurredAt: timestampFromDate(new Date(event.occurredAt)),
         refundReason: WIRE_REFUND_REASON[event.reason],
       }),

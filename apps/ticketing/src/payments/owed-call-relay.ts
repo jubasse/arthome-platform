@@ -1,7 +1,7 @@
 import { updateReturning } from '@arthome-platform/transactions';
 import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { Queue } from 'bullmq';
+import { Queue, type Job } from 'bullmq';
 import { DataSource, type EntityManager } from 'typeorm';
 
 import { type Clock, intentCancelIdempotencyKey } from '@arthome/core';
@@ -81,6 +81,14 @@ export const DUE_REFUNDS_SQL = `
    LIMIT $1
      FOR UPDATE SKIP LOCKED`;
 
+/** Asked again by a refund webhook, whatever became of the refund since. */
+export const RERUN_ASKED_REFUNDS_SQL = `
+  SELECT id, idempotency_key, refunded_at IS NULL AND dead_at IS NULL AS owed FROM order_refund
+   WHERE rerun_asked_at IS NOT NULL
+   ORDER BY rerun_asked_at
+   LIMIT $1
+     FOR UPDATE SKIP LOCKED`;
+
 /** Lost: enqueued before `$1` and still unsettled, given up at `$2`. */
 export const LOST_REFUNDS_SQL = `
   UPDATE order_refund SET dead_at = $2
@@ -102,7 +110,8 @@ export const DUE_INTENT_CANCELLATIONS_SQL = `
 
 /**
  * The outbox relay of the provider calls (HANDOVER §0m): every second, per kind, one transaction
- *   claims the rows due `FOR UPDATE SKIP LOCKED`, adds their jobs, stamps `enqueued_at`, commits.
+ *   claims the rows due `FOR UPDATE SKIP LOCKED`, adds their jobs, stamps `enqueued_at`, commits;
+ *   then the refund calls a webhook asked again run now (§0o).
  *   BullMQ ignores an id it already holds, so racing relays, or a crash between the add and the
  *   commit, enqueue once. It locks refund rows alone, or orders alone, and waits on nothing.
  */
@@ -124,8 +133,9 @@ export class OwedCallRelay extends SweeperLoop {
     const lost = await this.giveUpLostRefunds();
     await this.producer.ready();
     const refunds = await this.relayRefunds();
+    const reruns = await this.rerunAskedRefunds();
     const cancellations = await this.relayIntentCancellations();
-    return Math.max(lost, refunds, cancellations);
+    return Math.max(lost, refunds, reruns, cancellations);
   }
 
   /**
@@ -172,6 +182,34 @@ export class OwedCallRelay extends SweeperLoop {
     });
   }
 
+  /**
+   * A refund webhook asked these calls again (R15, replaced): a job waiting its backoff runs now. One
+   *   running keeps the request for the next pass, in case it fails into its backoff. Any other is
+   *   settled, or queued to run soon, or lost to the sweep above, never added again here: a call
+   *   asked past the provider's key retention may be made twice.
+   */
+  private rerunAskedRefunds(): Promise<number> {
+    return this.dataSource.transaction(async (manager) => {
+      const asked = await manager.query<{ id: string; idempotency_key: string; owed: boolean }[]>(
+        RERUN_ASKED_REFUNDS_SQL,
+        [RELAY_BATCH],
+      );
+      const answered: { id: string }[] = [];
+      for (const { id, idempotency_key, owed } of asked) {
+        const job = owed ? await this.producer.refunds.getJob(jobIdOf(idempotency_key)) : undefined;
+        if (job !== undefined && (await job.isActive())) continue;
+        if (job !== undefined && (await job.isDelayed())) await promoteUnlessMoved(job);
+        answered.push({ id });
+      }
+      if (answered.length === 0) return 0;
+      await manager.query(
+        'UPDATE order_refund SET rerun_asked_at = NULL WHERE id = ANY($1::uuid[])',
+        [answered.map(({ id }) => id)],
+      );
+      return answered.length;
+    });
+  }
+
   private relayIntentCancellations(): Promise<number> {
     const nowMs = this.clock.nowMs();
     return this.dataSource.transaction(async (manager) => {
@@ -189,6 +227,15 @@ export class OwedCallRelay extends SweeperLoop {
       );
       return stamp(manager, 'seat_order', 'intent_cancel_enqueued_at', due, nowMs);
     });
+  }
+}
+
+/** A job leaving its delay on its own between the read and the promotion runs now anyway. */
+async function promoteUnlessMoved(job: Job): Promise<void> {
+  try {
+    await job.promote();
+  } catch (error) {
+    if (await job.isDelayed()) throw error;
   }
 }
 

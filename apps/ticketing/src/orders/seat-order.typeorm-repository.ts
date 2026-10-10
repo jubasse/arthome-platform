@@ -267,7 +267,10 @@ const minorOf = (amount: Money | null): string | null =>
 function refundRowOf(
   orderId: string,
   refund: OrderRefund,
-): Omit<OrderRefundRow, 'traceparent' | 'enqueued_at' | 'dead_at' | 'created_at'> {
+): Omit<
+  OrderRefundRow,
+  'traceparent' | 'enqueued_at' | 'rerun_asked_at' | 'dead_at' | 'created_at'
+> {
   return {
     id: refund.id,
     order_id: orderId,

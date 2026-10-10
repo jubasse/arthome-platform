@@ -15,6 +15,7 @@ import {
 } from '@arthome/core';
 
 import { ApplyPaymentEvents } from './apply-payment-events.command.js';
+import { askRefundCallsAgain } from './refund-ledger.js';
 import { CLOCK } from '../clock.js';
 import { failUnpaidOrder } from '../orders/fail-unpaid-order.js';
 import { recordWaitingIntent } from '../orders/record-waiting-intent.js';
@@ -146,7 +147,7 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
       case PaymentEventKind.INTENT_CANCELLED:
         return failUnpaidOrder(transaction, order, { code: null, declineCode: null }, now);
       case PaymentEventKind.REFUND_SUCCEEDED:
-        this.applyRefundsReported(order, row, now);
+        await this.rerunRefundsReported(transaction, order, row, now);
         return null;
       case PaymentEventKind.DISPUTE_OPENED:
         return this.applyDispute(transaction, order, row, now);
@@ -155,20 +156,32 @@ export class ApplyPaymentEventsHandler implements ICommandHandler<ApplyPaymentEv
     }
   }
 
-  /** The refunds the provider's cumulative amount shows made, their seats refunded with them. */
-  private applyRefundsReported(order: SeatOrder, row: InboxRow, now: Instant): void {
+  /**
+   * Marks no refund made (R15, replaced): asks the relay to re-run now the call of each refund still
+   *   owed that the cumulative amount could cover. The provider answers under the refund's key, and
+   *   the processor marks it made with the provider's own reference.
+   */
+  private async rerunRefundsReported(
+    { manager }: TicketingTransaction,
+    order: SeatOrder,
+    row: InboxRow,
+    now: Instant,
+  ): Promise<void> {
     const { amount_refunded_minor: minor, amount_refunded_currency_code: currencyCode } = row;
     if (minor === null || currencyCode === null) {
       throw new Unappliable('a refund made carries no amount refunded');
     }
     const amountRefunded = money(Number(minor), currencyCode);
-    if (!order.refundsReported(row.refund_ref, amountRefunded, now)) {
+    const refundIds = order.refundsTheProviderMayHaveMade(amountRefunded);
+    if (refundIds === null) {
       this.logger.warn(
         `payment event ${row.event_id}: ${String(amountRefunded.amountMinor)} ${currencyCode} ` +
           `refunded on order ${order.snapshot.id}, more than every refund it holds; a refund ` +
           'made outside the platform, kept and ignored',
       );
+      return;
     }
+    await askRefundCallsAgain(manager, refundIds, now);
   }
 
   /**

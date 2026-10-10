@@ -4,8 +4,8 @@ import { type RefundReason } from '@arthome/core';
 
 /**
  * A refund of a `SeatOrder`, owed then made, written by the order's repository. `traceparent`,
- *   `enqueued_at` and `dead_at` are the queue's bookkeeping (`payments/refund-ledger.ts`, the relay,
- *   the processor), never the aggregate's.
+ *   `enqueued_at`, `rerun_asked_at` and `dead_at` are the queue's bookkeeping
+ *   (`payments/refund-ledger.ts`, the relay, the processor), never the aggregate's.
  */
 @Entity('order_refund')
 export class OrderRefundRow {
@@ -39,6 +39,9 @@ export class OrderRefundRow {
 
   @Column('timestamptz', { nullable: true })
   enqueued_at!: Date | null;
+
+  @Column('timestamptz', { nullable: true })
+  rerun_asked_at!: Date | null;
 
   @Column('text', { nullable: true })
   refund_ref!: string | null;

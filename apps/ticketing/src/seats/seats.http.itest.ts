@@ -36,12 +36,12 @@ import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { FULL_PRICE_MINOR, ITEST_BUYER_ACCOUNT_ID, nextKey, putOnSale } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { OrdersModule } from '../orders/orders.module.js';
-import { ApplyPaymentEvents } from '../payments/apply-payment-events.command.js';
-import { FakePaymentProvider, intentRefOf } from '../payments/fake-payment-provider.js';
+import { FakePaymentProvider } from '../payments/fake-payment-provider.js';
 import { PaymentWebhooksModule } from '../payments/payment-webhooks.module.js';
 import { PaymentWorker } from '../payments/payment-worker.js';
 import { PaymentWorkerModule } from '../payments/payment-worker.module.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
+import { TicketingTransactions } from '../ticketing-transactions.js';
 
 /**
  * `cancelSeat` and `refundSeat` through the module graph the API boots, over HTTP, the answers
@@ -285,24 +285,15 @@ describe('GET /v1/orders/:orderId once a seat is refunded', () => {
     async () => {
       const { orderId, seatIds } = await bought(2);
       await postCancel(seatIds[0] ?? '');
-      const [owed] = await dataSource.query<{ amount_minor: string; idempotency_key: string }[]>(
-        'SELECT amount_minor, idempotency_key FROM order_refund WHERE order_id = $1',
+      const [owed] = await dataSource.query<{ id: string }[]>(
+        'SELECT id FROM order_refund WHERE order_id = $1',
         [orderId],
       );
-      const { refundRef } = await fake.refund({
-        intentRef: intentRefOf(orderId),
-        amount: money(Number(owed?.amount_minor), 'EUR'),
-        idempotencyKey: owed?.idempotency_key ?? '',
-        refundApplicationFee: true,
+      await app.get(TicketingTransactions).run(async ({ orders }) => {
+        const order = await orders.findById(orderId);
+        order?.refundMade(owed?.id ?? '', 're_fake_seat', clock.now());
+        if (order !== null) await orders.save(order);
       });
-      const { body, signature } = fake.refundSucceededWebhookOf(refundRef);
-      await app.inject({
-        method: 'POST',
-        url: '/v1/payments/webhook',
-        headers: { 'content-type': 'application/json', [fake.signatureHeader]: signature },
-        payload: body,
-      });
-      await app.get(CommandBus).execute(new ApplyPaymentEvents(100));
 
       const read = await app.inject({
         method: 'GET',

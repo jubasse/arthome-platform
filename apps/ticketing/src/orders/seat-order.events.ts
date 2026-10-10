@@ -101,8 +101,7 @@ export class SeatOrderRefunded implements IEvent {
     public readonly channelId: string,
     public readonly refundId: string,
     public readonly amount: Money,
-    /** Null for a refund a webhook's cumulative amount showed made before the provider named it. */
-    public readonly refundRef: string | null,
+    public readonly refundRef: string,
     public readonly reason: RefundReason,
     public readonly occurredAt: Instant,
   ) {}

@@ -1,6 +1,6 @@
 import type { DataSource, EntityManager } from 'typeorm';
 
-import { money, type Money } from '@arthome/core';
+import { money, type Instant, type Money } from '@arthome/core';
 
 /**
  * The trace a refund was owed under, for the `order.refunded` the worker writes later: in the
@@ -63,6 +63,24 @@ export async function refundCallOf(
     settled: row.settled,
     traceparent: row.traceparent,
   };
+}
+
+/**
+ * A refund webhook's request (R15, replaced), in its transaction: the relay re-runs each call now,
+ *   its backoff cleared. Only a refund still owed, neither made nor given up on.
+ */
+export async function askRefundCallsAgain(
+  manager: EntityManager,
+  refundIds: readonly string[],
+  now: Instant,
+): Promise<void> {
+  if (refundIds.length === 0) return;
+  await manager.query(
+    `UPDATE order_refund SET rerun_asked_at = $2
+      WHERE id = ANY($1::uuid[]) AND refunded_at IS NULL AND dead_at IS NULL
+        AND rerun_asked_at IS NULL`,
+    [refundIds, new Date(now)],
+  );
 }
 
 /** After the last attempt failed: kept, owed, and never asked again until replayed (§0k). */

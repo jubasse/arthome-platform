@@ -7,7 +7,7 @@ import { SeatState } from '@arthome/core';
  *   made, or credited (PT1, whose `credit` table takes `credit_id`'s foreign key), its share of the
  *   credit nothing when the money left is below the seats credited. No backfill: every seat is
  *   active. The inbox keeps what a refund webhook reports, the provider's reference
- *   and everything refunded on the payment so far.
+ *   and everything refunded on the payment so far, and a refund the call a webhook asks again.
  */
 export class SeatStates1790441350000 implements MigrationInterface {
   name = 'SeatStates1790441350000';
@@ -34,9 +34,16 @@ export class SeatStates1790441350000 implements MigrationInterface {
         ADD COLUMN amount_refunded_minor         bigint NULL,
         ADD COLUMN amount_refunded_currency_code text   NULL
     `);
+    await queryRunner.query('ALTER TABLE order_refund ADD COLUMN rerun_asked_at timestamptz NULL');
+    await queryRunner.query(
+      `CREATE INDEX idx_order_refund_rerun_asked ON order_refund (rerun_asked_at)
+        WHERE rerun_asked_at IS NOT NULL`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query('DROP INDEX idx_order_refund_rerun_asked');
+    await queryRunner.query('ALTER TABLE order_refund DROP COLUMN rerun_asked_at');
     await queryRunner.query(`
       ALTER TABLE stripe_event_inbox
         DROP COLUMN amount_refunded_currency_code,

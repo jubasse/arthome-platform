@@ -5,7 +5,6 @@ import { v7 as uuidv7 } from 'uuid';
 import {
   DomainError,
   OrderErrorCode,
-  add,
   assertRefundWithinRemaining,
   compare,
   type Instant,
@@ -20,8 +19,8 @@ import {
   refundIdempotencyKey,
   refundableRemaining,
   seatStateMayMove,
+  subtract,
   sum,
-  zero,
 } from '@arthome/core';
 
 import { ORDER_STATES_AWAITING_PAYMENT } from './awaiting-payment.js';
@@ -161,10 +160,6 @@ export interface SeatOrderPlacement {
   readonly declaredTaxLocation: DeclaredTaxLocation | null;
   readonly holdId: string;
   readonly expiresAt: Instant;
-}
-
-function withRef(refund: OrderRefund, refundId: string, ref: string): OrderRefund {
-  return refund.id === refundId ? { ...refund, ref } : refund;
 }
 
 function sameRefund(owed: OrderRefund, refund: OwedRefund): boolean {
@@ -441,20 +436,13 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
   /**
    * A refund the provider made: `refunded` once the refunds made reach the total,
    *   `partially_refunded` before, forward only, and the seats it gives back `refunded`. Nothing
-   *   for one already made but its reference, when it was made before the provider named it.
+   *   for one already made.
    */
-  public refundMade(refundId: string, refundRef: string | null, now: Instant): void {
+  public refundMade(refundId: string, refundRef: string, now: Instant): void {
     const current = this.current;
     const refund = current.refunds.find(({ id }) => id === refundId);
     if (refund === undefined) throw new Error(`order ${current.id} owes no refund ${refundId}`);
-    if (refund.refundedAt !== null) {
-      if (refund.ref === null && refundRef !== null) {
-        this.advance({
-          refunds: current.refunds.map((owed) => withRef(owed, refundId, refundRef)),
-        });
-      }
-      return;
-    }
+    if (refund.refundedAt !== null) return;
     const refunds = current.refunds.map((owed) =>
       owed.id === refundId ? { ...owed, ref: refundRef, refundedAt: now } : owed,
     );
@@ -487,37 +475,24 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
   }
 
   /**
-   * A refund webhook: the provider has refunded `amountRefunded` on the payment in all. The refunds,
-   *   oldest first, whose running sum fits within it are made, each with its `SeatOrderRefunded`
-   *   once (the processor's call may have timed out after the provider made it); the newest of
-   *   them takes `refundRef` unless a refund already holds it. False, nothing applied, past every
-   *   refund the order holds: one made outside the platform.
+   * A refund webhook's cumulative amount says how much was refunded, not which refunds: it marks
+   *   none made (R15, replaced). The refunds still owed that the amount no refund made explains
+   *   could cover, whose calls to re-run now; null past every refund the order holds, a refund
+   *   made outside the platform.
    */
-  public refundsReported(refundRef: string | null, amountRefunded: Money, now: Instant): boolean {
+  public refundsTheProviderMayHaveMade(amountRefunded: Money): readonly string[] | null {
     const { refunds, quote } = this.current;
     const currencyCode = quote.total.currencyCode;
-    const ledger = sum(
-      refunds.map(({ amount }) => amount),
-      currencyCode,
-    );
-    if (compare(amountRefunded, ledger) > 0) return false;
-    const fitting: OrderRefund[] = [];
-    let running = zero(currencyCode);
-    for (const refund of refunds) {
-      running = add(running, refund.amount);
-      if (compare(running, amountRefunded) > 0) break;
-      fitting.push(refund);
-    }
-    const unmade = fitting.filter(({ refundedAt }) => refundedAt === null);
-    const refAlreadyHeld = refundRef === null || refunds.some(({ ref }) => ref === refundRef);
-    const reported = refAlreadyHeld
-      ? undefined
-      : (unmade.at(-1) ?? fitting.filter(({ ref }) => ref === null).at(-1));
-    for (const refund of unmade) {
-      if (refund !== reported) this.refundMade(refund.id, null, now);
-    }
-    if (reported !== undefined) this.refundMade(reported.id, refundRef, now);
-    return true;
+    const amountsOf = (held: readonly OrderRefund[]) =>
+      sum(
+        held.map(({ amount }) => amount),
+        currencyCode,
+      );
+    if (compare(amountRefunded, amountsOf(refunds)) > 0) return null;
+    const unmade = refunds.filter(({ refundedAt }) => refundedAt === null);
+    const made = refunds.filter(({ refundedAt }) => refundedAt !== null);
+    const unexplained = subtract(amountRefunded, amountsOf(made));
+    return unmade.filter(({ amount }) => compare(amount, unexplained) <= 0).map(({ id }) => id);
   }
 
   /**
@@ -527,8 +502,18 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
    */
   public cancelSeats({ reason, refundId, seats }: SeatCancellation, now: Instant): void {
     const current = this.current;
-    if (refundId !== null && !current.refunds.some(({ id }) => id === refundId)) {
+    const refund = current.refunds.find(({ id }) => id === refundId);
+    if (refundId !== null && refund === undefined) {
       throw new Error(`order ${current.id} owes no refund ${refundId}`);
+    }
+    const givenBack = seats.flatMap(({ refundAmount }) =>
+      refundAmount === null ? [] : [refundAmount],
+    );
+    if (
+      refund !== undefined &&
+      compare(sum(givenBack, refund.amount.currencyCode), refund.amount) > 0
+    ) {
+      throw new Error(`order ${current.id}: the seats' shares exceed refund ${refund.id}`);
     }
     if (refundId === null && seats.some(({ refundAmount }) => refundAmount !== null)) {
       throw new Error(`order ${current.id} cannot give a seat a share of no refund`);
