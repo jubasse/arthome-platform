@@ -432,8 +432,11 @@ UPDATE order_refund SET dead_at = NULL, enqueued_at = NULL
 
 The relay enqueues it again within a second, its schedule anew, under the same key, so a refund the
 provider made meanwhile is not made twice, and the order is then `refunded` with its
-`order.refunded`. Do not replay while the provider still refuses it for a reason of its own (a
-disputed charge): the call would be given up on again a day later. An intent's cancellation is
+`order.refunded`. Do not replay a refund whose order is `disputed`: its error says the dispute
+holds the buyer's money, which the dispute gives back if the buyer wins it, so a replay could pay
+them twice, and the processor gives it up again before any call (§0o). Owed still after a dispute
+the merchant won, it is a manual case until a dispute's close reaches the platform (no event for it
+yet). An intent's cancellation is
 replayed the same way, `UPDATE seat_order SET intent_cancel_dead_at = NULL,
 intent_cancel_enqueued_at = NULL WHERE id = '<order id>' AND intent_cancel_dead_at IS NOT NULL`,
 which is only worth it while the intent could still be confirmed.
@@ -533,7 +536,8 @@ to the queue.
   `enqueued_at` at the clock's instant, and commits. Due: owed, neither made nor given up on, and
   never enqueued; for a cancellation, also enqueued longer ago than its schedule's span with its
   jitter plus an hour (about 1.1 h), which only a job Redis lost leaves. A refund enqueued that
-  long ago (about 23.1 h) and unsettled is given up instead, its row dead and §0k's error logged:
+  long ago (about 23.1 h) and unsettled is given up instead, its row dead and §0k's error logged
+  (the dispute's, on a disputed order):
   enqueued again, it would be asked past the provider's key. This amends PT0's R5 for refunds
   (the review's S4, the lead's ruling): enqueuing a lost job again is an automatic retry, and no
   automatic refund attempt falls past the key. BullMQ
@@ -646,8 +650,8 @@ to the queue.
     left as they are. An order with no account (placed before auth slice A, none in production) is
     left so and logged: a credit is an account's. `credit` is unique on `(order_id, origin)`,
     inserted `ON CONFLICT DO NOTHING`: an order credited already gets nothing more and no event. A
-    credit of fewer minor units than seats gives a seat a share of nothing, which the migration lets
-    `credit_amount_minor` hold: refused, it aborted the batch of 500.
+    credit of fewer minor units than seats gives a seat a share of nothing, which seat-states' CHECK
+    lets `credit_amount_minor` hold (§0o): refused, it aborted the batch of 500.
   - **The waiting list, once** (D-096): after the batch, while `waitlist_ended_at` is null, one
     transaction claims the row, calls `WaitlistOutcomeHook.endWaitlist(transaction, dateId, now)`
     and stamps it. `NoWaitlistOutcomeHook`, a no-op, is bound in `DateOutcomesModule` until PT3
@@ -724,7 +728,9 @@ to the queue.
 - **The seam PT1 calls**: `SeatOrder.cancelSeats({ reason, refundId, seats: [{ seatId,
   refundAmount }] }, now)` and `creditSeats({ creditId, seats: [{ seatId, creditAmount }] }, now)`.
   The refund is one the order owes, a share of nothing is recorded as nothing given back (the seat
-  stays `cancelled` for good), and either refuses before anything moves.
+  stays `cancelled` for good), a negative share is refused, and the shares, with those the order's
+  seats already hold under that refund over earlier calls, stay within it. Either refuses before
+  anything moves.
 - **The wire**: one `ticketing.seat.cancelled.v1` per seat cancelled, on
   `arthome.ticketing.date_sales` keyed by the date (`seat_id`, `date_id`, the seat's `account_id`,
   `reason` through `WIRE_SEAT_CANCEL_REASON`, never `PAYMENT_FAILED`), in the transaction that saves
@@ -772,7 +778,9 @@ to the queue.
   cumulative says how much was refunded, not which refunds, and two equal shares cannot be told
   apart. For each refund still owed (neither made nor given up on) that the amount no refund made
   explains could cover, it stamps `order_refund.rerun_asked_at` in its transaction. The relay's
-  next pass promotes that refund's job when it waits its backoff (job id `jobIdOf(refund:{id})`),
+  next pass, 50 requests at a time (each holds its row lock across Redis round trips), reads each
+  job's state once, the lookups together, and promotes that refund's job when it waits its backoff
+  (job id `jobIdOf(refund:{id})`),
   keeps the request while the job runs, and clears it otherwise: a job queued runs soon, and one
   lost is left to the stale sweep, never added again, since a call past the key's retention may be
   made twice. The provider answers under the refund's key, the existing refund or a new one, and
@@ -784,9 +792,10 @@ to the queue.
 - **A dispute** (`dispute_opened`): the order `disputed`, above `refunded`, its seats left active,
   no provider call and no event (C1 adds none); one reaching an order not yet paid settles the
   payment first, as a confirmation would, so the seats a disputed charge implies exist. A refund
-  still owed on it stays owed: the fake, as Stripe, refuses a refund on a disputed charge as a
-  refusal, not `PaymentProviderUnavailable`, so the queue retries it to its bound and its dead row,
-  which the provider's dispute settles (§0k: do not replay it).
+  still owed on it is given up at once (PT1, the PT2 review's m2): its job reads the order
+  `disputed`, calls nothing, which the fake, as Stripe, would refuse, writes its dead row and logs
+  that the dispute holds the buyer's money, not to be replayed (§0k). Given up rather than marked
+  superseded: the row stays owed and visible, in case the merchant wins the dispute.
 - **The fake** (§0g) plays both, signed as `completeAction`'s: `refundSucceededWebhookOf(refundRef)`,
   with what the charge refunded up to that refund, and `disputeOpened(intentRef)`.
 
@@ -802,7 +811,7 @@ to the queue.
 | `date-sales.http.itest.ts` | the routes over HTTP through the modules the API boots |
 | `catalog-exchange.itest.ts` | catalog and ticketing read each other's real outbox rows, shaped as the connector routes them: a draft opens the sale, ticketing's capacity and price complete catalog's checklist, catalog publishes, the prices lock |
 | `boot.itest.ts` | the four root modules; the worker's (PT0) on Redis, a refund owed made by its first passes, its shutdown awaiting the provider call in flight before the pool closes |
-| `orders/seat-order.aggregate.spec.ts`, `orders/seat-hold.aggregate.spec.ts` | the order's forward-only states, its seats created at payment, a payment after a failure (D-082), a refund owed under its own key and no payment taken after it, an intent reaching a failed order owing its cancellation from the instant first owed; the ledger (PT0): two refunds, `partially_refunded` then `refunded`, one past `refundableLeft` or of nothing refused, none owed on an order holding no money, one owed again answered and changing nothing, its id or key with other facts refused; the seats (PT2): one of three cancelled then refunded when its refund is made, the others active, one `SeatCancelled` per seat, nothing given back cancelled for good (a share of nothing, a disputed order), a seat not active refused `seat.not_active` moving nothing, credited seats, a dispute above `refunded`, shares past the refund named or a seat named twice refused moving nothing; a refund webhook marking nothing made, two equal refunds the newer made first, naming the owed refunds its unexplained amount could cover, and none past the ledger; the hold's expiry its intent's, consumed or released once |
+| `orders/seat-order.aggregate.spec.ts`, `orders/seat-hold.aggregate.spec.ts` | the order's forward-only states, its seats created at payment, a payment after a failure (D-082), a refund owed under its own key and no payment taken after it, an intent reaching a failed order owing its cancellation from the instant first owed; the ledger (PT0): two refunds, `partially_refunded` then `refunded`, one past `refundableLeft` or of nothing refused, none owed on an order holding no money, one owed again answered and changing nothing, its id or key with other facts refused; the seats (PT2): one of three cancelled then refunded when its refund is made, the others active, one `SeatCancelled` per seat, nothing given back cancelled for good (a share of nothing, a disputed order), a seat not active refused `seat.not_active` moving nothing, credited seats, a dispute above `refunded`, shares past the refund named or a seat named twice refused moving nothing, the shares bounded across calls under one refund and a negative one refused (PT1); a refund webhook marking nothing made, two equal refunds the newer made first, naming the owed refunds its unexplained amount could cover, none past the ledger, and never one made (PT1); the hold's expiry its intent's, consumed or released once |
 | `date-sales.aggregate.spec.ts` (T3's block) | on sale, the quote through core, a hold that moves the counter and not the version |
 | `orders/purchase.itest.ts` | 23 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, its renewed hold's decrement last (another buyer's does not wait on it), and a renewal finding no seat rolled back and failed sold out for good, the quote; D-089: a purchase before the start without the header, one after it refused unacknowledged with the facts and nothing held then sold acknowledged, one past the cutoff refused `order.sales_closed` holding nothing, the hold's statement refusing past the cutoff on its own, the quote's `lateEntry` only after the start, a purchase resumed after the start asked then sold, and one resumed past the cutoff closed at once and for good |
 | `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry |
@@ -821,13 +830,14 @@ to the queue.
 | `payments/fake-payment-provider.spec.ts` | the fake: a retried intent found under its order id, each scenario, one refund per key, cancelling, an intent another instance created refunded by its reference, a signature over the exact bytes and its tolerance; a refund webhook carrying what its charge refunded up to it, a dispute confirming the charge, and a refund on a disputed charge refused, not unavailable (PT2) |
 | `payments/owed-calls.spec.ts` | a refund's delays doubling from 5 s to their one-hour cap, adding up to a day; an intent's cancellation on the consumers' bound |
 | `payments/provider-call-queues.spec.ts` | `jobIdOf` over each key, no colon and never an integer; one attempt more than the delays, the custom backoff, nothing kept; each backoff within its schedule's jitter and none after the last; the stale windows |
+| `payments/owed-call-relay.spec.ts` | PT1, the refund webhook's reruns: at most 50 claimed, each job's state read once, one running kept asked, one delayed promoted, the rest answered, the lookups in parallel, and a full rerun batch counted as a full pass |
 | `payments/provider-call-queues.itest.ts` | real Postgres and a Redis of its own: a call owed past a minute and never enqueued turning `provider_calls_waiting` degraded, then up once enqueued; a refund owed twice recorded once, and a key another refund holds refused with the transaction still alive; a D-082 refund owed by a webhook, made once, `order.refunded` under the webhook's trace; the provider down on a shortened schedule, given up with `dead_at` and §0k's error, `provider_calls_dead` degraded, then replayed and made once under the same key; 60 refunds at 20 a second in two seconds at least; Redis paused while a purchase, a webhook and an expiry commit, the relay failing within its timeout with nothing stamped and its locks released, then each call made once, `provider_call_queues` degraded then up; a worker killed mid-call, its stalled job run again, one refund at the fake; a cancellation cleared by a payment, no call; one owed again once given up on, a new job; a job stalled twice run again, one refund, and one stalled past its bound given up with its row dead and the error; jobs lost to `FLUSHDB`: the refund given up past its stale window with the error, never asked again, the cancellation enqueued again and made; two relays racing over 1,000 refunds, enqueued again after their commits were lost, each job completed once and each refund made once |
 | `migrations/provider-call-queues.itest.ts` | the backfill over refunds owed, made and given up on and an owed cancellation: one row each under `refund:{orderId}`, the owed ones due to the relay after; a second D-082 refund of one order refused by `uq_order_refund_unseated`; `down` refused while an unsettled refund is keyed by its own id, then putting them back once it is settled |
 | `payments/relay-plan.itest.ts` | over 20,000 refunds made and 20,000 orders, no claim reads its table sequentially, the refund webhook's reruns included |
 | `seats/cancel-seat.itest.ts` | PT2, real Postgres and Redis: one seat of three cancelled, its share owed under `refundIdempotencyKey` with the request's trace, `seat.cancelled` `VIEWER_REQUEST` on the date's key, the seat back on sale and a sold-out date published back at once; the queue making it, `refunded`, `partially_refunded`, `order.refunded` `VIEWER_REQUEST`, then the two others and the order `refunded`; a replay byte for byte; a key reused; another account's seat and an unknown one 404; past the deadline 409 with the instant; a seat already refunded 409 with its state; a cancelled date `date_cancelled` past the deadline with no counter move; a disputed order cancelled with nothing refunded; a hold's statement passing under 200 ms while the cancellation's outbox insert sleeps a second |
 | `seats/refund-seat.itest.ts` | PT2: `goodwill` in part, the seat active, the order `partially_refunded`, no `seat.cancelled`, `order.refunded` `UNSPECIFIED`; `duplicate` in full, then past what is left 409 naming it and nothing left 409; `date_cancelled` on a date scheduled, then interrupted, 409 `state.conflict` naming the outcome; on a cancelled date the seat cancelled, no counter move, then refunded; a seat no longer active and a disputed order 409; a replay |
 | `seats/seats.http.itest.ts` | PT2: both routes over HTTP through the modules the API boots, `TicketCardSchema` without `date` and `refundSeat`'s contract envelope; a replay's header and bytes; 401 without an account; 400 for a malformed body, a missing key and a malformed `If-Rights-Version`; `getOrder` serving `TicketCard.refund` and `Order.refundReasonCode` once the refund is made |
-| `payments/refund-dispute-webhooks.itest.ts` | PT2, over HTTP with the raw body, the queues on Redis: a refund made while its call timed out marked nothing made, its call re-run, the provider's answer under its key marking it made once with that reference, its seat refunded, duplicates and a second webhook applied once; two equal refunds waiting an hour's backoff, the newer made at the provider, its webhook marking neither, both jobs promoted, each made with its own reference, the older asked once; a refund made outside the platform kept and ignored; a dispute on a paid order `disputed`, seats active, no call, no event; a dispute before its confirmation settling the payment, its seats and events written, then `disputed`; a refund on a disputed charge refused by the fake, retried to its dead row |
+| `payments/refund-dispute-webhooks.itest.ts` | PT2, over HTTP with the raw body, the queues on Redis: a refund made while its call timed out marked nothing made, its call re-run, the provider's answer under its key marking it made once with that reference, its seat refunded, duplicates and a second webhook applied once; two equal refunds waiting an hour's backoff, the newer made at the provider, its webhook marking neither, both jobs promoted, each made with its own reference, the older asked once; a refund made outside the platform kept and ignored; a dispute on a paid order `disputed`, seats active, no call, no event; a dispute before its confirmation settling the payment, its seats and events written, then `disputed`; a refund owed before a dispute given up at once, no provider call, its error saying not to replay it |
 
 | `credits/credit.aggregate.spec.ts` | PT1: a credit issued for its amount, valid twelve months (29 February to the last day of the next February), its event; one of nothing refused |
 | `date-outcomes/order-outcome.spec.ts` | PT1, the per-order rules: on a cancellation what is left in one refund and its seats' shares adding up to it in seat-id order, the seats of an order refunded in full or disputed cancelled with nothing, nothing for an order with no active seat, the shares over the seats still active; on an interruption the credit and its shares, nothing left or disputed left, no account left, a share of nothing |
