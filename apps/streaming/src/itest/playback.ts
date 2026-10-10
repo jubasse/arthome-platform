@@ -433,6 +433,7 @@ export function ticketOf(response: { statusCode: number; body: string }) {
 export interface Ticket {
   readonly sessionId: string;
   readonly resumedExistingSession?: boolean;
+  readonly previewSecondsLeft?: number | null;
   readonly scope: string;
   readonly manifestUrl: string;
   readonly signature: { readonly queryToken?: string | null; readonly cookieSet?: boolean | null };
