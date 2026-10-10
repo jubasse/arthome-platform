@@ -35,6 +35,28 @@ export function accountOf(principal: Principal | null): string {
   return principal.accountId;
 }
 
+/** The profile the token names, or a 403: the route reads a profile and the token carries none. */
+export function profileOfPrincipal(principal: Principal): string {
+  if (principal.profileId === null) throw refusalOf(ApiErrorCode.FORBIDDEN);
+  return principal.profileId;
+}
+
+/**
+ * A body naming a `profileId` or `deviceId` other than the token's is refused 403: the BFF vouches
+ * for the caller in the token, so the body cannot pick another profile of the account.
+ */
+export function assertSameCaller(
+  principal: Principal,
+  body: { readonly profileId?: string; readonly deviceId?: string },
+): void {
+  if (body.profileId !== undefined && body.profileId !== principal.profileId) {
+    throw refusalOf(ApiErrorCode.FORBIDDEN);
+  }
+  if (body.deviceId !== undefined && body.deviceId !== principal.deviceId) {
+    throw refusalOf(ApiErrorCode.FORBIDDEN);
+  }
+}
+
 /** The verified caller of a route the internal token's guard covers. */
 export const CurrentPrincipal: () => ParameterDecorator = createParamDecorator(
   (_data: unknown, context: ExecutionContext): Principal => {

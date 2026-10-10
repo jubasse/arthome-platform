@@ -260,6 +260,18 @@ describe('readPlaybackSigningKey', () => {
     ).toBe('play-2026-10-06');
   });
 
+  it('refuses a kid outside the playback prefix, and accepts a play- one', () => {
+    const key = (kid: string): string =>
+      JSON.stringify({ ...DEVELOPMENT_PLAYBACK_PRIVATE_JWK, kid });
+
+    expect(() =>
+      readPlaybackSigningKey({ NODE_ENV: 'test', PLAYBACK_SIGNING_KEY: key('bff-sf-2026-10') }),
+    ).toThrow(/kid must start with play-/);
+    expect(
+      readPlaybackSigningKey({ NODE_ENV: 'test', PLAYBACK_SIGNING_KEY: key('play-2026-10') }).keyId,
+    ).toBe('play-2026-10');
+  });
+
   it('refuses a key that is not a private P-256 JWK', () => {
     const { d: _private, ...publicHalf } = DEVELOPMENT_PLAYBACK_PRIVATE_JWK;
 

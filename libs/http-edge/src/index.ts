@@ -34,8 +34,10 @@ export { InternalTokenVerifier } from './internal-token.verifier.js';
 export {
   CurrentPrincipal,
   accountOf,
+  assertSameCaller,
   attachPrincipal,
   principalOf,
+  profileOfPrincipal,
   unauthenticated,
 } from './principal.js';
 export type { Principal } from './principal.js';

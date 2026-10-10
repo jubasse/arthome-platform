@@ -256,6 +256,8 @@ export interface SigningKey {
   readonly privateJwk: Readonly<Record<string, string>>;
 }
 
+const PLAYBACK_KEY_ID_PREFIX = 'play-';
+
 const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/);
 
 const privateEcJwk = z.object({
@@ -304,6 +306,11 @@ export function readPlaybackSigningKey(
       ? DEVELOPMENT_PLAYBACK_PRIVATE_JWK
       : parseJson(raw, 'PLAYBACK_SIGNING_KEY'),
   );
+  if (!jwk.kid.startsWith(PLAYBACK_KEY_ID_PREFIX)) {
+    throw new Error(
+      `PLAYBACK_SIGNING_KEY: the kid must start with ${PLAYBACK_KEY_ID_PREFIX}, the prefix that keeps the playback keys apart from the session keys`,
+    );
+  }
   if (production && (isDevelopmentPlaybackKey(jwk) || isDevelopmentTokenKey(jwk))) {
     throw new Error('PLAYBACK_SIGNING_KEY: a development key cannot sign in production');
   }
