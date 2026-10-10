@@ -153,7 +153,7 @@ update the SHA and the comment together. Python dependencies of the workflows ar
 | `pnpm run use-core <version>` | points every `@arthome/*` spec at the arthome-core release `v<version>`, refreshes the lockfile, builds every lib |
 | `pnpm run bootstrap` | local mode: packs the sibling arthome-core into `vendor/`, installs, then builds every lib (`build:libs`) |
 | `pnpm run check:core-specs` | every `@arthome/*` spec is one build of one source; `--require-release` also refuses a `file:` spec |
-| `pnpm run build:libs` | `tsc -p tsconfig.build.json` in every `libs/*`; also what makes their `dist/` exist for ESLint's `import-x/order` (see below) |
+| `pnpm run build:libs` | `tsc -p tsconfig.build.json` in every `libs/*`; builds each lib's `dist/` |
 | `pnpm run verify` | everything below, in order, stopping at the first failure — cached |
 | `pnpm run verify:full` | the same, every cache off; what `.githooks/pre-push` runs before a push |
 | `pnpm run verify:offline` | the subset needing no install — core specs, versions, tsconfig, enums, language, symbols |
@@ -428,10 +428,11 @@ error, lint error and failing test, tried one at a time against the cached commi
 still caught, then reverted; a cross-file type-aware lint error and a staged deletion, tried against
 the cached commit hook, were each missed as designed and then caught by `pre-push`'s `verify:full`.
 
-**Why `bootstrap` builds the libs.** `pnpm run build:libs`, now inside `bootstrap`, exists because
-ESLint's `import-x/order` resolves a workspace import through the package's `exports` map's `default`
-condition, i.e. `dist/` — absent in a fresh worktree, which used to fail lint on
-`tools/ops-check.mjs` and `tools/republish-outbox.mjs`.
+**Lint does not depend on `libs/*/dist`.** `eslint.config.js` gives `import-x/order` a pathGroup
+that sorts `@arthome-platform/**` with the external packages, so the verdict is the same in a fresh
+worktree and after `build:libs`. Before, a workspace import was internal with a `dist/` and external
+without, and `tools/ops-check.mjs` and `tools/republish-outbox.mjs` flipped. Keep workspace imports
+in alphabetical order among the external ones.
 
 ## Running the event path
 
