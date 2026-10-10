@@ -5,11 +5,13 @@ import type { EachMessagePayload } from 'kafkajs';
 import { ApiErrorCode, isDomainError } from '@arthome/core';
 
 import type { Delivery } from './delivery.js';
+import { ENTITLEMENT_READERS } from './entitlement/entitlement-messages.js';
 
-type Reader = (value: Uint8Array, delivery: Delivery) => Command<Outcome>;
+/** Null when the message says nothing streaming keeps: ignored. */
+export type Reader = (value: Uint8Array, delivery: Delivery) => Command<Outcome> | null;
 
 /** The command each consumed type becomes; a type absent here is not streaming's, and ignored. */
-const READERS: Readonly<Record<string, Reader>> = {};
+const READERS: Readonly<Record<string, Reader>> = { ...ENTITLEMENT_READERS };
 
 /**
  * One message read as its command. Bytes that do not read as their type, and a refusal no retry
@@ -31,7 +33,7 @@ export async function applyStreamingMessage(
     topic: payload.topic,
     traceparent: header(payload, 'traceparent'),
   };
-  let command: Command<Outcome>;
+  let command: Command<Outcome> | null;
   try {
     command = read(new Uint8Array(value), delivery);
   } catch (cause) {
@@ -39,6 +41,7 @@ export async function applyStreamingMessage(
       cause,
     });
   }
+  if (command === null) return Outcome.IGNORED;
 
   try {
     return await commands.execute(command);

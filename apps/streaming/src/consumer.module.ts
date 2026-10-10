@@ -5,10 +5,15 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { applyStreamingMessage } from './consumed-messages.js';
 import { dataSource } from './data-source.js';
+import { EntitlementConsumerModule } from './entitlement/entitlement-consumer.module.js';
 import { SERVICE } from './service.js';
 
 /** Every topic the consumer reads. KafkaJS will not subscribe to an empty list. */
-export const CONSUMED_TOPICS: readonly string[] = [];
+export const CONSUMED_TOPICS: readonly string[] = [
+  'arthome.ticketing.date_sales',
+  'arthome.ticketing.account',
+  'arthome.catalog.date',
+];
 
 /** The consumer process: the commands it dispatches and what they need, no HTTP module. */
 @Module({
@@ -20,6 +25,7 @@ export const CONSUMED_TOPICS: readonly string[] = [];
       topics: CONSUMED_TOPICS,
       apply: applyStreamingMessage,
     }),
+    EntitlementConsumerModule,
   ],
 })
 export class ConsumerModule {}
