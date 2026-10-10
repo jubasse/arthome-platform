@@ -26,7 +26,7 @@ import {
   subscriptionStateOf,
 } from './entitlement-wire.js';
 import { RecordDateFact, type RightsFacts } from './record-date-fact.command.js';
-import { RecordSeatFact, type SeatFact } from './record-seat-fact.command.js';
+import { RecordSeatFact } from './record-seat-fact.command.js';
 import { RecordSubscriptionFact } from './record-subscription-fact.command.js';
 import type { Reader } from '../consumed-messages.js';
 import type { Delivery } from '../delivery.js';
@@ -53,13 +53,9 @@ function rightsOf(rights: WireTerritoryRights | undefined): RightsFacts {
   };
 }
 
-function seatRead(
-  delivery: Delivery,
-  type: SeatFact['type'],
-  event: SeatActivated | SeatCancelled,
-): RecordSeatFact {
+function seatActivatedRead(delivery: Delivery, event: SeatActivated): RecordSeatFact {
   return new RecordSeatFact(delivery, {
-    type,
+    type: 'ticketing.seat.activated.v1',
     seatId: idOf(event.seatId, 'seat_id'),
     accountId: idOf(event.accountId, 'account_id'),
     dateId: idOf(event.dateId, 'date_id'),
@@ -67,12 +63,31 @@ function seatRead(
   });
 }
 
+/**
+ * An empty account opens nothing, which is why an activation does not read without one; a
+ *   cancellation only ends, so it needs the seat alone and the handler ends the kept row by it.
+ */
+function seatCancelledRead(delivery: Delivery, event: SeatCancelled): RecordSeatFact {
+  const seatId = idOf(event.seatId, 'seat_id');
+  const statedAt = event.occurredAt === undefined ? null : timestampDate(event.occurredAt);
+  if (!UUID.test(event.accountId) || !UUID.test(event.dateId) || statedAt === null) {
+    return new RecordSeatFact(delivery, { type: 'ticketing.seat.cancelled.v1', seatId, statedAt });
+  }
+  return new RecordSeatFact(delivery, {
+    type: 'ticketing.seat.cancelled.v1',
+    seatId,
+    accountId: event.accountId,
+    dateId: event.dateId,
+    statedAt,
+  });
+}
+
 /** The entitlement projection's nine types; null for a fact this build keeps nothing of. */
 export const ENTITLEMENT_READERS: Readonly<Record<string, Reader>> = {
   'ticketing.seat.activated.v1': (value, delivery) =>
-    seatRead(delivery, 'ticketing.seat.activated.v1', fromBinary(SeatActivatedSchema, value)),
+    seatActivatedRead(delivery, fromBinary(SeatActivatedSchema, value)),
   'ticketing.seat.cancelled.v1': (value, delivery) =>
-    seatRead(delivery, 'ticketing.seat.cancelled.v1', fromBinary(SeatCancelledSchema, value)),
+    seatCancelledRead(delivery, fromBinary(SeatCancelledSchema, value)),
   'ticketing.subscription.changed.v1': (value, delivery) => {
     const event = fromBinary(SubscriptionChangedSchema, value);
     return new RecordSubscriptionFact(delivery, {

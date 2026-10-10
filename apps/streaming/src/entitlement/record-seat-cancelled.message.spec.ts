@@ -82,15 +82,20 @@ describe(TYPE, () => {
     }
   });
 
-  it('is dead-lettered at once with an empty account, which would open nothing', async () => {
-    await deadLettered(
-      toBinary(SeatCancelledSchema, create(SeatCancelledSchema, { ...event, accountId: '' })),
+  it('reads without an account, a date or an occurred_at, which the kept row holds', async () => {
+    const { executed } = await dispatched(
+      toBinary(SeatCancelledSchema, create(SeatCancelledSchema, { seatId: SEAT, accountId: '' })),
     );
+
+    expect(executed).toEqual([
+      new RecordSeatFact(DELIVERY, { type: TYPE, seatId: SEAT, statedAt: null }),
+    ]);
   });
 
-  it('is dead-lettered at once without an occurred_at, or with bytes of another type', async () => {
-    const { occurredAt: _omitted, ...undated } = event;
-    await deadLettered(toBinary(SeatCancelledSchema, create(SeatCancelledSchema, undated)));
+  it('is dead-lettered at once without a seat, or with bytes of another type', async () => {
+    await deadLettered(
+      toBinary(SeatCancelledSchema, create(SeatCancelledSchema, { ...event, seatId: '' })),
+    );
     await deadLettered(Uint8Array.of(0xff, 0xff, 0xff));
   });
 });

@@ -3,7 +3,7 @@ import { Inject, Logger } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 import type { EntityManager } from 'typeorm';
 
-import type { Clock } from '@arthome/core';
+import { DateOutcome, type Clock } from '@arthome/core';
 
 import { reportStaleness } from './freshness.js';
 import {
@@ -69,9 +69,12 @@ export const SET_PUBLICATION = groupUpsert(
   'kept.publication_version IS NULL OR excluded.publication_version > kept.publication_version',
 );
 
+/** Catalog refuses any outcome after a cancellation or an interruption: so does the guard, whatever the instants. */
 export const DECLARE_OUTCOME = groupUpsert(
   ['channel_id', 'outcome', 'outcome_declared_at'],
-  newerOrSame('outcome_declared_at'),
+  `(${newerOrSame('outcome_declared_at')})
+          AND kept.outcome IS DISTINCT FROM '${DateOutcome.CANCELLED}'
+          AND kept.outcome IS DISTINCT FROM '${DateOutcome.INTERRUPTED}'`,
 );
 
 type Write = (statement: string, values: readonly unknown[]) => Promise<boolean>;

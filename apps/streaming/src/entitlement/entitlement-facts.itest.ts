@@ -24,6 +24,7 @@ import {
   PublicationState,
   ReplayPolicy,
   RightsScope,
+  SubscriptionState,
   WatchDenialReason,
   WatchScope,
   concurrentStreamsAllowedFor,
@@ -250,6 +251,50 @@ describe('the entitlement facts PS3 decides from', () => {
           (await factsOf(HOLDER)).activeSeatsOnDate,
         ),
       ).toBe(2);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'reads a stored string this build does not know as unknown, never as a member',
+    async () => {
+      const dateId = '01a0f541-0000-7000-8000-0000000000f1';
+      const account = '01a0f542-0000-7000-8000-0000000000f1';
+      await projection.dataSource.query(
+        `INSERT INTO entitlement_date
+           (date_id, starts_at, runtime_min, replay_policy, rights_scope, blackout_reason,
+            publication_state, outcome, applied_at)
+         VALUES ($1, $2, 90, 'from_the_future', 'galaxy', 'new_reason', 'takedown', 'vanished', $3)`,
+        [dateId, STARTS_AT, NOW],
+      );
+      await projection.dataSource.query(
+        `INSERT INTO entitlement_subscription (account_id, state, openings, occurred_at, applied_at)
+         VALUES ($1, 'paused', $3, $2, $2)`,
+        [account, NOW, [PlanOpening.ALL_LIVES]],
+      );
+      await projection.dataSource.query(
+        `INSERT INTO entitlement_subscription (account_id, state, openings, occurred_at, applied_at)
+         VALUES ($1, $4, $3, $2, $2)`,
+        [
+          '01a0f542-0000-7000-8000-0000000000f2',
+          NOW,
+          [PlanOpening.ALL_LIVES, 'hologram'],
+          SubscriptionState.ACTIVE,
+        ],
+      );
+
+      const facts = await factsOf(account, dateId);
+
+      expect(facts.planOpenings).toEqual([]);
+      expect(facts.date).toMatchObject({
+        publicationState: null,
+        outcome: null,
+        rights: null,
+        timing: { replayPolicy: ReplayPolicy.NONE },
+      });
+      expect((await factsOf('01a0f542-0000-7000-8000-0000000000f2', dateId)).planOpenings).toEqual([
+        PlanOpening.ALL_LIVES,
+      ]);
     },
     CASE_MS,
   );

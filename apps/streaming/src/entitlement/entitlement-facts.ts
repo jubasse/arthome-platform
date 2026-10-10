@@ -1,18 +1,18 @@
 import type { EntityManager } from 'typeorm';
 
 import {
+  BlackoutReason,
+  DateOutcome,
   DomainConstant,
+  PlanOpening,
+  PublicationState,
+  ReplayPolicy,
+  RightsScope,
   SeatState,
+  SubscriptionState,
   planOpeningsOf,
-  type DateOutcome,
   type DateTiming,
   type Instant,
-  type PlanOpening,
-  type BlackoutReason,
-  type PublicationState,
-  type ReplayPolicy,
-  type RightsScope,
-  type SubscriptionState,
   type TerritoryRights,
 } from '@arthome/core';
 
@@ -49,13 +49,13 @@ interface DateRow {
   readonly channel_id: string | null;
   readonly starts_at: Date | null;
   readonly runtime_min: number | null;
-  readonly replay_policy: ReplayPolicy | null;
+  readonly replay_policy: string | null;
   readonly replay_window_hours: number | null;
-  readonly rights_scope: RightsScope | null;
+  readonly rights_scope: string | null;
   readonly blackout_countries: string[] | null;
-  readonly blackout_reason: BlackoutReason | null;
-  readonly publication_state: PublicationState | null;
-  readonly outcome: DateOutcome | null;
+  readonly blackout_reason: string | null;
+  readonly publication_state: string | null;
+  readonly outcome: string | null;
 }
 
 /** The date's columns come through a left join: all null, `date_id` too, without its row. */
@@ -63,8 +63,8 @@ interface EntitlementRow extends Omit<DateRow, 'date_id'> {
   readonly date_id: string | null;
   readonly active_seats: number;
   readonly cancelled_seats: number;
-  readonly subscription_state: SubscriptionState | null;
-  readonly openings: PlanOpening[] | null;
+  readonly subscription_state: string | null;
+  readonly openings: string[] | null;
   readonly paid_through: Date | null;
 }
 
@@ -85,6 +85,17 @@ export const READ_ENTITLEMENT_FACTS = `
     LEFT JOIN entitlement_subscription s ON s.account_id = $1
     LEFT JOIN entitlement_date d ON d.date_id = $2`;
 
+/**
+ * The stored strings come from the consumer's build, which a rolling deploy can make newer than
+ *   this one: a member this build does not know reads as unknown, never as a member (critical rule 10).
+ */
+function memberOf<Member extends string>(
+  members: Readonly<Record<string, Member>>,
+  stored: string | null,
+): Member | null {
+  return Object.values(members).find((member) => member === stored) ?? null;
+}
+
 function timingOf(row: DateRow): DateTiming | null {
   if (row.starts_at === null || row.runtime_min === null || row.replay_policy === null) {
     return null;
@@ -93,17 +104,18 @@ function timingOf(row: DateRow): DateTiming | null {
     startsAt: row.starts_at.toISOString(),
     runtimeMin: row.runtime_min,
     roomOpensBeforeMin: DomainConstant.ROOM_OPENS_MINUTES_BEFORE,
-    replayPolicy: row.replay_policy,
+    replayPolicy: memberOf(ReplayPolicy, row.replay_policy) ?? ReplayPolicy.NONE,
     replayWindowHours: row.replay_window_hours ?? 0,
   };
 }
 
 function rightsOf(row: DateRow): TerritoryRights | null {
-  if (row.rights_scope === null) return null;
+  const scope = memberOf(RightsScope, row.rights_scope);
+  if (scope === null) return null;
   return {
-    scope: row.rights_scope,
+    scope,
     blackoutCountries: row.blackout_countries ?? [],
-    reason: row.blackout_reason,
+    reason: memberOf(BlackoutReason, row.blackout_reason),
   };
 }
 
@@ -112,8 +124,8 @@ function dateFactsOf(row: DateRow): DateFacts {
     dateId: row.date_id,
     channelId: row.channel_id,
     timing: timingOf(row),
-    publicationState: row.publication_state,
-    outcome: row.outcome,
+    publicationState: memberOf(PublicationState, row.publication_state),
+    outcome: memberOf(DateOutcome, row.outcome),
     rights: rightsOf(row),
   };
 }
@@ -136,7 +148,7 @@ export async function readEntitlementFacts(
   const rows = await manager.query<EntitlementRow[]>(READ_ENTITLEMENT_FACTS, [accountId, dateId]);
   const row = rows[0];
   if (row === undefined) throw new Error('the entitlement read answered no row');
-  const state = row.subscription_state;
+  const state = memberOf(SubscriptionState, row.subscription_state);
   return {
     activeSeatsOnDate: row.active_seats,
     seatExpired: row.cancelled_seats > 0 && row.active_seats === 0,
@@ -146,7 +158,9 @@ export async function readEntitlementFacts(
         : planOpeningsOf(
             {
               state,
-              opens: row.openings ?? [],
+              opens: (row.openings ?? []).flatMap(
+                (opening) => memberOf(PlanOpening, opening) ?? [],
+              ),
               paidThrough: row.paid_through?.toISOString() ?? null,
             },
             now,

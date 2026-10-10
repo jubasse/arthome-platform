@@ -188,6 +188,58 @@ describe('the seats of the entitlement projection', () => {
   );
 
   it(
+    'ends the kept seat by its id when the cancellation states no account, date or instant',
+    async () => {
+      const seat = seatOf(501);
+      const bare = (): WireMessage =>
+        wireMessage(DATE_SALES_TOPIC, 'ticketing.seat.cancelled.v1', SeatCancelledSchema, seat, {
+          seatId: seat,
+        });
+
+      await projection.apply(activated(seat, accountOf(6), dateOf(6)));
+      expect(await projection.apply(bare())).toBe(Outcome.APPLIED);
+      expect(await seatRows(seat)).toEqual([
+        {
+          account_id: accountOf(6),
+          date_id: dateOf(6),
+          state: SeatState.CANCELLED,
+          occurred_at: ACTIVATED_AT,
+          applied_at: new Date(NOW),
+        },
+      ]);
+      expect(await projection.apply(bare())).toBe(Outcome.SUPERSEDED);
+      const facts = await readEntitlementFacts(projection.dataSource.manager, {
+        accountId: accountOf(6),
+        dateId: dateOf(6),
+        now: NOW,
+      });
+      expect({ active: facts.activeSeatsOnDate, expired: facts.seatExpired }).toEqual({
+        active: 0,
+        expired: true,
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'dead-letters a cancellation without an account only when no seat row exists',
+    async () => {
+      const seat = seatOf(502);
+
+      await expect(
+        projection.apply(
+          wireMessage(DATE_SALES_TOPIC, 'ticketing.seat.cancelled.v1', SeatCancelledSchema, seat, {
+            seatId: seat,
+            accountId: '',
+          }),
+        ),
+      ).rejects.toBeInstanceOf(PermanentError);
+      expect(await seatRows(seat)).toEqual([]);
+    },
+    CASE_MS,
+  );
+
+  it(
     'dead-letters a seat with an empty account at once, writing nothing',
     async () => {
       const seat = seatOf(401);

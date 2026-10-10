@@ -192,12 +192,19 @@ retried older copy ends in one row. The schedule's `runtime_min` is taken whenev
 reschedule overtaking its schedule leaves `timing` null until both arrive, the newer start kept.
 No lock across rows (§0's lock order).
 
+**Ties.** Two facts of one group stamped with the same instant resolve by arrival (`>=`: the last
+applied wins), so a retried older copy can re-apply over a newer one of the same millisecond. Open
+with ticketing: a per-subscription version on `subscription.changed`, guarded like the publication
+(`>`). The outcome is final once `cancelled` or `interrupted` (catalog's rule), whatever the
+instants. A `seat.cancelled` needs only its `seat_id`: without an account, a date or an instant it
+cancels the kept row by seat, and is dead-lettered only when no row exists.
+
 **Fail closed on the unknown** (critical rule 10): an unknown plan opening is dropped; an unknown
 publication state, rights scope or absent `rights` reads null, which PS3 refuses; an unknown replay
 policy reads `none`; an unknown outcome is `ignored`, as ticketing's consumer does; an unknown
 blackout reason reads null with its countries kept (upper-cased); an unknown subscription state opens
 nothing. An id that is not a UUID, an empty `account_id` first, is dead-lettered at attempt 0
-(permanent): a seat with no account would open nothing, and is seen rather than dropped.
+(permanent) for an activation: a seat with no account would open nothing, and is seen rather than dropped. Stored strings are mapped through core's member lists at read: a member this build does not know reads null (`none` for a replay policy) and an unknown opening is dropped.
 
 **The read interface** (`entitlement/entitlement-facts.ts`), on the caller's manager, no lock:
 
@@ -224,7 +231,11 @@ time: visible after p50 13 ms, p95 29 ms, max 35 ms.
 
 **Deployment order.** The consumer runs before the first seat is sold in production: the group reads
 each topic from the start of its retention (168 h), with no backfill, so a seat older than the
-retention is never projected and its holder is refused. That first catch-up logs the staleness line
+retention is never projected and its holder is refused. The same holds for a date scheduled and for
+a subscription last changed more than 168 h before the group first reads: with no row, the date reads
+null and the account has no openings, the holders are refused (closed, but refused). A consumer
+group whose offsets expire falls back to the same rule, so a stopped consumer is restarted inside the
+retention. That first catch-up logs the staleness line
 for every fact it replays, as it should.
 
 **What proves it**

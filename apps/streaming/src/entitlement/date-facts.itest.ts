@@ -292,6 +292,26 @@ describe("a date's facts in the entitlement projection", () => {
   );
 
   it(
+    'keeps a cancelled or interrupted outcome final against an older postponement',
+    async () => {
+      const cancelled = dateOf(8);
+      const interrupted = dateOf(9);
+
+      expect(
+        await outcomesOf([
+          outcomeDeclared(cancelled, WireDateOutcome.CANCELLED, 10),
+          outcomeDeclared(cancelled, WireDateOutcome.POSTPONED, 12),
+          outcomeDeclared(interrupted, WireDateOutcome.INTERRUPTED, 10),
+          outcomeDeclared(interrupted, WireDateOutcome.POSTPONED, 12),
+        ]),
+      ).toEqual([Outcome.APPLIED, Outcome.SUPERSEDED, Outcome.APPLIED, Outcome.SUPERSEDED]);
+      expect((await factsOf(cancelled))?.outcome).toBe(DateOutcome.CANCELLED);
+      expect((await factsOf(interrupted))?.outcome).toBe(DateOutcome.INTERRUPTED);
+    },
+    CASE_MS,
+  );
+
+  it(
     'fails closed on a member this build does not know',
     async () => {
       const dateId = dateOf(7);

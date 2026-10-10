@@ -12,10 +12,22 @@ export interface SeatFact {
   readonly statedAt: Date;
 }
 
+/** Only the seat is needed to end it: what the message leaves out, the kept row already holds. */
+export interface SeatCancellationOfKeptRow {
+  readonly type: 'ticketing.seat.cancelled.v1';
+  readonly seatId: string;
+  readonly statedAt: Date | null;
+}
+
+export type SeatMessageFact = SeatFact | SeatCancellationOfKeptRow;
+
+export const isCancellationOfKeptRow = (fact: SeatMessageFact): fact is SeatCancellationOfKeptRow =>
+  !('accountId' in fact);
+
 export class RecordSeatFact extends Command<Outcome> {
   public constructor(
     public readonly delivery: Delivery,
-    public readonly fact: SeatFact,
+    public readonly fact: SeatMessageFact,
   ) {
     super();
   }
