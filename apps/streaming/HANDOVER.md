@@ -51,7 +51,7 @@ behind it (`docs/review-checklist.md`).
 | PS1 | the run's row, then its open incident's, then its stream key (no path locks a key yet; the rotation will); a pass claims each run `FOR UPDATE SKIP LOCKED` in a transaction of its own; presence statements lock the run's row alone | `run/run-races.itest.ts` |
 | PS2 | none: each fact writes one row of one table (`entitlement_seat`, `entitlement_date` or `entitlement_subscription`) plus its `processed_message`, by upsert; the reads take no lock | `entitlement/seats.itest.ts`, `date-facts.itest.ts`, `subscription.itest.ts` |
 | PS3 | an opening or a renewal: the advisory lock on `screens:{account}:{date}`, then the account's active leases on the date `FOR UPDATE` by id, then PS4's budget row; a device consumer locks the device's leases by id with no advisory lock; a release locks its one row; the sweep claims `FOR UPDATE SKIP LOCKED` | `playback/screens-race.itest.ts`, `playback/lease-sweep.itest.ts` |
-| PS4 | not built yet | |
+| PS4 | the budget row last, in PS3's transactions: `INSERT … ON CONFLICT DO NOTHING`, `SELECT … FOR UPDATE`, one `UPDATE … RETURNING`; the resume point takes no lock, one statement on its own row | `preview/preview-race.itest.ts` |
 | PS5 | the asset's row alone: every pass and the calls' claim `FOR UPDATE SKIP LOCKED`; a call's outcome and its give-up `FOR UPDATE`, waiting, since every holder is a short transaction with no provider call; the run and the date's facts are read in the same transaction without a lock; a provider call is made outside any transaction | `replay-asset/asset-deletion.itest.ts` (the passes and the calls on the same assets), `asset-passes-plan.itest.ts` |
 
 ## 0a. Media ports and the fake (PS0)
@@ -430,9 +430,8 @@ token of at most 120 s on a stable signed prefix, and a 90 s lease renewed every
   No log line, refusal param or trace attribute carries a token or a cookie value; the screens'
   list names the session, the device, the surface as its label, no city, the opening instant.
 - **`PreviewMeter`** (`preview-meter.ts`): `secondsLeft` and `cover`, called last in the
-  transaction on its manager. PS3 binds `NoPreviewMeter` (0 and null), so a non-holder on air is
-  refused `watch.preview_exhausted`: no unmetered preview ships. PS4 replaces the binding in
-  `playback.module.ts`.
+  transaction on its manager. PS3 shipped it bound to a meter that covered nothing, so no
+  unmetered preview shipped; PS4's `PreviewModule` binds the real one (§0e).
 - **Revocations** (`devices/`, generated with `consumer-handler`, then grouped in
   `device-messages.ts` with no table of their own). On `arthome.identity.device`, key
   `device_id`: `identity.device.revoked.v1` revokes every active lease of the account's device,
@@ -507,7 +506,67 @@ refused for another reason.
 
 ## 0e. Preview and resume (PS4)
 
-Not built yet.
+`src/preview/` and `src/progress/`: the preview budget behind PS3's `PreviewMeter` port, and the
+resume points. Two tables (migration `PreviewAndResume1791800000000`, which also adds
+`incident_by_run`), no consumer, no event.
+
+- **The budget row** (`preview_budget`, one per account and date): `settled_seconds`,
+  `precharged_seconds`, `covered_until`, `settled_until`. `PostgresPreviewMeter` reads the run
+  (PS1's `readRunFacts`, plus the date's incidents) and keeps the row (`PreviewBudgets`: created by
+  `ON CONFLICT DO NOTHING`, read `FOR UPDATE`, written by one `updateReturning`), last in PS3's lock
+  order. The arithmetic is pure and lives in `preview-cover.ts`; the on-air spans in
+  `on-air-intervals.ts` (the run's `started_at` to its `ended_at` or now, less the incidents from
+  `raised_at` to `resolved_at` or now).
+- **The coverage rule.** At every preview token (opening or renewal) `cover` first settles the
+  past: the whole seconds of [`settled_until`, min(now, `covered_until`)] that fall inside the
+  on-air spans are added to `settled_seconds`. It then issues: left = 300 - settled; none left is
+  null (PS3 refuses `watch.preview_exhausted`); else the token expires at core's
+  `previewTokenExpiresAt(now, left)` = min(now + 120 s, now + left), `covered_until` is the later of
+  the old coverage and that expiry, and `precharged_seconds` is `covered_until` - now while the run
+  is `on_air`, else 0. Why: the token is the enforcement (the edge serves until it expires), so what
+  is charged is what the edge can serve. A token released early keeps its time covered, so releasing
+  and reopening extends nothing, and a client cannot buy time by disconnecting. Time under an incident
+  veil or before on air is never charged: it comes back at the next settle, because a settle counts
+  on-air seconds only. While spending, settled plus precharged never passes 300.
+- **Deviations from the PRD's wording.** rc.3's `previewTokenExpiresAt` takes no `spending` flag and
+  always caps at what is left, also under the veil, so a veil lifting mid-token never opens an
+  on-air second the budget does not cover (the open point's overrun cannot happen); `settled_until`
+  is set to `now` after a settle, not `min(now, covered_until)`, so the gap between a lapsed token
+  and the next cover is never charged by the following window; `secondsLeft` is `cover`'s
+  pre-issue left (budget less settled less the spending part of the window to settle) and does not
+  subtract the coverage still ahead, or the last renewal before the budget ends would be refused
+  early. Each settle floors to whole seconds, so a viewer gains under a second per settle.
+- **Shared across devices.** The scope is the account: a second device, a reinstall (a new device id)
+  and two simultaneous screens read and move the same row, so the preview is 300 s of wall time per
+  account and date. A PS3 opening takes the account's advisory lock first, which serialises them.
+- **Resume points** (`progress/`, `resume_point` on (`owner_id`, `date_id`)). The owner is the
+  token's profile (a token without one is 403, the lead's strict rule, so the PRD's account fallback
+  is not built). `recordPlaybackPosition`: while the date's run is not `ended` (a live, or no run)
+  nothing is written and the stored point is answered unchanged, `{}` when there is none (D-111); the
+  upsert is one statement that holds the ended check, with `version = version + 1` as the server rank
+  (last writer wins, a late write after a release is kept, no idempotency key). A body `deviceId` other
+  than the token's is 403 (`assertSameCaller`). The date is not checked against the projection.
+- **The batch** (`getViewerProgressBatch`): a body `profileId` other than the token's is 403, a token
+  without a profile or a user 403; the contract bounds 1 to 200 ids. The answer is a table keyed by
+  date id holding only the caller's points (`owner_id = $1 AND date_id = ANY($2) AND account_id = $3`,
+  the primary key, proved by `progress/progress-plan.itest.ts`).
+
+**What proves it**
+
+| Suite | What |
+| --- | --- |
+| `preview/on-air-intervals.spec.ts` | none before on air; to now while live, to the end once ended; veils taken out, clipped to the run |
+| `preview/preview-cover.spec.ts` | the first cover issues 120 s; a renewal at 45 s settles 45 s; 30 s left lasts 30 s; release and reopen gain nothing; a 60 s veil is given back; nothing charged before on air; a lapsed gap not charged; spent never passes 300 |
+| `preview/preview-budget.itest.ts` | through PS3's routes: every expiry is min(now + 120 s, now + left) down to `watch.preview_exhausted`; a second device and a reinstall share one budget, two accounts do not; the veil's time comes back |
+| `preview/preview-race.itest.ts` | six renewals at once on 50 s left never spend past the budget |
+| `progress/progress.http.itest.ts` | nothing recorded during a live or with no run, the stored point answered; the version grows by one, the last writer wins; a write after a release is kept; 200 ids pass, 201 are refused; the table holds the caller's points only; each route's 403 cases (other device or profile, no profile, no device, no user, studio token), past deadline 504 |
+| `progress/progress-plan.itest.ts` | the batch on `resume_point`'s primary key and the veils through `incident_by_run`, no sequential scan |
+
+**Gaps**
+
+- No 24-month resume-point purge (`data-model.md` §7.5): the streaming retention slice.
+- `resumePoint` on a live ticket stays null (D-111); on a replay ticket it is the replay slice's.
+- The storefront BFF's overlay (merge and Redis cache) reads the batch later.
 
 ## 0f. Replay asset (PS5)
 

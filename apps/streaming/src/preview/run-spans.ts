@@ -16,6 +16,10 @@ interface VeilRow {
   readonly resolved_at: Date | null;
 }
 
+export const VEILS_SQL = `SELECT incident.raised_at, incident.resolved_at
+       FROM incident JOIN run ON run.id = incident.run_id
+      WHERE run.date_id = $1`;
+
 /** On the caller's manager, no lock: a date without a run, or not yet on air, spends nothing. */
 export async function readRunSpans(
   manager: EntityManager,
@@ -24,12 +28,7 @@ export async function readRunSpans(
 ): Promise<RunSpans> {
   const run = await readRunFacts(manager, dateId);
   if (run?.startedAt == null) return { spending: false, onAir: [] };
-  const rows = await manager.query<VeilRow[]>(
-    `SELECT incident.raised_at, incident.resolved_at
-       FROM incident JOIN run ON run.id = incident.run_id
-      WHERE run.date_id = $1`,
-    [dateId],
-  );
+  const rows = await manager.query<VeilRow[]>(VEILS_SQL, [dateId]);
   const veils: Veil[] = rows.map((row) => ({
     raisedAt: row.raised_at.toISOString(),
     resolvedAt: row.resolved_at?.toISOString() ?? null,

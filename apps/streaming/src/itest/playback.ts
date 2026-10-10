@@ -62,6 +62,7 @@ import { EntitlementConsumerModule } from '../entitlement/entitlement-consumer.m
 import { FakeStreamingProvider } from '../media/fake-streaming-provider.js';
 import { ExpireLapsedLeases, ExpireLapsedLeasesHandler } from '../playback/lease-sweep.js';
 import { PlaybackModule } from '../playback/playback.module.js';
+import { ProgressModule } from '../progress/progress.module.js';
 
 /**
  * The player's routes over HTTP on a real Postgres, with the consumer's entitlement and device
@@ -101,7 +102,7 @@ export async function startPlayback(
   );
   const clock = new FixedClock(NOW);
   const app = await httpApp({
-    imports: [PlaybackModule, EntitlementConsumerModule, DevicesConsumerModule],
+    imports: [PlaybackModule, ProgressModule, EntitlementConsumerModule, DevicesConsumerModule],
     providers: EDGE_PROVIDERS,
     dataSource,
     overrides: [
@@ -334,7 +335,7 @@ export interface CallOptions {
   readonly surface?: StorefrontSurface;
 }
 
-async function headersFor(playback: Playback, viewer: Viewer, options: CallOptions) {
+export async function headersFor(playback: Playback, viewer: Viewer, options: CallOptions) {
   const issuer = options.issuer ?? InternalTokenIssuer.STOREFRONT_BFF;
   const named = { ...viewer, ...options.token };
   const token = await mintInternalToken(
