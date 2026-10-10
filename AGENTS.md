@@ -365,7 +365,7 @@ export class DatesController {
 | Process | Development port | Swagger UI | Operations |
 | --- | --- | --- | --- |
 | `bff-storefront` | 3003 | `http://localhost:3003/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink, signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification, getViewerContext |
-| `streaming` | 3005 | `http://localhost:3005/docs` | none yet: the run desk, playback and progress bind theirs (`apps/streaming/HANDOVER.md`) |
+| `streaming` | 3005 | `http://localhost:3005/docs` | getRunConsole, runTechnicalCheck, rehearseRun, goOnAir, endRun, resetRun, raiseIncident, resolveIncident; playback and progress bind theirs (`apps/streaming/HANDOVER.md`) |
 
 `@nestjs/swagger` is a peer of `libs/http-edge`; `@fastify/static` serves the UI on Fastify, and
 `@scarf/scarf` (swagger-ui-dist's telemetry install script) is denied in `pnpm-workspace.yaml`.
@@ -610,8 +610,9 @@ PATCH /v1/channels/:channelId/identity        { expectedVersion, publicName, slu
 ```
 
 Publishing answers `publication.checklist_incomplete` until ticketing, streaming and chat have
-reported their four facts. Chat does not exist yet and streaming publishes nothing until its run
-desk (PS1), so in development send the facts by hand on `arthome.ticketing.date_sales`,
+reported their four facts. Chat does not exist yet, and streaming's run desk (PS1) publishes its
+facts only from a feed its in-process fake receives, which no development route drives; so in
+development send the facts by hand on `arthome.ticketing.date_sales`,
 `arthome.streaming.run` and `arthome.chat.date`, keyed by the date id, with a `message-id` and a
 `type` header. A `streaming.run.started.v1` sent the same way on a date under technical check makes
 its card `live`; `streaming.run.ended.v1` ends it.

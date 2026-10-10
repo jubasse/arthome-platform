@@ -6,12 +6,13 @@ import { ApiErrorCode, isDomainError } from '@arthome/core';
 
 import type { Delivery } from './delivery.js';
 import { ENTITLEMENT_READERS } from './entitlement/entitlement-messages.js';
+import { RUN_READERS } from './run/run-messages.js';
 
 /** Null when the message says nothing streaming keeps: ignored. */
 export type Reader = (value: Uint8Array, delivery: Delivery) => Command<Outcome> | null;
 
 /** The command each consumed type becomes; a type absent here is not streaming's, and ignored. */
-const READERS: Readonly<Record<string, Reader>> = { ...ENTITLEMENT_READERS };
+const READERS: Readonly<Record<string, Reader>> = { ...ENTITLEMENT_READERS, ...RUN_READERS };
 
 /**
  * One message read as its command. Bytes that do not read as their type, and a refusal no retry
