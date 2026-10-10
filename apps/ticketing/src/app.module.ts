@@ -24,10 +24,12 @@ import { EDGE_PROVIDERS } from './edge-providers.js';
 import { OrdersModule } from './orders/orders.module.js';
 import { PaymentWebhooksModule } from './payments/payment-webhooks.module.js';
 import { PaymentWorkerModule } from './payments/payment-worker.module.js';
+import { SeatsModule } from './seats/seats.module.js';
 
 /**
  * The API process: the studio's commands and pane, the storefront's availability read, its seat
- *   quote, purchase and order, the payment provider's webhooks and the worker that applies them.
+ *   quote, purchase and order, a seat's cancellation and refund, the payment provider's webhooks
+ *   and the worker that applies them.
  */
 @Module({
   controllers: [HealthController],
@@ -39,6 +41,7 @@ import { PaymentWorkerModule } from './payments/payment-worker.module.js';
     OrdersModule,
     PaymentWebhooksModule,
     PaymentWorkerModule,
+    SeatsModule,
   ],
   providers: [
     ...EDGE_PROVIDERS,

@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { OrderState, PriceTier, RefundReason, SeatHoldOrigin, SeatHoldState } from '@arthome/core';
 
 import { ProviderCallQueues1790441200000 } from './1790441200000-provider-call-queues.js';
+import { OneUnseatedRefundPerOrder1790441300000 } from './1790441300000-one-unseated-refund-per-order.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { DUE_INTENT_CANCELLATIONS_SQL, DUE_REFUNDS_SQL } from '../payments/owed-call-relay.js';
 
@@ -120,7 +121,14 @@ describe('the provider-call queues migration', () => {
         await before.destroy();
       }
 
-      const after = await applyMigrations(database, TICKETING_SCHEMA);
+      // Up to the unseated refunds' index alone, so the undos below reach this migration's down.
+      const after = await applyMigrations(database, {
+        entities,
+        migrations: migrations.slice(
+          0,
+          migrations.indexOf(OneUnseatedRefundPerOrder1790441300000) + 1,
+        ),
+      });
       try {
         const refunds = await after.query<Record<string, unknown>[]>(
           `SELECT order_id, seat_id, amount_minor, currency_code, reason, idempotency_key, owed_at,

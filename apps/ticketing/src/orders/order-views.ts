@@ -3,13 +3,16 @@ import {
   type Instant,
   type Money,
   type PriceTier,
+  type RefundDelayCode,
+  RefundMethod,
   type RefundReason,
   OrderState,
-  type SeatState,
+  SeatState,
+  refundDelayCodeOf,
 } from '@arthome/core';
 
 import { ORDER_STATES_AWAITING_PAYMENT } from './awaiting-payment.js';
-import type { OrderRefund, SeatOrderSnapshot } from './seat-order.aggregate.js';
+import type { OrderRefund, SeatOrderSnapshot, SeatSnapshot } from './seat-order.aggregate.js';
 import { type NextAction } from '../payments/next-action.js';
 
 /**
@@ -24,6 +27,15 @@ export interface TicketView {
   readonly tier: PriceTier;
   readonly state: SeatState;
   readonly cancelDeadline: Instant | null;
+  readonly refund: TicketRefundView | null;
+}
+
+/** `TicketCard.refund`: what the viewer gets back, and where. */
+export interface TicketRefundView {
+  readonly amount: Money;
+  readonly delayCode: RefundDelayCode | null;
+  readonly method: RefundMethod;
+  readonly refundReasonCode: RefundReason | null;
 }
 
 /** storefront.yaml's `Order`. */
@@ -62,8 +74,15 @@ export interface OrderDetail {
   readonly handoff?: PaymentHandoffView;
 }
 
+const STATES_SERVING_REFUND_REASON: readonly OrderState[] = [
+  OrderState.REFUNDED,
+  OrderState.PARTIALLY_REFUNDED,
+];
+
 export function orderViewOf(order: SeatOrderSnapshot): OrderView {
-  const refunded = order.state === OrderState.REFUNDED ? latestRefundMade(order) : undefined;
+  const refunded = STATES_SERVING_REFUND_REASON.includes(order.state)
+    ? latestRefundMade(order)
+    : undefined;
   return {
     id: order.id,
     reference: order.reference,
@@ -99,7 +118,41 @@ export function ticketViewsOf(order: SeatOrderSnapshot): TicketView[] {
     tier: seat.tier,
     state: seat.state,
     cancelDeadline: seat.cancelDeadline,
+    refund: ticketRefundOf(seat, order.refunds),
   }));
+}
+
+/**
+ * Null while active, and once cancelled with nothing given back (a disputed order, nothing left);
+ *   the refund's share from the cancellation on, the provider's delay with it; a credit's share.
+ */
+function ticketRefundOf(
+  seat: SeatSnapshot,
+  refunds: readonly OrderRefund[],
+): TicketRefundView | null {
+  if (seat.state === SeatState.CREDITED && seat.creditAmount !== null) {
+    return {
+      amount: seat.creditAmount,
+      delayCode: refundDelayCodeOf(RefundMethod.ACCOUNT_CREDIT),
+      method: RefundMethod.ACCOUNT_CREDIT,
+      refundReasonCode: null,
+    };
+  }
+  const refund = refunds.find(({ id }) => id === seat.refundId);
+  if (seat.refundAmount === null || refund === undefined) return null;
+  return {
+    amount: seat.refundAmount,
+    delayCode: refundDelayCodeOf(RefundMethod.ORIGINAL_PAYMENT_METHOD),
+    method: RefundMethod.ORIGINAL_PAYMENT_METHOD,
+    refundReasonCode: refund.reason,
+  };
+}
+
+/** One seat's card, as `ticketViewsOf` serves it among its order's. */
+export function ticketViewOf(order: SeatOrderSnapshot, seatId: string): TicketView {
+  const ticket = ticketViewsOf(order).find((view) => view.seatId === seatId);
+  if (ticket === undefined) throw new Error(`order ${order.id} holds no seat ${seatId}`);
+  return ticket;
 }
 
 /** Null once the order stopped waiting for the buyer, or for an intent that carries no secret. */
