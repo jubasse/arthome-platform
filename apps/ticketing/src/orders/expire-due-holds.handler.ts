@@ -6,6 +6,7 @@ import { type Clock, OrderState, SeatHoldState } from '@arthome/core';
 
 import { ExpireDueHolds } from './expire-due-holds.command.js';
 import { CLOCK } from '../clock.js';
+import type { HeldSeats } from '../date-sales/date-sales.repository.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 import { ORDER_STATES_AWAITING_PAYMENT } from './awaiting-payment.js';
 
@@ -14,6 +15,7 @@ interface DueHold {
   readonly order_id: string;
   readonly date_id: string;
   readonly quantity: number;
+  readonly pool_seats: number;
 }
 
 /**
@@ -33,9 +35,11 @@ export class ExpireDueHoldsHandler implements ICommandHandler<ExpireDueHolds> {
 
   public execute({ batch }: ExpireDueHolds): Promise<number> {
     return this.transactions.run(async ({ manager, dateSales }) => {
-      const now = new Date(this.clock.now());
+      const instant = this.clock.now();
+      const now = new Date(instant);
       const due = await manager.query<DueHold[]>(
-        `SELECT hold.id AS hold_id, placed.id AS order_id, hold.date_id, hold.quantity
+        `SELECT hold.id AS hold_id, placed.id AS order_id, hold.date_id, hold.quantity,
+                hold.pool_seats
            FROM seat_hold AS hold
            JOIN seat_order AS placed ON placed.hold_id = hold.id
           WHERE hold.state = $1 AND hold.expires_at <= $2
@@ -65,8 +69,8 @@ export class ExpireDueHoldsHandler implements ICommandHandler<ExpireDueHolds> {
           ORDER_STATES_AWAITING_PAYMENT,
         ],
       );
-      for (const [dateId, quantity] of seatsByDate(due)) {
-        await dateSales.returnHeldSeats(dateId, quantity);
+      for (const [dateId, seats] of seatsByDate(due)) {
+        await dateSales.returnHeldSeats(dateId, seats, instant);
       }
       return due.length;
     });
@@ -91,9 +95,14 @@ export class ExpireDueHoldsHandler implements ICommandHandler<ExpireDueHolds> {
 }
 
 /** Sorted by date, so two passes on shared dates take their rows in one order. */
-function seatsByDate(due: readonly DueHold[]): [string, number][] {
-  const byDate = new Map<string, number>();
-  for (const { date_id, quantity } of due)
-    byDate.set(date_id, (byDate.get(date_id) ?? 0) + quantity);
+function seatsByDate(due: readonly DueHold[]): [string, HeldSeats][] {
+  const byDate = new Map<string, HeldSeats>();
+  for (const { date_id, quantity, pool_seats } of due) {
+    const seats = byDate.get(date_id) ?? { quantity: 0, poolSeats: 0 };
+    byDate.set(date_id, {
+      quantity: seats.quantity + quantity,
+      poolSeats: seats.poolSeats + pool_seats,
+    });
+  }
   return [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right));
 }

@@ -1,13 +1,18 @@
-import { AggregateTracker, saveVersioned, type Track } from '@arthome-platform/transactions';
+import {
+  AggregateTracker,
+  saveVersioned,
+  updateReturning,
+  type Track,
+} from '@arthome-platform/transactions';
 import type { EntityManager } from 'typeorm';
 
 import { money, type Instant, type TierPrice } from '@arthome/core';
 
 import { DateSales, type DateSalesSnapshot } from './date-sales.aggregate.js';
 import { DateSalesRow, type PriceTierColumn } from './date-sales.entity.js';
-import { DateSalesRepository } from './date-sales.repository.js';
+import { DateSalesRepository, type HeldSeats } from './date-sales.repository.js';
 
-type Counter = 'seats_available' | 'seats_sold' | 'waitlist_count';
+type Counter = 'seats_available' | 'seats_sold' | 'waitlist_count' | 'priority_pool_seats';
 
 type StateColumns = Omit<
   DateSalesRow,
@@ -56,13 +61,51 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
       [dateId, quantity, new Date(now)],
     );
     if (!taken) return false;
+    this.heldBy(sales, quantity);
+    return true;
+  }
+
+  /**
+   * The pool share is the open pool's seats up to the quantity, both read before the statement
+   *   moves them. The hold's own row, inserted earlier in this transaction, takes it in the same
+   *   statement, which stays the last of tx A.
+   */
+  public async takeSeatsFromPool(
+    sales: DateSales,
+    holdId: string,
+    quantity: number,
+    now: Instant,
+  ): Promise<boolean> {
+    const openPool = openPoolAt('$3');
+    const poolShare = `LEAST(${openPool}, $2)`;
+    const recorded = await updateReturning<{ id: string }>(
+      this.manager,
+      `WITH taken AS (
+         UPDATE date_sales
+            SET priority_pool_seats = priority_pool_seats - ${poolShare},
+                seats_available = seats_available - ($2 - ${poolShare}),
+                availability_moves = availability_moves + 1
+          WHERE date_id = $1 AND on_sale AND seats_available + ${openPool} >= $2
+            AND ${beforeSalesEnd('$3')}
+         RETURNING old.priority_pool_seats - new.priority_pool_seats AS pool_seats
+       )
+       UPDATE seat_hold SET pool_seats = taken.pool_seats FROM taken WHERE seat_hold.id = $4
+       RETURNING seat_hold.id`,
+      [sales.snapshot.dateId, quantity, new Date(now), holdId],
+    );
+    if (recorded.length !== 1) return false;
+    this.heldBy(sales, quantity);
+    return true;
+  }
+
+  /** The stored snapshot moved as the aggregate's `holdSeats` moved it, so a save measures none. */
+  private heldBy(sales: DateSales, quantity: number): void {
     const stored = this.storedSnapshots.get(sales) ?? sales.snapshot;
     this.storedSnapshots.set(sales, {
       ...stored,
       seatsAvailable: stored.seatsAvailable - quantity,
     });
     this.tracker.writtenUnversioned(sales);
-    return true;
   }
 
   public async sellHeldSeats(dateId: string, quantity: number): Promise<void> {
@@ -74,12 +117,19 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
     );
   }
 
-  public async returnHeldSeats(dateId: string, quantity: number): Promise<void> {
+  public async returnHeldSeats(
+    dateId: string,
+    { quantity, poolSeats }: HeldSeats,
+    now: Instant,
+  ): Promise<void> {
+    const toPool = `CASE WHEN priority_until > $4 THEN $3::integer ELSE 0 END`;
     await this.affected(
       `UPDATE date_sales
-          SET seats_available = seats_available + $2, availability_moves = availability_moves + 1
+          SET priority_pool_seats = priority_pool_seats + ${toPool},
+              seats_available = seats_available + $2 - ${toPool},
+              availability_moves = availability_moves + 1
         WHERE date_id = $1`,
-      [dateId, quantity],
+      [dateId, quantity, poolSeats, new Date(now)],
     );
   }
 
@@ -94,15 +144,64 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
     );
   }
 
-  public takeAndSellSeats(dateId: string, quantity: number, now: Instant): Promise<boolean> {
+  public takeAndSellSeats(
+    dateId: string,
+    quantity: number,
+    now: Instant,
+    fromPool: boolean,
+  ): Promise<boolean> {
+    const openPool = fromPool ? openPoolAt('$3') : '0';
+    const poolShare = `LEAST(${openPool}, $2)`;
     return this.affected(
       `UPDATE date_sales
-          SET seats_available = seats_available - $2,
+          SET priority_pool_seats = priority_pool_seats - ${poolShare},
+              seats_available = seats_available - ($2 - ${poolShare}),
               seats_sold = seats_sold + $2,
               availability_moves = availability_moves + 1
-        WHERE date_id = $1 AND on_sale AND seats_available >= $2
+        WHERE date_id = $1 AND on_sale AND seats_available + ${openPool} >= $2
           AND ${beforeSalesEnd('$3')}`,
       [dateId, quantity, new Date(now)],
+    );
+  }
+
+  /**
+   * Unversioned, as `takeSeats`: a flood of joins never makes the studio's `expectedVersion` stale.
+   *   The aggregate's count does not move, so neither does the stored one.
+   */
+  public async moveWaitlistCount(sales: DateSales, by: 1 | -1): Promise<void> {
+    const moved = await this.affected(
+      `UPDATE date_sales
+          SET waitlist_count = waitlist_count + $2, availability_moves = availability_moves + 1
+        WHERE date_id = $1 AND waitlist_count + $2 >= 0`,
+      [sales.snapshot.dateId, by],
+    );
+    if (!moved) throw new Error(`waitlist count of ${sales.snapshot.dateId} would go negative`);
+    this.tracker.writtenUnversioned(sales);
+  }
+
+  public async endPriorityWindow(dateId: string, entriesEnded: number): Promise<void> {
+    await this.affected(
+      `UPDATE date_sales
+          SET seats_available = seats_available + priority_pool_seats,
+              priority_pool_seats = 0,
+              priority_until = NULL,
+              waitlist_count = waitlist_count - $2,
+              availability_moves = availability_moves + 1
+        WHERE date_id = $1 AND priority_until IS NOT NULL`,
+      [dateId, entriesEnded],
+    );
+  }
+
+  public closeWaitlist(dateId: string): Promise<boolean> {
+    return this.affected(
+      `UPDATE date_sales
+          SET seats_available = seats_available + priority_pool_seats,
+              priority_pool_seats = 0,
+              priority_until = NULL,
+              waitlist_count = 0,
+              availability_moves = availability_moves + 1
+        WHERE date_id = $1 AND (priority_until IS NOT NULL OR waitlist_count <> 0)`,
+      [dateId],
     );
   }
 
@@ -121,6 +220,7 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
         seats_available: current.seatsAvailable,
         seats_sold: current.seatsSold,
         waitlist_count: current.waitlistCount,
+        priority_pool_seats: current.priorityPoolSeats,
       });
     } else {
       const stored = this.storedSnapshots.get(sales) ?? current;
@@ -137,6 +237,10 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
           ),
           seats_sold: movedBy('seats_sold', current.seatsSold - stored.seatsSold),
           waitlist_count: movedBy('waitlist_count', current.waitlistCount - stored.waitlistCount),
+          priority_pool_seats: movedBy(
+            'priority_pool_seats',
+            current.priorityPoolSeats - stored.priorityPoolSeats,
+          ),
         },
         ({ version }) => ({ currentVersion: version }),
       );
@@ -164,6 +268,11 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
  */
 function beforeSalesEnd(now: `$${number}`): string {
   return `(sales_end_at IS NULL OR sales_end_at > ${now})`;
+}
+
+/** The pool, while the window is open at the statement's `now`; nothing once it has ended. */
+function openPoolAt(now: `$${number}`): string {
+  return `(CASE WHEN priority_until > ${now} THEN priority_pool_seats ELSE 0 END)`;
 }
 
 function affectedOne(result: unknown): boolean {
@@ -203,6 +312,8 @@ export function dateSalesSnapshotOf(row: DateSalesRow): DateSalesSnapshot {
     seatsAvailable: row.seats_available,
     seatsSold: row.seats_sold,
     waitlistCount: row.waitlist_count,
+    priorityPoolSeats: row.priority_pool_seats,
+    priorityUntil: instantOf(row.priority_until),
     priceTiers: row.price_tiers.map(tierPriceOf),
     pricesLockedAt: instantOf(row.prices_locked_at),
     salesClosedAt: instantOf(row.sales_closed_at),
@@ -238,6 +349,7 @@ function stateColumnsOf(sales: DateSalesSnapshot): StateColumns {
     schedule_stated_at: dateOf(sales.scheduleStatedAt),
     outcome: sales.outcome,
     outcome_stated_at: dateOf(sales.outcomeStatedAt),
+    priority_until: dateOf(sales.priorityUntil),
     version: sales.version,
   };
 }

@@ -50,7 +50,7 @@ export class SetDatePricesHandler implements ICommandHandler<SetDatePrices> {
     await dateSales.save(sales);
     await recordDateSalesEvents(manager, sales.getUncommittedEvents(), { traceparent });
 
-    const pane = await readDateSalesPane(manager, dateId);
+    const pane = await readDateSalesPane(manager, dateId, this.clock.now());
     if (pane === null) throw new Error(`date sales ${dateId} vanished inside its transaction`);
     return { data: pane, version: sales.snapshot.version };
   }

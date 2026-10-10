@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const OpenCapacityTierSchema = z.strictObject({
   additionalCapacity: z.int().min(1),
   expectedVersion: z.int().min(1),
-  /** Accepted as the contract has it; the waiting list and its notification are T5's. */
+  /** False puts the tier on public sale at once, notifying nobody (D-094). */
   notifyWaitlist: z.boolean().default(true),
 });
 

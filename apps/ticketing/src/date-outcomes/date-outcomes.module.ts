@@ -4,9 +4,10 @@ import { SystemClock } from '@arthome/core';
 
 import { DateOutcomeSweeper } from './date-outcome-sweeper.js';
 import { SettleDateOutcomesHandler } from './settle-date-outcomes.handler.js';
-import { NoWaitlistOutcomeHook, WaitlistOutcomeHook } from './waitlist-outcome-hook.js';
+import { WaitlistOutcomeHook } from './waitlist-outcome-hook.js';
 import { CLOCK } from '../clock.js';
 import { TicketingTransactionsModule } from '../ticketing-transactions.js';
+import { WaitlistEndingHook } from '../waitlist/waitlist-ending-hook.js';
 
 /** The sweeper process's settlement of a date's cancellation or interruption. */
 @Module({
@@ -14,7 +15,7 @@ import { TicketingTransactionsModule } from '../ticketing-transactions.js';
   providers: [
     SettleDateOutcomesHandler,
     DateOutcomeSweeper,
-    { provide: WaitlistOutcomeHook, useClass: NoWaitlistOutcomeHook },
+    { provide: WaitlistOutcomeHook, useClass: WaitlistEndingHook },
     { provide: CLOCK, useValue: new SystemClock() },
   ],
 })

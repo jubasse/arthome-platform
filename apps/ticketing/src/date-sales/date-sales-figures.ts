@@ -13,7 +13,7 @@ import type { DateSalesRow } from './date-sales.entity.js';
 
 type GaugeColumns = Pick<
   DateSalesRow,
-  'capacity_total' | 'seats_available' | 'seats_sold' | 'waitlist_count'
+  'capacity_total' | 'seats_available' | 'seats_sold' | 'waitlist_count' | 'priority_pool_seats'
 >;
 
 /** What the pane, the public read and `availability_changed` state, each through core. */
@@ -26,15 +26,17 @@ export interface AvailabilityFigures {
   readonly lowestPrice: Money | null;
 }
 
-/** `seats_available` is what is left once sold and held are taken: the held ones are the rest. */
+/**
+ * The held seats are what is left once sold, public and pool seats are taken, so core's
+ *   `seatsAvailable` is the public count, `seats_available` (D-083).
+ */
 export function gaugeOf(row: GaugeColumns): Gauge {
   return {
     capacityTotal: row.capacity_total,
     seatsSold: row.seats_sold,
-    seatsHeld: row.capacity_total - row.seats_sold - row.seats_available,
+    seatsHeld: row.capacity_total - row.seats_sold - row.seats_available - row.priority_pool_seats,
     waitlistCount: row.waitlist_count,
-    // No priority pool opens before the waiting list's (T5, PT3).
-    priorityPoolSeats: 0,
+    priorityPoolSeats: row.priority_pool_seats,
   };
 }
 

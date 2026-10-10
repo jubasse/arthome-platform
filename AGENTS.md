@@ -695,8 +695,8 @@ a bare producer script prints it too.
 (`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`),
 the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
 nobody paid, closes each sale thirty minutes after its start (D-089, HANDOVER §0l), settles a
-cancelled date's refunds and an interrupted one's credits (HANDOVER §0n), and needs Postgres
-alone, and the worker (`node dist/worker.js`, `REDIS_URL`), which makes every call owed to
+cancelled date's refunds and an interrupted one's credits and ends its waiting list (HANDOVER §0n),
+ends each waiting list's priority window (HANDOVER §0p), and needs Postgres alone, and the worker (`node dist/worker.js`, `REDIS_URL`), which makes every call owed to
 the payment provider from BullMQ's queues (HANDOVER §0m) and alone holds Redis. Its connector is
 `infra/debezium/ticketing-outbox.json`, registered with the loop above.
 
@@ -710,6 +710,19 @@ PUT  /v1/dates/:dateId/technical-provision  { provisionedCapacity, expectedVersi
 GET  /v1/dates/:dateId/panes/tickets
 GET  /v1/dates/:dateId/availability     x-arthome-deadline required; 404 unless on sale
 ```
+
+The storefront's waiting list on a sold-out date (D-083, HANDOVER §0p), for the token's account:
+
+```
+PUT    /v1/dates/:dateId/waitlist   Idempotency-Key; 409 waitlist.not_sold_out while public seats remain
+DELETE /v1/dates/:dateId/waitlist   Idempotency-Key; { joined: false }, replayed or not
+GET    /v1/dates/:dateId/waitlist   x-arthome-deadline required; state, and the window while notified
+```
+
+With `notifyWaitlist: true` and someone on the list, a tier becomes a priority pool only the
+notified accounts buy for `WAITLIST_PRIORITY_HOURS`, named in `waitlist.notified` on
+`arthome.ticketing.date_sales`; the public still sees the date sold out until the sweeper ends the
+window and puts the rest on sale.
 
 Each command writes `capacity_set` or `pricing_changed` on `arthome.ticketing.date_sales`, keyed by
 the date, which catalog's checklist consumer reads: with them, catalog's by-hand

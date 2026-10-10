@@ -89,9 +89,9 @@ export class OrdersController {
     @Headers(DEADLINE_HEADER) deadline: string | undefined,
     @CurrentPrincipal() principal: Principal,
   ): Promise<PerishableResponse<SeatQuoteView>> {
-    accountOf(principal);
+    const accountId = accountOf(principal);
     remainingBeforeDeadline(deadline, this.clock);
-    return this.queries.execute(new QuoteSeat(dateId, body));
+    return this.queries.execute(new QuoteSeat(dateId, body, accountId));
   }
 
   /**

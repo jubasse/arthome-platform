@@ -17,6 +17,7 @@ import {
   type PriceTier,
   type TierPrice,
   lateEntryOf,
+  priorityUntilOf,
   salesEndedBy,
   seatSalesEndAt,
   type LateEntry,
@@ -31,6 +32,7 @@ import {
   DateSalesOpened,
   DateSalesReopened,
   DateScheduleRecorded,
+  PriorityWindowOpened,
   SeatsHeld,
   TechnicalProvisionSet,
   type CapacityTier,
@@ -47,12 +49,16 @@ export interface DateSalesSnapshot {
   readonly provisionedCapacity: number | null;
   readonly capacityTiers: readonly CapacityTier[];
   /**
-   * The three counters as loaded. The repository writes each as a delta from what it read, never
-   *   as a value: the hot decrement (adr-ticketing.md §3) moves them without the version.
+   * The counters as loaded. The repository writes each as a delta from what it read, never as a
+   *   value: the hot decrement (adr-ticketing.md §3) moves them without the version.
    */
   readonly seatsAvailable: number;
   readonly seatsSold: number;
   readonly waitlistCount: number;
+  /** The seats only the accounts notified into the open window buy; never in `seatsAvailable`. */
+  readonly priorityPoolSeats: number;
+  /** The open window's end, cleared by the sweeper once past (D-083). */
+  readonly priorityUntil: Instant | null;
   readonly priceTiers: readonly TierPrice[];
   /** When `catalog.publication.engaged` opened the sale: the prices hold from then on. */
   readonly pricesLockedAt: Instant | null;
@@ -107,6 +113,8 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
       seatsAvailable: 0,
       seatsSold: 0,
       waitlistCount: 0,
+      priorityPoolSeats: 0,
+      priorityUntil: null,
       priceTiers: [],
       pricesLockedAt: null,
       salesClosedAt: null,
@@ -195,15 +203,21 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
   }
 
   /**
-   * Widens the capacity by one tier, the first included, and the seats available with it; a sale
-   *   an outcome closed is refused, naming it, and so is a capacity past core's threshold that the
-   *   recorded provision does not cover. The waiting list's notification is T5's: nothing is
-   *   recorded for it yet.
+   * Widens the capacity by one tier, the first included; a sale an outcome closed is refused, naming
+   *   it, and so is a capacity past core's threshold that the recorded provision does not cover.
+   *   Notifying a list with someone on it, the tier becomes the priority pool and the window opens
+   *   or is extended, which it answers; otherwise the seats go on public sale (D-094) and an open
+   *   window keeps its pool and end.
    */
-  public openCapacityTier(expectedVersion: number, additionalCapacity: number, now: Instant): void {
+  public openCapacityTier(
+    expectedVersion: number,
+    additionalCapacity: number,
+    notifyWaitlist: boolean,
+    now: Instant,
+  ): Instant | null {
     const version = this.advancedFrom(expectedVersion);
-    const { dateId, channelId, capacityTotal, capacityTiers, seatsAvailable, startsAt } =
-      this.current;
+    const { dateId, channelId, capacityTotal, capacityTiers, startsAt } = this.current;
+    const { seatsAvailable, priorityPoolSeats, waitlistCount } = this.current;
     const { provisionedCapacity, salesClosedAt, outcome } = this.current;
     if (salesClosedAt !== null && outcome !== null) {
       throw new DomainError({ code: CatalogErrorCode.OUTCOME_FINAL, params: { outcome } });
@@ -212,11 +226,14 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
     assertTierWidens(capacityTotal, widened);
     assertTechnicalProvisionCovers(widened, provisionedCapacity, startsAt);
     const tier: CapacityTier = { id: uuidv7(), capacity: additionalCapacity, openedAt: now };
+    const priorityUntil = notifyWaitlist && waitlistCount > 0 ? priorityUntilOf(now) : null;
     this.current = frozen({
       ...this.current,
       capacityTotal: widened,
       capacityTiers: [...capacityTiers, tier],
-      seatsAvailable: seatsAvailable + additionalCapacity,
+      ...(priorityUntil === null
+        ? { seatsAvailable: seatsAvailable + additionalCapacity }
+        : { priorityPoolSeats: priorityPoolSeats + additionalCapacity, priorityUntil }),
       version,
     });
     this.apply(
@@ -229,6 +246,10 @@ export class DateSales extends AggregateRoot<DateSalesEvent> {
         now,
       ),
     );
+    if (priorityUntil !== null) {
+      this.apply(new PriorityWindowOpened(dateId, additionalCapacity, priorityUntil, now));
+    }
+    return priorityUntil;
   }
 
   /**
