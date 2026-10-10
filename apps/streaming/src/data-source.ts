@@ -5,6 +5,7 @@ import { env } from './env.js';
 import { Initial1791287654242 } from './migrations/1791287654242-initial.js';
 import { EntitlementProjection1791636545325 } from './migrations/1791636545325-entitlement-projection.js';
 import { Run1791636564435 } from './migrations/1791636564435-run.js';
+import { ReplayAsset1791700000000 } from './migrations/1791700000000-replay-asset.js';
 import { IncidentRow, RunRow } from './run/run.entity.js';
 import { SERVICE } from './service.js';
 
@@ -17,7 +18,12 @@ export const dataSource: DataSource = new DataSource({
   type: 'postgres',
   url: env.DATABASE_URL,
   entities: [ProcessedMessage, OutboxEvent, RunRow, IncidentRow],
-  migrations: [Initial1791287654242, EntitlementProjection1791636545325, Run1791636564435],
+  migrations: [
+    Initial1791287654242,
+    EntitlementProjection1791636545325,
+    Run1791636564435,
+    ReplayAsset1791700000000,
+  ],
   applicationName: SERVICE,
 
   // `poolSize` × replicas × processes, plus the connector's replication connection, must stay
