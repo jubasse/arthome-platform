@@ -1,19 +1,26 @@
 import { notFound } from '@arthome-platform/http-edge';
+import { Inject } from '@nestjs/common';
 import { QueryHandler, type IQueryHandler } from '@nestjs/cqrs';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
+import type { Clock } from '@arthome/core';
+
 import type { DateSalesPane } from './date-sales-pane.js';
 import { GetDateTicketsPane } from './get-date-tickets-pane.query.js';
 import { readDateSalesPane } from './read-date-sales-pane.js';
+import { CLOCK } from '../clock.js';
 
 /** One row, so one read: nothing to hold together. */
 @QueryHandler(GetDateTicketsPane)
 export class GetDateTicketsPaneHandler implements IQueryHandler<GetDateTicketsPane> {
-  public constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  public constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    @Inject(CLOCK) private readonly clock: Clock,
+  ) {}
 
   public async execute({ dateId }: GetDateTicketsPane): Promise<DateSalesPane> {
-    const pane = await readDateSalesPane(this.dataSource.manager, dateId);
+    const pane = await readDateSalesPane(this.dataSource.manager, dateId, this.clock.now());
     if (pane === null) throw notFound();
     return pane;
   }

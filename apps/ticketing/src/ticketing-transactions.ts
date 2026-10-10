@@ -16,12 +16,15 @@ import type { SeatHoldRepository } from './orders/seat-hold.repository.js';
 import { TypeOrmSeatHoldRepository } from './orders/seat-hold.typeorm-repository.js';
 import type { SeatOrderRepository } from './orders/seat-order.repository.js';
 import { TypeOrmSeatOrderRepository } from './orders/seat-order.typeorm-repository.js';
+import type { WaitlistEntryRepository } from './waitlist/waitlist-entry.repository.js';
+import { TypeOrmWaitlistEntryRepository } from './waitlist/waitlist-entry.typeorm-repository.js';
 
 export interface TicketingTransaction extends TransactionScope {
   readonly credits: CreditRepository;
   readonly dateSales: DateSalesRepository;
   readonly holds: SeatHoldRepository;
   readonly orders: SeatOrderRepository;
+  readonly waitlistEntries: WaitlistEntryRepository;
 }
 
 function ticketingTransactionOf(manager: EntityManager, track: Track): TicketingTransaction {
@@ -30,6 +33,7 @@ function ticketingTransactionOf(manager: EntityManager, track: Track): Ticketing
     dateSales: new TypeOrmDateSalesRepository(manager, track),
     holds: new TypeOrmSeatHoldRepository(manager, track),
     orders: new TypeOrmSeatOrderRepository(manager, track),
+    waitlistEntries: new TypeOrmWaitlistEntryRepository(manager, track),
     manager,
   };
 }

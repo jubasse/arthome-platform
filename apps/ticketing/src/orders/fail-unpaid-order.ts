@@ -20,6 +20,5 @@ export async function failUnpaidOrder(
   if (hold?.isActive !== true) return null;
   hold.release(now);
   await holds.save(hold);
-  const { dateId, quantity } = hold.snapshot;
-  return () => dateSales.returnHeldSeats(dateId, quantity);
+  return () => dateSales.returnHeldSeats(hold.snapshot.dateId, hold.snapshot, now);
 }

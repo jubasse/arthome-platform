@@ -45,6 +45,7 @@ import type { DateSales } from '../date-sales/date-sales.aggregate.js';
 import { PAYMENT_PORT } from '../payments/payment-tokens.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactions, type TicketingTransaction } from '../ticketing-transactions.js';
+import { drawsOnPriorityPool } from '../waitlist/priority-pool.js';
 
 const LOCK_NOT_AVAILABLE = '55P03';
 
@@ -123,9 +124,10 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
   }
 
   private async placeIn(
-    { manager, orders, holds, dateSales }: TicketingTransaction,
+    transaction: TicketingTransaction,
     { body, buyer, idempotency, traceparent, lateEntryAcknowledged }: PurchaseSeat,
   ): Promise<Placement> {
+    const { manager, orders, holds, dateSales } = transaction;
     const bound = await orders.findBound(idempotency.accountId, idempotency.key);
     if (bound !== null) {
       if (bound.fingerprint !== idempotency.fingerprint) throw keyReused();
@@ -148,6 +150,7 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     ) {
       throw priceStale(expectedTotal, quote.total);
     }
+    const fromPool = await drawsOnPriorityPool(transaction, sales, buyer.accountId, now);
 
     const orderId = uuidv7();
     const holdId = uuidv7();
@@ -196,7 +199,10 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     await writeSeatOrderIntegrationEvents(manager, order.getUncommittedEvents(), { traceparent });
     // Last, so the date's row is locked for the commit alone. The hold's foreign key takes a KEY
     //   SHARE on it, which the decrement's NO KEY UPDATE does not wait on.
-    if (!(await dateSales.takeSeats(sales, body.quantity, now))) throw soldOut();
+    const taken = fromPool
+      ? await dateSales.takeSeatsFromPool(sales, holdId, body.quantity, now)
+      : await dateSales.takeSeats(sales, body.quantity, now);
+    if (!taken) throw soldOut();
     return { kind: 'placed', orderId, request: this.intentRequestOf(order) };
   }
 
@@ -319,17 +325,19 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
    *   sale no longer sells.
    */
   private async renewHoldIn(
-    { holds, dateSales }: TicketingTransaction,
+    transaction: TicketingTransaction,
     order: SeatOrder,
     sales: DateSales | null,
     now: Instant,
   ): Promise<(() => Promise<boolean>) | null> {
+    const { holds, dateSales } = transaction;
     const { id, dateId, accountId, profileId, tier, quantity } = order.snapshot;
     if (sales?.sellsSeatsAt(now) !== true) {
       order.fail({ code: OrderErrorCode.SOLD_OUT, declineCode: null }, now);
       return null;
     }
     sales.holdSeats(quantity, now);
+    const fromPool = await drawsOnPriorityPool(transaction, sales, accountId, now);
     const expiresAt = checkoutIntentExpiry(now);
     const hold = SeatHold.place(
       {
@@ -347,7 +355,9 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     );
     await holds.save(hold);
     order.renewHold(hold.snapshot.id, expiresAt, now);
-    return () => dateSales.takeSeats(sales, quantity, now);
+    return fromPool
+      ? () => dateSales.takeSeatsFromPool(sales, hold.snapshot.id, quantity, now)
+      : () => dateSales.takeSeats(sales, quantity, now);
   }
 
   /**
@@ -402,9 +412,10 @@ export class PurchaseSeatHandler implements ICommandHandler<PurchaseSeat> {
     if (!order.awaitsIntent) return;
     const hold = await holds.findById(order.snapshot.holdId);
     if (hold?.isActive !== true) return;
-    hold.release(this.clock.now());
+    const now = this.clock.now();
+    hold.release(now);
     await holds.save(hold);
-    await dateSales.returnHeldSeats(hold.snapshot.dateId, hold.snapshot.quantity);
+    await dateSales.returnHeldSeats(hold.snapshot.dateId, hold.snapshot, now);
   }
 
   /** The first answer the order gives, kept for its replays; a refusal is answered from its state. */

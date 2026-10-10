@@ -10,6 +10,7 @@ export const TICKETING_EVENT_TOPICS = {
   'ticketing.date_sales.availability_changed.v1': 'ticketing.date_sales',
   'ticketing.seat.activated.v1': 'ticketing.date_sales',
   'ticketing.seat.cancelled.v1': 'ticketing.date_sales',
+  'ticketing.waitlist.notified.v1': 'ticketing.date_sales',
   'ticketing.order.paid.v1': 'ticketing.order',
   'ticketing.order.refunded.v1': 'ticketing.order',
   'ticketing.credit.issued.v1': 'ticketing.account',

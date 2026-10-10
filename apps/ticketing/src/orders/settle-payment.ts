@@ -12,6 +12,7 @@ import { drawFreeSeatCodes } from './seat-codes.js';
 import type { SeatOrder } from './seat-order.aggregate.js';
 import { recordRefundTraceparent } from '../payments/refund-ledger.js';
 import type { TicketingTransaction } from '../ticketing-transactions.js';
+import { drawsOnPriorityPool } from '../waitlist/priority-pool.js';
 
 /**
  * A move of the date's counters kept for the end of the transaction: the hot row stays locked from
@@ -36,7 +37,7 @@ export async function settleConfirmedPayment(
 ): Promise<PendingCounterMove | null> {
   if (!order.acceptsPayment) return null;
   const { holds, dateSales } = transaction;
-  const { holdId, dateId, quantity } = order.snapshot;
+  const { holdId, dateId, quantity, accountId } = order.snapshot;
   const sales = await dateSales.findUnlocked(dateId);
   const outcome = sales?.snapshot.outcome ?? null;
   const hold = await holds.findById(holdId);
@@ -45,7 +46,7 @@ export async function settleConfirmedPayment(
     if (hold?.isActive === true) {
       hold.release(now);
       await holds.save(hold);
-      returned = () => dateSales.returnHeldSeats(dateId, quantity);
+      returned = () => dateSales.returnHeldSeats(dateId, hold.snapshot, now);
     }
     await owePaymentBack(transaction, order, outcome, intentRef, now, traceparent);
     return returned;
@@ -55,7 +56,14 @@ export async function settleConfirmedPayment(
     hold.consume(now);
     await holds.save(hold);
     pending = () => dateSales.sellHeldSeats(dateId, quantity);
-  } else if (!(await dateSales.takeAndSellSeats(dateId, quantity, now))) {
+  } else if (
+    !(await dateSales.takeAndSellSeats(
+      dateId,
+      quantity,
+      now,
+      await drawsOnPriorityPool(transaction, sales, accountId, now),
+    ))
+  ) {
     // Read again: a cancellation committed since the first read is what refused the statement.
     const outcomeNow = (await dateSales.findUnlocked(dateId))?.snapshot.outcome ?? null;
     await owePaymentBack(transaction, order, outcomeNow, intentRef, now, traceparent);

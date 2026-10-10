@@ -18,7 +18,7 @@ export abstract class WaitlistOutcomeHook {
   ): Promise<void>;
 }
 
-/** Until the waiting list exists (T5, PT3 replaces this binding). */
+/** For a suite that settles a date with no waiting list; the sweeper binds PT3's `WaitlistEndingHook`. */
 @Injectable()
 export class NoWaitlistOutcomeHook extends WaitlistOutcomeHook {
   public endWaitlist(): Promise<void> {

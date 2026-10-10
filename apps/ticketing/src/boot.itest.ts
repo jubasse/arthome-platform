@@ -31,6 +31,7 @@ import {
   OrderState,
   SeatHoldOrigin,
   SeatHoldState,
+  WaitlistEntryState,
   money,
 } from '@arthome/core';
 
@@ -50,6 +51,9 @@ const HELD_DATE_ID = '01a0f100-0000-7000-8000-000000000002';
 const HOLD_ID = '01a0f100-0000-7000-8000-0000000000b1';
 const ORDER_ID = '01a0f100-0000-7000-8000-0000000000a1';
 const WORKER_DATE_ID = '01a0f100-0000-7000-8000-000000000003';
+const WINDOW_DATE_ID = '01a0f100-0000-7000-8000-000000000004';
+const WINDOW_ENTRY_ID = '01a0f100-0000-7000-8000-0000000000e4';
+const WINDOW_ACCOUNT_ID = '01a0f100-0000-7000-8000-0000000000c4';
 const WORKER_HOLD_ID = '01a0f100-0000-7000-8000-0000000000b3';
 const WORKER_ORDER_ID = '01a0f100-0000-7000-8000-0000000000a3';
 const WORKER_REFUND_ID = '01a0f100-0000-7000-8000-0000000000f3';
@@ -303,6 +307,63 @@ describe('the sweeper process', () => {
           [ORDER_ID],
         );
         expect(row).toEqual({ seats_available: 10, state: OrderState.FAILED });
+      } finally {
+        await seed.destroy();
+      }
+    },
+    CASE_MS,
+  );
+  it(
+    'ends a priority window past its end on its first pass, the pool on sale and the entry lapsed',
+    async () => {
+      const seed = new DataSource({ type: 'postgres', url: databaseUrl });
+      await seed.initialize();
+      try {
+        await seed.query(
+          `INSERT INTO date_sales (date_id, channel_id, capacity_total, capacity_tiers,
+                                   seats_available, seats_sold, waitlist_count, price_tiers,
+                                   prices_locked_at, version, priority_pool_seats, priority_until)
+           VALUES ($1, 'channel-boot', 10, '[]', 0, 7, 1, '[]', now(), 2, 3,
+                   now() - interval '1 second')`,
+          [WINDOW_DATE_ID],
+        );
+        await seed.query(
+          `INSERT INTO waitlist_entry (id, date_id, account_id, state, joined_at, notified_at,
+                                       version)
+           VALUES ($1, $2, $3, $4, now() - interval '2 hours', now() - interval '2 hours', 2)`,
+          [WINDOW_ENTRY_ID, WINDOW_DATE_ID, WINDOW_ACCOUNT_ID, WaitlistEntryState.NOTIFIED],
+        );
+
+        const { SweeperModule } = await import('./sweeper.module.js');
+        const context = await Test.createTestingModule({ imports: [SweeperModule] }).compile();
+        await context.init();
+        const windowOf = async () => {
+          const [row] = await seed.query<
+            { seats_available: number; priority_pool_seats: number; waitlist_count: number }[]
+          >(
+            `SELECT seats_available, priority_pool_seats, waitlist_count FROM date_sales
+              WHERE date_id = $1 AND priority_until IS NULL`,
+            [WINDOW_DATE_ID],
+          );
+          return row;
+        };
+        try {
+          const deadline = Date.now() + 10_000;
+          while ((await windowOf()) === undefined && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        } finally {
+          await context.close();
+        }
+
+        expect(await windowOf()).toEqual({
+          seats_available: 3,
+          priority_pool_seats: 0,
+          waitlist_count: 0,
+        });
+        expect(
+          await seed.query('SELECT state FROM waitlist_entry WHERE id = $1', [WINDOW_ENTRY_ID]),
+        ).toEqual([{ state: WaitlistEntryState.LAPSED }]);
       } finally {
         await seed.destroy();
       }

@@ -43,6 +43,12 @@ export class DateSalesRow {
   @Column('integer')
   waitlist_count!: number;
 
+  @Column('integer')
+  priority_pool_seats!: number;
+
+  @Column('timestamptz', { nullable: true })
+  priority_until!: Date | null;
+
   @Column('jsonb')
   price_tiers!: PriceTierColumn[];
 

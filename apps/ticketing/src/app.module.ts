@@ -25,6 +25,7 @@ import { OrdersModule } from './orders/orders.module.js';
 import { PaymentWebhooksModule } from './payments/payment-webhooks.module.js';
 import { PaymentWorkerModule } from './payments/payment-worker.module.js';
 import { SeatsModule } from './seats/seats.module.js';
+import { WaitlistModule } from './waitlist/waitlist.module.js';
 
 /**
  * The API process: the studio's commands and pane, the storefront's availability read, its seat
@@ -42,6 +43,7 @@ import { SeatsModule } from './seats/seats.module.js';
     PaymentWebhooksModule,
     PaymentWorkerModule,
     SeatsModule,
+    WaitlistModule,
   ],
   providers: [
     ...EDGE_PROVIDERS,

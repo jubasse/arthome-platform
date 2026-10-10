@@ -25,9 +25,22 @@ export abstract class DateSalesRepository {
    */
   public abstract takeSeats(sales: DateSales, quantity: number, now: Instant): Promise<boolean>;
 
+  /**
+   * The hold's statement for a buyer notified into the window: the pool first, then the public
+   *   seats, the pool only while the window is open at `now`; the hold records the pool seats it
+   *   drew in the same statement. False, nothing taken, as `takeSeats`.
+   */
+  public abstract takeSeatsFromPool(
+    sales: DateSales,
+    holdId: string,
+    quantity: number,
+    now: Instant,
+  ): Promise<boolean>;
+
   public abstract sellHeldSeats(dateId: string, quantity: number): Promise<void>;
 
-  public abstract returnHeldSeats(dateId: string, quantity: number): Promise<void>;
+  /** A hold's pool seats go back to the pool while the window is open at `now`, else on sale. */
+  public abstract returnHeldSeats(dateId: string, seats: HeldSeats, now: Instant): Promise<void>;
 
   /**
    * Sold seats back on sale at once (D-093), counted as a move so a date sold out and back is
@@ -40,5 +53,21 @@ export abstract class DateSalesRepository {
     dateId: string,
     quantity: number,
     now: Instant,
+    fromPool: boolean,
   ): Promise<boolean>;
+
+  /** A join or a leave, under the row `findById` locked; the version does not move. */
+  public abstract moveWaitlistCount(sales: DateSales, by: 1 | -1): Promise<void>;
+
+  /** The window's end: the pool's rest on public sale, the entries ended off the count. */
+  public abstract endPriorityWindow(dateId: string, entriesEnded: number): Promise<void>;
+
+  /** D-096: the pool on sale, the window and the count cleared; false when nothing was left. */
+  public abstract closeWaitlist(dateId: string): Promise<boolean>;
+}
+
+export interface HeldSeats {
+  readonly quantity: number;
+  /** Of `quantity`, the seats drawn from the priority pool. */
+  readonly poolSeats: number;
 }

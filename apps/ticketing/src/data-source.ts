@@ -24,10 +24,12 @@ import { ProviderCallQueues1790441200000 } from './migrations/1790441200000-prov
 import { OneUnseatedRefundPerOrder1790441300000 } from './migrations/1790441300000-one-unseated-refund-per-order.js';
 import { SeatStates1790441350000 } from './migrations/1790441350000-seat-states.js';
 import { DateOutcomes1790441400000 } from './migrations/1790441400000-date-outcomes.js';
+import { Waitlist1791636734134 } from './migrations/1791636734134-waitlist.js';
 import { OrderRefundRow } from './orders/order-refund.entity.js';
 import { SeatHoldRow } from './orders/seat-hold.entity.js';
 import { SeatOrderRow } from './orders/seat-order.entity.js';
 import { SeatRow } from './orders/seat.entity.js';
+import { WaitlistEntryRow } from './waitlist/waitlist-entry.entity.js';
 
 /**
  * Used by the four processes AND by the migration CLI. `synchronize` stays false: it would drop
@@ -48,6 +50,7 @@ export const dataSource: DataSource = new DataSource({
     DateOutcomeSettlementRow,
     ProcessedMessage,
     OutboxEvent,
+    WaitlistEntryRow,
   ],
   migrations: [
     Initial1790440000000,
@@ -66,6 +69,7 @@ export const dataSource: DataSource = new DataSource({
     OneUnseatedRefundPerOrder1790441300000,
     SeatStates1790441350000,
     DateOutcomes1790441400000,
+    Waitlist1791636734134,
   ],
   applicationName: Service.TICKETING,
 
