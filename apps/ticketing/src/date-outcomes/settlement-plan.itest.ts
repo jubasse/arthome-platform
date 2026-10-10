@@ -115,7 +115,7 @@ describe('the settlement pass on filled tables', () => {
       const dateId = dateIdOf(42);
 
       const plans = {
-        due: await planOf(DUE_SETTLEMENTS, [new Date(NOW), 10]),
+        due: await planOf(DUE_SETTLEMENTS, [new Date(NOW), 10, SeatState.ACTIVE]),
         claim: await planOf(CLAIM_SETTLEMENT, [dateId]),
         orders: await planOf(ORDERS_TO_SETTLE, [dateId, 500, SeatState.ACTIVE]),
         settled: await planOf(NOTHING_LEFT_TO_SETTLE, [

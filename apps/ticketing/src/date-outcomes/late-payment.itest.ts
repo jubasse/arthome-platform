@@ -25,7 +25,7 @@ import {
 
 import { DateOutcomeSweeper } from './date-outcome-sweeper.js';
 import { DateOutcomesModule } from './date-outcomes.module.js';
-import { SettleDateOutcomes } from './settle-date-outcomes.command.js';
+import { DATE_OUTCOME_DATES_PER_PASS, SettleDateOutcomes } from './settle-date-outcomes.command.js';
 import { CLOCK } from '../clock.js';
 import { applyCatalogDateMessage } from '../date-sales/catalog-date-messages.js';
 import { CatalogFactsModule } from '../date-sales/catalog-facts.module.js';
@@ -34,6 +34,7 @@ import { SalesClosingSweeper } from '../date-sales/sales-closing-sweeper.js';
 import { SalesClosingModule } from '../date-sales/sales-closing.module.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { delivered, outcomeDeclared } from '../itest/catalog-messages.js';
+import { seedPaidOrders } from '../itest/paid-orders.js';
 import {
   FULL_PRICE_MINOR,
   ITEST_BUYER_ACCOUNT_ID,
@@ -320,6 +321,40 @@ describe('a payment on a date since cancelled', () => {
         ],
         holdState: SeatHoldState.CONSUMED,
       });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'leaves no room to dates waiting on a live hold alone while another date has orders to settle',
+    async () => {
+      const waiting: string[] = [];
+      for (let n = 0; n < DATE_OUTCOME_DATES_PER_PASS; n += 1) {
+        const dateId = await dateOnSale();
+        await awaitingOrder(dateId);
+        await cancel(dateId);
+        waiting.push(dateId);
+        // Each outcome recorded before the next, so the oldest dates are the waiting ones.
+        clock.advance(1_000);
+      }
+      await settle();
+      await settle();
+      for (const dateId of waiting) expect(await settledAt(dateId)).toBeNull();
+
+      const dateId = await dateOnSale();
+      await seedPaidOrders(dataSource, {
+        dateId,
+        channelId: CHANNEL,
+        series: '01a0e6f1',
+        quantities: [1, 2],
+        accountId: ITEST_BUYER_ACCOUNT_ID,
+        cancelDeadline: null,
+        paidAt: clock.now(),
+      });
+      await cancel(dateId);
+
+      expect(await settle()).toBe(2);
+      for (const waitingDate of waiting) expect(await settledAt(waitingDate)).toBeNull();
     },
     CASE_MS,
   );
