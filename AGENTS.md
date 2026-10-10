@@ -222,8 +222,8 @@ README, this file or a tool is a warning to act on, not a failure. Nothing is ev
 renamed, and a file that exists is refused. So is a service name used anywhere: an app directory, a
 database, a topic (its retry and dead-letter ones included), a connector's name, slot or
 publication, a consumer group. The one exception is a topic declared before its service, as
-`arthome.streaming.run` is for catalog to consume: `--topics run:12` owns it, at exactly its
-declared partitions.
+`arthome.chat.date` is for catalog to consume: `--topics date:12` owns it, at exactly its
+declared partitions (`streaming` was generated that way, owning `arthome.streaming.run`).
 
 The collection is ESM TypeScript loaded without a build: the engine's `require()` reaches it
 through Node's `require(esm)` and type stripping, so its code stays erasable (no enum, no parameter
@@ -290,7 +290,9 @@ export class DatesController {
   the route. `refusalOf(code, params)` stays for code no route reaches.
 - **Only the storefront BFF binds the public contract.** Catalog and ticketing keep their own
   routes until their INTERNAL contracts exist (their paths and headers differ); they are not bound
-  here and serve no Swagger UI.
+  here and serve no Swagger UI. Streaming is born on its internal one,
+  `@arthome/contracts/streaming-service-api` (D-121): its routes bind it, and it mounts that
+  contract's Swagger UI (`mountStreamingDocs`).
 - **Access comes from the route** (ADR contract model §4.5). A route declared through the builder
   with `.identity(...)`, `.public()` or `.optionalAuth()` and its `requires` is guarded by
   `EndpointAccessGuard`: the identity's guard first, bound under the identity's name, then each
@@ -303,7 +305,10 @@ export class DatesController {
   counts nothing and fails the boot on a bucket with no cap, the global `AuthThrottlerGuard` counts
   the caps of the buckets the route's contract declares); every service binds `service` (`ServiceIdentity`: the internal token,
   verified as `InternalTokenGuard` does, which leaves a route declaring an access to it; the
-  principal is core's `{ callingService, userId }`, from the token's issuer and subject). On a
+  principal is core's `{ callingService, userId, profileId?, deviceId? }`, from the token's `iss`,
+  `sub`, `pro` and `did`, a claim the token lacks absent, never null) and `callerService`
+  (`CallerServiceRule`: a calling BFF the rule does not name is refused 403 `api.forbidden`, and a
+  rule naming no issuer, or one no BFF mints as, fails the boot). On a
   service, a route the contract declares public, or optional (which lets a call without a token
   in as well), fails the boot unless `edgeProviders`' `publicRoutes` names it (empty today):
   reached in the cluster without TLS, a service has the token as its only authorisation
@@ -360,6 +365,7 @@ export class DatesController {
 | Process | Development port | Swagger UI | Operations |
 | --- | --- | --- | --- |
 | `bff-storefront` | 3003 | `http://localhost:3003/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink, signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification, getViewerContext |
+| `streaming` | 3005 | `http://localhost:3005/docs` | none yet: the run desk, playback and progress bind theirs (`apps/streaming/HANDOVER.md`) |
 
 `@nestjs/swagger` is a peer of `libs/http-edge`; `@fastify/static` serves the UI on Fastify, and
 `@scarf/scarf` (swagger-ui-dist's telemetry install script) is denied in `pnpm-workspace.yaml`.
@@ -445,8 +451,9 @@ pnpm --filter @arthome-platform/notifications run migration:run
 pnpm --filter @arthome-platform/catalog       run migration:run
 pnpm --filter @arthome-platform/search-indexer run migration:run
 pnpm --filter @arthome-platform/ticketing     run migration:run   # its four processes stopped first
+pnpm --filter @arthome-platform/streaming     run migration:run
 pnpm run provision:topics          # BEFORE the connectors, and before any consumer
-for c in identity catalog ticketing; do
+for c in identity catalog ticketing streaming; do
   curl -s -X POST -H 'Content-Type: application/json' \
     --data @infra/debezium/$c-outbox.json http://localhost:8083/connectors
 done
@@ -455,7 +462,8 @@ done
 **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
 anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`, `PUBLIC_WEB_ORIGIN`,
 `OPENSEARCH_URL`, `REDIS_URL`, `PAYMENT_WEBHOOK_SECRET`, `IDENTITY_URL`, `JWKS_URL`,
-`INTERNAL_TOKEN_SIGNING_KEY`, `BETTER_AUTH_SECRET`, `CSRF_SECRET` — is filled from a local default
+`INTERNAL_TOKEN_SIGNING_KEY`, `BETTER_AUTH_SECRET`, `CSRF_SECRET`, `PLAYBACK_SIGNING_KEY`,
+`STREAM_KEY_SECRET` — is filled from a local default
 **only outside production**, and `NODE_ENV` is
 what selects that. Defaulting it to `development` would make an unset variable open the
 production-guarded write routes and point a migration at localhost; both fail loudly instead, naming
@@ -602,10 +610,11 @@ PATCH /v1/channels/:channelId/identity        { expectedVersion, publicName, slu
 ```
 
 Publishing answers `publication.checklist_incomplete` until ticketing, streaming and chat have
-reported their four facts. None of those services exists yet, so in development send the facts by
-hand on `arthome.ticketing.date_sales`, `arthome.streaming.run` and `arthome.chat.date`, keyed by the
-date id, with a `message-id` and a `type` header. A `streaming.run.started.v1` sent the same way on a
-date under technical check makes its card `live`; `streaming.run.ended.v1` ends it.
+reported their four facts. Chat does not exist yet and streaming publishes nothing until its run
+desk (PS1), so in development send the facts by hand on `arthome.ticketing.date_sales`,
+`arthome.streaming.run` and `arthome.chat.date`, keyed by the date id, with a `message-id` and a
+`type` header. A `streaming.run.started.v1` sent the same way on a date under technical check makes
+its card `live`; `streaming.run.ended.v1` ends it.
 
 Proven on the running stack on 2026-09-26:
 

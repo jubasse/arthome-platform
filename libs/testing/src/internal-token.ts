@@ -16,6 +16,8 @@ export interface InternalCaller {
   readonly clock: Clock;
   readonly accountId?: string;
   readonly deviceId?: string;
+  /** Minted as `pro`: a service route that reads the profile refuses a token without it. */
+  readonly profileId?: string;
 }
 
 export interface MintOptions {
@@ -41,6 +43,7 @@ export async function mintInternalToken(
   return new SignJWT({
     ...(caller.accountId !== undefined && { sub: caller.accountId }),
     ...(caller.deviceId !== undefined && { did: caller.deviceId }),
+    ...(caller.profileId !== undefined && { pro: caller.profileId }),
   })
     .setProtectedHeader({ alg: algorithm, kid: options.keyId ?? development.keyId })
     .setIssuer(options.issuer ?? InternalTokenIssuer.STOREFRONT_BFF)

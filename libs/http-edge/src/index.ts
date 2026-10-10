@@ -29,12 +29,15 @@ export { DenyInProductionGuard } from './deny-in-production.guard.js';
 
 export { AllowAnonymous } from './allow-anonymous.js';
 export { InternalTokenGuard, ServiceIdentity } from './internal-token.guard.js';
+export { CallerServiceRule } from './caller-service.rule.js';
 export { InternalTokenVerifier } from './internal-token.verifier.js';
 export {
   CurrentPrincipal,
   accountOf,
+  assertSameCaller,
   attachPrincipal,
   principalOf,
+  profileOfPrincipal,
   unauthenticated,
 } from './principal.js';
 export type { Principal } from './principal.js';

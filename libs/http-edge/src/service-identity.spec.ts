@@ -1,5 +1,5 @@
-import { httpApp } from '@arthome-platform/testing';
-import { Controller, Module } from '@nestjs/common';
+import { httpApp, mintInternalToken } from '@arthome-platform/testing';
+import { Controller, Module, type ExecutionContext } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -16,10 +16,14 @@ import { DEADLINE_HEADER } from './deadline.js';
 import { edgeProviders } from './edge-providers.js';
 import { EndpointInput } from './endpoint-input.js';
 import { Endpoint, serveEndpoints } from './endpoint.js';
+import { ServiceIdentity } from './internal-token.guard.js';
+import type { InternalTokenVerifier } from './internal-token.verifier.js';
 
 /** Core's `service` identity, bound by every service, on fixture routes. A public route needs the service's allow-list. */
 
 const ACCOUNT = '01a0e700-0000-7000-8000-0000000000c1';
+const PROFILE = '01a0e700-0000-7000-8000-0000000000d1';
+const DEVICE = '01a0e700-0000-7000-8000-0000000000e1';
 
 const builder = routeBuilder(
   defineErrorModel<string>({
@@ -129,6 +133,7 @@ class StrayOptionalModule {}
 class AllowedOptionalModule {}
 
 const clock = new FixedClock(Date.now());
+
 let app: Awaited<ReturnType<typeof httpApp>>;
 let anonymous: Awaited<ReturnType<typeof httpApp>>;
 
@@ -157,6 +162,54 @@ describe('the service identity', () => {
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.json<{ data: { caller: string } }>().data.caller)).toEqual({
+      callingService: InternalTokenIssuer.STOREFRONT_BFF,
+      userId: ACCOUNT,
+    });
+  });
+
+  it('hands over the profile and the device the token names', async () => {
+    const response = await anonymous.inject({
+      method: 'GET',
+      url: '/v1/overlay',
+      headers: {
+        authorization: `Bearer ${await mintInternalToken({
+          service: Service.CATALOG,
+          clock,
+          accountId: ACCOUNT,
+          profileId: PROFILE,
+          deviceId: DEVICE,
+        })}`,
+        [DEADLINE_HEADER]: new Date(clock.nowMs() + 60_000).toISOString(),
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.json<{ data: { caller: string } }>().data.caller)).toEqual({
+      callingService: InternalTokenIssuer.STOREFRONT_BFF,
+      userId: ACCOUNT,
+      profileId: PROFILE,
+      deviceId: DEVICE,
+    });
+  });
+
+  it('leaves out a profile and a device the token does not name, never null', async () => {
+    const verifier = {
+      verify: () =>
+        Promise.resolve({
+          accountId: ACCOUNT,
+          profileId: null,
+          deviceId: null,
+          issuer: InternalTokenIssuer.STOREFRONT_BFF,
+        }),
+    } as unknown as InternalTokenVerifier;
+    const request = { headers: { authorization: 'Bearer a.b.c' } };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext;
+
+    const principal = await new ServiceIdentity(verifier).identify(context);
+
+    expect(principal).toStrictEqual({
       callingService: InternalTokenIssuer.STOREFRONT_BFF,
       userId: ACCOUNT,
     });

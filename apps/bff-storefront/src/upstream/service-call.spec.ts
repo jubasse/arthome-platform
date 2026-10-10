@@ -1,10 +1,13 @@
+import { IncomingMessage, ServerResponse } from 'node:http';
+import { Socket } from 'node:net';
+
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { defineErrorModel, routeBuilder } from '@arthome/contracts/http';
-import { FixedClock } from '@arthome/core';
+import { FixedClock, Surface } from '@arthome/core';
 
-import { budgetOf, withinBudget } from './service-call.js';
+import { budgetOf, serviceCallFor, withinBudget } from './service-call.js';
 import type { ServiceCall } from './service-client.js';
 
 const NOW = Date.parse('2026-10-05T10:00:00.000Z');
@@ -56,5 +59,23 @@ describe('withinBudget', () => {
 
     expect(withinBudget(call, 150, clock)).toBe(call);
     expect(withinBudget(call, undefined, clock)).toBe(call);
+  });
+});
+
+describe('serviceCallFor', () => {
+  const response = (): ServerResponse => new ServerResponse(new IncomingMessage(new Socket()));
+
+  it('carries the request’s surface as the actor’s, and none when the request named none', () => {
+    const named = serviceCallFor(
+      { headers: { 'x-arthome-surface': Surface.STOREFRONT_WEB } },
+      response(),
+      clock,
+      200,
+      null,
+    );
+    const unnamed = serviceCallFor({ headers: {} }, response(), clock, 200, null);
+
+    expect(named.actorSurface).toBe(Surface.STOREFRONT_WEB);
+    expect(unnamed).not.toHaveProperty('actorSurface');
   });
 });

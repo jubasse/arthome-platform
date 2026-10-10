@@ -111,6 +111,14 @@
     {
       "name": "arthome.chat.date",
       "partitions": 12
+    },
+    {
+      "name": "arthome.streaming.retry",
+      "partitions": 3
+    },
+    {
+      "name": "arthome.streaming.dlq",
+      "partitions": 3
     }
   ]
 }

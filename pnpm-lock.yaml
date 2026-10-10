@@ -510,6 +510,79 @@ importers:
         specifier: workspace:*
         version: link:../../libs/testing
 
+  apps/streaming:
+    dependencies:
+      '@arthome-platform/config':
+        specifier: workspace:*
+        version: link:../../libs/config
+      '@arthome-platform/events':
+        specifier: workspace:*
+        version: link:../../libs/events
+      '@arthome-platform/http-edge':
+        specifier: workspace:*
+        version: link:../../libs/http-edge
+      '@arthome-platform/messaging':
+        specifier: workspace:*
+        version: link:../../libs/messaging
+      '@arthome-platform/transactions':
+        specifier: workspace:*
+        version: link:../../libs/transactions
+      '@arthome/contracts':
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.3/arthome-contracts-0.2.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.3/arthome-contracts-0.2.0-rc.3.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.3/arthome-core-0.2.0-rc.3.tgz(zod@4.6.5))(zod@4.6.5)
+      '@arthome/core':
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.3/arthome-core-0.2.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.2.0-rc.3/arthome-core-0.2.0-rc.3.tgz(zod@4.6.5)
+      '@bufbuild/protobuf':
+        specifier: 2.15.0
+        version: 2.15.0
+      '@fastify/static':
+        specifier: 10.1.5
+        version: 10.1.5
+      '@nestjs/common':
+        specifier: 12.0.3
+        version: 12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core':
+        specifier: 12.0.3
+        version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/cqrs':
+        specifier: 12.0.0
+        version: 12.0.0(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/platform-fastify':
+        specifier: 12.0.3
+        version: 12.0.3(@fastify/static@10.1.5)(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))
+      '@nestjs/swagger':
+        specifier: 12.0.2
+        version: 12.0.2(@fastify/static@10.1.5)(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(typescript@6.0.3)
+      '@nestjs/typeorm':
+        specifier: 12.0.1
+        version: 12.0.1(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.1.1(pg@8.23.0))
+      jose:
+        specifier: 6.2.12
+        version: 6.2.12
+      kafkajs:
+        specifier: 2.2.4
+        version: 2.2.4
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
+      reflect-metadata:
+        specifier: 0.2.2
+        version: 0.2.2
+      typeorm:
+        specifier: 1.1.1
+        version: 1.1.1(ioredis@6.0.0)(pg@8.23.0)
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@arthome-platform/testing':
+        specifier: workspace:*
+        version: link:../../libs/testing
+      '@nestjs/testing':
+        specifier: 12.0.3
+        version: 12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.0.3(@nestjs/common@12.0.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))
+
   apps/ticketing:
     dependencies:
       '@arthome-platform/config':
