@@ -3,12 +3,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import {
   OrderRefundedSchema,
   RefundReason as WireRefundReason,
-  SeatCancelledSchema,
-  SeatCancelReason as WireSeatCancelReason,
   DateOutcome as WireDateOutcome,
 } from '@arthome-platform/events';
-import { RefusalException, domainRefusal } from '@arthome-platform/http-edge';
-import { Outcome, OutboxEvent } from '@arthome-platform/messaging';
+import { Outcome } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
@@ -32,10 +29,8 @@ import {
   PriceTier,
   RefundReason,
   SeatCancelReason,
-  SeatHoldState,
   SeatState,
   Service,
-  isDomainError,
 } from '@arthome/core';
 
 import { ExpireDueHolds } from './expire-due-holds.command.js';
@@ -54,6 +49,16 @@ import { DateSalesModule } from '../date-sales/date-sales.module.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { delivered, outcomeDeclared } from '../itest/catalog-messages.js';
 import { gateInserts, holdAdvisoryLock, untilWaitingOnAdvisoryLock } from '../itest/locks.js';
+import {
+  expectLedgerHolds as expectLedger,
+  madeTotalOf,
+  ordersOf as ledgerOrdersOf,
+  outboxOf as ledgerOutboxOf,
+  raced,
+  seatCancellationsPerSeat as cancellationsPerSeat,
+  seatsOf as ledgerSeatsOf,
+  times,
+} from '../itest/race-ledger.js';
 import {
   FULL_PRICE_MINOR,
   ITEST_BUYER_ACCOUNT_ID,
@@ -183,34 +188,6 @@ async function cancelDate(dateId: string): Promise<void> {
   expect(applied).toBe(Outcome.APPLIED);
 }
 
-const times = (count: number, task: () => Promise<unknown>): (() => Promise<unknown>)[] =>
-  Array.from({ length: count }, () => task);
-
-function refusalCodeOf(error: unknown): string | null {
-  if (error instanceof RefusalException) return error.refusal.code;
-  if (isDomainError(error)) return domainRefusal(error).refusal.code;
-  return null;
-}
-
-/**
- * Every task started at once; none may reject but with one of the refusals `expected`, the answers
- *   a racer loses with. Answers how many were refused.
- */
-async function raced(
-  tasks: readonly (() => Promise<unknown>)[],
-  expected: readonly string[] = [],
-): Promise<number> {
-  const settled = await Promise.allSettled(tasks.map((task) => task()));
-  const refused = settled.filter(
-    (outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected',
-  );
-  for (const { reason } of refused) {
-    const code = refusalCodeOf(reason);
-    if (code === null || !expected.includes(code)) throw reason;
-  }
-  return refused.length;
-}
-
 async function until(what: string, ready: () => Promise<boolean>, timeoutMs = 60_000) {
   const deadline = performance.now() + timeoutMs;
   while (!(await ready())) {
@@ -248,109 +225,6 @@ async function drainRefunds(dateId: string): Promise<void> {
   });
 }
 
-const callsTo = (call: string): number => fake.calls.filter((made) => made === call).length;
-
-interface OrderLedger {
-  readonly id: string;
-  readonly state: string;
-  readonly total_minor: string;
-  readonly refunds: { reason: string; amount_minor: string; made: boolean }[];
-  readonly seats: number;
-}
-
-async function ordersOf(dateId: string): Promise<Map<string, OrderLedger>> {
-  const rows = await dataSource.query<OrderLedger[]>(
-    `SELECT placed.id, placed.state, placed.total_minor,
-            coalesce((SELECT json_agg(json_build_object('reason', refund.reason,
-                                                        'amount_minor', refund.amount_minor::text,
-                                                        'made', refund.refunded_at IS NOT NULL)
-                                      ORDER BY refund.owed_at, refund.id)
-                        FROM order_refund AS refund WHERE refund.order_id = placed.id),
-                     '[]') AS refunds,
-            (SELECT count(*)::int FROM seat WHERE seat.order_id = placed.id) AS seats
-       FROM seat_order AS placed WHERE placed.date_id = $1`,
-    [dateId],
-  );
-  return new Map(rows.map((row) => [row.id, row]));
-}
-
-const madeTotalOf = ({ refunds }: OrderLedger): number =>
-  refunds
-    .filter(({ made }) => made)
-    .reduce((sum, { amount_minor }) => sum + Number(amount_minor), 0);
-
-async function outboxOf(aggregateId: string, type: string): Promise<OutboxEvent[]> {
-  return dataSource.getRepository(OutboxEvent).findBy({ aggregateid: aggregateId, type });
-}
-
-async function seatCancellationsPerSeat(dateId: string): Promise<Map<string, string[]>> {
-  const perSeat = new Map<string, string[]>();
-  for (const row of await outboxOf(dateId, 'ticketing.seat.cancelled.v1')) {
-    const event = fromBinary(SeatCancelledSchema, row.payload);
-    perSeat.set(event.seatId, [
-      ...(perSeat.get(event.seatId) ?? []),
-      WireSeatCancelReason[event.reason],
-    ]);
-  }
-  return perSeat;
-}
-
-async function seatsOf(dateId: string) {
-  return dataSource.query<{ id: string; order_id: string; state: string; cancel_reason: string }[]>(
-    'SELECT id, order_id, state, cancel_reason FROM seat WHERE date_id = $1 ORDER BY id',
-    [dateId],
-  );
-}
-
-/**
- * The ledger after a race: available, held and sold seats adding up to the capacity, one `seat`
- *   row per seat sold (a viewer's cancellation on a date still running gives its seat back to
- *   sale), refunds never above what the order paid, and each refund made once at the provider,
- *   under its key, for the amount its row owes.
- */
-async function expectLedgerHolds(dateId: string): Promise<void> {
-  const [ledger] = await dataSource.query<
-    {
-      capacity: number;
-      available: number;
-      sold: number;
-      held: number;
-      seats: number;
-      back_on_sale: number;
-    }[]
-  >(
-    `SELECT sales.capacity_total AS capacity, sales.seats_available AS available,
-            sales.seats_sold AS sold,
-            (SELECT coalesce(sum(quantity), 0)::int FROM seat_hold
-              WHERE date_id = $1 AND state = $2) AS held,
-            (SELECT count(*)::int FROM seat WHERE date_id = $1) AS seats,
-            (SELECT count(*)::int FROM seat
-              WHERE date_id = $1 AND cancel_reason = $3) AS back_on_sale
-       FROM date_sales AS sales WHERE sales.date_id = $1`,
-    [dateId, SeatHoldState.ACTIVE, SeatCancelReason.VIEWER_REQUEST],
-  );
-  if (ledger === undefined) throw new Error(`no date ${dateId}`);
-  expect(ledger.available + ledger.held + ledger.sold).toBe(ledger.capacity);
-  expect(ledger.seats - ledger.back_on_sale).toBe(ledger.sold);
-
-  for (const order of (await ordersOf(dateId)).values()) {
-    const owed = order.refunds.reduce((sum, { amount_minor }) => sum + Number(amount_minor), 0);
-    expect(owed, order.id).toBeLessThanOrEqual(Number(order.total_minor));
-  }
-  const made = await dataSource.query<{ idempotency_key: string; amount_minor: string }[]>(
-    `SELECT refund.idempotency_key, refund.amount_minor FROM order_refund AS refund
-       JOIN seat_order AS placed ON placed.id = refund.order_id
-      WHERE placed.date_id = $1 AND refund.refunded_at IS NOT NULL`,
-    [dateId],
-  );
-  for (const { idempotency_key, amount_minor } of made) {
-    expect(fake.refundedUnder(idempotency_key)?.amountMinor, idempotency_key).toBe(
-      Number(amount_minor),
-    );
-    expect(callsTo(`refund ${idempotency_key}`), idempotency_key).toBe(1);
-  }
-}
-
 /** Every order of a cancelled date refunded once and in full, `date_cancelled`, with its events. */
 async function expectRefundedOnceDateCancelled(
   dateId: string,
@@ -371,6 +245,13 @@ async function expectRefundedOnceDateCancelled(
     expect(refunded, orderId).toEqual([WireRefundReason.DATE_CANCELLED]);
   }
 }
+
+const ordersOf = (dateId: string) => ledgerOrdersOf(dataSource, dateId);
+const outboxOf = (aggregateId: string, type: string) =>
+  ledgerOutboxOf(dataSource, aggregateId, type);
+const seatsOf = (dateId: string) => ledgerSeatsOf(dataSource, dateId);
+const seatCancellationsPerSeat = (dateId: string) => cancellationsPerSeat(dataSource, dateId);
+const expectLedgerHolds = (dateId: string) => expectLedger(dataSource, fake, dateId);
 
 beforeAll(async () => {
   stack = await startStack({ postgres: true, redis: true, startupTimeoutMs: STARTUP_MS });
@@ -634,6 +515,7 @@ describe("a seat's cancellation racing the date's", () => {
           reason: RefundReason.DATE_CANCELLED,
           amount_minor: String(FULL_PRICE_MINOR),
           made: false,
+          dead: false,
         },
       ]);
       expect((await seatCancellationsPerSeat(dateId)).get(seatId)).toEqual(['DATE_CANCELLED']);

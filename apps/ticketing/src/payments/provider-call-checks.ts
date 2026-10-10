@@ -2,7 +2,7 @@ import { boundedCheck, type CheckResult } from '@arthome-platform/messaging';
 import { Queue } from 'bullmq';
 import type { DataSource } from 'typeorm';
 
-import { MINUTE_MS, SystemClock, type Clock } from '@arthome/core';
+import { MINUTE_MS, OrderState, SystemClock, type Clock } from '@arthome/core';
 
 import {
   FAIL_FAST_CONNECTION,
@@ -18,15 +18,25 @@ export const INTENT_CANCELLATION_REPLAY =
   'UPDATE seat_order SET intent_cancel_dead_at = NULL, intent_cancel_enqueued_at = NULL ' +
   'WHERE id = $1 AND intent_cancel_dead_at IS NOT NULL';
 
-/** The calls given up on: a refund given up is a buyer's money held without a seat. */
+/**
+ * The calls given up on: a refund given up is a buyer's money held without a seat. One on a
+ *   disputed order is not: the dispute holds that money and gives it back if the buyer wins, so it
+ *   is counted apart, never replayed (HANDOVER §0k), and turns nothing degraded.
+ */
 export function checkProviderCallsDead(dataSource: DataSource): Promise<CheckResult> {
   return boundedCheck('provider_calls_dead', 'degraded', async () => {
-    const [dead] = await dataSource.query<{ refunds: number; intent_cancellations: number }[]>(
-      `SELECT (SELECT count(*)::int FROM order_refund
-                WHERE dead_at IS NOT NULL AND refunded_at IS NULL) AS refunds,
+    const [dead] = await dataSource.query<
+      { refunds: number; refunds_held_by_disputes: number; intent_cancellations: number }[]
+    >(
+      `SELECT count(*) FILTER (WHERE placed.state <> $1)::int AS refunds,
+              count(*) FILTER (WHERE placed.state = $1)::int AS refunds_held_by_disputes,
               (SELECT count(*)::int FROM seat_order
                 WHERE intent_cancel_dead_at IS NOT NULL
-                  AND intent_cancel_owed_at IS NOT NULL) AS intent_cancellations`,
+                  AND intent_cancel_owed_at IS NOT NULL) AS intent_cancellations
+         FROM order_refund AS refund
+         JOIN seat_order AS placed ON placed.id = refund.order_id
+        WHERE refund.dead_at IS NOT NULL AND refund.refunded_at IS NULL`,
+      [OrderState.DISPUTED],
     );
     const refunds = dead?.refunds ?? 0;
     const intentCancellations = dead?.intent_cancellations ?? 0;
@@ -34,6 +44,7 @@ export function checkProviderCallsDead(dataSource: DataSource): Promise<CheckRes
       status: refunds + intentCancellations > 0 ? 'degraded' : 'up',
       detail: {
         refunds,
+        refundsHeldByDisputes: dead?.refunds_held_by_disputes ?? 0,
         intentCancellations,
         refundReplay: REFUND_REPLAY,
         intentCancellationReplay: INTENT_CANCELLATION_REPLAY,
