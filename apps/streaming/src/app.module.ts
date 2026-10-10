@@ -18,6 +18,7 @@ import { DataSource } from 'typeorm';
 import { dataSource } from './data-source.js';
 import { EDGE_PROVIDERS } from './edge-providers.js';
 import { MediaModule } from './media/media.module.js';
+import { RunModule } from './run/run.module.js';
 import { SERVICE } from './service.js';
 
 /**
@@ -27,7 +28,12 @@ import { SERVICE } from './service.js';
  */
 @Module({
   controllers: [HealthController],
-  imports: [TypeOrmModule.forRoot(dataSource.options), CqrsModule.forRoot(), MediaModule],
+  imports: [
+    TypeOrmModule.forRoot(dataSource.options),
+    CqrsModule.forRoot(),
+    MediaModule,
+    RunModule,
+  ],
   providers: [
     ...EDGE_PROVIDERS,
     {

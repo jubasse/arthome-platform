@@ -12,6 +12,11 @@
   ],
   "allow": [
     {
+      "file": "apps/streaming/src/run/run.aggregate.ts",
+      "value": "none",
+      "reason": "`publication.transition_forbidden`'s `from` when no publication state is projected for the date (PS1 R7): an absence, which PUBLICATION_STATES has no member for. REPLAY_POLICIES, LANGUAGE_DEPENDENCIES, WATCH_SCOPES, WATCH_FALLBACK_ACTIONS and AUDIENCE_SANCTIONS each have a `none` about another concept; importing one would name the wrong thing."
+    },
+    {
       "file": "libs/config/src/env.ts",
       "value": "none",
       "reason": "TRUSTED_PROXIES' explicit word for 'no proxy fronts this BFF', a deployment setting. REPLAY_POLICIES, LANGUAGE_DEPENDENCIES, WATCH_SCOPES, WATCH_FALLBACK_ACTIONS and AUDIENCE_SANCTIONS each have a `none` member about a show, a viewer or a sanction; importing any of them to read an environment variable would name the wrong concept."

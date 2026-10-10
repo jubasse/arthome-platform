@@ -3,6 +3,7 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { dataSource } from './data-source.js';
+import { RunSweeperModule } from './run/run-sweeper.module.js';
 
 /**
  * The sweeper process: the work that runs on a clock against Postgres alone, each pass a
@@ -10,6 +11,6 @@ import { dataSource } from './data-source.js';
  *   which is why it is not the consumer's process.
  */
 @Module({
-  imports: [TypeOrmModule.forRoot(dataSource.options), CqrsModule.forRoot()],
+  imports: [TypeOrmModule.forRoot(dataSource.options), CqrsModule.forRoot(), RunSweeperModule],
 })
 export class SweeperModule {}

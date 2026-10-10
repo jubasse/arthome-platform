@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { applyStreamingMessage } from './consumed-messages.js';
 import { dataSource } from './data-source.js';
 import { EntitlementConsumerModule } from './entitlement/entitlement-consumer.module.js';
+import { RunConsumerModule } from './run/run-consumer.module.js';
 import { SERVICE } from './service.js';
 
 /** Every topic the consumer reads. KafkaJS will not subscribe to an empty list. */
@@ -26,6 +27,7 @@ export const CONSUMED_TOPICS: readonly string[] = [
       apply: applyStreamingMessage,
     }),
     EntitlementConsumerModule,
+    RunConsumerModule,
   ],
 })
 export class ConsumerModule {}
