@@ -93,7 +93,16 @@ export interface PreparedRun {
   readonly key: string;
 }
 
-export async function startRunDesk(database: string, watch?: DeclaredResponses): Promise<RunDesk> {
+export interface RunDeskOptions {
+  readonly watch?: DeclaredResponses;
+  /** PS2's own `readDateFacts` over its tables, rather than the suite's map. */
+  readonly projectedByEntitlement?: boolean;
+}
+
+export async function startRunDesk(
+  database: string,
+  { watch, projectedByEntitlement = false }: RunDeskOptions = {},
+): Promise<RunDesk> {
   const stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
   const created = await createDatabase(stack.postgres, database);
   const dataSource = await applyMigrations(created, STREAMING_SCHEMA);
@@ -107,7 +116,7 @@ export async function startRunDesk(database: string, watch?: DeclaredResponses):
     dataSource,
     overrides: [
       [CLOCK, clock],
-      [READ_DATE_FACTS, readDateFacts],
+      ...(projectedByEntitlement ? [] : [[READ_DATE_FACTS, readDateFacts] as const]),
       [STREAM_KEY_SECRET, STREAM_KEY_TEST_SECRET],
       [InternalTokenVerifier, studioTokenVerifier(clock)],
     ],

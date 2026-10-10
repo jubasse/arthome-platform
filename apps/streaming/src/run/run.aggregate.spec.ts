@@ -18,7 +18,7 @@ import {
   type Instant,
 } from '@arthome/core';
 
-import { Run, SYSTEM_ACTOR, type RunSnapshot } from './run.aggregate.js';
+import { NO_PUBLICATION, Run, SYSTEM_ACTOR, type RunSnapshot } from './run.aggregate.js';
 import {
   IncidentRaised,
   IncidentResolved,
@@ -147,7 +147,7 @@ describe('the moves the studio asks for', () => {
     });
     expect(refusal(() => runIn(RunState.REHEARSAL).goOnAir(3, null, ACTOR, NOW))).toEqual({
       code: DomainErrorCode.PUBLICATION_TRANSITION_FORBIDDEN,
-      params: { from: 'none', to: PublicationState.LIVE },
+      params: { from: NO_PUBLICATION, to: PublicationState.LIVE },
     });
   });
 

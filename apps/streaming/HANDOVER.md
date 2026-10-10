@@ -219,10 +219,9 @@ two sweeper passes. The `Run` aggregate holds the row and its open incident (`da
 - **`readRunFacts(manager, dateId)`** (`run-facts.ts`), for PS3, PS4 and PS5: one statement, no lock,
   `{ state, startedAt, endedAt, streamPath, incident }`, the open incident as the storefront reads
   it.
-- **PS2's facts.** `date-facts.ts` declares PS2's `readDateFacts(manager, dateId)` behind
-  `READ_DATE_FACTS`; until PS2 merges it is bound to "nothing projected", so `goOnAir` is refused
-  and no run ends by itself. **Bind PS2's `readDateFacts` in `DATE_FACTS_PROVIDER` before PS1
-  merges.**
+- **PS2's facts.** `date-facts.ts` binds PS2's `readDateFacts(manager, dateId)` behind
+  `READ_DATE_FACTS`, which the suites override with the dates they project: the publication state
+  for `goOnAir` (none projected reads `none`), the timing for the end by itself.
 
 **Deployment order.** Migrate, then the consumer before the first draft in production, as
 ticketing's §0: a draft read before the consumer exists is read from the topic's retention, so
@@ -243,11 +242,11 @@ already drafted.
 | `run/grace-and-hold-screen.itest.ts` | a two-second drop writes nothing; "publisher gone" and its clearing at one version; the hold screen at its delay, lifted by the feed's return; one raised by hand stays; a final worker failure |
 | `run/run-races.itest.ts` | `goOnAir` against the automatic incident, two `raiseIncident`, the feed's return against the pass, two sweepers on the same runs |
 | `run/auto-end.itest.ts` | the end fifteen minutes after the later of the scheduled end and the last loss, `ended_at` the loss, `ended_by` the system; never with a publisher online; at the scheduled end with none ever online; never without a timing |
+| `run/date-facts.itest.ts` | the run desk on PS2's own `readDateFacts`: `goOnAir` refused from `none` and from the projected state, on air from `technical`, the end by itself from the projected timing |
 | `run/run-passes-plan.itest.ts` | both passes on their index over 50,000 ended runs |
 
 **Gaps**
 
-- `READ_DATE_FACTS` is bound to "nothing projected" until PS2's `readDateFacts` is bound (above).
 - The technical check and the console read the metrics port in the request, the check under the
   run's lock: in process with the fake; a real adapter's call must be bounded there.
 - A run ended with an incident open keeps it open, and `readRunFacts` serves it: nothing resolves it

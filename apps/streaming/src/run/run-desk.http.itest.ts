@@ -43,7 +43,7 @@ const responses = guardDeclaredResponses(streamingServiceApi);
 let desk: RunDesk;
 
 beforeAll(async () => {
-  desk = await startRunDesk('streaming_run_desk_http_itest', responses);
+  desk = await startRunDesk('streaming_run_desk_http_itest', { watch: responses });
 }, STARTUP_MS);
 
 afterAll(async () => {

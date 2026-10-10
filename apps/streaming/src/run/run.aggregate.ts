@@ -65,7 +65,7 @@ export interface RunToPrepare {
 export const SYSTEM_ACTOR: RunActor = { accountId: null, surface: Surface.SYSTEM };
 
 /** `publication.transition_forbidden`'s `from` when no publication state is projected. */
-const NO_PUBLICATION = 'none';
+export const NO_PUBLICATION = 'none';
 
 /**
  * A date's run and its incidents (`data-model.md` §5.1, §5.6). The version counts state, not
