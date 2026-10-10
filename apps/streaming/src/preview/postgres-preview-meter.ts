@@ -32,9 +32,9 @@ export class PostgresPreviewMeter implements PreviewMeter {
     now: Instant,
   ): Promise<Instant | null> {
     const budgets = new PreviewBudgets(manager);
-    const { spending, onAir } = await readRunSpans(manager, dateId, now);
+    const { onAir } = await readRunSpans(manager, dateId, now);
     const locked = await budgets.lock(accountId, dateId);
-    const { budget, expiresAt } = coverAt(locked, now, onAir, spending);
+    const { budget, expiresAt } = coverAt(locked, now, onAir);
     await budgets.write(accountId, dateId, budget, now);
     return expiresAt;
   }

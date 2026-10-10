@@ -4,7 +4,6 @@ import {
   isBefore,
   latest,
   previewSecondsLeft,
-  previewSecondsSpent,
   previewTokenExpiresAt,
   toEpochMs,
   windowOf,
@@ -12,17 +11,15 @@ import {
   type Window,
 } from '@arthome/core';
 
-/** One account's budget on one date: what is settled, what the edge may still serve unpaid. */
+/** One account's budget on one date: what is settled, and how far the edge may serve. */
 export interface BudgetState {
-  readonly settledSeconds: number;
-  readonly prechargedSeconds: number;
+  readonly settledMs: number;
   readonly coveredUntil: Instant | null;
   readonly settledUntil: Instant | null;
 }
 
 export const FRESH_BUDGET: BudgetState = {
-  settledSeconds: 0,
-  prechargedSeconds: 0,
+  settledMs: 0,
   coveredUntil: null,
   settledUntil: null,
 };
@@ -41,18 +38,34 @@ function unsettledWindow(budget: BudgetState, now: Instant): Window | null {
   return isBefore(settledUntil, end) ? windowOf(settledUntil, end) : null;
 }
 
-function spentSince(budget: BudgetState, now: Instant, onAir: readonly Window[]): number {
+/**
+ * The milliseconds of `window` inside the disjoint on-air spans. Core's `previewSecondsSpent`
+ *   floors to whole seconds, which a client renewing faster than once a second would never pay.
+ */
+function onAirMsWithin(window: Window, onAir: readonly Window[]): number {
+  const start = toEpochMs(window.start);
+  const end = toEpochMs(window.end);
+  return onAir.reduce(
+    (sum, span) =>
+      sum +
+      Math.max(0, Math.min(end, toEpochMs(span.end)) - Math.max(start, toEpochMs(span.start))),
+    0,
+  );
+}
+
+function settledMsAt(budget: BudgetState, now: Instant, onAir: readonly Window[]): number {
   const window = unsettledWindow(budget, now);
-  return window === null ? 0 : previewSecondsSpent(window, onAir);
+  return budget.settledMs + (window === null ? 0 : onAirMsWithin(window, onAir));
+}
+
+/** A started second counts whole, so a token never reaches past the milliseconds left. */
+function secondsLeftOf(settledMs: number): number {
+  return previewSecondsLeft(Math.ceil(settledMs / 1000));
 }
 
 /** What `cover` would leave before issuing, read without writing. */
 export function secondsLeftAt(budget: BudgetState, now: Instant, onAir: readonly Window[]): number {
-  return previewSecondsLeft(budget.settledSeconds + spentSince(budget, now, onAir));
-}
-
-function wholeSecondsBetween(from: Instant, to: Instant): number {
-  return Math.max(0, Math.ceil((toEpochMs(to) - toEpochMs(from)) / 1000));
+  return secondsLeftOf(settledMsAt(budget, now, onAir));
 }
 
 /**
@@ -60,16 +73,11 @@ function wholeSecondsBetween(from: Instant, to: Instant): number {
  *   edge can serve, so a token released early keeps its time covered and reopening gains nothing.
  *   Time under the veil or off air is never charged, and comes back at the settle.
  */
-export function coverAt(
-  budget: BudgetState,
-  now: Instant,
-  onAir: readonly Window[],
-  spending: boolean,
-): Cover {
-  const settledSeconds = budget.settledSeconds + spentSince(budget, now, onAir);
-  const left = previewSecondsLeft(settledSeconds);
+export function coverAt(budget: BudgetState, now: Instant, onAir: readonly Window[]): Cover {
+  const settledMs = settledMsAt(budget, now, onAir);
+  const left = secondsLeftOf(settledMs);
   // Nothing in [now, covered_until) has been served unless a token reaches past now.
-  const settled = { settledSeconds, prechargedSeconds: 0, settledUntil: now };
+  const settled = { settledMs, settledUntil: now };
   if (left <= 0)
     return { budget: { ...settled, coveredUntil: budget.coveredUntil }, expiresAt: null };
 
@@ -78,12 +86,5 @@ export function coverAt(
     budget.coveredUntil !== null && isAfter(budget.coveredUntil, expiresAt)
       ? budget.coveredUntil
       : expiresAt;
-  return {
-    budget: {
-      ...settled,
-      coveredUntil: latest(coveredUntil, now),
-      prechargedSeconds: spending ? wholeSecondsBetween(now, coveredUntil) : 0,
-    },
-    expiresAt,
-  };
+  return { budget: { ...settled, coveredUntil: latest(coveredUntil, now) }, expiresAt };
 }

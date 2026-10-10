@@ -1,13 +1,12 @@
 import type { EntityManager } from 'typeorm';
 
-import { isPreviewBudgetSpending, type Instant, type Window } from '@arthome/core';
+import type { Instant, Window } from '@arthome/core';
 
 import { onAirIntervalsOf, type Veil } from './on-air-intervals.js';
 import { readRunFacts } from '../run/run-facts.js';
 
-/** Where a date's run stands for the budget: whether it is spending now, and the spans it spent on. */
+/** The spans of a date's run the budget is spent on. */
 export interface RunSpans {
-  readonly spending: boolean;
   readonly onAir: Window[];
 }
 
@@ -27,14 +26,13 @@ export async function readRunSpans(
   now: Instant,
 ): Promise<RunSpans> {
   const run = await readRunFacts(manager, dateId);
-  if (run?.startedAt == null) return { spending: false, onAir: [] };
+  if (run?.startedAt == null) return { onAir: [] };
   const rows = await manager.query<VeilRow[]>(VEILS_SQL, [dateId]);
   const veils: Veil[] = rows.map((row) => ({
     raisedAt: row.raised_at.toISOString(),
     resolvedAt: row.resolved_at?.toISOString() ?? null,
   }));
   return {
-    spending: isPreviewBudgetSpending(run.state),
     onAir: onAirIntervalsOf({ startedAt: run.startedAt, endedAt: run.endedAt, veils }, now),
   };
 }

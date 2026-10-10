@@ -23,7 +23,7 @@ import {
   ticketOf,
   type Playback,
 } from '../itest/playback.js';
-import { budgetOf, raiseVeil, resolveVeil } from '../itest/preview.js';
+import { budgetOf, chargedMsOf, raiseVeil, resolveVeil } from '../itest/preview.js';
 
 /**
  * The preview budget through PS3's routes on one `FixedClock`: a token never outlives the budget
@@ -67,12 +67,42 @@ describe('the preview budget', () => {
       }
 
       expect(spent).toBe(PREVIEW_BUDGET_SECONDS);
-      const row = await budgetOf(playback, viewer.accountId, dateId);
-      expect((row?.settled_seconds ?? 0) + (row?.precharged_seconds ?? 0)).toBe(
-        PREVIEW_BUDGET_SECONDS,
+      expect(chargedMsOf(await budgetOf(playback, viewer.accountId, dateId))).toBe(
+        PREVIEW_BUDGET_SECONDS * 1000,
       );
       const reopened = await openCall(playback, viewer, dateId);
       expect(errorOf(reopened).code).toBe(WatchDenialReason.PREVIEW_EXHAUSTED);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'charges sub-second renewals: renewing every 900 ms exhausts the budget, never serving past it',
+    async () => {
+      const viewer = newViewer();
+      const dateId = await liveDate(playback);
+      const openedAt = playback.clock.now();
+      const opened = ticketOf(await openCall(playback, viewer, dateId));
+      let servedUntil = opened.expiresAt;
+      let refusal: Awaited<ReturnType<typeof renewCall>> | undefined;
+
+      while (refusal === undefined && playback.clock.now() < plusSeconds(openedAt, 400)) {
+        playback.clock.advance(900);
+        const renewed = await renewCall(playback, viewer, opened.sessionId);
+        if (renewed.statusCode !== 200) refusal = renewed;
+        else {
+          const { expiresAt } = (JSON.parse(renewed.body) as { data: { expiresAt: string } }).data;
+          if (expiresAt > servedUntil) servedUntil = expiresAt;
+        }
+      }
+
+      expect(refusal?.statusCode).toBe(403);
+      expect(errorOf(refusal ?? { body: '{}' })?.code).toBe(WatchDenialReason.PREVIEW_EXHAUSTED);
+      expect(servedUntil <= plusSeconds(openedAt, PREVIEW_BUDGET_SECONDS)).toBe(true);
+      expect(playback.clock.now() > plusSeconds(openedAt, PREVIEW_BUDGET_SECONDS - 1)).toBe(true);
+      const chargedMs = chargedMsOf(await budgetOf(playback, viewer.accountId, dateId));
+      expect(chargedMs).toBeGreaterThan((PREVIEW_BUDGET_SECONDS - 1) * 1000);
+      expect(chargedMs).toBeLessThanOrEqual(PREVIEW_BUDGET_SECONDS * 1000);
     },
     CASE_MS,
   );
@@ -93,7 +123,7 @@ describe('the preview budget', () => {
         await openCall(playback, { ...first, deviceId: identityId() }, dateId),
       );
       expect(reinstalled.previewSecondsLeft).toBe(PREVIEW_BUDGET_SECONDS - 100);
-      expect((await budgetOf(playback, first.accountId, dateId))?.settled_seconds).toBe(100);
+      expect((await budgetOf(playback, first.accountId, dateId))?.settled_ms).toBe(100_000);
     },
     CASE_MS,
   );
@@ -127,10 +157,7 @@ describe('the preview budget', () => {
       playback.clock.advance(15_000);
       const underVeil = await renewCall(playback, viewer, opened.sessionId);
       expect(underVeil.statusCode).toBe(200);
-      expect(await budgetOf(playback, viewer.accountId, dateId)).toMatchObject({
-        settled_seconds: 30,
-        precharged_seconds: 0,
-      });
+      expect((await budgetOf(playback, viewer.accountId, dateId))?.settled_ms).toBe(30_000);
 
       playback.clock.advance(45_000);
       await resolveVeil(playback, dateId);
@@ -138,7 +165,7 @@ describe('the preview budget', () => {
       const afterVeil = await renewCall(playback, viewer, opened.sessionId);
 
       expect(afterVeil.statusCode).toBe(200);
-      expect((await budgetOf(playback, viewer.accountId, dateId))?.settled_seconds).toBe(40);
+      expect((await budgetOf(playback, viewer.accountId, dateId))?.settled_ms).toBe(40_000);
     },
     CASE_MS,
   );

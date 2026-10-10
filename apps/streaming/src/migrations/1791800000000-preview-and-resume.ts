@@ -4,6 +4,8 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * The preview budget and the resume points (PS4). A budget row is one account's on one date,
  *   whatever its devices; a resume point is one profile's on one date, read by its primary key.
  *   `incident_by_run` is the budget's read of a run's veils: only the open incident was indexed.
+ *   `settled_ms` is in milliseconds so no settle drops a remainder; it never passes the budget's
+ *   300 000, so an integer holds it.
  */
 export class PreviewAndResume1791800000000 implements MigrationInterface {
   name = 'PreviewAndResume1791800000000';
@@ -13,8 +15,7 @@ export class PreviewAndResume1791800000000 implements MigrationInterface {
       CREATE TABLE preview_budget (
         account_id uuid NOT NULL,
         date_id uuid NOT NULL,
-        settled_seconds integer NOT NULL DEFAULT 0 CHECK (settled_seconds >= 0),
-        precharged_seconds integer NOT NULL DEFAULT 0 CHECK (precharged_seconds >= 0),
+        settled_ms integer NOT NULL DEFAULT 0 CHECK (settled_ms >= 0),
         covered_until timestamptz NULL,
         settled_until timestamptz NULL,
         updated_at timestamptz NOT NULL DEFAULT now(),

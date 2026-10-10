@@ -11,9 +11,9 @@ import {
 import { setRun, type Playback } from './playback.js';
 
 export interface BudgetRow {
-  readonly settled_seconds: number;
-  readonly precharged_seconds: number;
+  readonly settled_ms: number;
   readonly covered_until: Date | null;
+  readonly settled_until: Date | null;
 }
 
 /** The account's budget row on the date, as the meter keeps it. */
@@ -23,11 +23,21 @@ export async function budgetOf(
   dateId: string,
 ): Promise<BudgetRow | undefined> {
   const [row] = await playback.dataSource.query<BudgetRow[]>(
-    `SELECT settled_seconds, precharged_seconds, covered_until
+    `SELECT settled_ms, covered_until, settled_until
        FROM preview_budget WHERE account_id = $1 AND date_id = $2`,
     [accountId, dateId],
   );
   return row;
+}
+
+/** Settled plus covered since the last settle: what the edge was allowed on a run with no veil. */
+export function chargedMsOf(row: BudgetRow | undefined): number {
+  if (row === undefined) return 0;
+  const coveredMs =
+    row.covered_until === null || row.settled_until === null
+      ? 0
+      : Math.max(0, row.covered_until.getTime() - row.settled_until.getTime());
+  return row.settled_ms + coveredMs;
 }
 
 /** The veil as PS1 leaves it: an open incident, the run `interrupted`. */

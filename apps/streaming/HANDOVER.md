@@ -510,24 +510,24 @@ refused for another reason.
 resume points. Two tables (migration `PreviewAndResume1791800000000`, which also adds
 `incident_by_run`), no consumer, no event.
 
-- **The budget row** (`preview_budget`, one per account and date): `settled_seconds`,
-  `precharged_seconds`, `covered_until`, `settled_until`. `PostgresPreviewMeter` reads the run
+- **The budget row** (`preview_budget`, one per account and date): `settled_ms`, `covered_until`,
+  `settled_until`. `PostgresPreviewMeter` reads the run
   (PS1's `readRunFacts`, plus the date's incidents) and keeps the row (`PreviewBudgets`: created by
   `ON CONFLICT DO NOTHING`, read `FOR UPDATE`, written by one `updateReturning`), last in PS3's lock
   order. The arithmetic is pure and lives in `preview-cover.ts`; the on-air spans in
   `on-air-intervals.ts` (the run's `started_at` to its `ended_at` or now, less the incidents from
   `raised_at` to `resolved_at` or now).
 - **The coverage rule.** At every preview token (opening or renewal) `cover` first settles the
-  past: the whole seconds of [`settled_until`, min(now, `covered_until`)] that fall inside the
-  on-air spans are added to `settled_seconds`. It then issues: left = 300 - settled; none left is
-  null (PS3 refuses `watch.preview_exhausted`); else the token expires at core's
+  past: the milliseconds of [`settled_until`, min(now, `covered_until`)] that fall inside the
+  on-air spans are added to `settled_ms`. It then issues: left = 300 - ceil(settled_ms / 1000);
+  none left is null (PS3 refuses `watch.preview_exhausted`); else the token expires at core's
   `previewTokenExpiresAt(now, left)` = min(now + 120 s, now + left), `covered_until` is the later of
-  the old coverage and that expiry, and `precharged_seconds` is `covered_until` - now while the run
-  is `on_air`, else 0. Why: the token is the enforcement (the edge serves until it expires), so what
-  is charged is what the edge can serve. A token released early keeps its time covered, so releasing
+  the old coverage and that expiry. Why: the token is the enforcement (the edge serves until it
+  expires), so what is charged is what the edge can serve. A token released early keeps its time covered, so releasing
   and reopening extends nothing, and a client cannot buy time by disconnecting. Time under an incident
   veil or before on air is never charged: it comes back at the next settle, because a settle counts
-  on-air seconds only. While spending, settled plus precharged never passes 300.
+  on-air time only. Left is computed from `settled_ms` alone, never less the coverage ahead (see
+  below), and settled plus the on-air part of the coverage ahead never passes 300 s.
 - **Deviations from the PRD's wording.** rc.3's `previewTokenExpiresAt` takes no `spending` flag and
   always caps at what is left, also under the veil, so a veil lifting mid-token never opens an
   on-air second the budget does not cover (the open point's overrun cannot happen); `settled_until`
@@ -535,7 +535,10 @@ resume points. Two tables (migration `PreviewAndResume1791800000000`, which also
   and the next cover is never charged by the following window; `secondsLeft` is `cover`'s
   pre-issue left (budget less settled less the spending part of the window to settle) and does not
   subtract the coverage still ahead, or the last renewal before the budget ends would be refused
-  early. Each settle floors to whole seconds, so a viewer gains under a second per settle.
+  early. The settle keeps milliseconds and left rounds the settled time up, so no renewal cadence
+  serves more than 300 s on air: core's `previewSecondsSpent` floors each window to whole seconds,
+  which a client renewing faster than once a second would never pay (review B1), so the meter
+  counts the on-air milliseconds itself. An honest viewer loses under a second at the end.
 - **Shared across devices.** The scope is the account: a second device, a reinstall (a new device id)
   and two simultaneous screens read and move the same row, so the preview is 300 s of wall time per
   account and date. A PS3 opening takes the account's advisory lock first, which serialises them.
@@ -556,8 +559,8 @@ resume points. Two tables (migration `PreviewAndResume1791800000000`, which also
 | Suite | What |
 | --- | --- |
 | `preview/on-air-intervals.spec.ts` | none before on air; to now while live, to the end once ended; veils taken out, clipped to the run |
-| `preview/preview-cover.spec.ts` | the first cover issues 120 s; a renewal at 45 s settles 45 s; 30 s left lasts 30 s; release and reopen gain nothing; a 60 s veil is given back; nothing charged before on air; a lapsed gap not charged; spent never passes 300 |
-| `preview/preview-budget.itest.ts` | through PS3's routes: every expiry is min(now + 120 s, now + left) down to `watch.preview_exhausted`; a second device and a reinstall share one budget, two accounts do not; the veil's time comes back |
+| `preview/preview-cover.spec.ts` | the first cover issues 120 s; a renewal at 45 s settles 45 s; 30 s left lasts 30 s; release and reopen gain nothing; a 60 s veil is given back; nothing charged before on air; a lapsed gap not charged; spent never passes 300; renewals every 250 ms, 900 ms, 1999 ms and 45 s never serve past 300 s; a 900 ms settle is charged |
+| `preview/preview-budget.itest.ts` | through PS3's routes: every expiry is min(now + 120 s, now + left) down to `watch.preview_exhausted`; renewals every 900 ms exhaust the budget without serving past it; a second device and a reinstall share one budget, two accounts do not; the veil's time comes back |
 | `preview/preview-race.itest.ts` | six renewals at once on 50 s left never spend past the budget |
 | `progress/progress.http.itest.ts` | nothing recorded during a live or with no run, the stored point answered; the version grows by one, the last writer wins; a write after a release is kept; 200 ids pass, 201 are refused; the table holds the caller's points only; each route's 403 cases (other device or profile, no profile, no device, no user, studio token), past deadline 504 |
 | `progress/progress-plan.itest.ts` | the batch on `resume_point`'s primary key and the veils through `incident_by_run`, no sequential scan |

@@ -14,7 +14,7 @@ import {
   ticketOf,
   type Playback,
 } from '../itest/playback.js';
-import { budgetOf } from '../itest/preview.js';
+import { budgetOf, chargedMsOf } from '../itest/preview.js';
 
 /** Renewals of one account at once queue on its screens' lock and never spend past the budget. */
 
@@ -36,9 +36,9 @@ describe('the preview budget under concurrent renewals', () => {
       const dateId = await liveDate(playback);
       const opened = ticketOf(await openCall(playback, viewer, dateId));
       await playback.dataSource.query(
-        `UPDATE preview_budget SET settled_seconds = $3, covered_until = $4, settled_until = $4
+        `UPDATE preview_budget SET settled_ms = $3, covered_until = $4, settled_until = $4
           WHERE account_id = $1 AND date_id = $2`,
-        [viewer.accountId, dateId, PREVIEW_BUDGET_SECONDS - 50, playback.clock.now()],
+        [viewer.accountId, dateId, (PREVIEW_BUDGET_SECONDS - 50) * 1000, playback.clock.now()],
       );
       const now = playback.clock.now();
 
@@ -52,9 +52,7 @@ describe('the preview budget under concurrent renewals', () => {
         expect(expiresAt <= plusSeconds(now, 50)).toBe(true);
       }
       const row = await budgetOf(playback, viewer.accountId, dateId);
-      expect((row?.settled_seconds ?? 0) + (row?.precharged_seconds ?? 0)).toBeLessThanOrEqual(
-        PREVIEW_BUDGET_SECONDS,
-      );
+      expect(chargedMsOf(row)).toBeLessThanOrEqual(PREVIEW_BUDGET_SECONDS * 1000);
     },
     CASE_MS,
   );
