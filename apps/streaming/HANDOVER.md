@@ -399,13 +399,16 @@ token of at most 120 s on a stable signed prefix, and a 90 s lease renewed every
 - **The lease** (`playback_session`, one row per session, written by conditional statements, never
   loaded and saved as an aggregate: it is the hot path). An opening on a device holding the
   account's unlapsed lease for the date resumes it: same `sessionId`, a fresh token and lease, the
-  opener's profile (D-103). A lapsed one is expired and a new session opens. D-117's takeover: when
+  opener's profile (D-103), and `opened_at` moved to the resumption, so a profile close older than
+  it spares the lease and the renewal ranks it newest. A lapsed one is expired and a new session opens. D-117's takeover: when
   the account's other screens on the date reach the allowance, the opening takes over the least
   recently renewed (then opened earliest, then the smallest id), as many as the allowance fell
   below, so an opening is never refused for the ceiling; they are revoked
   `watch.concurrent_limit_reached` only when the verdict allows the opening. A racing insert on
   the one-active-lease index (`ON CONFLICT DO NOTHING`) is answered as a resumption.
-- **The renewal**: released, expired or lapsed is 404, and the player reopens with its device,
+- **The renewal**: the caller is checked against the session before the locks, for an early
+  answer, and again on the row it locked, since a resumption by another profile may have taken the
+  lease in between. Released, expired or lapsed is 404, and the player reopens with its device,
   which runs the whole decision again; revoked answers 403 with the stored reason (the list
   recomputed for the screens' refusal). A refused verdict revokes the lease with its reason, which
   is committed before the refusal is answered. The screens' rank at a renewal is by `opened_at`,
@@ -420,7 +423,9 @@ token of at most 120 s on a stable signed prefix, and a 90 s lease renewed every
   SameSite=None`), `cookieSet` true. A provider that cannot sign answers the service's 500
   `api.internal`, logged with the mechanism, and the lease is rolled back. Claims: `sub` the
   profile, `did`, `dat`, `sid`, `qmax`, `scope`, `jti` new at every issue and kept on the row;
-  `sessionScope` random per session and stable across its renewals. `resumePoint` null (D-111),
+  `sessionScope` random per session and stable across its renewals. Every token expires at most
+  core's 120 s after its issue; a preview's at the earliest of that and the meter's cover.
+  `resumePoint` null (D-111),
   `chatMode` `off` while no chat service exists, the incident from `readRunFacts` (its veil only).
   No log line, refusal param or trace attribute carries a token or a cookie value; the screens'
   list names the session, the device, the surface as its label, no city, the opening instant.
@@ -476,13 +481,13 @@ refused for another reason.
 | --- | --- |
 | `playback/screen-allowance.spec.ts` | a lease holds until its expiry; the device's own unlapsed lease resumed, a lapsed one not; the takeover candidates, least recently renewed then earliest opened then smallest id, as many as the allowance fell below; the renewal's rank by opening then id, lapsed leases uncounted |
 | `playback/playback-format.spec.ts` | the quality cap by height, `hd` undeclared; no DRM on the fake; FairPlay on HLS, Widevine on DASH; cookies for the browser, the query token otherwise; the `Set-Cookie` value |
-| `playback/token-claims.spec.ts` | the claims, a new `jti` per issue, a random session scope; the expiry from core on a full scope, the meter's cover on a preview, never without one; the screens' list carrying no token, token id or signed scope |
+| `playback/token-claims.spec.ts` | the claims, a new `jti` per issue, a random session scope; the expiry from core on a full scope, the meter's cover on a preview, never without one, never past 120 s; the screens' list carrying no token, token id or signed scope |
 | `devices/device-messages.spec.ts` | both types read into their commands; no `occurred_at`, an empty account or no profile dead-lettered at once |
 | `playback/playback.http.itest.ts` | the three routes under `guardDeclaredResponses(streamingServiceApi)`: the ticket and `no-store`, the cookie on the browser, a replay 403, an unknown date 404, a non-holder refused with nothing written, out of territory, live ended, no country 400, a past deadline 504, an unsigned stream 500 with no lease kept; a studio token, no user, no profile, no device 403; a body profile or device that differs 403; another account's session 404, another device's or profile's renewal 403, a release without a user 403; renewal, release 204 twice, then 404 |
 | `playback/screens.itest.ts` | two seats two screens; a third device takes over the least recently renewed, whose renewal is refused with the list, and takes it back; a cancelled seat refuses the oldest lease; resumption; a lapsed lease; a multi-screen plan |
-| `playback/screens-race.itest.ts` | two openings at once on a ceiling of one wait on the advisory lock (`untilBlockedOrSettled`, an `advisory` wait seen) and end with one active lease and one revoked; four at once the same |
+| `playback/screens-race.itest.ts` | two openings at once on a ceiling of one wait on the advisory lock (`untilBlockedOrSettled`, an `advisory` wait seen) and end with one active lease and one revoked; four at once the same; a renewal waiting on the lock while another profile takes the lease answers 403 |
 | `playback/renewal.itest.ts` | a lost seat, an interrupted date, an ended live, a country the date excludes, each revoked with its reason and answered again; an incident veil keeps playing; a lapsed lease 404, expired, reopened |
-| `devices/revocations.itest.ts` | a device's leases on every date revoked, no other device's, no other account's; a profile's close revokes its lease opened before it, not one opened after, nor another profile's; a duplicate `DUPLICATE` |
+| `devices/revocations.itest.ts` | a device's leases on every date revoked, no other device's, no other account's; a profile's close revokes its lease opened before it, not one opened after, nor one resumed on the same date after it, nor another profile's; a duplicate `DUPLICATE` |
 | `playback/playback-stop.itest.ts` | the measure above, three timings by device revocation on a query token, and a cancelled seat on a browser's cookie |
 | `playback/lease-sweep.itest.ts` | lapsed leases expired a batch at a time, the renewed kept; a held row skipped, then expired |
 | `playback/lease-sweep-plan.itest.ts` | over 200,000 closed leases, the sweep through `playback_session_lease_due` and a device's revocation through `playback_session_active_by_device`, no sequential scan |
