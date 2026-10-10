@@ -104,9 +104,9 @@ export function seatsOf(dataSource: DataSource, dateId: string) {
 }
 
 /**
- * The ledger after a race: available, held and sold seats adding up to the capacity, one `seat`
- *   row per seat sold (a viewer's cancellation on a date still running gives its seat back to
- *   sale), refunds never above what the order paid, and each refund made once at the provider,
+ * The ledger after a race: available, pooled (PT3), held and sold seats adding up to the capacity,
+ *   one `seat` row per seat sold (a viewer's cancellation on a date still running gives its seat
+ *   back to sale), refunds never above what the order paid, and each refund made once at the provider,
  *   under its key, for the amount its row owes.
  */
 export async function expectLedgerHolds(
@@ -118,6 +118,7 @@ export async function expectLedgerHolds(
     {
       capacity: number;
       available: number;
+      pooled: number;
       sold: number;
       held: number;
       seats: number;
@@ -125,6 +126,7 @@ export async function expectLedgerHolds(
     }[]
   >(
     `SELECT sales.capacity_total AS capacity, sales.seats_available AS available,
+            sales.priority_pool_seats AS pooled,
             sales.seats_sold AS sold,
             (SELECT coalesce(sum(quantity), 0)::int FROM seat_hold
               WHERE date_id = $1 AND state = $2) AS held,
@@ -135,7 +137,7 @@ export async function expectLedgerHolds(
     [dateId, SeatHoldState.ACTIVE, SeatCancelReason.VIEWER_REQUEST],
   );
   if (ledger === undefined) throw new Error(`no date ${dateId}`);
-  expect(ledger.available + ledger.held + ledger.sold).toBe(ledger.capacity);
+  expect(ledger.available + ledger.pooled + ledger.held + ledger.sold).toBe(ledger.capacity);
   expect(ledger.seats - ledger.back_on_sale).toBe(ledger.sold);
 
   for (const order of (await ordersOf(dataSource, dateId)).values()) {
