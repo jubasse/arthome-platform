@@ -26,6 +26,24 @@ export const RUN_PASS_BATCH = 100;
 
 const RUN_PASS_EVERY_MS = 1_000;
 
+/** Through `idx_run_publisher_lost`: $1 the grace's bound, $2 the hold screen's, $3 the batch. */
+export const PRESENCE_DUE_SQL = `
+  SELECT id FROM run
+   WHERE state = '${RunState.ON_AIR}' AND publisher_online_since IS NULL
+     AND publisher_lost_at <= $1
+     AND (NOT after_grace_period OR publisher_lost_at <= $2)
+   ORDER BY publisher_lost_at
+   LIMIT $3`;
+
+/** Through `run_live`, which PS5's recording pass reads too: $1 the page's last date, $2 its size. */
+export const LIVE_RUNS_SQL = `
+  SELECT id, date_id, publisher_lost_at FROM run
+   WHERE state IN ('${RunState.ON_AIR}', '${RunState.INTERRUPTED}')
+     AND publisher_online_since IS NULL
+     AND ($1::uuid IS NULL OR date_id > $1)
+   ORDER BY date_id
+   LIMIT $2`;
+
 /** The publisher's loss on air: "publisher gone" past the grace, the hold screen at its delay. */
 export class SweepRunPresence extends Command<number> {
   public constructor(public readonly batch: number = RUN_PASS_BATCH) {
@@ -56,19 +74,11 @@ export class SweepRunPresenceHandler implements ICommandHandler<SweepRunPresence
 
   public async execute({ batch }: SweepRunPresence): Promise<number> {
     const now = this.clock.now();
-    const due = await this.dataSource.query<{ id: string }[]>(
-      `SELECT id FROM run
-        WHERE state = '${RunState.ON_AIR}' AND publisher_online_since IS NULL
-          AND publisher_lost_at <= $1
-          AND (NOT after_grace_period OR publisher_lost_at <= $2)
-        ORDER BY publisher_lost_at
-        LIMIT $3`,
-      [
-        new Date(plusSeconds(now, -PUBLISHER_GRACE_SECONDS)),
-        new Date(plusSeconds(now, -HOLD_SCREEN_AUTO_AFTER_SECONDS_DEFAULT)),
-        batch,
-      ],
-    );
+    const due = await this.dataSource.query<{ id: string }[]>(PRESENCE_DUE_SQL, [
+      new Date(plusSeconds(now, -PUBLISHER_GRACE_SECONDS)),
+      new Date(plusSeconds(now, -HOLD_SCREEN_AUTO_AFTER_SECONDS_DEFAULT)),
+      batch,
+    ]);
     let settled = 0;
     for (const { id } of due) {
       const moved = await this.transactions.run(async ({ manager, runs }) => {
@@ -115,15 +125,7 @@ export class EndRunsByThemselvesHandler implements ICommandHandler<EndRunsByThem
     let ended = 0;
     let after: string | null = null;
     for (;;) {
-      const live: LiveRun[] = await this.dataSource.query<LiveRun[]>(
-        `SELECT id, date_id, publisher_lost_at FROM run
-          WHERE state IN ('${RunState.ON_AIR}', '${RunState.INTERRUPTED}')
-            AND publisher_online_since IS NULL
-            AND ($1::uuid IS NULL OR date_id > $1)
-          ORDER BY date_id
-          LIMIT $2`,
-        [after, batch],
-      );
+      const live: LiveRun[] = await this.dataSource.query<LiveRun[]>(LIVE_RUNS_SQL, [after, batch]);
       for (const candidate of live) {
         if (await this.endIfDue(candidate, now)) ended += 1;
       }
