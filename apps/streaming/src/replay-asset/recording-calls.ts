@@ -9,7 +9,7 @@ import { writeAssetReady } from './replay-asset-wire.js';
 import { RecordingCall, callDue, readinessAt } from './replay-asset.js';
 import {
   CALL_DUE_NOW,
-  lockAsset,
+  lockAssetWaiting,
   lockAssetsDue,
   patchAsset,
   type LockedAsset,
@@ -44,6 +44,15 @@ export const READINESS_GIVE_UP_AFTER_MS = 6 * HOUR_MS;
 
 export const RECORDING_CALLS_BATCH = 20;
 
+/**
+ * Below the first retry delay, the claim's shortest lease: a call still in flight past its lease
+ *   would be claimed again by another replica. A timeout is a failed attempt.
+ */
+export const RECORDING_CALL_TIMEOUT_MS = 4_000;
+
+/** A started recording the asset cannot keep is deleted at the provider, retried this many times. */
+export const ORPHAN_DELETE_ATTEMPTS = 3;
+
 type CallResult =
   | { readonly call: typeof RecordingCall.START; readonly ref: RecordingRef }
   | { readonly call: typeof RecordingCall.STOP }
@@ -51,14 +60,27 @@ type CallResult =
   | { readonly call: typeof RecordingCall.DELETE };
 
 /** A call the provider can never answer differently: given up at once, not after its attempts. */
-class CallRefused extends Error {}
+class CallRefused extends Error {
+  public override readonly name = 'CallRefused';
+}
+
+export class RecordingCallTimedOut extends Error {
+  public override readonly name = 'RecordingCallTimedOut';
+
+  public constructor() {
+    super(`the recording provider did not answer within ${String(RECORDING_CALL_TIMEOUT_MS)} ms`);
+  }
+}
 
 /**
  * Requirement 3: the provider's calls, each claimed `FOR UPDATE SKIP LOCKED` in a short transaction
  *   that counts the attempt and moves the next one out by the backoff before the call is made, so
  *   another replica skips it and a crash during the call leaves it due again then. The call runs
- *   outside any transaction; its outcome is written in one of its own. The `RecordingRef` stays in
- *   its column: no log, event or answer carries it.
+ *   outside any transaction, bounded by its timeout; its outcome is written in one of its own. Only
+ *   a failed call counts toward the give-up: a recording started that the asset cannot keep, its
+ *   outcome not written or the asset moved on, is deleted at the provider after the transaction.
+ *   The `RecordingRef` stays in its column: no log, event or answer carries it, nor an error's
+ *   message, which a provider may fill with it.
  */
 @Injectable()
 export class RecordingCalls {
@@ -102,15 +124,33 @@ export class RecordingCalls {
   private async attempt(asset: LockedAsset, attempt: number): Promise<void> {
     const call = callDue(asset);
     if (call === null) return;
+    let result: CallResult;
     try {
-      const result = await this.invoke(call, asset);
-      await this.dataSource.transaction((manager) => this.settle(manager, asset, result));
+      result = await this.invoke(call, asset);
     } catch (error) {
+      this.logger.warn(
+        `date ${asset.dateId}: the recording's ${call} call failed, attempt ${String(attempt)}: ${nameOf(error)}`,
+      );
       if (error instanceof CallRefused || attempt >= RECORDING_ATTEMPTS_MAX) {
         await this.giveUp(asset.dateId, call, attempt);
       }
       // Otherwise the claim already scheduled the next attempt.
+      return;
     }
+    let orphan: RecordingRef | null;
+    try {
+      orphan = await this.dataSource.transaction((manager) => this.settle(manager, asset, result));
+    } catch (error) {
+      if (error instanceof CallRefused) {
+        await this.giveUp(asset.dateId, call, attempt);
+        return;
+      }
+      this.logger.error(
+        `date ${asset.dateId}: the recording's ${call} call answered, its outcome not written: ${nameOf(error)}`,
+      );
+      orphan = result.call === RecordingCall.START ? result.ref : null;
+    }
+    if (orphan !== null) await this.deleteOrphan(asset.dateId, orphan);
   }
 
   private async invoke(call: RecordingCall, asset: LockedAsset): Promise<CallResult> {
@@ -119,7 +159,7 @@ export class RecordingCalls {
       case RecordingCall.START: {
         const run = await readRunFacts(this.dataSource.manager, asset.dateId);
         if (run === null) throw new Error('the asset has no run');
-        return { call, ref: await this.provider.start(run.streamPath) };
+        return { call, ref: await this.started(asset.dateId, run.streamPath) };
       }
       case RecordingCall.STOP:
         if (ref !== null) await ignoringUnknown(() => this.provider.stop(ref));
@@ -127,7 +167,7 @@ export class RecordingCalls {
       case RecordingCall.STATUS: {
         if (ref === null) throw new CallRefused();
         try {
-          return { call, status: await this.provider.status(ref) };
+          return { call, status: await withinTimeout(this.provider.status(ref)) };
         } catch (error) {
           throw error instanceof RecordingNotFound ? new CallRefused() : error;
         }
@@ -138,24 +178,41 @@ export class RecordingCalls {
     }
   }
 
-  /** The outcome of a call, written in a transaction of its own after deciding again on the locked row. */
+  /** A start answering after its timeout has still started a recording, which nobody will keep. */
+  private async started(dateId: string, streamPath: string): Promise<RecordingRef> {
+    const starting = this.provider.start(streamPath);
+    try {
+      return await withinTimeout(starting);
+    } catch (error) {
+      if (error instanceof RecordingCallTimedOut) {
+        void starting.then(
+          (late) => this.deleteOrphan(dateId, late),
+          () => undefined,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The outcome of a call, written in a transaction of its own after deciding again on the locked
+   *   row. A recording started that the asset does not keep comes back, to be deleted once committed.
+   */
   private async settle(
     manager: EntityManager,
     asked: LockedAsset,
     result: CallResult,
-  ): Promise<void> {
+  ): Promise<RecordingRef | null> {
     const now = this.clock.now();
-    const asset = await lockAsset(manager, asked.dateId);
-    if (asset === null) throw new Error('the asset is held by another pass');
+    const asset = await lockAssetWaiting(manager, asked.dateId);
     if (result.call === RecordingCall.START) {
-      await this.settleStart(manager, asset, result.ref, now);
-      return;
+      return this.settleStart(manager, asset, result.ref, now);
     }
-    if (callDue(asset) !== result.call) return;
+    if (asset === null || callDue(asset) !== result.call) return null;
     switch (result.call) {
       case RecordingCall.STOP:
         await patchAsset(manager, asset.dateId, now, { stopped_at: now, ...CALL_DUE_NOW });
-        return;
+        break;
       case RecordingCall.DELETE:
         await patchAsset(manager, asset.dateId, now, {
           state: ReplayAssetState.DELETED,
@@ -163,31 +220,49 @@ export class RecordingCalls {
           recording_ref: null,
           ...CALL_DUE_NOW,
         });
-        return;
+        break;
       case RecordingCall.STATUS:
         await this.settleStatus(manager, asset, result.status, now);
-        return;
+        break;
     }
+    return null;
   }
 
+  /** The reference kept, or back when the asset moved on while the provider started. */
   private async settleStart(
     manager: EntityManager,
-    asset: LockedAsset,
+    asset: LockedAsset | null,
     ref: RecordingRef,
     now: string,
-  ): Promise<void> {
+  ): Promise<RecordingRef | null> {
     if (
-      asset.recordingRef === null &&
+      asset?.recordingRef === null &&
       (asset.state === ReplayAssetState.RECORDING || asset.state === ReplayAssetState.DELETING)
     ) {
       await patchAsset(manager, asset.dateId, now, { recording_ref: ref, ...CALL_DUE_NOW });
-      return;
+      return null;
     }
-    // The asset moved on while the provider started: what it started is nobody's, so it goes.
+    return ref;
+  }
+
+  /** Never inside a transaction: the provider is called once the asset's outcome is committed. */
+  private async deleteOrphan(dateId: string, ref: RecordingRef): Promise<void> {
+    for (let attempt = 1; attempt <= ORPHAN_DELETE_ATTEMPTS; attempt += 1) {
+      try {
+        await withinTimeout(this.provider.delete(ref));
+        this.logger.error(
+          `date ${dateId}: a recording started that the asset did not keep, deleted`,
+        );
+        return;
+      } catch (error) {
+        this.logger.warn(
+          `date ${dateId}: deleting a recording the asset did not keep failed, attempt ${String(attempt)}: ${nameOf(error)}`,
+        );
+      }
+    }
     this.logger.error(
-      `date ${asset.dateId}: a recording started for an asset that moved on, deleted`,
+      `date ${dateId}: a recording started that the asset did not keep is left at the provider`,
     );
-    await this.provider.delete(ref);
   }
 
   private async settleStatus(
@@ -248,7 +323,7 @@ export class RecordingCalls {
   private async giveUp(dateId: string, call: RecordingCall, attempt: number): Promise<void> {
     const now = this.clock.now();
     const marked = await this.dataSource.transaction(async (manager) => {
-      const asset = await lockAsset(manager, dateId);
+      const asset = await lockAssetWaiting(manager, dateId);
       if (asset === null || callDue(asset) !== call) return false;
       await patchAsset(manager, dateId, now, {
         state: ReplayAssetState.FAILED,
@@ -266,10 +341,33 @@ export class RecordingCalls {
   }
 }
 
+/** The losing call keeps running: the port takes no signal to abort it. */
+export async function withinTimeout<T>(
+  call: Promise<T>,
+  timeoutMs: number = RECORDING_CALL_TIMEOUT_MS,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new RecordingCallTimedOut());
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([call, timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function ignoringUnknown(call: () => Promise<void>): Promise<void> {
   try {
-    await call();
+    await withinTimeout(call());
   } catch (error) {
     if (!(error instanceof RecordingNotFound)) throw error;
   }
+}
+
+/** A provider's message may carry the reference: only the error's name is logged. */
+function nameOf(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
 }

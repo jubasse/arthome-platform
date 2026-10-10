@@ -36,6 +36,9 @@ function lockedOf(row: ReplayAssetRow): LockedAsset {
   };
 }
 
+const ASSET_COLUMNS = `date_id, channel_id, state, recording_ref, recorded_until, stopped_at, announced_at,
+            expires_at, call_attempts`;
+
 /**
  * The asset's row, `FOR UPDATE SKIP LOCKED`: null when another pass holds it or it is gone. A
  *   caller decides again on what it locked, the candidates having been read without a lock.
@@ -45,9 +48,23 @@ export async function lockAsset(
   dateId: string,
 ): Promise<LockedAsset | null> {
   const [row] = await manager.query<ReplayAssetRow[]>(
-    `SELECT date_id, channel_id, state, recording_ref, recorded_until, stopped_at, announced_at,
-            expires_at, call_attempts
-       FROM replay_asset WHERE date_id = $1 FOR UPDATE SKIP LOCKED`,
+    `SELECT ${ASSET_COLUMNS} FROM replay_asset WHERE date_id = $1 FOR UPDATE SKIP LOCKED`,
+    [dateId],
+  );
+  return row === undefined ? null : lockedOf(row);
+}
+
+/**
+ * The asset's row, `FOR UPDATE`, waiting for the pass holding it: a call already made writes its
+ *   outcome rather than lose it to a skipped lock. Every holder is a short transaction with no
+ *   provider call. Null when the row is gone.
+ */
+export async function lockAssetWaiting(
+  manager: EntityManager,
+  dateId: string,
+): Promise<LockedAsset | null> {
+  const [row] = await manager.query<ReplayAssetRow[]>(
+    `SELECT ${ASSET_COLUMNS} FROM replay_asset WHERE date_id = $1 FOR UPDATE`,
     [dateId],
   );
   return row === undefined ? null : lockedOf(row);
@@ -98,8 +115,7 @@ export const TO_DELETING: AssetPatch = {
 };
 
 /** Through `replay_asset_calls_due`: $1 the instant, $2 the batch. */
-export const ASSETS_DUE_SQL = `SELECT date_id, channel_id, state, recording_ref, recorded_until, stopped_at, announced_at,
-            expires_at, call_attempts
+export const ASSETS_DUE_SQL = `SELECT ${ASSET_COLUMNS}
        FROM replay_asset
       WHERE call_dead_at IS NULL
         AND state IN ('${ReplayAssetState.RECORDING}', '${ReplayAssetState.PROCESSING}',

@@ -161,6 +161,28 @@ describe('the replay asset ready', () => {
   );
 
   it(
+    'goes to deleting with no event when its window has closed before the provider was ready',
+    async () => {
+      const date = await seedDate(desk, { windowHours: 1 });
+      await recordingStarted(desk, date);
+      await endRun(desk, date, 30);
+      await desk.passes.closeRecordings();
+      await desk.calls.pass();
+      desk.fake.markReady(await refOf(desk, date.dateId), 1_800);
+      desk.clock.advance(2 * 60 * MINUTE_MS);
+
+      await desk.calls.pass();
+
+      expect(await assetOf(desk, date.dateId)).toMatchObject({
+        state: ReplayAssetState.DELETING,
+        announced_at: null,
+      });
+      expect(await outboxTypesOf(desk, date.dateId)).toEqual([]);
+    },
+    CASE_MS,
+  );
+
+  it(
     'goes to deleting with no event when the date no longer has a replay by then',
     async () => {
       const date = await seedDate(desk);

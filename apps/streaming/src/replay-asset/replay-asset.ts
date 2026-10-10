@@ -104,7 +104,7 @@ export type Readiness =
 /**
  * A poll that answered ready: the replay opens from now and closes once, computed from the run's
  *   real end and the date's window (`adr-replay.md` §4), unless the date's outcome has taken the
- *   replay away by then.
+ *   replay away by then, or the window has already closed: a replay never online is not announced.
  */
 export function readinessAt(
   now: Instant,
@@ -112,11 +112,9 @@ export function readinessAt(
   facts: { readonly timing: DateTiming; readonly outcome: DateOutcome | null },
 ): Readiness {
   if (outcomeWithdrawsReplay(facts.outcome)) return { kind: 'withdrawn' };
-  return {
-    kind: 'opens',
-    availableFrom: now,
-    expiresAt: replayClosesAt(runEndedAt, facts.timing.replayWindowHours),
-  };
+  const expiresAt = replayClosesAt(runEndedAt, facts.timing.replayWindowHours);
+  if (!isAfter(expiresAt, now)) return { kind: 'withdrawn' };
+  return { kind: 'opens', availableFrom: now, expiresAt };
 }
 
 /** Only an asset whose readiness was announced has an expiry to announce. */

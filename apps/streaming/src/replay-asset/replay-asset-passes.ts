@@ -84,18 +84,15 @@ export class ReplayAssetPasses {
       const live: { date_id: string; channel_id: string; started_at: Date }[] =
         await this.dataSource.query(UNRECORDED_LIVE_RUNS_SQL, [after, batch]);
       for (const run of live) {
-        const now = this.clock.now();
-        const inserted = await this.dataSource.transaction(async (manager) => {
-          if (!shouldRecord(await readDateFacts(manager, run.date_id))) return false;
-          const rows = await manager.query<unknown[]>(
-            `INSERT INTO replay_asset (date_id, channel_id, state, recorded_from, created_at, updated_at)
-             VALUES ($1, $2, '${ReplayAssetState.RECORDING}', $3, $4, $4)
-             ON CONFLICT (date_id) DO NOTHING RETURNING date_id`,
-            [run.date_id, run.channel_id, run.started_at, now],
-          );
-          return rows.length > 0;
-        });
-        if (inserted) requested += 1;
+        // A run with no replay mode gets no row and comes back each pass: one read, no transaction.
+        if (!shouldRecord(await readDateFacts(this.dataSource.manager, run.date_id))) continue;
+        const inserted = await this.dataSource.query<unknown[]>(
+          `INSERT INTO replay_asset (date_id, channel_id, state, recorded_from, created_at, updated_at)
+           VALUES ($1, $2, '${ReplayAssetState.RECORDING}', $3, $4, $4)
+           ON CONFLICT (date_id) DO NOTHING RETURNING date_id`,
+          [run.date_id, run.channel_id, run.started_at, this.clock.now()],
+        );
+        if (inserted.length > 0) requested += 1;
       }
       const last = live.at(-1);
       if (last === undefined || live.length < batch) return requested;

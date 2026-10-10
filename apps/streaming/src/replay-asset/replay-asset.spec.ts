@@ -103,6 +103,12 @@ describe('a readiness', () => {
       kind: 'withdrawn',
     });
   });
+
+  it('is a withdrawal, never an announcement, once the window has closed', () => {
+    const closing = plusMinutes(NOW, 48 * 60);
+    expect(readinessAt(closing, NOW, facts)).toEqual({ kind: 'withdrawn' });
+    expect(readinessAt(plusMinutes(closing, -1), NOW, facts)).toMatchObject({ kind: 'opens' });
+  });
 });
 
 describe('a withdrawal', () => {

@@ -1,9 +1,15 @@
 import { nextAttemptAt } from '@arthome-platform/messaging';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ReplayAssetState } from '@arthome/core';
 
-import { RECORDING_ATTEMPTS_MAX, RECORDING_RETRY_DELAYS_MS } from './recording-calls.js';
+import {
+  RECORDING_ATTEMPTS_MAX,
+  RECORDING_CALL_TIMEOUT_MS,
+  RECORDING_RETRY_DELAYS_MS,
+  RecordingCallTimedOut,
+  withinTimeout,
+} from './recording-calls.js';
 import { RecordingCall, callDue, type ReplayAssetSnapshot } from './replay-asset.js';
 import { recordingRefOf } from '../media/media-ports.js';
 
@@ -64,5 +70,28 @@ describe('the attempts of a call', () => {
     expect(Math.max(...RECORDING_RETRY_DELAYS_MS)).toBe(300_000);
     const total = RECORDING_RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0);
     expect(total).toBeGreaterThanOrEqual(3_600_000);
+  });
+});
+
+describe('a provider call', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('times out before the shortest lease, so no other replica claims it while in flight', () => {
+    expect(RECORDING_CALL_TIMEOUT_MS).toBeLessThan(RECORDING_RETRY_DELAYS_MS[0] ?? 0);
+  });
+
+  it('fails with a timeout when the provider does not answer in time', async () => {
+    vi.useFakeTimers();
+    const call = withinTimeout(new Promise<never>(() => undefined));
+    const failed = expect(call).rejects.toBeInstanceOf(RecordingCallTimedOut);
+    await vi.advanceTimersByTimeAsync(RECORDING_CALL_TIMEOUT_MS);
+    await failed;
+  });
+
+  it('answers as the provider does within the timeout', async () => {
+    await expect(withinTimeout(Promise.resolve('answer'))).resolves.toBe('answer');
+    await expect(withinTimeout(Promise.reject(new Error('down')))).rejects.toThrow('down');
   });
 });
