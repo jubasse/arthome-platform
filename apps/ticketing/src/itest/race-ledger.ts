@@ -106,8 +106,10 @@ export function seatsOf(dataSource: DataSource, dateId: string) {
 /**
  * The ledger after a race: available, pooled (PT3), held and sold seats adding up to the capacity,
  *   one `seat` row per seat sold (a viewer's cancellation on a date still running gives its seat
- *   back to sale), refunds never above what the order paid, and each refund made once at the provider,
- *   under its key, for the amount its row owes.
+ *   back to sale), refunds never above what the order paid, and a refund made at the provider under
+ *   each key, for the amount its row owes, exactly when its row is marked made: a refund made whose
+ *   marking was lost would go dead and raise a false "money held" alert. The calls per key are not
+ *   counted, since a refund webhook asks the call again under the same key (R15, replaced).
  */
 export async function expectLedgerHolds(
   dataSource: DataSource,
@@ -144,19 +146,18 @@ export async function expectLedgerHolds(
     const owed = order.refunds.reduce((sum, { amount_minor }) => sum + Number(amount_minor), 0);
     expect(owed, order.id).toBeLessThanOrEqual(Number(order.total_minor));
   }
-  const made = await dataSource.query<{ idempotency_key: string; amount_minor: string }[]>(
-    `SELECT refund.idempotency_key, refund.amount_minor FROM order_refund AS refund
+  const refunds = await dataSource.query<
+    { idempotency_key: string; amount_minor: string; made: boolean }[]
+  >(
+    `SELECT refund.idempotency_key, refund.amount_minor, refund.refunded_at IS NOT NULL AS made
+       FROM order_refund AS refund
        JOIN seat_order AS placed ON placed.id = refund.order_id
-      WHERE placed.date_id = $1 AND refund.refunded_at IS NOT NULL`,
+      WHERE placed.date_id = $1`,
     [dateId],
   );
-  for (const { idempotency_key, amount_minor } of made) {
-    expect(fake.refundedUnder(idempotency_key)?.amountMinor, idempotency_key).toBe(
-      Number(amount_minor),
+  for (const { idempotency_key, amount_minor, made } of refunds) {
+    expect(fake.refundedUnder(idempotency_key)?.amountMinor ?? null, idempotency_key).toBe(
+      made ? Number(amount_minor) : null,
     );
-    expect(
-      fake.calls.filter((call) => call === `refund ${idempotency_key}`),
-      idempotency_key,
-    ).toHaveLength(1);
   }
 }

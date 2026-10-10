@@ -13,6 +13,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { Job, Worker } from 'bullmq';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -50,6 +51,7 @@ import {
   FakePaymentScenario,
   intentRefOf,
 } from '../payments/fake-payment-provider.js';
+import { IntentCancellationProcessor } from '../payments/intent-cancellation.processor.js';
 import { OwedCallRelay, ProviderCallProducer } from '../payments/owed-call-relay.js';
 import { PaymentWorker } from '../payments/payment-worker.js';
 import { PaymentWorkerModule } from '../payments/payment-worker.module.js';
@@ -61,6 +63,7 @@ import {
   type ProviderCallSchedules,
 } from '../payments/provider-call-queues.js';
 import { ProviderCallQueuesModule } from '../payments/provider-call-queues.module.js';
+import { RefundProcessor } from '../payments/refund.processor.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 
 /**
@@ -102,24 +105,26 @@ let clock: FixedClock;
 let fake: FakePaymentProvider;
 let relay: OwedCallRelay;
 
-/** Each call that reached the fake, by key, and when, read off a wrapper of the suite's own. */
+/** Each call that reached the fake, by key, read off a wrapper of the suite's own. */
 const attempts = new Map<string, number>();
-const refundCalls: number[] = [];
-const cancellationCalls: number[] = [];
+const calls = { refunds: 0, cancellations: 0 };
+/** When each queue's limiter counted each job it started, retries included. */
+const refundStarts: number[] = [];
+const cancellationStarts: number[] = [];
 /** Refused as a provider refuses a request, never as an outage, while listed. */
 const refusedForGood = new Set<string>();
 
 const commands = (): CommandBus => app.get(CommandBus);
 
-function recordCall(key: string, instants: number[]): void {
+function recordCall(key: string, queue: keyof typeof calls): void {
   attempts.set(key, (attempts.get(key) ?? 0) + 1);
-  instants.push(performance.now());
+  calls[queue] += 1;
 }
 
 function watchProviderCalls(): void {
   const refund = fake.refund.bind(fake);
   fake.refund = (request: RefundRequest) => {
-    recordCall(request.idempotencyKey, refundCalls);
+    recordCall(request.idempotencyKey, 'refunds');
     if (refusedForGood.has(request.idempotencyKey)) {
       return Promise.reject(new Error(`fake provider refuses ${request.idempotencyKey}`));
     }
@@ -127,30 +132,43 @@ function watchProviderCalls(): void {
   };
   const cancelIntent = fake.cancelIntent.bind(fake);
   fake.cancelIntent = (intentRef: string, idempotencyKey: string) => {
-    recordCall(idempotencyKey, cancellationCalls);
+    recordCall(idempotencyKey, 'cancellations');
     return cancelIntent(intentRef, idempotencyKey);
   };
 }
 
-/**
- * BullMQ's limiter is a fixed window opened by the first job it lets through: one second may
- *   straddle two windows, and any span holds at most one window more than the seconds it lasts.
- */
-function peakPerSecond(instants: readonly number[]): number {
-  let peak = 0;
-  for (const [index, start] of instants.entries()) {
-    const within = instants.slice(index).filter((instant) => instant < start + 1_000).length;
-    peak = Math.max(peak, within);
-  }
-  return peak;
+function watchJobStarts(worker: Worker, starts: number[]): void {
+  worker.on('active', (job: Job) => {
+    if (job.processedOn !== undefined) starts.push(job.processedOn);
+  });
 }
 
-function assertWithinLimiter(instants: readonly number[], max: number): void {
-  const first = instants[0] ?? 0;
-  const spanMs = (instants.at(-1) ?? first) - first;
-  expect(peakPerSecond(instants)).toBeLessThanOrEqual(2 * max);
-  expect(instants.length).toBeLessThanOrEqual(max * (Math.ceil(spanMs / 1_000) + 2));
+/**
+ * `processedOn` is read off the worker's clock before BullMQ's script runs, the window off Redis's:
+ *   the next window's first job was measured 1,000 to 1,003 ms after the previous one's, so a
+ *   window is taken to close this much early.
+ */
+const WORKER_CLOCK_SLACK_MS = 20;
+
+/**
+ * BullMQ's limiter is a fixed window, opened by the first job it starts once the previous window
+ *   closed; rebuilt from each start, its job's `processedOn`, the jobs each window started.
+ */
+function limiterWindowsOf(starts: readonly number[], durationMs: number): number[] {
+  const windows: number[] = [];
+  let closesAt = -Infinity;
+  for (const start of [...starts].sort((a, b) => a - b)) {
+    if (start >= closesAt) {
+      windows.push(0);
+      closesAt = start + durationMs - WORKER_CLOCK_SLACK_MS;
+    }
+    windows[windows.length - 1] = (windows.at(-1) ?? 0) + 1;
+  }
+  return windows;
 }
+
+const busiestWindowOf = (starts: readonly number[], durationMs: number): number =>
+  Math.max(0, ...limiterWindowsOf(starts, durationMs));
 
 async function until(what: string, ready: () => Promise<boolean>, timeoutMs = 60_000) {
   const deadline = performance.now() + timeoutMs;
@@ -253,6 +271,8 @@ beforeAll(async () => {
     ],
   });
   relay = new OwedCallRelay(dataSource, app.get(ProviderCallProducer), clock, DRILL);
+  watchJobStarts(app.get(RefundProcessor).worker, refundStarts);
+  watchJobStarts(app.get(IntentCancellationProcessor).worker, cancellationStarts);
 }, STARTUP_MS);
 
 afterAll(async () => {
@@ -376,13 +396,22 @@ describe('the payment provider down (adr-ticketing.md §12)', () => {
         errors.mockRestore();
         warnings.mockRestore();
       }
+      const busiest = {
+        refunds: busiestWindowOf(refundStarts, REFUND_RATE_LIMIT.duration),
+        cancellations: busiestWindowOf(cancellationStarts, INTENT_CANCELLATION_RATE_LIMIT.duration),
+      };
       process.stdout.write(
-        `provider down for ${outageMs.toFixed(0)} ms; peak calls a second: refunds ` +
-          `${String(peakPerSecond(refundCalls))}, cancellations ${String(peakPerSecond(cancellationCalls))}\n`,
+        `provider down for ${outageMs.toFixed(0)} ms; most jobs a limiter window started: ` +
+          `refunds ${String(busiest.refunds)}, cancellations ${String(busiest.cancellations)}\n`,
       );
 
-      assertWithinLimiter(refundCalls, REFUND_RATE_LIMIT.max);
-      assertWithinLimiter(cancellationCalls, INTENT_CANCELLATION_RATE_LIMIT.max);
+      // At the limit, never past it: the drill's bursts fill a window.
+      expect(busiest).toEqual({
+        refunds: REFUND_RATE_LIMIT.max,
+        cancellations: INTENT_CANCELLATION_RATE_LIMIT.max,
+      });
+      expect(refundStarts.length).toBeGreaterThanOrEqual(calls.refunds);
+      expect(cancellationStarts.length).toBeGreaterThanOrEqual(calls.cancellations);
       expect(fake.refundsMade).toBe(REFUNDS - 1);
       const events = await refundedEventsPerOrder();
       for (const { order_id, idempotency_key } of owed) {

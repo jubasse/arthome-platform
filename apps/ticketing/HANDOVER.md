@@ -910,18 +910,30 @@ adr-ticketing.md §12's races and failure drills, on real Postgres, Redis, Kafka
 - **The races** (`orders/refund-races.itest.ts`, `payments/chargeback.itest.ts`), 20 orders at once
   each through `Promise.allSettled`, a loser's refusal named, then the ledger
   (`src/itest/race-ledger.ts`): available, held and sold seats adding up to the capacity, one `seat`
-  row per seat sold, no order refunded above what it paid, each refund made once at the provider
-  under its key for its row's amount.
+  row per seat sold, no order refunded above what it paid, and for every refund row, made or not, a
+  refund at the provider under its key, of the row's amount, exactly when the row is made. Calls
+  per key are not counted: a refund webhook asks the call again under the same key (R15).
   - A date's cancellation against 80 payments confirmed before it, with it, during its settlement
     and after it (past their holds): every order refunded once, in full, `date_cancelled`, none left
     `paid`, every seat `refunded` after one `seat.cancelled` `DATE_CANCELLED`, no seat for the late
-    ones. Late payments alone the same, never `hold_expired_capacity_lost`.
+    ones. Late payments alone the same, never `hold_expired_capacity_lost`. The 20 paid with the
+    cancellation are applied while its transaction is held open before it locks the date, then race
+    its commit: 7 of 20 seated before it, three runs out of three, bounded above 0 and below 20. The
+    20 paid during the settlement all see the cancellation: no race with the enumeration, which
+    `late-payment.itest.ts` covers.
   - Two paths to one refund: the date's refund job against duplicated successes applied by two
     workers, for orders paid before and orders seated by the payment itself: one call, one
-    `order.refunded`.
-  - A viewer's `cancelSeat` and the studio's partial `refundSeat` racing the date's refund: the
-    paid total refunded once, each seat cancelled once. Measured interleavings, viewer first then
-    after the fact: 12/8 and 15/5 over two runs. **Found and fixed**: a cancellation committed
+    `order.refunded`. And R15's path: 20 refunds made at the provider, their answers lost, their
+    `refund_succeeded` applied by four workers while four relay passes run their jobs: one refund
+    per key, each row made with the provider's ref, one `order.refunded`. At the race's end, five
+    runs: all 20 webhooks applied, 0 to 20 rows made, 2 to 20 reruns still asked.
+  - A viewer's `cancelSeat` and the studio's partial `refundSeat` racing the date's refund, a relay
+    pass in the race: the paid total refunded once, each seat cancelled once. The race only plays
+    the command first: viewer first then after the fact 13/7 to 15/5, the studio first 20/20, the
+    settlement first never, since the commands take the pool before the date's settlement runs.
+    That order is forced in a case of its own per command: the settlement held on its
+    `seat.cancelled` insert with the order locked, the command seen waiting on the order's row,
+    then refused `seat.not_active`, one `date_cancelled` refund of the paid total. **Found and fixed**: a cancellation committed
     between `cancelSeat`'s read of the date and its counter move gave the seat back to sale on a
     cancelled date, refunded `viewer_request` (§0o, the PT2 review's m3).
   - Chargebacks: a dispute and its duplicate; one before its confirmation; one before or after a
@@ -930,9 +942,10 @@ adr-ticketing.md §12's races and failure drills, on real Postgres, Redis, Kafka
     disputed order. Never a second refund, nothing on the viewer's side.
 - **Provider down** (`drills/provider-down.itest.ts`, about 5 s of outage on a 1/4/8/8 s schedule):
   a purchase 503 with its hold released; 50 refunds and 15 intent cancellations each tried again,
-  none dead, then each made once; the limiters held (BullMQ counts fixed windows opened by the first
-  job, so a sliding second may hold two: peaks of 37 refunds and 9 cancellations, within twice 20
-  and 5); a refund refused for good dead after its five attempts, then replayed once.
+  none dead, then each made once; the limiters held at their limit: BullMQ's fixed windows rebuilt
+  from each job's `processedOn` (a window opened by the first job started once the last closed),
+  the busiest started exactly 20 refunds and 5 cancellations, three runs out of three; a refund
+  refused for good dead after its five attempts, then replayed once.
 - **Redis down** (`drills/redis-down.itest.ts`, about 22 s): purchases, the expiry, the publisher
   and the settlement on Postgres alone, readiness up, 30 refunds owed, the relay failing fast and
   stamping nothing; Redis back, the same worker makes each call once.

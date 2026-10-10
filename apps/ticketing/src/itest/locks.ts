@@ -61,15 +61,25 @@ async function backendsWaiting(dataSource: DataSource, onAdvisory: boolean): Pro
   return row?.waiting ?? 0;
 }
 
-/** Resolves once `count` backends of this database wait on an advisory lock. */
-export async function untilWaitingOnAdvisoryLock(dataSource: DataSource, count = 1): Promise<void> {
+async function untilWaiting(dataSource: DataSource, onAdvisory: boolean, count: number) {
   const deadline = performance.now() + SEEN_WAITING_WITHIN_MS;
-  while ((await backendsWaiting(dataSource, true)) < count) {
+  while ((await backendsWaiting(dataSource, onAdvisory)) < count) {
     if (performance.now() > deadline) {
-      throw new Error(`no ${String(count)} backends waiting on an advisory lock`);
+      const lock = onAdvisory ? 'an advisory' : 'a row';
+      throw new Error(`no ${String(count)} backends waiting on ${lock} lock`);
     }
     await delay(POLL_MS);
   }
+}
+
+/** Resolves once `count` backends of this database wait on an advisory lock. */
+export function untilWaitingOnAdvisoryLock(dataSource: DataSource, count = 1): Promise<void> {
+  return untilWaiting(dataSource, true, count);
+}
+
+/** Resolves once `count` backends of this database wait on a row lock another transaction holds. */
+export function untilWaitingOnRowLock(dataSource: DataSource, count = 1): Promise<void> {
+  return untilWaiting(dataSource, false, count);
 }
 
 /**
