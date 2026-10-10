@@ -9,6 +9,8 @@ import { OrderState, type Clock, intentCancelIdempotencyKey } from '@arthome/cor
 import {
   FAIL_FAST_CONNECTION,
   INTENT_CANCELLATION_JOB,
+  JOB_ACTIVE,
+  JOB_DELAYED,
   PRODUCER_TIMEOUT_MS,
   PROVIDER_CALL_SCHEDULES,
   REFUND_JOB,
@@ -24,6 +26,8 @@ import { SweeperLoop } from '../sweeper-loop.js';
 
 const RELAY_EVERY_MS = 1_000;
 export const RELAY_BATCH = 500;
+/** Each rerun asks Redis about its job while the claim holds its row: a smaller batch. */
+export const RERUN_BATCH = 50;
 
 /**
  * A queue as registered, its options and name, on the fail-fast connection: with Redis down a pass
@@ -130,14 +134,14 @@ export class OwedCallRelay extends SweeperLoop {
     super(RELAY_EVERY_MS, RELAY_BATCH);
   }
 
-  /** One pass, the largest of the batches it settled. */
+  /** One pass, the largest of the batches it settled, a full rerun batch counted as a full one. */
   public async relayDue(): Promise<number> {
     const lost = await this.giveUpLostRefunds();
     await this.producer.ready();
     const refunds = await this.relayRefunds();
     const reruns = await this.rerunAskedRefunds();
     const cancellations = await this.relayIntentCancellations();
-    return Math.max(lost, refunds, reruns, cancellations);
+    return Math.max(lost, refunds, reruns === RERUN_BATCH ? RELAY_BATCH : reruns, cancellations);
   }
 
   /**
@@ -193,22 +197,32 @@ export class OwedCallRelay extends SweeperLoop {
     return this.dataSource.transaction(async (manager) => {
       const asked = await manager.query<{ id: string; idempotency_key: string; owed: boolean }[]>(
         RERUN_ASKED_REFUNDS_SQL,
-        [RELAY_BATCH],
+        [RERUN_BATCH],
       );
-      const answered: { id: string }[] = [];
-      for (const { id, idempotency_key, owed } of asked) {
-        const job = owed ? await this.producer.refunds.getJob(jobIdOf(idempotency_key)) : undefined;
-        if (job !== undefined && (await job.isActive())) continue;
-        if (job !== undefined && (await job.isDelayed())) await promoteUnlessMoved(job);
-        answered.push({ id });
-      }
+      const answers = await Promise.all(
+        asked.map(async ({ id, idempotency_key, owed }) => ({
+          id,
+          answered: !owed || (await this.rerunJob(jobIdOf(idempotency_key))),
+        })),
+      );
+      const answered = answers.filter(({ answered }) => answered).map(({ id }) => id);
       if (answered.length === 0) return 0;
       await manager.query(
         'UPDATE order_refund SET rerun_asked_at = NULL WHERE id = ANY($1::uuid[])',
-        [answered.map(({ id }) => id)],
+        [answered],
       );
       return answered.length;
     });
+  }
+
+  /** False while the job runs, so the next pass asks again. */
+  private async rerunJob(jobId: string): Promise<boolean> {
+    const job = await this.producer.refunds.getJob(jobId);
+    if (job === undefined) return true;
+    const state = await job.getState();
+    if (state === JOB_ACTIVE) return false;
+    if (state === JOB_DELAYED) await promoteUnlessMoved(job);
+    return true;
   }
 
   private relayIntentCancellations(): Promise<number> {
@@ -236,7 +250,7 @@ async function promoteUnlessMoved(job: Job): Promise<void> {
   try {
     await job.promote();
   } catch (error) {
-    if (await job.isDelayed()) throw error;
+    if ((await job.getState()) === JOB_DELAYED) throw error;
   }
 }
 

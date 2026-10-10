@@ -1,6 +1,6 @@
 import { JITTER_RATIO, attemptsAllowedBy, retryDelayAfter } from '@arthome-platform/messaging';
 import type { Logger } from '@nestjs/common';
-import type { DefaultJobOptions, Job, Worker, WorkerListener } from 'bullmq';
+import type { DefaultJobOptions, Job, JobState, Worker, WorkerListener } from 'bullmq';
 
 import { HOUR_MS } from '@arthome/core';
 
@@ -107,6 +107,10 @@ export function isLastAttempt(job: Job): boolean {
 
 /** BullMQ's worker event for a failed job: a job's state, not an order's. */
 export const JOB_FAILED: keyof WorkerListener = 'failed';
+
+/** BullMQ's states of a job a worker is running, and of one waiting its backoff. */
+export const JOB_ACTIVE: JobState = 'active';
+export const JOB_DELAYED: JobState = 'delayed';
 
 /**
  * Failed by BullMQ before any attempt ran, stalled past its bound: `process()` never sees it. The
