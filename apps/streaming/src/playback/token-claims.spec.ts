@@ -69,6 +69,13 @@ describe('tokenExpiresAt', () => {
     expect(() => tokenExpiresAt(WatchScope.PREVIEW, NOW, null)).toThrow();
   });
 
+  it("never outlives core's lifetime on a preview whose cover reaches further", () => {
+    const cover = plusSeconds(NOW, PLAYBACK_TOKEN_LIFETIME_SECONDS + 600);
+    expect(tokenExpiresAt(WatchScope.PREVIEW, NOW, cover)).toBe(
+      plusSeconds(NOW, PLAYBACK_TOKEN_LIFETIME_SECONDS),
+    );
+  });
+
   it("renews at core's interval, and a preview before its budget runs out", () => {
     expect(renewAfterSecondsOf(WatchScope.FULL, 0)).toBe(PLAYBACK_RENEWAL_INTERVAL_SECONDS);
     expect(renewAfterSecondsOf(WatchScope.PREVIEW, 20)).toBe(20);

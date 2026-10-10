@@ -4,6 +4,7 @@ import type { QualityCap } from '@arthome/contracts/streaming';
 import {
   PLAYBACK_RENEWAL_INTERVAL_SECONDS,
   WatchScope,
+  earliest,
   playbackTokenExpiresAt,
   previewRenewAfterSeconds,
   type Instant,
@@ -45,7 +46,7 @@ export function newSessionScope(): string {
   return randomBytes(16).toString('base64url');
 }
 
-/** A full token lives core's 120 s; a preview's never outlives the budget the meter covers. */
+/** A token never outlives core's 120 s; a preview's never outlives the budget the meter covers either. */
 export function tokenExpiresAt(
   scope: TicketScope,
   now: Instant,
@@ -53,7 +54,7 @@ export function tokenExpiresAt(
 ): Instant {
   if (scope === WatchScope.FULL) return playbackTokenExpiresAt(now);
   if (previewCover === null) throw new Error('a preview token is never issued without a cover');
-  return previewCover;
+  return earliest(playbackTokenExpiresAt(now), previewCover);
 }
 
 export function renewAfterSecondsOf(scope: TicketScope, previewSecondsLeft: number): number {
