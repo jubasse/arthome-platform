@@ -691,4 +691,11 @@ describe('SeatOrder, the refunds a webhook may report made', () => {
     ]);
     expect(refundedEvents(order)).toHaveLength(1);
   });
+
+  it('never names a refund already made, even one the unexplained amount would cover', () => {
+    const order = paidOwing(500, 1000);
+    order.refundMade(FIRST, 're_1', LATER);
+
+    expect(order.refundsTheProviderMayHaveMade(money(1000, 'EUR'))).toEqual([]);
+  });
 });
