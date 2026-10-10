@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, IsNull } from 'typeorm';
 
 import { runConsoleOf, type RunConsole } from './run-console.js';
+import { sampleWithin } from './run-desk-call.js';
 import { IncidentRow, RunRow } from './run.entity.js';
 import { incidentSnapshotOf, runSnapshotOf } from './run.typeorm-repository.js';
 import type { LiveIngestProvider, StreamingMetricsProvider } from '../media/media-ports.js';
@@ -17,7 +18,7 @@ export class RunConsoleReader {
     @Inject(STREAMING_METRICS_PROVIDER) private readonly metrics: StreamingMetricsProvider,
   ) {}
 
-  public async consoleOf(dateId: string): Promise<RunConsole | null> {
+  public async consoleOf(dateId: string, remainingMs: number): Promise<RunConsole | null> {
     const [row, incident] = await this.dataSource.transaction(
       'REPEATABLE READ',
       async (manager) => {
@@ -32,7 +33,7 @@ export class RunConsoleReader {
     );
     if (row === null) return null;
     const run = runSnapshotOf(row, incident);
-    const sample = await this.metrics.sample(run.streamPath);
+    const sample = await sampleWithin(remainingMs, this.metrics, run.streamPath);
     return runConsoleOf(
       run,
       incident === null ? null : incidentSnapshotOf(incident),

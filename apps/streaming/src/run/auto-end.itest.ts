@@ -3,9 +3,16 @@ import { fromBinary } from '@bufbuild/protobuf';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { RUN_AUTO_END_MINUTES, RunState, endsAt, plusMinutes, toEpochMs } from '@arthome/core';
+import {
+  HOLD_SCREEN_AUTO_AFTER_SECONDS_DEFAULT,
+  RUN_AUTO_END_MINUTES,
+  RunState,
+  endsAt,
+  plusMinutes,
+  toEpochMs,
+} from '@arthome/core';
 
-import { EndRunsByThemselves } from './run-passes.js';
+import { EndRunsByThemselves, SweepRunPresence } from './run-passes.js';
 import {
   CASE_MS,
   STARTUP_MS,
@@ -95,6 +102,35 @@ describe('the end by itself', () => {
   );
 
   it(
+    'resolves, as the system, the hold screen the presence pass raised over the lost feed',
+    async () => {
+      const { run, scheduledEnd } = await onAir();
+      await desk.fake.drop(run.streamPath);
+      desk.clock.advance(HOLD_SCREEN_AUTO_AFTER_SECONDS_DEFAULT * 1000);
+      await desk.commands.execute(new SweepRunPresence());
+      expect((await endOf(run))?.state).toBe(RunState.INTERRUPTED);
+      const written = (await outboxOf(desk, run.dateId)).length;
+
+      advanceTo(plusMinutes(scheduledEnd, RUN_AUTO_END_MINUTES));
+      await endPass();
+
+      expect((await endOf(run))?.state).toBe(RunState.ENDED);
+      const open = await desk.dataSource.query<{ id: string }[]>(
+        'SELECT id FROM incident WHERE run_id = $1 AND resolved_at IS NULL',
+        [run.runId],
+      );
+      expect(open).toEqual([]);
+      const rows = (await outboxOf(desk, run.dateId)).slice(written);
+      expect(rows.map(({ type }) => type)).toEqual([
+        'streaming.incident.resolved.v1',
+        'streaming.run.ended.v1',
+        'streaming.run.state_changed.v1',
+      ]);
+    },
+    CASE_MS,
+  );
+
+  it(
     'after an overrun, comes fifteen minutes after the last loss',
     async () => {
       const { run, scheduledEnd } = await onAir();
@@ -135,8 +171,8 @@ describe('the end by itself', () => {
     async () => {
       const run = await preparedRun(desk);
       await desk.dataSource.query(
-        'UPDATE run SET state = $2, started_at = now(), version = 4 WHERE id = $1',
-        [run.runId, RunState.ON_AIR],
+        'UPDATE run SET state = $2, started_at = $3, version = 4 WHERE id = $1',
+        [run.runId, RunState.ON_AIR, desk.clock.now()],
       );
       const scheduledEnd = endsAt(timingOf(desk.clock.now()));
       advanceTo(plusMinutes(scheduledEnd, RUN_AUTO_END_MINUTES));

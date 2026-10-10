@@ -191,11 +191,17 @@ two sweeper passes. The `Run` aggregate holds the row and its open incident (`da
   unless PS2's projected publication is `technical` (`none` when none is projected), and
   `state.conflict` while an incident is open: `on_air` always means no veil. No route reads a
   profile or a device, so none calls `profileOfPrincipal` or `assertSameCaller`: the principal's
-  user is the actor. Per-role authorisation is auth slice B's; `DenyInProductionGuard` stays.
+  user is the actor, and a write without one, or on the `system` surface, is refused 403
+  `api.forbidden` (`run-desk-call.ts`). Per-role authorisation is auth slice B's;
+  `DenyInProductionGuard` stays. The check and the console read the metrics sample outside any
+  transaction, within the caller's deadline (`sampleWithin`, 504 past it): a slow provider never
+  holds the run's lock.
 - **Incidents.** One open per run (`incident_open`, and the aggregate decides first); an insert is
   `ON CONFLICT DO NOTHING`, so a reused `incidentId` answers 409 `state.conflict`. One raised on air
   interrupts the run with its cause; elsewhere the state stays. Resolving returns an interrupted
-  run to air; an incident already resolved answers its first resolution.
+  run to air; an incident already resolved answers its first resolution. Ending a run, by hand or
+  by itself, resolves its open incident by the system first: `incident.resolved`, `run.ended`,
+  then `run.state_changed`.
 - **The passes** (`run-passes.ts`, both in the sweeper every second, `SweeperLoop`). Each reads its
   candidates without a lock through its partial index, then claims each run `FOR UPDATE SKIP
   LOCKED` in its own transaction and decides again on what it locked, so replicas share them.
@@ -208,7 +214,7 @@ two sweeper passes. The `Run` aggregate holds the row and its open incident (`da
   `workerFailed` raises an automatic `compatibility_worker_failed` incident, lifted by hand; with
   one open it is logged. The end pass (D-123): every live run with no publisher, page by page,
   ends at `runAutoEndsAt(endsAt(timing), publisher_lost_at, false)`, `ended_at` the last loss or
-  the scheduled end, `ended_by` the system; a date with no timing never ends by itself, logged once
+  the scheduled end, never before `started_at`, `ended_by` the system; a date with no timing never ends by itself, logged once
   per run and process.
 - **Events** on `arthome.streaming.run`, key `date_id`: `run.technical_check_passed` (each pass,
   `passed_at` now), `run.started`, `run.ended` (no viewer peak: none is measured),
@@ -232,27 +238,27 @@ already drafted.
 
 | Suite | What |
 | --- | --- |
-| `run/run.aggregate.spec.ts` | each move through `assertRunTransition`, stale versions, the check required, the publication guard, no air under an incident; the first pass recorded; incidents interrupt on air only, one open, resolved twice; presence never moves the version; the grace, the hold screen at its delay, D-124's lift, the worker failure; the end by itself |
+| `run/run.aggregate.spec.ts` | each move through `assertRunTransition`, stale versions, the check required, the publication guard, no air under an incident; the first pass recorded; incidents interrupt on air only, one open, resolved twice; presence never moves the version; the grace, the hold screen at its delay, D-124's lift, the worker failure; the end by itself, never before the start; an open incident resolved by the system at the end |
 | `run/stream-key.spec.ts` | derivation, digest, constant-time match, the path's 128 bits, the key absent from the snapshot, the events and the console |
 | `run/prepare-run.message.spec.ts`, `run/prepare-run.handler.itest.ts` | the draft read into `PrepareRun`, a non-UUID or a missing `occurred_at` dead-lettered; a run per draft, `duplicate`, a second draft `superseded`, the digest kept and never the key |
-| `run/run-desk.http.itest.ts` | the eight routes under `guardDeclaredResponses(streamingServiceApi)`: the console, a replay, a stale version, a move off the table, `goOnAir`'s three refusals, no deadline or key refused, 403 for another BFF, the outbox rows in order on the date's key |
+| `run/run-desk.http.itest.ts` | the eight routes under `guardDeclaredResponses(streamingServiceApi)`: the console, a replay, a stale version, a move off the table, `goOnAir`'s three refusals, no deadline or key refused, 403 for another BFF, 403 for a write with no user or on the system surface, the outbox rows in order on the date's key |
 | `run/authorize-ingest.itest.ts` | the right key accepted; another key, an unknown path, a retired generation, an ended run, a busy run refused; nothing accepted that is refused; no key in the logs |
-| `run/technical-check.itest.ts` | each of `TECHNICAL_CHECK_FAILURES` from a fed sample; a pass's payload with `passed_at`, the first pass kept; refused on an ended run |
+| `run/technical-check.itest.ts` | each of `TECHNICAL_CHECK_FAILURES` from a fed sample; a pass's payload with `passed_at`, the first pass kept; refused on an ended run; a hanging sample read outside the run's lock, 504 at the deadline |
 | `run/incidents.itest.ts` | one open at a time, a reused id 409, refused on an ended run, `readRunFacts`' veil, resolve twice answers the first resolution |
 | `run/grace-and-hold-screen.itest.ts` | a two-second drop writes nothing; "publisher gone" and its clearing at one version; the hold screen at its delay, lifted by the feed's return; one raised by hand stays; a final worker failure |
 | `run/run-races.itest.ts` | `goOnAir` against the automatic incident, two `raiseIncident`, the feed's return against the pass, two sweepers on the same runs |
-| `run/auto-end.itest.ts` | the end fifteen minutes after the later of the scheduled end and the last loss, `ended_at` the loss, `ended_by` the system; never with a publisher online; at the scheduled end with none ever online; never without a timing |
+| `run/auto-end.itest.ts` | the end fifteen minutes after the later of the scheduled end and the last loss, `ended_at` the loss, `ended_by` the system; the presence pass's hold screen resolved before `run.ended`; never with a publisher online; at the scheduled end with none ever online; never without a timing |
 | `run/date-facts.itest.ts` | the run desk on PS2's own `readDateFacts`: `goOnAir` refused from `none` and from the projected state, on air from `technical`, the end by itself from the projected timing |
 | `run/run-passes-plan.itest.ts` | both passes on their index over 50,000 ended runs |
 
 **Gaps**
 
-- The technical check and the console read the metrics port in the request, the check under the
-  run's lock: in process with the fake; a real adapter's call must be bounded there.
-- A run ended with an incident open keeps it open, and `readRunFacts` serves it: nothing resolves it
-  at the end.
+- Two publishers on one key race the authorizer: both are accepted inside the authorise-to-online
+  window, and the first one's loss clears presence under the second. The real adapter's slice
+  gives the ports a session id, which `publisherOnline` records and `publisherOffline` matches.
 - The run desk resolving the automatic hold screen while the feed is still lost puts the run on
-  air, and the next presence pass raises it again: the veil stays true to the feed.
+  air, and the next presence pass raises it again within a second: the studio BFF must tell the
+  operator that only the feed's return or End lifts it.
 - The hold screen's delay and the bitrate floor are core's defaults until a channel serves its own
   (second phase); reveal, rotation, health series, chapters and the viewer counts are the second
   phase too.

@@ -5,6 +5,8 @@ import {
 } from '@arthome-platform/http-edge';
 import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 
 import {
   ApiErrorCode,
@@ -26,8 +28,9 @@ import {
   type StudioIncident,
   type TechnicalCheckAnswer,
 } from './run-console.js';
+import { sampleWithin } from './run-desk-call.js';
 import { CheckRun, MoveRun, RaiseIncident, ResolveIncident } from './run-desk.commands.js';
-import { IncidentRow } from './run.entity.js';
+import { IncidentRow, RunRow } from './run.entity.js';
 import { assertNever } from '../assert-never.js';
 import { CLOCK } from '../clock.js';
 import {
@@ -101,8 +104,8 @@ export class MoveRunHandler implements ICommandHandler<MoveRun> {
 
 /**
  * D-114: a feed received on the date's path (the authorizer admits only its key), in codecs the
- *   chain carries, above the floor. The sample is read under the run's lock, which a real
- *   adapter's call then bounds.
+ *   chain carries, above the floor. The path never changes once prepared, so the sample is read
+ *   before the transaction, within the caller's deadline.
  */
 @CommandHandler(CheckRun)
 export class CheckRunHandler implements ICommandHandler<CheckRun> {
@@ -111,14 +114,24 @@ export class CheckRunHandler implements ICommandHandler<CheckRun> {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(LIVE_INGEST_PROVIDER) private readonly ingest: LiveIngestProvider,
     @Inject(STREAMING_METRICS_PROVIDER) private readonly metrics: StreamingMetricsProvider,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
-  public execute({ dateId, call }: CheckRun): Promise<MemorisedResponse<TechnicalCheckAnswer>> {
+  public async execute({
+    dateId,
+    remainingMs,
+    call,
+  }: CheckRun): Promise<MemorisedResponse<TechnicalCheckAnswer>> {
+    const prepared = await this.dataSource.manager.findOne(RunRow, {
+      where: { date_id: dateId },
+      select: { stream_path: true },
+    });
+    if (prepared === null) throw noRun();
+    const sample = await sampleWithin(remainingMs, this.metrics, prepared.stream_path);
     return this.transactions.run(({ manager, runs }) =>
       runIdempotentlyVersioned(manager, call.idempotency, this.clock, async () => {
         const run = await runs.findByDate(dateId);
         if (run === null) throw noRun();
-        const sample = await this.metrics.sample(run.snapshot.streamPath);
         const failures = technicalCheckFailuresOf(
           {
             feedReceived: sample !== null,

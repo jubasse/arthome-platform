@@ -277,6 +277,25 @@ describe('incidents', () => {
     expect(run.resolveIncident(INCIDENT_ID, ACTOR, later)).toBe(false);
     expect(run.snapshot.version).toBe(5);
   });
+
+  it('still open when the run ends, are resolved by the system first, in one version', () => {
+    const run = runIn(RunState.ON_AIR);
+    run.raiseIncident(raised, ACTOR, NOW);
+    run.uncommit();
+    const later = plusMinutes(NOW, 2);
+    run.end(4, ACTOR, later);
+    expect(run.snapshot).toMatchObject({
+      state: RunState.ENDED,
+      version: 5,
+      incident: { id: INCIDENT_ID, resolvedAt: later, resolvedBy: null },
+    });
+    expect(run.openIncident).toBeNull();
+    expect(run.getUncommittedEvents()).toEqual([
+      new IncidentResolved(DATE_ID, INCIDENT_ID, SYSTEM_ACTOR, later),
+      new RunEnded(DATE_ID, CHANNEL_ID, later, 120, ACTOR, later),
+      new RunStateChanged(DATE_ID, RunState.ENDED, null, false, later),
+    ]);
+  });
 });
 
 describe('presence', () => {
@@ -394,6 +413,13 @@ describe('the end by itself (D-123)', () => {
     expect(run.endByItself(scheduledEnd, plusMinutes(lostAt, 14))).toBe(false);
     expect(run.endByItself(scheduledEnd, plusMinutes(lostAt, 15))).toBe(true);
     expect(run.snapshot.endedAt).toBe(lostAt);
+  });
+
+  it('never ends before the start: a feed lost in rehearsal ends the run at its start', () => {
+    const run = runIn(RunState.ON_AIR, lostSince(plusMinutes(NOW, -5)));
+    expect(run.endByItself(scheduledEnd, plusMinutes(scheduledEnd, 15))).toBe(true);
+    expect(run.snapshot.endedAt).toBe(NOW);
+    expect(run.getUncommittedEvents()[0]).toMatchObject({ kind: 'RunEnded', durationSec: 0 });
   });
 
   it('never while a publisher is online, overrunning or not', () => {

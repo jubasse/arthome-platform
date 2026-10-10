@@ -155,14 +155,17 @@ export class Run extends AggregateRoot<RunEvent> {
 
   /**
    * D-123: a run left on air ends at `runAutoEndsAt`, its end the last publisher's loss, or the
-   *   scheduled end when none was ever online. False while a publisher is online, or before then.
+   *   scheduled end when none was ever online, never before its start (a feed lost in rehearsal).
+   *   False while a publisher is online, or before then.
    */
   public endByItself(scheduledEndsAt: Instant, now: Instant): boolean {
-    const { state, publisherLostAt, publisherOnlineSince, version } = this.current;
+    const { state, publisherLostAt, publisherOnlineSince, startedAt, version } = this.current;
     if (state !== RunState.ON_AIR && state !== RunState.INTERRUPTED) return false;
     const endsAt = runAutoEndsAt(scheduledEndsAt, publisherLostAt, publisherOnlineSince !== null);
     if (endsAt === null || isAfter(endsAt, now)) return false;
-    this.endAt(version + 1, publisherLostAt ?? scheduledEndsAt, SYSTEM_ACTOR, now);
+    const lastFeed = publisherLostAt ?? scheduledEndsAt;
+    const endedAt = startedAt !== null && isAfter(startedAt, lastFeed) ? startedAt : lastFeed;
+    this.endAt(version + 1, endedAt, SYSTEM_ACTOR, now);
     return true;
   }
 
@@ -269,10 +272,21 @@ export class Run extends AggregateRoot<RunEvent> {
     this.applyStateChanged(now);
   }
 
+  /** An incident still open is resolved by the system first: an ended run carries no veil. */
   private endAt(version: number, endedAt: Instant, actor: RunActor, now: Instant): void {
     assertRunTransition(this.current.state, RunState.ENDED, this.technicalCheckPassed);
+    const open = this.openIncident;
     const { dateId, channelId, startedAt } = this.current;
-    this.current = frozen({ ...this.current, state: RunState.ENDED, endedAt, version });
+    this.current = frozen({
+      ...this.current,
+      ...(open !== null && {
+        incident: { ...open, resolvedAt: now, resolvedBy: SYSTEM_ACTOR.accountId },
+      }),
+      state: RunState.ENDED,
+      endedAt,
+      version,
+    });
+    if (open !== null) this.apply(new IncidentResolved(dateId, open.id, SYSTEM_ACTOR, now));
     const durationMs = startedAt === null ? 0 : toEpochMs(endedAt) - toEpochMs(startedAt);
     const durationSec = Math.max(0, Math.round(durationMs / 1000));
     this.apply(new RunEnded(dateId, channelId, endedAt, durationSec, actor, now));

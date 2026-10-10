@@ -2,10 +2,11 @@ import { TechnicalCheckPassedSchema } from '@arthome-platform/events';
 import { guardDeclaredResponses } from '@arthome-platform/testing';
 import { fromBinary } from '@bufbuild/protobuf';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { streamingServiceApi } from '@arthome/contracts/streaming-service-api';
 import {
+  ApiErrorCode,
   DomainErrorCode,
   RunState,
   TECHNICAL_CHECK_BITRATE_FLOOR_KBPS_DEFAULT,
@@ -143,6 +144,39 @@ describe('runTechnicalCheck', () => {
       const response = await check(run);
       expect(response.statusCode).toBe(409);
       expect(response.json()).toMatchObject({ error: { code: DomainErrorCode.STATE_CONFLICT } });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'reads a hanging sample outside the run lock, and answers 504 at the deadline',
+    async () => {
+      const run = await fed(CARRIED);
+      const hanging = vi
+        .spyOn(desk.fake, 'sample')
+        .mockReturnValue(new Promise<FeedSample | null>(() => undefined));
+      try {
+        const deadline = new Date(desk.clock.nowMs() + 300).toISOString();
+        const answer = studioCall(desk, 'POST', `/v1/dates/${run.dateId}/run/technical-check`, {
+          deadline,
+        });
+        await vi.waitFor(() => expect(hanging).toHaveBeenCalled());
+        const locked = await desk.dataSource.transaction((manager) =>
+          manager.query<{ id: string }[]>('SELECT id FROM run WHERE id = $1 FOR UPDATE NOWAIT', [
+            run.runId,
+          ]),
+        );
+        expect(locked).toHaveLength(1);
+
+        const response = await answer;
+        expect(response.statusCode).toBe(504);
+        expect(response.json()).toMatchObject({
+          error: { code: ApiErrorCode.DEADLINE_EXCEEDED },
+        });
+        expect(await versionOf(desk, run.dateId)).toBe(1);
+      } finally {
+        hanging.mockRestore();
+      }
     },
     CASE_MS,
   );

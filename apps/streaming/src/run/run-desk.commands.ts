@@ -37,6 +37,8 @@ export class MoveRun extends Command<MemorisedResponse<RunConsole>> {
 export class CheckRun extends Command<MemorisedResponse<TechnicalCheckAnswer>> {
   public constructor(
     public readonly dateId: string,
+    /** What the caller's deadline leaves for the metrics sample. */
+    public readonly remainingMs: number,
     public readonly call: RunDeskCall,
   ) {
     super();

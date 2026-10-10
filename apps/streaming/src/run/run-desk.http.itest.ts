@@ -17,6 +17,7 @@ import {
   Locale,
   PublicationState,
   RunState,
+  Surface,
 } from '@arthome/core';
 
 import {
@@ -307,6 +308,29 @@ describe('incidents over HTTP', () => {
     async () => {
       const response = await studioCall(desk, 'POST', `/v1/incidents/${randomUUID()}/resolve`);
       expect(response.statusCode).toBe(404);
+    },
+    CASE_MS,
+  );
+});
+
+describe('the operator', () => {
+  it(
+    'refuses 403 a write with no user, or on the system surface, and moves nothing',
+    async () => {
+      const run = await preparedRun(desk);
+      const writes = [
+        { url: moveUrl(run.dateId, 'rehearse'), body: { expectedVersion: 1 } },
+        { url: moveUrl(run.dateId, 'technical-check') },
+        { url: `/v1/incidents/${randomUUID()}/resolve` },
+      ];
+      for (const write of writes) {
+        for (const caller of [{ accountId: null }, { surface: Surface.SYSTEM }]) {
+          const response = await studioCall(desk, 'POST', write.url, { ...write, ...caller });
+          expect(response.statusCode).toBe(403);
+          expect(errorOf(response).code).toBe(ApiErrorCode.FORBIDDEN);
+        }
+      }
+      expect(await versionOf(desk, run.dateId)).toBe(1);
     },
     CASE_MS,
   );

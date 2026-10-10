@@ -37,8 +37,8 @@ export class RunDeskController {
   public async console(
     @EndpointInput(getRunConsole) { params, headers }: HandlerInput<typeof getRunConsole>,
   ): Promise<HandlerOutput<typeof getRunConsole>> {
-    remainingBeforeDeadline(headers['x-arthome-deadline'], this.clock);
-    const data = await this.consoles.consoleOf(params.dateId);
+    const remainingMs = remainingBeforeDeadline(headers['x-arthome-deadline'], this.clock);
+    const data = await this.consoles.consoleOf(params.dateId, remainingMs);
     if (data === null) throw refuse(getRunConsole, ApiErrorCode.NOT_FOUND);
     return { data };
   }
@@ -59,8 +59,9 @@ export class RunDeskController {
       },
       this.clock,
     );
+    const remainingMs = remainingBeforeDeadline(headers['x-arthome-deadline'], this.clock);
     try {
-      return await this.commands.execute(new CheckRun(params.dateId, call));
+      return await this.commands.execute(new CheckRun(params.dateId, remainingMs, call));
     } catch (error) {
       throw refusedOn(runTechnicalCheck, error);
     }

@@ -187,6 +187,9 @@ export interface CallOptions {
   readonly key?: string | null;
   readonly deadline?: string | null;
   readonly issuer?: string;
+  /** Null mints a token without a user. */
+  readonly accountId?: string | null;
+  readonly surface?: Surface;
 }
 
 /** A call as the studio BFF relays it: its token, a deadline, a key and the surface on a write. */
@@ -194,10 +197,17 @@ export async function studioCall(
   desk: RunDesk,
   method: 'GET' | 'POST',
   url: string,
-  { body, key = randomUUID(), deadline, issuer = InternalTokenIssuer.STUDIO_BFF }: CallOptions = {},
+  {
+    body,
+    key = randomUUID(),
+    deadline,
+    issuer = InternalTokenIssuer.STUDIO_BFF,
+    accountId = OPERATOR,
+    surface = Surface.STUDIO_WEB,
+  }: CallOptions = {},
 ) {
   const token = await mintInternalToken(
-    { service: Service.STREAMING, clock: desk.clock, accountId: OPERATOR },
+    { service: Service.STREAMING, clock: desk.clock, ...(accountId !== null && { accountId }) },
     {
       issuer,
       keyId: issuer === InternalTokenIssuer.STUDIO_BFF ? STUDIO_KEY_ID : DEVELOPMENT_KEY.keyId,
@@ -212,7 +222,7 @@ export async function studioCall(
       authorization: `Bearer ${token}`,
       ...(due !== null && { 'x-arthome-deadline': due }),
       ...(method === 'POST' && {
-        'x-arthome-actor-surface': Surface.STUDIO_WEB,
+        'x-arthome-actor-surface': surface,
         ...(key !== null && { 'idempotency-key': key }),
       }),
       ...(body !== undefined && { 'content-type': 'application/json' }),
