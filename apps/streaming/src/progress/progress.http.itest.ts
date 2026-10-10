@@ -83,6 +83,21 @@ describe('recordPlaybackPosition', () => {
   );
 
   it(
+    'refuses a date the entitlement projection does not hold, api.not_found, writing nothing',
+    async () => {
+      const viewer = newViewer();
+      const unknown = randomUUID();
+
+      const recorded = await recordCall(playback, viewer, unknown, 10);
+
+      expect(recorded.statusCode).toBe(404);
+      expect(errorOf(recorded).code).toBe(ApiErrorCode.NOT_FOUND);
+      expect(await storedPoint(playback, viewer.profileId, unknown)).toBeUndefined();
+    },
+    CASE_MS,
+  );
+
+  it(
     'grows the version by one per write after the run ended, the last writer winning',
     async () => {
       const viewer = newViewer();

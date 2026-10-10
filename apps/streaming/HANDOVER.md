@@ -548,7 +548,8 @@ resume points. Two tables (migration `PreviewAndResume1791800000000`, which also
   nothing is written and the stored point is answered unchanged, `{}` when there is none (D-111); the
   upsert is one statement that holds the ended check, with `version = version + 1` as the server rank
   (last writer wins, a late write after a release is kept, no idempotency key). A body `deviceId` other
-  than the token's is 403 (`assertSameCaller`). The date is not checked against the projection.
+  than the token's is 403 (`assertSameCaller`). A date the entitlement projection does not hold is
+  404 `api.not_found` (`readDateFacts`), distinct from a known date with no run, which is `{}`.
 - **The batch** (`getViewerProgressBatch`): a body `profileId` other than the token's is 403, a token
   without a profile or a user 403; the contract bounds 1 to 200 ids. The answer is a table keyed by
   date id holding only the caller's points (`owner_id = $1 AND date_id = ANY($2) AND account_id = $3`,
@@ -562,7 +563,7 @@ resume points. Two tables (migration `PreviewAndResume1791800000000`, which also
 | `preview/preview-cover.spec.ts` | the first cover issues 120 s; a renewal at 45 s settles 45 s; 30 s left lasts 30 s; release and reopen gain nothing; a 60 s veil is given back; nothing charged before on air; a lapsed gap not charged; spent never passes 300; renewals every 250 ms, 900 ms, 1999 ms and 45 s never serve past 300 s; a 900 ms settle is charged |
 | `preview/preview-budget.itest.ts` | through PS3's routes: every expiry is min(now + 120 s, now + left) down to `watch.preview_exhausted`; renewals every 900 ms exhaust the budget without serving past it; a second device and a reinstall share one budget, two accounts do not; the veil's time comes back |
 | `preview/preview-race.itest.ts` | six renewals at once on 50 s left never spend past the budget |
-| `progress/progress.http.itest.ts` | nothing recorded during a live or with no run, the stored point answered; the version grows by one, the last writer wins; a write after a release is kept; 200 ids pass, 201 are refused; the table holds the caller's points only; each route's 403 cases (other device or profile, no profile, no device, no user, studio token), past deadline 504 |
+| `progress/progress.http.itest.ts` | nothing recorded during a live or with no run, the stored point answered; an unknown date 404; the version grows by one, the last writer wins; a write after a release is kept; 200 ids pass, 201 are refused; the table holds the caller's points only; each route's 403 cases (other device or profile, no profile, no device, no user, studio token), past deadline 504 |
 | `progress/progress-plan.itest.ts` | the batch on `resume_point`'s primary key and the veils through `incident_by_run`, no sequential scan |
 
 **Gaps**

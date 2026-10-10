@@ -3,6 +3,7 @@ import {
   EndpointInput,
   assertSameCaller,
   profileOfPrincipal,
+  refuse,
   remainingBeforeDeadline,
 } from '@arthome-platform/http-edge';
 import { Controller, Inject } from '@nestjs/common';
@@ -11,10 +12,11 @@ import { DataSource } from 'typeorm';
 
 import type { HandlerInput, HandlerOutput } from '@arthome/contracts/http';
 import { streamingServiceApi } from '@arthome/contracts/streaming-service-api';
-import type { Clock } from '@arthome/core';
+import { ApiErrorCode, type Clock } from '@arthome/core';
 
 import { ResumePoints } from './resume-points.js';
 import { CLOCK } from '../clock.js';
+import { readDateFacts } from '../entitlement/entitlement-facts.js';
 import { accountOf, callerOf } from '../service-caller.js';
 
 const { recordPlaybackPosition, getViewerProgressBatch } = streamingServiceApi.routes;
@@ -33,7 +35,8 @@ export class ProgressController {
 
   /**
    * Last writer wins on the server's rank, and a late write after a release is kept. During a live
-   *   (or with no run) nothing is recorded and the stored point answers unchanged (D-111).
+   *   (or with no run) nothing is recorded and the stored point answers unchanged (D-111); a date
+   *   the entitlement projection does not hold is not found.
    */
   @Endpoint(recordPlaybackPosition)
   public async record(
@@ -45,6 +48,8 @@ export class ProgressController {
     const caller = callerOf(principal);
     const profileId = profileOfPrincipal(caller);
     assertSameCaller(caller, { deviceId: body.deviceId });
+    if ((await readDateFacts(this.dataSource.manager, params.dateId)) === null)
+      throw refuse(recordPlaybackPosition, ApiErrorCode.NOT_FOUND);
 
     const points = new ResumePoints(this.dataSource.manager);
     const recorded = await points.recordAfterRun({
