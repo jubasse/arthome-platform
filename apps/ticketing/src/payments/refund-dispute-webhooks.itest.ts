@@ -11,10 +11,11 @@ import {
 } from '@arthome-platform/testing';
 import { fromBinary } from '@bufbuild/protobuf';
 import { BullModule } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
 import { CommandBus } from '@nestjs/cqrs';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { DataSource } from 'typeorm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   FixedClock,
@@ -438,7 +439,7 @@ describe('a dispute (dispute_opened)', () => {
   );
 
   it(
-    'has the fake refuse a refund on the disputed charge, retried to its dead row',
+    'gives a refund owed before the dispute up at once, no provider call, not to be replayed',
     async () => {
       const dateId = await dateOnSale();
       const { order, tickets } = await bought(dateId, 2);
@@ -447,14 +448,25 @@ describe('a dispute (dispute_opened)', () => {
       await applyEvents();
       const [owed] = await refundsOf(order.id);
       if (owed === undefined) throw new Error('no refund owed');
+      const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 
-      await relay.relayDue();
-      await until('the refund given up on', async () =>
-        (await refundsOf(order.id)).every(({ dead_at }) => dead_at !== null),
-      );
+      try {
+        await relay.relayDue();
+        await until('the refund given up on', async () =>
+          (await refundsOf(order.id)).every(({ dead_at }) => dead_at !== null),
+        );
+        expect(errors.mock.calls.filter(([message]) => String(message).includes(owed.id))).toEqual([
+          [
+            expect.stringContaining('do not replay the refund while the dispute is open'),
+            undefined,
+          ],
+        ]);
+      } finally {
+        errors.mockRestore();
+      }
 
       expect(await refundsOf(order.id)).toMatchObject([{ refunded_at: null }]);
-      expect(providerCallsFor(owed.idempotency_key)).toHaveLength(SHORT.refunds.length + 1);
+      expect(providerCallsFor(owed.idempotency_key)).toEqual([]);
       expect((await orderOf(order.id)).state).toBe(OrderState.DISPUTED);
     },
     CASE_MS,

@@ -4,7 +4,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { Queue, type Job } from 'bullmq';
 import { DataSource, type EntityManager } from 'typeorm';
 
-import { type Clock, intentCancelIdempotencyKey } from '@arthome/core';
+import { OrderState, type Clock, intentCancelIdempotencyKey } from '@arthome/core';
 
 import {
   FAIL_FAST_CONNECTION,
@@ -18,6 +18,7 @@ import {
   type ProviderCallSchedules,
   type RefundJob,
 } from './provider-call-queues.js';
+import { operatorStepAfterGivingUp } from './refund-ledger.js';
 import { CLOCK } from '../clock.js';
 import { SweeperLoop } from '../sweeper-loop.js';
 
@@ -97,7 +98,8 @@ export const LOST_REFUNDS_SQL = `
                  ORDER BY enqueued_at
                  LIMIT $3
                    FOR UPDATE SKIP LOCKED)
-  RETURNING id`;
+  RETURNING id, (SELECT state FROM seat_order WHERE seat_order.id = order_refund.order_id)
+                  = '${OrderState.DISPUTED}' AS disputed`;
 
 /** Due: owed, neither made nor given up on, and never enqueued or enqueued before `$1`. */
 export const DUE_INTENT_CANCELLATIONS_SQL = `
@@ -146,15 +148,14 @@ export class OwedCallRelay extends SweeperLoop {
    */
   private async giveUpLostRefunds(): Promise<number> {
     const nowMs = this.clock.nowMs();
-    const lost = await updateReturning<{ id: string }>(this.dataSource, LOST_REFUNDS_SQL, [
-      new Date(nowMs - staleAfterMs(this.schedules.refunds)),
-      new Date(nowMs),
-      RELAY_BATCH,
-    ]);
-    for (const { id } of lost) {
+    const lost = await updateReturning<{ id: string; disputed: boolean }>(
+      this.dataSource,
+      LOST_REFUNDS_SQL,
+      [new Date(nowMs - staleAfterMs(this.schedules.refunds)), new Date(nowMs), RELAY_BATCH],
+    );
+    for (const { id, disputed } of lost) {
       this.logger.error(
-        `refund ${id} given up, its job lost: the buyer's money is held without a seat ` +
-          'until an operator replays the refund (apps/ticketing/HANDOVER.md §0k)',
+        `refund ${id} given up, its job lost: ${operatorStepAfterGivingUp(disputed)}`,
       );
     }
     return lost.length;

@@ -26,7 +26,7 @@ import {
   type ProviderCallSchedules,
   type RefundJob,
 } from './provider-call-queues.js';
-import { giveUpRefund, refundCallOf } from './refund-ledger.js';
+import { giveUpRefund, operatorStepAfterGivingUp, refundCallOf } from './refund-ledger.js';
 import { CLOCK } from '../clock.js';
 import { writeSeatOrderIntegrationEvents } from '../orders/seat-order-integration-events.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
@@ -93,10 +93,17 @@ export class RefundProcessor
     );
   }
 
-  /** A refund made, given up on or unknown here settles the job without a call. */
+  /**
+   * A refund made, given up on or unknown here settles the job without a call. One on a disputed
+   *   order is given up at once: the provider refuses it while the dispute holds the money.
+   */
   private async refund(refundId: string): Promise<void> {
     const call = await refundCallOf(this.dataSource, refundId);
     if (call === null || call.settled) return;
+    if (call.disputed) {
+      await this.giveUp(refundId, 'with its order disputed', undefined, { disputed: true });
+      return;
+    }
     if (call.intentRef === null) throw new Error(`order ${call.orderId} holds no intent to refund`);
     const { refundRef } = await this.payments.refund({
       intentRef: call.intentRef,
@@ -126,15 +133,19 @@ export class RefundProcessor
     await this.giveUp(refundId, `after ${attempt}`, stack);
   }
 
-  private async giveUp(refundId: string, why: string, stack: string | undefined): Promise<void> {
+  private async giveUp(
+    refundId: string,
+    why: string,
+    stack: string | undefined,
+    { disputed } = { disputed: false },
+  ): Promise<void> {
     await giveUpRefund(this.dataSource, refundId, new Date(this.clock.nowMs())).catch(
       (cause: unknown) => {
         this.logger.error(`refund ${refundId} not marked given up`, String(cause));
       },
     );
     this.logger.error(
-      `refund ${refundId} given up ${why}: the buyer's money is held without a seat ` +
-        'until an operator replays the refund (apps/ticketing/HANDOVER.md §0k)',
+      `refund ${refundId} given up ${why}: ${operatorStepAfterGivingUp(disputed)}`,
       stack,
     );
   }
