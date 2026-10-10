@@ -45,7 +45,7 @@ export const AVAILABILITY_PUBLISH_RETRY_SECONDS = 10;
  *   Read without any lock: the figures are re-read and the decision taken again under the
  *   publication row's.
  */
-const DUE_DATES = `
+export const DUE_DATES = `
   WITH open_or_closing AS (
     SELECT date_id FROM date_sales WHERE on_sale
     UNION

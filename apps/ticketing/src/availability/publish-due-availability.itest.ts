@@ -21,7 +21,9 @@ import { AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS, FixedClock, PriceTier } from
 import { DateAvailabilityPublicationRow } from './date-availability-publication.entity.js';
 import { PublishDueAvailability } from './publish-due-availability.command.js';
 import {
+  AVAILABILITY_PUBLISH_BATCH,
   AVAILABILITY_PUBLISH_RETRY_SECONDS,
+  DUE_DATES,
   PublishDueAvailabilityHandler,
 } from './publish-due-availability.handler.js';
 import { CLOCK } from '../clock.js';
@@ -32,6 +34,7 @@ import { OpenCapacityTierHandler } from '../date-sales/open-capacity-tier.handle
 import { SetDatePrices } from '../date-sales/set-date-prices.command.js';
 import { SetDatePricesHandler } from '../date-sales/set-date-prices.handler.js';
 import { delivered, drafted, engaged, outcomeDeclared } from '../itest/catalog-messages.js';
+import { gateInserts, holdAdvisoryLock, untilWaitingOnAdvisoryLock } from '../itest/locks.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
 
@@ -46,6 +49,9 @@ const CASE_MS = 30_000;
 
 const CHANNEL = 'channel-publisher-itest';
 const INTERVAL_MS = AVAILABILITY_PUBLISH_MIN_INTERVAL_SECONDS * 1_000;
+const PUBLICATION_GATE = 4_242_101;
+/** A move waiting on a lock fails at this bound instead of passing slowly. */
+const HOT_ROW_LOCK_TIMEOUT = '200ms';
 
 let stack: StartedStack;
 let dataSource: DataSource;
@@ -341,25 +347,29 @@ describe('the availability publisher', () => {
     'never makes a move wait for a publication, and never loses one made during it',
     async () => {
       const dateId = await openSale(30);
-      // Holds the publication between its read of the figures and its commit.
-      await dataSource.query(
-        `CREATE FUNCTION slow_publication_itest() RETURNS trigger LANGUAGE plpgsql AS
-           $$ BEGIN PERFORM pg_sleep(0.3); RETURN NEW; END $$`,
-      );
-      await dataSource.query(
-        `CREATE TRIGGER slow_publication_itest BEFORE INSERT ON outbox_event FOR EACH ROW
-           WHEN (NEW.aggregateid = '${dateId}') EXECUTE FUNCTION slow_publication_itest()`,
-      );
+      const ungate = await gateInserts(dataSource, {
+        name: 'itest_publication_gate',
+        table: 'outbox_event',
+        when: `NEW.aggregateid = '${dateId}'`,
+        key: PUBLICATION_GATE,
+      });
       try {
-        const pass = publish();
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        const started = performance.now();
-        await move(dateId, 2);
-        expect(performance.now() - started).toBeLessThan(100);
+        const release = await holdAdvisoryLock(dataSource, PUBLICATION_GATE);
+        let pass: Promise<number> | undefined;
+        try {
+          pass = publish();
+          // The publication has read the figures and waits, its transaction open, before its row.
+          await untilWaitingOnAdvisoryLock(dataSource);
+          await dataSource.transaction(async (manager) => {
+            await manager.query(`SET LOCAL lock_timeout = '${HOT_ROW_LOCK_TIMEOUT}'`);
+            await manager.query(MOVE, [dateId, 2]);
+          });
+        } finally {
+          await release();
+        }
         expect(await pass).toBe(1);
       } finally {
-        await dataSource.query('DROP TRIGGER slow_publication_itest ON outbox_event');
-        await dataSource.query('DROP FUNCTION slow_publication_itest()');
+        await ungate();
       }
 
       expect((await published(dateId)).map(({ event }) => event.seatsAvailable)).toEqual([30]);
@@ -381,19 +391,35 @@ describe('the availability publisher', () => {
       for (const dateId of dates) await move(dateId, 1);
       const hot = dates.at(-1) ?? '';
 
-      const passStarted = performance.now();
-      const pass = publish();
-      await new Promise((resolve) => setTimeout(resolve, 2));
-      const holdStarted = performance.now();
-      await dataSource.query(`${MOVE} AND on_sale AND seats_available >= $2`, [hot, 1]);
-      const holdMs = performance.now() - holdStarted;
-      expect(await pass).toBe(100);
-      const passMs = performance.now() - passStarted;
-
-      process.stdout.write(
-        `hold behind a 100-date pass: waited ${holdMs.toFixed(1)} ms, pass ${passMs.toFixed(1)} ms\n`,
-      );
-      expect(holdMs).toBeLessThan(20);
+      const ungate = await gateInserts(dataSource, {
+        name: 'itest_pass_gate',
+        table: 'outbox_event',
+        when: `NEW.aggregateid <> '${hot}'`,
+        key: PUBLICATION_GATE,
+      });
+      try {
+        const release = await holdAdvisoryLock(dataSource, PUBLICATION_GATE);
+        let pass: Promise<number> | undefined;
+        let holdMs = 0;
+        try {
+          pass = publish();
+          await untilWaitingOnAdvisoryLock(dataSource);
+          const holdStarted = performance.now();
+          await dataSource.transaction(async (manager) => {
+            await manager.query(`SET LOCAL lock_timeout = '${HOT_ROW_LOCK_TIMEOUT}'`);
+            await manager.query(`${MOVE} AND on_sale AND seats_available >= $2`, [hot, 1]);
+          });
+          holdMs = performance.now() - holdStarted;
+        } finally {
+          await release();
+        }
+        expect(await pass).toBe(100);
+        process.stdout.write(
+          `hold on the last date of a 100-date pass held part-way: ${holdMs.toFixed(1)} ms\n`,
+        );
+      } finally {
+        await ungate();
+      }
     },
     CASE_MS,
   );
@@ -468,6 +494,15 @@ describe('the availability publisher', () => {
       await dataSource.query('ANALYZE date_sales, date_availability_publication');
       await publish();
 
+      const now = clock.nowMs();
+      const plan = await dataSource.query<{ 'QUERY PLAN': string }[]>(`EXPLAIN ${DUE_DATES}`, [
+        new Date(now - INTERVAL_MS),
+        AVAILABILITY_PUBLISH_BATCH,
+        new Date(now - AVAILABILITY_PUBLISH_RETRY_SECONDS * 1_000),
+      ]);
+      const text = plan.map((line) => line['QUERY PLAN']).join('\n');
+      expect(text, text).not.toMatch(/Seq Scan on (date_sales|date_availability_publication)/);
+
       const passes: number[] = [];
       for (let run = 0; run < 5; run += 1) {
         const started = performance.now();
@@ -477,7 +512,6 @@ describe('the availability publisher', () => {
       process.stdout.write(
         `idle pass over ${String(history)} dates of history: ${passes.map((ms) => ms.toFixed(1)).join(', ')} ms\n`,
       );
-      expect(Math.min(...passes)).toBeLessThan(10);
     },
     CASE_MS * 2,
   );

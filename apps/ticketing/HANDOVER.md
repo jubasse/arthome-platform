@@ -158,8 +158,9 @@ A draft older than the topic's retention is never read: see the deployment order
   counts one more than what is recorded as published, so it is due again and none is lost.
   Measured (`publish-due-availability.itest.ts`, three runs): a hold on the last date of a
   hundred-date pass waits 1.2 to 1.3 ms, against 69 to 73 ms when the pass locked every row; the
-  pass takes 230 to 300 ms, one transaction per date. A move during a publication held open 300 ms
-  does not wait for it.
+  pass takes 230 to 300 ms, one transaction per date. A move during a publication held open
+  does not wait for it. The suite proves both without a wall-clock bound since PT4 (§0q): the
+  publication, or the pass part-way, held on an advisory lock, the move under `lock_timeout`.
 - **A pass reads the sales on sale and the closings not yet published, nothing else** (correctness
   re-review): each branch through a partial index (`idx_date_sales_on_sale`,
   `idx_date_availability_publication_closing_due`), a closing flagging its publication row in its
@@ -421,7 +422,8 @@ relay's second. Never an oversold date, never money kept without a seat. `payout
 bound or lost (§0m), the refund is marked `dead_at` and
 an error is logged: "the buyer's money is held without a seat until an operator replays the refund".
 `pnpm run ops:check ticketing` reports it, `provider_calls_dead` degraded with the replay statement
-in its detail. Find them with `SELECT id, order_id, idempotency_key, owed_at, dead_at FROM
+in its detail; one on a disputed order is counted apart, `refundsHeldByDisputes`, and degrades
+nothing, since it is never replayed (below; the PT1 review's F2). Find them with `SELECT id, order_id, idempotency_key, owed_at, dead_at FROM
 order_refund WHERE dead_at IS NOT NULL AND refunded_at IS NULL`. Once the cause is gone (the
 provider's incident over, or the refusal understood and settled at the provider), and **once the
 refund is looked up at the provider by its refund id**, which past the key's 24 hours alone tells
@@ -628,7 +630,9 @@ to the queue.
 - **The settlement pass** (`SettleDateOutcomes`, run by `DateOutcomeSweeper`, a fourth `SweeperLoop`
   in the sweeper, every second, Postgres alone): the oldest unsettled rows, ten dates a pass, and a
   date that failed only once its `DATE_OUTCOME_RETRY_SECONDS` (10) are past, behind the others, as
-  the publisher sets a date aside (§0e). Each step claims the date's row `FOR UPDATE SKIP LOCKED`
+  the publisher sets a date aside (§0e). A date waiting on a live hold alone (its orders settled,
+  its waiting list ended) sorts behind every date with work left, so ten of them cannot fill every
+  pass while another date's refunds wait (the PT1 review's F1, PT4). Each step claims the date's row `FOR UPDATE SKIP LOCKED`
   in a transaction of its own, so replicas share the dates.
   - **500 orders per transaction** (adr-ticketing.md §8): the date's orders holding an `active` seat
     and not marked `outcome_settled_at`, found through `idx_seat_date_active` then by key (as a
@@ -758,7 +762,10 @@ to the queue.
   the money, adr-payments.md §9; the lead's ruling). The seat returns to sale at once (D-093) by
   `releaseSoldSeats`: `seats_available + 1`, `seats_sold - 1`, one move, so a sold-out date is
   published back at once. **On a date a cancellation closed** the refund is `date_cancelled` (core's
-  `refundReasonOnDate`, D-097), the deadline is not applied and no seat returns to sale. It answers
+  `refundReasonOnDate`, D-097), the deadline is not applied and no seat returns to sale. A
+  cancellation committed after the date was read is caught by `releaseSoldSeats`, which refuses a
+  cancelled date: the handler reads the outcome again and runs the whole transaction once more, so
+  the refund says `date_cancelled` and no seat goes back on sale (the PT2 review's m3, PT4). It answers
   `{ ticket }`, the `TicketCard` but its `date`, which the BFF adds (T7).
 - **`refundSeat`** (`POST /v1/seats/:seatId/refund`, `SeatRefundsController`, `no-store`): the
   studio's, `Idempotency-Key` in the operator's scope, `If-Rights-Version` parsed (an integer, else
@@ -893,6 +900,76 @@ stopped). adr-ticketing.md §9, D-083, D-093, D-094, D-096; core's `ticketing/wa
 - **Left as they are**: the entries of a sale ended by time (D-089). No rule ends them and nothing
   reads them; a retention purge can take them later.
 
+## 0q. The race suite and the drills (T4, PT4)
+
+adr-ticketing.md §12's races and failure drills, on real Postgres, Redis, Kafka and Debezium from
+`libs/testing`, each file on a database of its own, every outage a `docker pause` restored in
+`finally`. No suite asserts a wall-clock bound: a wait is held on an advisory lock the suite holds
+(`src/itest/locks.ts`) and seen in `pg_stat_activity`, and retries run on shortened schedules.
+
+- **The races** (`orders/refund-races.itest.ts`, `payments/chargeback.itest.ts`), 20 orders at once
+  each through `Promise.allSettled`, a loser's refusal named, then the ledger
+  (`src/itest/race-ledger.ts`): available, held and sold seats adding up to the capacity, one `seat`
+  row per seat sold, no order refunded above what it paid, and for every refund row, made or not, a
+  refund at the provider under its key, of the row's amount, exactly when the row is made. Calls
+  per key are not counted: a refund webhook asks the call again under the same key (R15).
+  - A date's cancellation against 80 payments confirmed before it, with it, during its settlement
+    and after it (past their holds): every order refunded once, in full, `date_cancelled`, none left
+    `paid`, every seat `refunded` after one `seat.cancelled` `DATE_CANCELLED`, no seat for the late
+    ones. Late payments alone the same, never `hold_expired_capacity_lost`. The 20 paid with the
+    cancellation are applied while its transaction is held open before it locks the date, then race
+    its commit: 7 of 20 seated before it, three runs out of three, bounded above 0 and below 20. The
+    20 paid during the settlement all see the cancellation: no race with the enumeration, which
+    `late-payment.itest.ts` covers.
+  - Two paths to one refund: the date's refund job against duplicated successes applied by two
+    workers, for orders paid before and orders seated by the payment itself: one call, one
+    `order.refunded`. And R15's path: 20 refunds made at the provider, their answers lost, their
+    `refund_succeeded` applied by four workers while four relay passes run their jobs: one refund
+    per key, each row made with the provider's ref, one `order.refunded`. At the race's end, five
+    runs: all 20 webhooks applied, 0 to 20 rows made, 2 to 20 reruns still asked.
+  - A viewer's `cancelSeat` and the studio's partial `refundSeat` racing the date's refund, a relay
+    pass in the race: the paid total refunded once, each seat cancelled once. The race only plays
+    the command first: viewer first then after the fact 13/7 to 15/5, the studio first 20/20, the
+    settlement first never, since the commands take the pool before the date's settlement runs.
+    That order is forced in a case of its own per command: the settlement held on its
+    `seat.cancelled` insert with the order locked, the command seen waiting on the order's row,
+    then refused `seat.not_active`, one `date_cancelled` refund of the paid total. **Found and fixed**: a cancellation committed
+    between `cancelSeat`'s read of the date and its counter move gave the seat back to sale on a
+    cancelled date, refunded `viewer_request` (§0o, the PT2 review's m3).
+  - Chargebacks: a dispute and its duplicate; one before its confirmation; one before or after a
+    cancelled date's refund, the refused refunds given up within their bound and counted apart by
+    `provider_calls_dead` (§0k, F2); a refunded order disputed; a viewer's cancellation on a
+    disputed order. Never a second refund, nothing on the viewer's side.
+- **Provider down** (`drills/provider-down.itest.ts`, about 5 s of outage on a 1/4/8/8 s schedule):
+  a purchase 503 with its hold released; 50 refunds and 15 intent cancellations each tried again,
+  none dead, then each made once; the limiters held at their limit: BullMQ's fixed windows rebuilt
+  from each job's `processedOn` (a window opened by the first job started once the last closed),
+  the busiest started exactly 20 refunds and 5 cancellations, three runs out of three; a refund
+  refused for good dead after its five attempts, then replayed once.
+- **Redis down** (`drills/redis-down.itest.ts`, about 22 s): purchases, the expiry, the publisher
+  and the settlement on Postgres alone, readiness up, 30 refunds owed, the relay failing fast and
+  stamping nothing; Redis back, the same worker makes each call once.
+- **Kafka down** (`drills/kafka-down.itest.ts`, 30 s, the connector registered from
+  `infra/debezium/ticketing-outbox.json`): purchases, a seat's cancellation and a publication commit
+  and readiness stays up; once Kafka is back every outbox row reaches its topic in commit order per
+  key, a consumer claiming by `message-id` applies each once (redeliveries happen), and the catalog
+  consumer, never restarted, applies a cancellation produced after it and answers its redelivery
+  `DUPLICATE`. **Found, not fixed**: past the Connect worker's session the
+  broker, resuming, may evict it, and its connector then waits Connect's
+  `scheduled.rebalance.max.delay.ms` (five minutes by default) before it is assigned again: the
+  last row arrived 1.5 s, 300.9 s and 302.5 s after the resume over three runs. Nothing is lost,
+  but the freshness transport.md §5.9 promises is not kept for those minutes; a single-worker
+  Connect can set that delay far lower (`CONNECT_SCHEDULED_REBALANCE_MAX_DELAY_MS`), a deployment
+  decision left open.
+- **The flaky timings made causal**: `publish-due-availability.itest.ts`' three (§0e) and
+  `expire-due-holds.itest.ts`' skip (§0i). The publisher's suite passed 20 runs in a row
+  while ticketing's whole integration suite (37 files) ran beside it, the load average at 25 to 54
+  during the overlap and down to 5 by the last run.
+- **Two settlement fixes** (the PT1 review): a date waiting on a hold alone no longer takes a
+  pass's slot (§0n, F1), and both guards of nothing left in `order-outcome.ts` are pinned (F3).
+  `provider-call-queues.itest.ts`' 1,000-refund race read a job's `completed` event before it
+  fired, the refund row being committed first: test timing, not a missed enqueue.
+
 ## 1. What proves it
 
 | Suite | What |
@@ -900,7 +977,7 @@ stopped). adr-ticketing.md §9, D-083, D-093, D-094, D-096; core's `ticketing/wa
 | `date-sales.aggregate.spec.ts` | 19 cases, plain Vitest, core never mocked |
 | `date-sales.itest.ts` | the commands through the buses: replay, key reuse, stale version, two commands from one version, the lock, the counters as deltas under a hold, two currencies and an unprovisioned capacity past the threshold refused, a provision recorded and its two refusals, a tier past the threshold it covers, its deadline restated when the date moves, domain events after commit only, the outbox's rows in order |
 | `catalog-date-consumer.itest.ts` | real Kafka: duplicate, superseded start and outcome, ignored, a fact before its draft retried then applied, poison dead-lettered |
-| `publish-due-availability.itest.ts` | the rate bound (a seat every 500 ms for 12 s: four publications), selling out and back at once, a closing, a draft unpublished, a date a command holds published without waiting, `SKIP LOCKED` and four racing passes, a move during a publication neither waiting nor lost, the hold's wait behind a hundred-date pass, a date that cannot be published set aside and tried again |
+| `publish-due-availability.itest.ts` | the rate bound (a seat every 500 ms for 12 s: four publications), selling out and back at once, a closing, a draft unpublished, a date a command holds published without waiting, `SKIP LOCKED` and four racing passes, a move during a publication neither waiting nor lost, the hold's wait behind a hundred-date pass, a date that cannot be published set aside and tried again; since PT4 without a wall-clock bound: the publication and the pass held on an advisory lock, the move and the hold under a 200 ms `lock_timeout`, and the candidates' plan reading neither table sequentially over 50,000 dates of history |
 | `migrations/availability-publication.itest.ts` | the publication table's migration on a database that already holds dates |
 | `date-sales.http.itest.ts` | the routes over HTTP through the modules the API boots |
 | `catalog-exchange.itest.ts` | catalog and ticketing read each other's real outbox rows, shaped as the connector routes them: a draft opens the sale, ticketing's capacity and price complete catalog's checklist, catalog publishes, the prices lock |
@@ -908,7 +985,7 @@ stopped). adr-ticketing.md §9, D-083, D-093, D-094, D-096; core's `ticketing/wa
 | `orders/seat-order.aggregate.spec.ts`, `orders/seat-hold.aggregate.spec.ts` | the order's forward-only states, its seats created at payment, a payment after a failure (D-082), a refund owed under its own key and no payment taken after it, an intent reaching a failed order owing its cancellation from the instant first owed; the ledger (PT0): two refunds, `partially_refunded` then `refunded`, one past `refundableLeft` or of nothing refused, none owed on an order holding no money, one owed again answered and changing nothing, its id or key with other facts refused; the seats (PT2): one of three cancelled then refunded when its refund is made, the others active, one `SeatCancelled` per seat, nothing given back cancelled for good (a share of nothing, a disputed order), a seat not active refused `seat.not_active` moving nothing, credited seats, a dispute above `refunded`, shares past the refund named or a seat named twice refused moving nothing, the shares bounded across calls under one refund and a negative one refused (PT1); a refund webhook marking nothing made, two equal refunds the newer made first, naming the owed refunds its unexplained amount could cover, none past the ledger, and never one made (PT1); the hold's expiry its intent's, consumed or released once |
 | `date-sales.aggregate.spec.ts` (T3's block) | on sale, the quote through core, a hold that moves the counter and not the version |
 | `orders/purchase.itest.ts` | 23 cases through the buses: paid at once (counters, the hold consumed, `order.paid` then `seat.activated`, the cancel deadline, domain events after commit), a replay byte for byte with no second provider call, a key reused, two attempts at once, a crash between tx A and tx B resumed, a stale price and sold out writing nothing, a 202 replayed and read back by `getOrder`, a decline, the provider down then resumed, its renewed hold's decrement last (another buyer's does not wait on it), and a renewal finding no seat rolled back and failed sold out for good, the quote; D-089: a purchase before the start without the header, one after it refused unacknowledged with the facts and nothing held then sold acknowledged, one past the cutoff refused `order.sales_closed` holding nothing, the hold's statement refusing past the cutoff on its own, the quote's `lateEntry` only after the start, a purchase resumed after the start asked then sold, and one resumed past the cutoff closed at once and for good |
-| `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry |
+| `orders/expire-due-holds.itest.ts` | a due hold expired, its seats back, its order failed owing its intent's cancellation, a younger one left; the batch and the pass after it; a hold whose order another transaction holds skipped at once and taken the pass after; a pending order whose hold went back failed at its expiry; the skip proven by no backend ever waiting on a row lock (PT4) |
 | `boot.itest.ts` (T3's case) | the sweeper root expiring a due hold on its first pass |
 | `orders/orders.http.itest.ts` | the three routes over HTTP, parsed by the contract's `SeatQuoteSchema`, `OrderSchema`, `PaymentHandoffSchema` and `TicketCardSchema` without `date`; 201 and 202 from one route; the replay's header and bytes; a late entry quoted, refused, then sold, `lateEntry` parsed by the contract's schema extended as the report gives it |
 | `date-sales.aggregate.spec.ts` (T3's second block) | D-089's end thirty minutes after the start, moved by a postponement; on sale until the end, not at it (core's `seats.spec.ts` proves `seatSalesEndAt` and `lateEntryOf`) |
@@ -934,10 +1011,10 @@ stopped). adr-ticketing.md §9, D-083, D-093, D-094, D-096; core's `ticketing/wa
 | `payments/refund-dispute-webhooks.itest.ts` | PT2, over HTTP with the raw body, the queues on Redis: a refund made while its call timed out marked nothing made, its call re-run, the provider's answer under its key marking it made once with that reference, its seat refunded, duplicates and a second webhook applied once; two equal refunds waiting an hour's backoff, the newer made at the provider, its webhook marking neither, both jobs promoted, each made with its own reference, the older asked once; a refund made outside the platform kept and ignored; a dispute on a paid order `disputed`, seats active, no call, no event; a dispute before its confirmation settling the payment, its seats and events written, then `disputed`; a refund owed before a dispute given up at once, no provider call, its error saying not to replay it |
 
 | `credits/credit.aggregate.spec.ts` | PT1: a credit issued for its amount, valid twelve months (29 February to the last day of the next February), its event; one of nothing refused |
-| `date-outcomes/order-outcome.spec.ts` | PT1, the per-order rules: on a cancellation what is left in one refund and its seats' shares adding up to it in seat-id order, the seats of an order refunded in full or disputed cancelled with nothing, nothing for an order with no active seat, the shares over the seats still active; on an interruption the credit and its shares, nothing left or disputed left, no account left, a share of nothing |
+| `date-outcomes/order-outcome.spec.ts` | PT1, the per-order rules: on a cancellation what is left in one refund and its seats' shares adding up to it in seat-id order, the seats of an order refunded in full or disputed cancelled with nothing, nothing for an order with no active seat, the shares over the seats still active; on an interruption the credit and its shares, nothing left or disputed left, no account left, a share of nothing; PT4: each guard of nothing left pinned alone (a disputed order with money left, a paid order whose refunds owed cover its total) |
 | `date-outcomes/cancelled-date.itest.ts` | PT1, real Postgres and Redis: 1,200 paid orders, a quarter of three seats, one with a `goodwill` refund made; the cancellation fact applied, then a `duplicate`; settled in batches of 500, 500 and 199 while another transaction holds one order, taken by the next pass, then the date settled; one refund per order of what is left under `refundIdempotencyKey` with the fact's trace, every seat `cancelled` `DATE_CANCELLED` with its share, the goodwill order's 2067, 2067, 2066; one `seat.cancelled` per seat on the date's key; `date_sales`' counters unchanged; the queue draining them, every order and seat `refunded`, one `order.refunded` `DATE_CANCELLED` each |
 | `date-outcomes/interrupted-date.itest.ts` | PT1: 1,200 orders credited in batches of 500 on their account and channel, `creditExpiresAt`, seats `credited` with shares adding up, `credit.issued` on `ticketing.account` keyed by the account, no `seat.cancelled`; an order with no account and one refunded in full left active; a second pass and an order credited already issuing nothing; a share of nothing credited |
-| `date-outcomes/late-payment.itest.ts` | PT1: a hold active at the cancellation, paid after: no seat, the hold released and its seats back, `date_cancelled`, the date not settled while the hold was active; a payment past its hold: `date_cancelled`, not `hold_expired_capacity_lost`; a payment that read the date before the cancellation committed (its seat insert slowed 2 s): seated, the date kept open, then refunded by the pass |
+| `date-outcomes/late-payment.itest.ts` | PT1: a hold active at the cancellation, paid after: no seat, the hold released and its seats back, `date_cancelled`, the date not settled while the hold was active; a payment past its hold: `date_cancelled`, not `hold_expired_capacity_lost`; a payment that read the date before the cancellation committed (its seat insert slowed 2 s): seated, the date kept open, then refunded by the pass; PT4: ten dates waiting on live holds never take the pass from a date with orders to settle |
 | `date-outcomes/postponement.itest.ts` | PT1: 10,000 active seats' deadlines moved by one statement (counted by a statement trigger), a cancelled seat and another date's left; a hold's statement passing under 200 ms while the seats' statement sleeps a second; a start older than the one applied moving none, superseded; a newer start committed before the lock rolling the moved seats back, then superseded; no settlement and the hook not called |
 | `date-outcomes/waitlist-hook.itest.ts` | PT1: a recording hook called once per cancelled and interrupted date, in a transaction of its own holding the settlement row (another connection's `NOWAIT` refused), not the batches'; a hook failing twice, the refunds owed meanwhile, tried again after 10 s each time, the date settled only once it passed |
 | `date-outcomes/settlement-plan.itest.ts` | PT1: over 50,000 seats on 100 dates and 20,000 dates settled before, the pass's four statements and the postponement's read no table sequentially, `seat` through `idx_seat_date_active`, holds through `idx_seat_hold_active_date`, the due rows through `idx_date_outcome_settlement_due` |
@@ -954,6 +1031,11 @@ stopped). adr-ticketing.md §9, D-083, D-093, D-094, D-096; core's `ticketing/wa
 | `waitlist/window-end-plan.itest.ts` | PT3: the conversion over 20,000 orders through `seat_order_idempotency`, no sequential read; 10,000 entries ended, the time printed |
 | `migrations/waitlist.itest.ts` | PT3: no backfill on a database holding dates and holds, every pool and count 0; the three CHECKs refusing |
 | `boot.itest.ts` (PT3's case) | the sweeper root ending a priority window on its first pass |
+| `orders/refund-races.itest.ts` | PT4, real Postgres and Redis, 20 orders at once per race, then the ledger (available, held and sold adding up to the capacity, one `seat` per seat sold, refunds within what was paid, one provider refund per key for its row's amount): a cancellation racing payments confirmed before, with, during and after its settlement, each order refunded once `date_cancelled`, none left `paid`, each seat one `seat.cancelled`; late payments past their holds `date_cancelled`, no seat; two paths to one refund (the job against duplicated successes applied by two workers), one call and one `order.refunded`; a viewer's and a studio refund racing the date's, the paid total refunded once; a seat cancelled while the date is cancelled (held on an advisory lock), `date_cancelled`, no seat back on sale |
+| `payments/chargeback.itest.ts` | PT4, 20 orders at once each: a dispute and its duplicate, `disputed`, seats active, no call; a dispute before its confirmation, its seats created once; disputed first then the date cancelled, no refund owed, seats cancelled with none; the refund owed first, refused on the disputed charge and given up within its bound, `provider_calls_dead` counting it apart once the dispute is applied; a refunded order disputed, no second refund; a viewer's cancellation on a disputed order, no refund |
+| `drills/provider-down.itest.ts` | PT4, adr-ticketing.md §12: the provider down, a purchase 503 with its hold released; a cancelled date's 50 refunds and 15 intent cancellations retried on their schedules under the limiters, none dead during the outage, each made once after; one refused for good dead after its last attempt with its error and `provider_calls_dead`, then replayed once |
+| `drills/redis-down.itest.ts` | PT4: Redis paused about 22 s; purchases 201, readiness up, the expiry, the publisher and the settlement passes run, 30 refunds owed in Postgres, the relay failing fast and stamping nothing, `provider_call_queues` degraded; Redis back, the same worker makes each call once and every check is up |
+| `drills/kafka-down.itest.ts` | PT4, Postgres, Kafka and Connect: ticketing's connector registered from its JSON; Kafka paused 30 s while purchases, a seat's cancellation and a publication commit, readiness up; then every outbox row on its topic in commit order per key, applied once by `message-id`, and the catalog consumer, never restarted, applying a cancellation produced after the outage and answering its redelivery `DUPLICATE` |
 
 **`catalog-exchange.itest.ts` imports fourteen of catalog's internal modules by relative path**, no
 manifest recording it (architecture review M5), and that is accepted, in a test only. Its point is

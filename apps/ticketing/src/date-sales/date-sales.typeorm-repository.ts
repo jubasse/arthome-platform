@@ -6,7 +6,7 @@ import {
 } from '@arthome-platform/transactions';
 import type { EntityManager } from 'typeorm';
 
-import { money, type Instant, type TierPrice } from '@arthome/core';
+import { DateOutcome, money, type Instant, type TierPrice } from '@arthome/core';
 
 import { DateSales, type DateSalesSnapshot } from './date-sales.aggregate.js';
 import { DateSalesRow, type PriceTierColumn } from './date-sales.entity.js';
@@ -139,8 +139,8 @@ export class TypeOrmDateSalesRepository extends DateSalesRepository {
           SET seats_available = seats_available + $2,
               seats_sold = seats_sold - $2,
               availability_moves = availability_moves + 1
-        WHERE date_id = $1 AND seats_sold >= $2`,
-      [dateId, quantity],
+        WHERE date_id = $1 AND seats_sold >= $2 AND outcome IS DISTINCT FROM $3`,
+      [dateId, quantity, DateOutcome.CANCELLED],
     );
   }
 

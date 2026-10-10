@@ -959,7 +959,13 @@ describe('two relays racing', () => {
         await processor.worker.resume();
       }
 
-      await until('the 1,000 refunds made', async () => (await madeCount(ids)) === 1_000, DRAIN_MS);
+      // A job's `completed` event follows the commit that marks its refund made: waiting for the
+      //   rows alone read the last events before they fired.
+      await until(
+        'the 1,000 refunds made and their jobs completed',
+        async () => (await madeCount(ids)) === 1_000 && completed.size === 1_000,
+        DRAIN_MS,
+      );
       processor.worker.off('completed', count);
 
       for (const { key } of owed) {

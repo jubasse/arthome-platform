@@ -44,7 +44,7 @@ export abstract class DateSalesRepository {
 
   /**
    * Sold seats back on sale at once (D-093), counted as a move so a date sold out and back is
-   *   published at once; false, nothing moved, when fewer were sold.
+   *   published at once; false, nothing moved, when fewer were sold or the date is cancelled.
    */
   public abstract releaseSoldSeats(dateId: string, quantity: number): Promise<boolean>;
 

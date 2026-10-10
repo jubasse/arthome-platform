@@ -35,10 +35,20 @@ interface Settlement {
   readonly waitlist_ended_at: Date | null;
 }
 
+/**
+ * A date whose orders are all settled and whose waiting list has ended waits on a live hold alone:
+ *   it sorts behind every date with work left, so ten of them never fill a pass while another
+ *   date's refunds wait (the PT1 review's F1).
+ */
 export const DUE_SETTLEMENTS = `
-  SELECT date_id, recorded_at FROM date_outcome_settlement
-   WHERE settled_at IS NULL AND (failed_at IS NULL OR failed_at <= $1)
-   ORDER BY failed_at ASC NULLS FIRST, recorded_at ASC
+  SELECT due.date_id, due.recorded_at FROM date_outcome_settlement AS due
+   WHERE due.settled_at IS NULL AND (due.failed_at IS NULL OR due.failed_at <= $1)
+   ORDER BY (due.waitlist_ended_at IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM seat
+                               JOIN seat_order AS placed ON placed.id = seat.order_id
+                              WHERE seat.date_id = due.date_id AND seat.state = $3
+                                AND placed.outcome_settled_at IS NULL)) ASC,
+            due.failed_at ASC NULLS FIRST, due.recorded_at ASC
    LIMIT $2
 `;
 
@@ -100,7 +110,7 @@ export class SettleDateOutcomesHandler implements ICommandHandler<SettleDateOutc
     const retrySince = new Date(Date.parse(now) - DATE_OUTCOME_RETRY_SECONDS * 1_000);
     const due = await this.dataSource.query<{ date_id: string; recorded_at: Date }[]>(
       DUE_SETTLEMENTS,
-      [retrySince, dates],
+      [retrySince, dates, SeatState.ACTIVE],
     );
     let settled = 0;
     for (const { date_id, recorded_at } of due) {

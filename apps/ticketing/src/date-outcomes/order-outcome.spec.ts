@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CreditOrigin,
+  OrderState,
   PriceTier,
   RefundReason,
   SeatCancelReason,
@@ -48,11 +49,12 @@ function placement(accountId: string | null): SeatOrderPlacement {
   };
 }
 
-/** Paid for three seats, given `refunded` back already by a goodwill refund made. */
+/** Paid for three seats, owed `refunded` back by a goodwill refund, made unless `owedOnly`. */
 function paidOrder({
   accountId = ACCOUNT,
   refunded = null,
-}: { accountId?: string | null; refunded?: Money | null } = {}): SeatOrder {
+  owedOnly = false,
+}: { accountId?: string | null; refunded?: Money | null; owedOnly?: boolean } = {}): SeatOrder {
   const order = SeatOrder.place(placement(accountId), NOW);
   order.pay(
     'pi_fake_1',
@@ -71,7 +73,7 @@ function paidOrder({
       },
       NOW,
     );
-    order.refundMade(goodwill, 're_goodwill', NOW);
+    if (!owedOnly) order.refundMade(goodwill, 're_goodwill', NOW);
   }
   return order;
 }
@@ -119,6 +121,17 @@ describe('a cancelled date, per order', () => {
       null,
       null,
     ]);
+  });
+
+  it('owes nothing on an order still paid whose refunds owed cover its total', () => {
+    const order = paidOrder({ refunded: money(7200, 'EUR'), owedOnly: true });
+    expect(order.snapshot.state).toBe(OrderState.PAID);
+
+    const settled = cancelledDateSettlementOf(order, REFUND_ID);
+
+    expect(settled?.refund).toBeNull();
+    expect(settled?.cancellation.refundId).toBeNull();
+    expect(settled?.cancellation.seats).toHaveLength(3);
   });
 
   it('owes nothing on a disputed order, the provider holding its money, and cancels its seats', () => {
@@ -222,6 +235,15 @@ describe('an interrupted date, per order', () => {
       kind: 'nothing_owed',
       because: 'nothing_left',
     });
+  });
+
+  it('leaves an order still paid whose refunds owed cover its total', () => {
+    expect(
+      interruptedDateSettlementOf(
+        paidOrder({ refunded: money(7200, 'EUR'), owedOnly: true }),
+        CREDIT_ID,
+      ),
+    ).toEqual({ kind: 'nothing_owed', because: 'nothing_left' });
   });
 
   it('leaves an order with no account: a credit is an account’s', () => {
