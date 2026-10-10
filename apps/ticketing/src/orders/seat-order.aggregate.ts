@@ -509,9 +509,15 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
     const givenBack = seats.flatMap(({ refundAmount }) =>
       refundAmount === null ? [] : [refundAmount],
     );
+    if (givenBack.some(({ amountMinor }) => amountMinor < 0)) {
+      throw new Error(`order ${current.id}: a seat's share of a refund cannot be negative`);
+    }
+    const heldAlready = current.seats.flatMap((seat) =>
+      seat.refundId === refundId && seat.refundAmount !== null ? [seat.refundAmount] : [],
+    );
     if (
       refund !== undefined &&
-      compare(sum(givenBack, refund.amount.currencyCode), refund.amount) > 0
+      compare(sum([...heldAlready, ...givenBack], refund.amount.currencyCode), refund.amount) > 0
     ) {
       throw new Error(`order ${current.id}: the seats' shares exceed refund ${refund.id}`);
     }
