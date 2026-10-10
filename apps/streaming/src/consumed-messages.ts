@@ -5,6 +5,7 @@ import type { EachMessagePayload } from 'kafkajs';
 import { ApiErrorCode, isDomainError } from '@arthome/core';
 
 import type { Delivery } from './delivery.js';
+import { DEVICE_READERS } from './devices/device-messages.js';
 import { ENTITLEMENT_READERS } from './entitlement/entitlement-messages.js';
 import { RUN_READERS } from './run/run-messages.js';
 
@@ -12,7 +13,11 @@ import { RUN_READERS } from './run/run-messages.js';
 export type Reader = (value: Uint8Array, delivery: Delivery) => Command<Outcome> | null;
 
 /** The command each consumed type becomes; a type absent here is not streaming's, and ignored. */
-const READERS: Readonly<Record<string, Reader>> = { ...ENTITLEMENT_READERS, ...RUN_READERS };
+const READERS: Readonly<Record<string, Reader>> = {
+  ...ENTITLEMENT_READERS,
+  ...RUN_READERS,
+  ...DEVICE_READERS,
+};
 
 /**
  * One message read as its command. Bytes that do not read as their type, and a refusal no retry

@@ -3,6 +3,7 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { dataSource } from './data-source.js';
+import { PlaybackSweeperModule } from './playback/playback-sweeper.module.js';
 import { ReplayAssetSweeperModule } from './replay-asset/replay-asset-sweeper.module.js';
 import { RunSweeperModule } from './run/run-sweeper.module.js';
 
@@ -17,6 +18,7 @@ import { RunSweeperModule } from './run/run-sweeper.module.js';
     CqrsModule.forRoot(),
     RunSweeperModule,
     ReplayAssetSweeperModule,
+    PlaybackSweeperModule,
   ],
 })
 export class SweeperModule {}

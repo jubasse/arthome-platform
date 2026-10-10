@@ -365,7 +365,7 @@ export class DatesController {
 | Process | Development port | Swagger UI | Operations |
 | --- | --- | --- | --- |
 | `bff-storefront` | 3003 | `http://localhost:3003/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink, signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification, getViewerContext |
-| `streaming` | 3005 | `http://localhost:3005/docs` | getRunConsole, runTechnicalCheck, rehearseRun, goOnAir, endRun, resetRun, raiseIncident, resolveIncident; playback and progress bind theirs (`apps/streaming/HANDOVER.md`) |
+| `streaming` | 3005 | `http://localhost:3005/docs` | getRunConsole, runTechnicalCheck, rehearseRun, goOnAir, endRun, resetRun, raiseIncident, resolveIncident, openPlayback, renewPlaybackTicket, releasePlayback; progress binds its own (`apps/streaming/HANDOVER.md`) |
 
 `@nestjs/swagger` is a peer of `libs/http-edge`; `@fastify/static` serves the UI on Fastify, and
 `@scarf/scarf` (swagger-ui-dist's telemetry install script) is denied in `pnpm-workspace.yaml`.
