@@ -58,12 +58,9 @@ export class DateOutcomes1790441400000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`
-      ALTER TABLE seat
-        ADD CONSTRAINT seat_credit_fkey FOREIGN KEY (credit_id) REFERENCES credit (id),
-        DROP CONSTRAINT seat_credit_amount_minor_check,
-        ADD CONSTRAINT seat_credit_amount_minor_check CHECK (credit_amount_minor >= 0)
-    `);
+    await queryRunner.query(
+      'ALTER TABLE seat ADD CONSTRAINT seat_credit_fkey FOREIGN KEY (credit_id) REFERENCES credit (id)',
+    );
     await queryRunner.query(
       'ALTER TABLE seat_order ADD COLUMN outcome_settled_at timestamptz NULL',
     );
@@ -98,12 +95,7 @@ export class DateOutcomes1790441400000 implements MigrationInterface {
     await queryRunner.query('DROP INDEX idx_seat_hold_active_date');
     await queryRunner.query('DROP INDEX idx_seat_date_active');
     await queryRunner.query('ALTER TABLE seat_order DROP COLUMN outcome_settled_at');
-    await queryRunner.query(`
-      ALTER TABLE seat
-        DROP CONSTRAINT seat_credit_amount_minor_check,
-        ADD CONSTRAINT seat_credit_amount_minor_check CHECK (credit_amount_minor > 0),
-        DROP CONSTRAINT seat_credit_fkey
-    `);
+    await queryRunner.query('ALTER TABLE seat DROP CONSTRAINT seat_credit_fkey');
     await queryRunner.query('DROP TABLE credit');
     await queryRunner.query('DROP TABLE date_outcome_settlement');
   }
