@@ -1,0 +1,98 @@
+# The playback edge: the only door to the edge MediaMTX's HLS port, checking PS3's playback token on
+# every request as a CDN does (adr-stream-entitlement.md §3.2). It checks the token and nothing
+# else: no buffer, compressor, cache, CORS or ext_authz filter, so responses stream.
+#
+# The token travels as `?token=` (a simple request, no CORS preflight). No access log: the query
+# would land in it. The key set is read from disk at start only: after regenerating it
+# (tools/playback-jwks.mjs), restart `playback-edge`.
+
+static_resources:
+  listeners:
+    - name: watch
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8080 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: watch
+                # jwt_authn answers 403 on a wrong audience: every token refusal reads 401.
+                local_reply_config:
+                  mappers:
+                    - filter:
+                        status_code_filter:
+                          comparison:
+                            op: EQ
+                            value: { default_value: 403, runtime_key: watch.refused_status }
+                      status_code: 401
+                # No `..`, `//` or `%2F` lets a path climb out of its signed prefix.
+                normalize_path: true
+                merge_slashes: true
+                path_with_escaped_slashes_action: REJECT_REQUEST
+                route_config:
+                  name: watch
+                  virtual_hosts:
+                    - name: edge
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: /watch/ }
+                          route:
+                            cluster: edge_hls
+                            # Above three target durations: an LL-HLS blocking reload waits that long.
+                            timeout: 10s
+                          # The edge's `hlsCDNSecret` (edge.yml): one shared session per path.
+                          request_headers_to_add:
+                            - header:
+                                key: authorization
+                                value: Bearer arthome-playback-edge-development
+                              append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                http_filters:
+                  - name: envoy.filters.http.jwt_authn
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+                      providers:
+                        playback:
+                          audiences: [arthome.cdn]
+                          require_expiration: true
+                          # A refused renewal stops the viewer within seconds of `exp` (adr §3.3).
+                          clock_skew_seconds: 5
+                          local_jwks:
+                            filename: /etc/envoy/playback-jwks.json
+                          from_params: [token]
+                          payload_in_metadata: playback
+                          jwt_cache_config:
+                            jwt_cache_size: 1024
+                      rules:
+                        - match: { prefix: /watch/ }
+                          requires: { provider_name: playback }
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      default_source_code:
+                        # jwt_authn has no claim-to-path match: the token's `prefix` binds it to one
+                        # date. jwt_authn already dropped the token from the query (`forward: false`).
+                        inline_string: |
+                          function envoy_on_request(handle)
+                            local path = handle:headers():get(":path")
+                            if path:sub(1, 7) ~= "/watch/" then return end
+                            local claims = handle:streamInfo():dynamicMetadata():get("envoy.filters.http.jwt_authn")
+                            local prefix = claims and claims["playback"] and claims["playback"]["prefix"]
+                            if type(prefix) ~= "string" or path:sub(1, #prefix) ~= prefix then
+                              handle:respond({ [":status"] = "401" }, "")
+                            end
+                          end
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: edge_hls
+      type: STRICT_DNS
+      connect_timeout: 1s
+      load_assignment:
+        cluster_name: edge_hls
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: mediamtx-edge, port_value: 8888 }

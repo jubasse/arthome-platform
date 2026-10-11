@@ -1,0 +1,25 @@
+# R0 spike overlay, never used outside the spike: an encoder container, the edge's HLS on the host
+# for a direct comparison, and Envoy with a timing access log and its admin port.
+#
+#   docker compose -f compose.media.yaml -f infra/mediamtx/spike/compose.spike.yaml up -d
+#
+# `r0.mjs up` writes the two generated files first.
+
+services:
+  mediamtx-edge:
+    ports:
+      - 127.0.0.1:58886:8888
+
+  playback-edge:
+    volumes:
+      - ./infra/mediamtx/spike/.generated/envoy-timed.yaml:/etc/envoy/edge.yaml:ro
+    ports:
+      - 127.0.0.1:58901:9901
+
+  encoder:
+    image: bluenviron/mediamtx:1.21.2-ffmpeg
+    volumes:
+      - ./infra/mediamtx/spike/.generated/encoder.yml:/mediamtx.yml:ro
+      - ./infra/mediamtx/spike/encoder.sh:/encoder.sh:ro
+    depends_on: [mediamtx-origin]
+    networks: [media]

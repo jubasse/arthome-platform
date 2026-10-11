@@ -1,0 +1,13 @@
+{
+  "keys": [
+    {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "fJX5rezG5FSD2_OmhffGlraX6DbJF6zUi_fGgaSM8rM",
+      "y": "cxNwxbf1tJ8NwRIAJ0u7sO5Uz_Pcdxbdg5L7v7VP3x0",
+      "kid": "play-development",
+      "alg": "ES256",
+      "use": "sig"
+    }
+  ]
+}

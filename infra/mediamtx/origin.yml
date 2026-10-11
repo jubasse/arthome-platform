@@ -1,0 +1,57 @@
+# The ingest instance: encoders publish here, the edge and the studio monitor read here.
+# One `authMethod` per instance (MediaMTX 1.21): `http`, so every publish asks the streaming API
+# (`POST /v1/media-server/authorize`, MX1). Its URL carries the shared secret in the userinfo and
+# comes from MTX_AUTHHTTPADDRESS, never from this file.
+
+# `debug` prints the auth request body, stream key included.
+logLevel: info
+
+authMethod: http
+authHTTPExclude:
+  # Read ports are bound to 127.0.0.1 and the media network (compose.media.yaml).
+  - action: read
+  - action: playback
+  - action: api
+  - action: metrics
+  - action: pprof
+
+api: true
+apiAddress: :9997
+metrics: true
+metricsAddress: :9998
+playback: true
+playbackAddress: :9996
+
+rtsp: true
+rtspTransports: [tcp]
+rtmp: false
+moq: false
+
+# The studio monitor (D-019: WHEP is offered, never promised; LL-HLS always is).
+hls: true
+hlsAddress: :8888
+hlsVariant: lowLatency
+
+webrtc: true
+webrtcAddress: :8889
+# The ICE candidate carries this port, so the host maps it unchanged.
+webrtcLocalUDPAddress: :58189
+# Container addresses for encoders on the media network, 127.0.0.1 for a browser on the host.
+webrtcIPsFromInterfaces: true
+webrtcAdditionalHosts: [127.0.0.1]
+
+srt: true
+srtAddress: :8890
+
+pathDefaults:
+  # D-112: nothing is recorded unless the run starts a recording (own path configuration).
+  record: false
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordDeleteAfter: 0s
+  # A second publisher on a live path is refused, never swapped in.
+  overridePublisher: false
+
+paths:
+  # Sets nothing else: an own configuration differing only in `record*` hot-reloads without
+  # cutting the publisher.
+  "~^live/": {}
