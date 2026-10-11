@@ -42,6 +42,7 @@ import {
   SystemClock,
   fromEpochMs,
   toEpochMs,
+  WatchDenialReason,
   WatchScope,
   type Instant,
 } from '@arthome/core';
@@ -54,6 +55,7 @@ import { EntitlementConsumerModule } from '../entitlement/entitlement-consumer.m
 import { CATALOG_DATE_TOPIC, payloadOf, wireMessage } from '../itest/entitlement.js';
 import {
   cancelSeat,
+  errorOf,
   grantSeat,
   newViewer,
   openCall,
@@ -399,7 +401,8 @@ describe('a real live through MediaMTX and Envoy', () => {
       // hand until its `exp`, then refuses every request.
       await cancelSeat(playback, seatId, viewer.accountId, whip.dateId);
       const renewed = await renewCall(playback, viewer, opened.sessionId);
-      expect(renewed.statusCode).not.toBe(200);
+      expect(renewed.statusCode).toBe(403);
+      expect(errorOf(renewed).code).toBe(WatchDenialReason.SEAT_EXPIRED);
       expect((await edgeGet(`${playlist.segment}?token=${opened.token}`)).status).toBe(200);
       const pastExpMs = toEpochMs(opened.expiresAt) + 6_000 - new SystemClock().nowMs();
       await new Promise((resolve) => setTimeout(resolve, Math.max(0, pastExpMs)));

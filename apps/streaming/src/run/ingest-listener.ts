@@ -97,7 +97,8 @@ export class RunIngestListener implements IngestLifecycleListener {
       [streamPath, new Date(at), new Date(onlineSince)],
     );
     if (lost.length === 0) {
-      this.logger.warn('a publisher offline on a run with none online, or reported late: ignored');
+      // Every replica but the first reports each loss: expected, not a fault.
+      this.logger.debug('a publisher offline on no onset it names: already ended, or a later one');
     }
   }
 
