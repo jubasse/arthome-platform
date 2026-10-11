@@ -171,9 +171,9 @@ describe('PathWatcher', () => {
   });
 });
 
-function providerAt(clock: FixedClock): MediaMtxStreamingProvider {
+function providerAt(clock: FixedClock, watchEveryMs = 100): MediaMtxStreamingProvider {
   return new MediaMtxStreamingProvider({
-    env: readMediaMtxEnv({ ...MEDIAMTX_SPEC_ENV, MEDIAMTX_WATCH_EVERY_MS: '100' }),
+    env: readMediaMtxEnv({ ...MEDIAMTX_SPEC_ENV, MEDIAMTX_WATCH_EVERY_MS: String(watchEveryMs) }),
     signingKey: readPlaybackSigningKey({ NODE_ENV: 'test' }),
     clock,
   });
@@ -222,6 +222,34 @@ describe('the watch loop', () => {
     } finally {
       await provider.beforeApplicationShutdown();
     }
+  });
+
+  it('stops as soon as the tick in flight ends, without one more period', async () => {
+    let release = (): void => undefined;
+    const fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () => {
+            resolve(Response.json({ pageCount: 1, items: [] }));
+          };
+        }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const provider = providerAt(new FixedClock(NOW), 10_000);
+    provider.attachIngestHooks({
+      authorizer: { authorize: () => Promise.resolve({ accepted: true }) },
+      listener: new Reports().listener,
+    });
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledOnce();
+    });
+
+    const stopped = provider.beforeApplicationShutdown();
+    release();
+    const startedMs = performance.now();
+    await stopped;
+
+    expect(performance.now() - startedMs).toBeLessThan(1_000);
   });
 
   it('emits nothing while the origin is unreachable: never "every feed offline"', async () => {

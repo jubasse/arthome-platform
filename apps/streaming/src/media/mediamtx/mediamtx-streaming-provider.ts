@@ -263,6 +263,7 @@ class WatchLoop {
         }
         this.failing = true;
       }
+      if (this.stopping) break;
       await this.pause();
     }
   }
