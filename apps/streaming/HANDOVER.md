@@ -750,8 +750,8 @@ protocol of its source, offline at the clock. A failed read reports nothing, log
 recovers. Every replica polls: `RunIngestListener` records an onset equal to
 `publisher_online_since` once. The same tick writes the edge path of every date signed in the last
 ten minutes whose feed is online; `sign` does no I/O, so a first manifest may answer 404 for up to a
-tick. The audio worker keeps the manifest through a cut within its 5 s grace; past it the provider
-restarts it (the manifest starts over); an edge path offline 15 s with the feed online is reported
+tick. The audio worker keeps the manifest through a cut it outlives (it retries for 12 s); a feed
+back later gets a restarted worker and the manifest starts over; an edge path offline 15 s with the feed online is reported
 as `workerFailed({ attempts: 3, final: true })` once. Edge routes are per replica: a date signed on
 two replicas is removed by the first to reach ten minutes idle and rewritten by the other.
 
@@ -777,10 +777,11 @@ reload cut by the 10 s route timeout.
 | --- | --- |
 | `media/media.module.spec.ts` | the fake by default, MediaMTX on config, either refused in production, a missing URL or an unknown provider fails the boot |
 | `media/mediamtx/path-watcher.spec.ts` | online once at `onlineTime` with the protocol of its source, offline at the clock, a report the listener failed repeated, an unreachable origin reporting nothing |
-| `media/mediamtx/edge-routes.spec.ts` | AAC pulled as it is, Opus through the worker, a worker restarted past its grace, its failure reported once, a date removed ten minutes after its last signature |
+| `media/mediamtx/edge-routes.spec.ts` | AAC pulled as it is, Opus through the worker, a worker restarted once it exited, its failure reported once, a date removed ten minutes after its last signature |
 | `media/mediamtx/mediamtx-playback.spec.ts`, `mediamtx-metrics.spec.ts`, `recording-ref.spec.ts` | cookie refused, claims, prefix, `exp`, a stable manifest; codecs, rate, WHIP jitter and loss; an opaque reference |
 | `run/grace-and-hold-screen.itest.ts` | a second replica's report of the same onset writes nothing |
 | `media/mediamtx/*.itest.ts` (testcontainers, `startMediaStack`) | ingest by key, a second publisher refused, disconnect; every token refusal on a segment and a part through Envoy, AAC LL-HLS on a valid one; recording ready within 2 s and deleted; two watchers lift a lost feed once |
+| `drills/real-live.itest.ts` (3.5 min) | the whole chain on a real feed: published with the run's key, the technical check on a real sample (D-114), on air; PS3 opens playback and Envoy serves AAC LL-HLS; the renewal refused once the seat is lost, then 401 past `exp`; a kicked publisher back within the worker's budget keeps the media sequence; an SRT feed gets no worker; a replay recorded at ingest, ready at the end, then deleted, a date without a mode leaving nothing; the hold screen raised on a lost feed and lifted on its return (D-124); a frozen worker raising `compatibility_worker_failed` |
 
 **Gaps.** The studio monitor is not authenticated on the origin (read excluded, bound to
 127.0.0.1): fine on a laptop, not on a shared host (the sandbox slice). After an abrupt loss the

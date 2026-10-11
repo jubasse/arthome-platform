@@ -22,6 +22,10 @@ export const MEDIAMTX_RECORDING_CAPABILITIES: RecordingCapabilities = {
  */
 const SEGMENT_START_SKEW_MS = 5_000;
 
+function listedFrom(start: string): string {
+  return new Date(Date.parse(start) - SEGMENT_START_SKEW_MS).toISOString();
+}
+
 interface ListedSpan {
   readonly start: string;
   /** Seconds. */
@@ -90,7 +94,7 @@ export class MediaMtxRecording implements RecordingProvider {
       this.originPlayback.json<readonly ListedSpan[]>({
         operation: 'recording list',
         path: '/list',
-        query: { path: name, start },
+        query: { path: name, start: listedFrom(start) },
       }),
     ]);
     if (configuration.status === 'rejected') throw configuration.reason;
@@ -110,7 +114,7 @@ export class MediaMtxRecording implements RecordingProvider {
       operation: 'recording segments',
       path: `/v3/recordings/get/${name}`,
     });
-    const from = Date.parse(start) - SEGMENT_START_SKEW_MS;
+    const from = Date.parse(listedFrom(start));
     for (const segment of recordings?.segments ?? []) {
       if (Date.parse(segment.start) < from) continue;
       await this.originApi.command({

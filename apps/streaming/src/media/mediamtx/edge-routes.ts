@@ -17,16 +17,14 @@ import type { IngestLifecycleListener } from '../media-ports.js';
 export const EDGE_ROUTE_IDLE_MS = 10 * MINUTE_MS;
 
 /**
- * `infra/mediamtx/audio-worker.sh`'s `AUDIO_WORKER_GRACE_S`: a feed back within it finds its worker
- *   still reading, so the manifest goes on; back later, the worker is restarted and it starts over,
- *   as the fake's generation does.
+ * The worker retries a lost input for its 5 s grace, then at 1, 2 and 4 s, and exits 12 s after the
+ *   loss (`infra/mediamtx/audio-worker.sh`, measured in R0). A feed back before that finds it still
+ *   reading, so the manifest goes on; back later, the worker is restarted and the manifest starts
+ *   over, as the fake's generation does.
  */
-export const AUDIO_WORKER_GRACE_MS = 5_000;
+export const AUDIO_WORKER_EXITS_AFTER_MS = 12_000;
 
-/**
- * The worker gives up 12 s after a lost input (its grace, then 1, 2 and 4 s; measured in R0). An
- *   edge path offline this long while the feed is online is a worker that failed for good.
- */
+/** An edge path offline this long while the feed is online is a worker that failed for good. */
 export const AUDIO_WORKER_FAILED_AFTER_MS = 15_000;
 export const AUDIO_WORKER_ATTEMPTS = 3;
 
@@ -107,11 +105,11 @@ class EdgeRoute {
     this.edgeOfflineSinceMs = null;
   }
 
-  /** A feed back past the worker's grace, or after its failure, gets a new worker. */
+  /** A feed back after the worker exited, or after its failure, gets a new worker. */
   public feedOnline(nowMs: number): void {
     if (this.feedOfflineSinceMs === null) return;
     const workerGone =
-      this.failureReported || nowMs - this.feedOfflineSinceMs >= AUDIO_WORKER_GRACE_MS;
+      this.failureReported || nowMs - this.feedOfflineSinceMs >= AUDIO_WORKER_EXITS_AFTER_MS;
     if (this.applied !== null && workerGone) this.generation += 1;
     this.feedOfflineSinceMs = null;
     this.failureReported = false;

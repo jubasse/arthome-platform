@@ -5,7 +5,7 @@ import { FixedClock, MINUTE_MS } from '@arthome/core';
 
 import {
   AUDIO_WORKER_FAILED_AFTER_MS,
-  AUDIO_WORKER_GRACE_MS,
+  AUDIO_WORKER_EXITS_AFTER_MS,
   EdgeRoutes,
   edgePathConfigurationOf,
 } from './edge-routes.js';
@@ -147,18 +147,18 @@ describe('EdgeRoutes', () => {
     expect(calls.at(-1)?.body).toMatchObject({ source: 'rtsp://mediamtx-origin:8554/live/sp1' });
   });
 
-  it('keeps the worker through a cut within its grace, restarts it after', async () => {
+  it('keeps the worker through a cut it outlives, restarts it after it exited', async () => {
     routes.remember('d1', 'sp1');
     await tick(opusFeed());
     edgePaths = [edgePath(true)];
 
     await tick(opusFeed(false));
-    clock.advance(AUDIO_WORKER_GRACE_MS - 1_000);
+    clock.advance(AUDIO_WORKER_EXITS_AFTER_MS - 1_000);
     await tick(opusFeed());
     expect(writes()).toHaveLength(1);
 
     await tick(opusFeed(false));
-    clock.advance(AUDIO_WORKER_GRACE_MS);
+    clock.advance(AUDIO_WORKER_EXITS_AFTER_MS);
     await tick(opusFeed());
     expect(writes()).toHaveLength(2);
     expect(calls.at(-1)?.body).toMatchObject({ runOnInit: expect.stringMatching(/ 2$/) as string });

@@ -49,6 +49,8 @@ export interface StartedMediaStack {
   readonly playbackEdgeUrl: string;
   readonly edgeHlsPortMapped: boolean;
   startEncoder(request: EncoderRequest): Promise<StartedEncoder>;
+  /** Every audio worker on the edge frozen and its FFmpeg killed: never restarted, never exited. */
+  failAudioWorkers(): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -189,6 +191,15 @@ export async function startMediaStack(request: MediaStackRequest): Promise<Start
             await container.stop({ timeout: 1_000 });
           },
         };
+      },
+      failAudioWorkers: async (): Promise<void> => {
+        const { exitCode } = await edge.exec([
+          'sh',
+          '-c',
+          // The bracket keeps pkill from matching this very command line.
+          'pkill -STOP -f "[a]udio-worker.sh"; pkill -KILL ffmpeg; true',
+        ]);
+        if (exitCode !== 0) throw new Error('the audio workers could not be stopped');
       },
       stop: async (): Promise<void> => {
         for (const container of started.reverse()) await container.stop({ timeout: 1_000 });
