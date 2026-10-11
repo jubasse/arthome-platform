@@ -1,0 +1,53 @@
+# The viewer instance, the CDN's development twin. No auth of its own: Envoy (infra/envoy/edge.yaml)
+# is the only door to its HLS port and checks the playback token on every request. Its paths are
+# written by the streaming API through the Control API, one `watch/<dateId>` per signed date.
+
+logLevel: info
+
+authMethod: internal
+authInternalUsers:
+  - user: any
+    ips: []
+    permissions:
+      - action: read
+  # The audio worker, run by this instance.
+  - user: any
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: publish
+  # Bound to 127.0.0.1 on the host; a host request arrives from the bridge gateway, not loopback.
+  - user: any
+    ips: []
+    permissions:
+      - action: api
+      - action: metrics
+
+api: true
+apiAddress: :9997
+metrics: true
+metricsAddress: :9998
+
+rtsp: true
+rtspTransports: [tcp]
+rtmp: false
+webrtc: false
+srt: false
+moq: false
+playback: false
+
+hls: true
+hlsAddress: :8888
+hlsVariant: lowLatency
+# The muxer runs from the path's creation: the first viewer gets a manifest at once, not after
+# about three seconds (R0).
+hlsAlwaysRemux: true
+hlsAllowOrigins: ["*"]
+# Envoy presents it on every request, so the edge serves one shared session per path, as to a CDN:
+# no cookie-check redirect (it would drop the token from the URL) and no per-viewer session query.
+# Not a barrier: the HLS port is reachable from the media network only. Same value in edge.yaml.
+hlsCDNSecret: arthome-playback-edge-development
+
+pathDefaults:
+  record: false
+  # The origin answers RTSP over TCP only: no UDP attempt first.
+  rtspTransport: tcp

@@ -122,9 +122,11 @@ decision for one request: a valid signature by a known `kid`, a path under the p
 first, so an encoded `..` cannot climb out), and `at` before `exp`. A suite calls it to measure
 playback stopping, not the renewal refused (`adr-stream-entitlement.md` §3.3).
 
-**`MediaModule`** (`src/media/media.module.ts`) binds the fake under the four tokens through
-`fakeOutsideProduction()`, which throws in production ("the fake streaming provider cannot be bound
-in production"), and binds its own `CLOCK`, which a suite overrides.
+**`MediaModule`** (`src/media/media.module.ts`) binds one provider under the four tokens through
+`mediaProviderOutsideProduction()`: the fake by default, MediaMTX with
+`STREAMING_MEDIA_PROVIDER=mediamtx` (§0h). Either throws in production, naming the selected one ("the mediamtx
+streaming provider cannot be bound in production"). It binds its own `CLOCK`, which a suite overrides;
+`FakeStreamingProvider` resolves to null when MediaMTX is bound.
 
 **The keys** (`libs/config`). `readPlaybackSigningKey`: `PLAYBACK_SIGNING_KEY`, a P-256 private JWK
 with its `kid`; outside production the published `play-development` key, distinct from the internal
@@ -714,3 +716,88 @@ decide nothing (`adr-stream-entitlement.md` §6).
   `authorize-media-server.http.itest.ts` (204 over both protocols, 403 for a wrong key, a retired
   generation, an ended run, a publisher online and a read, 401, 400, no deadline, the log capture),
   and `boot.itest.ts` (`EndpointGuardsCheck` finds the identity bound).
+
+## 0h. MediaMTX, a real media server behind the four ports (MX2)
+
+`src/media/mediamtx/`: `MediaMtxStreamingProvider` binds the four ports to MediaMTX 1.21.2 in
+development. No byte of video passes through NestJS: the provider calls the Control APIs, the
+origin's metrics endpoint and its playback server's `/list`, never a segment.
+
+**Topology** (`compose.media.yaml`, its own compose project `arthome-media`, never `arthome`):
+
+| Service | Role | Host ports (127.0.0.1) |
+| --- | --- | --- |
+| `mediamtx-origin` (`infra/mediamtx/origin.yml`) | ingest: WHIP, SRT; asks the streaming API before each publish (`authMethod: http`, MX1's route); records at ingest; the studio monitor | 58889 WHIP/WHEP, 58189/udp WebRTC, 58890/udp SRT, 58887 monitor LL-HLS, 59997 API, 59998 metrics, 59996 playback |
+| `mediamtx-edge` (`infra/mediamtx/edge.yml`, `-ffmpeg` image) | the CDN's twin: one `watch/<dateId>` path per signed date, AAC pulled from the origin or Opus through `audio-worker.sh` | 59995 API; its HLS stays on the media network |
+| `playback-edge` (`infra/envoy/edge.yaml`) | the only door to the edge's HLS: checks PS3's token on every request (`jwt_authn`), binds it to the date's prefix (`lua`) | 58888 |
+
+**The switch.** `STREAMING_MEDIA_PROVIDER=mediamtx` and every URL of `src/media/mediamtx/mediamtx-env.ts`
+(`MEDIAMTX_ORIGIN_API_URL`, `_ORIGIN_METRICS_URL`, `_ORIGIN_PLAYBACK_URL`, `_ORIGIN_RTSP_URL` as the
+edge reaches the origin, `_EDGE_API_URL`, `_WEBRTC_URL`, `_SRT_URL`, `_MONITOR_HLS_URL`,
+`_PLAYBACK_EDGE_URL`); a missing one fails the boot. The fake stays the default and every existing
+suite runs on it. Start the stack with `MTX_AUTHHTTPADDRESS` set to MX1's route, its secret in the
+userinfo (`apps/streaming/.env.example`), then `docker compose -f compose.media.yaml up -d`.
+
+**Publishing.** Over WHIP, `ingestUrlFor` gives `http://127.0.0.1:58889/live/<streamPath>/whip`, the
+run's key as the Bearer token (OBS's WHIP output, or a browser WHIP client). Over SRT,
+`srt://127.0.0.1:58890?streamid=publish:live/<streamPath>`, the encoder appending `:<any>:<key>`
+(H.264 with AAC). A real browser publishing was not measured: the suites publish through MediaMTX's
+own WHIP client and FFmpeg's SRT.
+
+**How the provider follows a feed.** A loop, started by `attachIngestHooks` in the API only, reads
+the origin's paths every `MEDIAMTX_WATCH_EVERY_MS` (1 s): online at the path's `onlineTime` with the
+protocol of its source, offline at the instant the list was read (taken before the call), naming the
+onset it ends. A failed read reports nothing, logged once until it recovers. Every replica polls:
+`RunIngestListener` records an onset equal to `publisher_online_since` once, and a loss clears only
+the onset it names, so a slower replica's loss never ends the feed's return. Each extra replica's
+second report of a loss finds nothing to clear: logged at `debug`, not a fault. The residue: a
+return is refused as older than its loss only if MediaMTX's clock lags the API's by more than the
+time between the read and the reconnection. The same tick writes the edge path of every date signed in the last
+ten minutes whose feed is online; `sign` does no I/O, so a first manifest may answer 404 for up to a
+tick. The audio worker keeps the manifest through a cut it outlives (it retries for 12 s); a feed
+back later gets a restarted worker and the manifest starts over; an edge path offline 15 s with the feed online is reported
+as `workerFailed({ attempts: 3, final: true })` once. Edge routes are per replica: a date signed on
+two replicas is removed by the first to reach ten minutes idle and rewritten by the other.
+
+**Playback.** `query_token` only (`signed_cookie` throws `PlaybackSigningUnavailable`): ES256 with
+PS3's claims and `prefix: /watch/<dateId>/`, `aud` `arthome.cdn`, `exp` the grant's;
+`manifestUrl` `<envoy>/watch/<dateId>/index.m3u8`, the same across renewals. The player appends the
+current token as `?token=` to every request: a simple request, no CORS preflight. Envoy strips it
+before the edge and keeps no access log. `checksEveryRequest: true`: a refused renewal stops
+playback at `exp` plus Envoy's 5 s clock skew.
+
+**The key set.** `tools/playback-jwks.mjs` writes `infra/mediamtx/playback-jwks.json` from
+`readPlaybackSigningKey` (committed for the development key). Envoy reads it at start only: after
+regenerating it, `docker compose -f compose.media.yaml restart playback-edge`. No NestJS route
+serves it (D-121).
+
+**Envoy's measured cost** (R0, 10 min of LL-HLS in headless Chrome, 13,674 requests): its own time
+per request p50 0.58 ms, p99 1.53 ms; glass-to-glass +13 ms against direct edge access; no blocking
+reload cut by the 10 s route timeout.
+
+**What proves it**
+
+| Suite | What |
+| --- | --- |
+| `media/media.module.spec.ts` | the fake by default, MediaMTX on config, either refused in production, a missing URL or an unknown provider fails the boot |
+| `media/mediamtx/path-watcher.spec.ts` | online once at `onlineTime` with the protocol of its source, offline at the read with the onset it ends, a publisher back while a slow tick reports not refused, a report the listener failed repeated, an unreachable origin reporting nothing, a stop that waits no extra period |
+| `media/mediamtx/edge-routes.spec.ts` | AAC pulled as it is, Opus through the worker, a worker restarted once it exited, its failure reported once, a date removed ten minutes after its last signature |
+| `media/mediamtx/mediamtx-playback.spec.ts`, `mediamtx-metrics.spec.ts`, `recording-ref.spec.ts` | cookie refused, claims, prefix, `exp`, a stable manifest; codecs, rate, WHIP jitter and loss; an opaque reference |
+| `run/grace-and-hold-screen.itest.ts` | a second replica's report of the same onset writes nothing; a loss naming an earlier onset leaves the return in place |
+| `media/mediamtx/*.itest.ts` (testcontainers, `startMediaStack`; the origin asks a double of MX1's route built on its `attemptOf`, no database) | ingest by key, a second publisher refused, disconnect; every token refusal on a segment and a part through Envoy, a `prefix` claim of any other shape than `/watch/<date>/` refused, AAC LL-HLS on a valid one; recording ready within 2 s and deleted; two watchers lift a lost feed once |
+| `drills/real-live.itest.ts` (3 min) | the whole chain on a real feed: published with the run's key through MX1's route (§0g) on the app, the technical check on a real sample (D-114), on air; PS3 opens playback and Envoy serves AAC LL-HLS; the renewal refused once the seat is lost (403 `watch.seat_expired`), then 401 past `exp`; a kicked publisher back within the worker's budget keeps the media sequence; an SRT feed gets no worker; a replay recorded at ingest, ready at the end, then deleted, a date without a mode leaving nothing; the hold screen raised on a lost feed and lifted on its return (D-124); a frozen worker raising `compatibility_worker_failed` |
+
+**Proven only by R0 or by configuration**, no suite fails if they break:
+- Envoy strips the token before the edge (`forward: false` on `from_params`, Envoy 1.39): measured
+  once in R0. The Lua check relies on it; an Envoy bump must measure it again.
+- The edge HLS port unreachable from the host: `compose.media.yaml` binds no host port for it. The
+  `edge-playback.itest.ts` case only checks that `startMediaStack` maps none.
+- An SRT feed's AAC pulled as it is and played through Envoy: the drill checks the edge path's
+  configuration (no worker), no suite plays it.
+- `audio-worker.sh`'s own budget (5 s grace, then 1, 2 and 4 s, then exit): measured in R0. The
+  drill freezes the script and kills FFmpeg, which proves the provider's 15 s detection only.
+
+**Gaps.** The studio monitor is not authenticated on the origin (read excluded, bound to
+127.0.0.1): fine on a laptop, not on a shared host (the sandbox slice). After an abrupt loss the
+origin refuses a reconnecting encoder until it times the dead session out (about 8 s for SRT).
+

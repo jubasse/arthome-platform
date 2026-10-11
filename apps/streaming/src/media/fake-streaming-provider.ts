@@ -2,17 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import type { SigningKey } from '@arthome-platform/config';
 import { doublingDelays } from '@arthome-platform/messaging';
-import {
-  SignJWT,
-  createLocalJWKSet,
-  importJWK,
-  jwtVerify,
-  type CryptoKey,
-  type JWTVerifyGetKey,
-} from 'jose';
+import { createLocalJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
 
 import { EdgeRenewalMode, PlaybackProtocol } from '@arthome/contracts/streaming';
-import { audienceOf, fromEpochMs, toEpochMs, type Clock, type Instant } from '@arthome/core';
+import { fromEpochMs, toEpochMs, type Clock, type Instant } from '@arthome/core';
 
 import {
   IngestProtocol,
@@ -35,6 +28,12 @@ import {
   type SignedPlayback,
   type StreamingMetricsProvider,
 } from './media-ports.js';
+import {
+  PLAYBACK_ALGORITHM,
+  PLAYBACK_AUDIENCE,
+  PlaybackTokenSigner,
+  assertUrlSafeSegment,
+} from './playback-token.js';
 
 /**
  * How long a worker outlives its publisher, so a short cut at the venue keeps the HLS manifest
@@ -62,6 +61,7 @@ export const FAKE_PLAYBACK_CAPABILITIES: PlaybackCapabilities = {
   protocols: [PlaybackProtocol.HLS],
   drmSystems: [],
   geoRestriction: false,
+  checksEveryRequest: true,
 };
 
 export const FAKE_RECORDING_CAPABILITIES: RecordingCapabilities = {
@@ -69,14 +69,10 @@ export const FAKE_RECORDING_CAPABILITIES: RecordingCapabilities = {
   masterAtIngest: true,
 };
 
-const PLAYBACK_ALGORITHM = 'ES256';
-/** The playback set's audience (`adr-auth.md` §8.1): an edge, never a service, reads it. */
-const PLAYBACK_AUDIENCE = audienceOf('cdn');
 const PLAYBACK_COOKIE = 'arthome_playback';
 const EDGE_ORIGIN = 'https://edge.fake-streaming.invalid';
 const INGEST_HOST = 'ingest.fake-streaming.invalid';
 const MONITOR_ORIGIN = 'https://monitor.fake-streaming.invalid';
-const PATH_SEGMENT = /^[A-Za-z0-9_-]+$/;
 
 export interface FakeStreamingOptions {
   readonly signingKey: SigningKey;
@@ -94,8 +90,12 @@ interface Publish {
   readonly presentedKey: string;
 }
 
+interface Connection extends Publish {
+  readonly onlineSince: Instant;
+}
+
 interface Stream {
-  connected: Publish | null;
+  connected: Connection | null;
   lastPublish: Publish | null;
   offlineAtMs: number | null;
   workerFailed: boolean;
@@ -120,9 +120,8 @@ function settled<T>(answer: () => T): Promise<T> {
 }
 
 function signedPrefixOf(dateId: string, sessionScope: string): string {
-  for (const segment of [dateId, sessionScope]) {
-    if (!PATH_SEGMENT.test(segment)) throw new Error('a playback path segment must be URL-safe');
-  }
+  assertUrlSafeSegment(dateId);
+  assertUrlSafeSegment(sessionScope);
   return `/playback/${dateId}/${sessionScope}/`;
 }
 
@@ -151,17 +150,16 @@ export class FakeStreamingProvider
   public readonly recordingCapabilities: RecordingCapabilities = FAKE_RECORDING_CAPABILITIES;
 
   private readonly clock: Clock;
-  private readonly signingKey: SigningKey;
+  private readonly signer: PlaybackTokenSigner;
   private readonly workerGraceMs: number;
   private readonly edgeKeys: JWTVerifyGetKey;
-  private privateKey: Promise<CryptoKey> | null = null;
   private hooks: IngestHooks | null = null;
   private readonly streams = new Map<string, Stream>();
   private readonly recordings = new Map<string, Recording>();
 
   public constructor(options: FakeStreamingOptions) {
     this.clock = options.clock;
-    this.signingKey = options.signingKey;
+    this.signer = new PlaybackTokenSigner(options.signingKey);
     this.workerGraceMs = options.workerGraceMs ?? FAKE_WORKER_GRACE_MS;
     this.ingestCapabilities = { ...FAKE_INGEST_CAPABILITIES, ...options.ingestCapabilities };
     this.playbackCapabilities = { ...FAKE_PLAYBACK_CAPABILITIES, ...options.playbackCapabilities };
@@ -218,7 +216,7 @@ export class FakeStreamingProvider
       stream.offlineAtMs !== null &&
       nowMs < stream.offlineAtMs + this.workerGraceMs;
     if (!workerKept) stream.generation += 1;
-    stream.connected = { protocol, presentedKey };
+    stream.connected = { protocol, presentedKey, onlineSince: fromEpochMs(nowMs) };
     stream.lastPublish = stream.connected;
     stream.offlineAtMs = null;
     stream.workerFailed = false;
@@ -338,18 +336,14 @@ export class FakeStreamingProvider
     if (!declared) throw new PlaybackSigningUnavailable(grant.mechanism);
 
     const prefix = signedPrefixOf(grant.dateId, grant.sessionScope);
-    const token = await new SignJWT({ ...grant.claims, prefix })
-      .setProtectedHeader({ alg: PLAYBACK_ALGORITHM, kid: this.signingKey.keyId })
-      .setAudience(PLAYBACK_AUDIENCE)
-      .setExpirationTime(Math.floor(toEpochMs(grant.expiresAt) / 1_000))
-      .sign(await this.key());
+    const token = await this.signer.sign(grant, prefix);
     return {
       manifestUrl: `${EDGE_ORIGIN}${prefix}master.m3u8`,
       queryToken: byCookie ? null : token,
       cookies: byCookie
         ? [{ name: PLAYBACK_COOKIE, value: token, path: prefix, expiresAt: grant.expiresAt }]
         : [],
-      keyId: this.signingKey.keyId,
+      keyId: this.signer.keyId,
     };
   }
 
@@ -406,22 +400,15 @@ export class FakeStreamingProvider
     const listener = this.attachedHooks().listener;
     const stream = this.streamAt(streamPath);
     const nowMs = this.clock.nowMs();
+    const onlineSince = stream.connected?.onlineSince ?? fromEpochMs(nowMs);
     stream.connected = null;
     stream.offlineAtMs = nowMs;
-    await listener.publisherOffline({ streamPath, at: fromEpochMs(nowMs) });
+    await listener.publisherOffline({ streamPath, onlineSince, at: fromEpochMs(nowMs) });
   }
 
   private recordingOf(ref: RecordingRef): Recording {
     const recording = this.recordings.get(ref);
     if (recording === undefined) throw new RecordingNotFound();
     return recording;
-  }
-
-  private key(): Promise<CryptoKey> {
-    this.privateKey ??= importJWK(
-      { ...this.signingKey.privateJwk },
-      PLAYBACK_ALGORITHM,
-    ) as Promise<CryptoKey>;
-    return this.privateKey;
   }
 }

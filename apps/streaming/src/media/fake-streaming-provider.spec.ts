@@ -156,8 +156,8 @@ describe('ingest', () => {
       { streamPath: PATH, protocol: IngestProtocol.RTMPS, at: plusSeconds(START, 11) },
     ]);
     expect(hooks.offline).toEqual([
-      { streamPath: PATH, at: plusSeconds(START, 10) },
-      { streamPath: PATH, at: plusSeconds(START, 71) },
+      { streamPath: PATH, onlineSince: START, at: plusSeconds(START, 10) },
+      { streamPath: PATH, onlineSince: plusSeconds(START, 11), at: plusSeconds(START, 71) },
     ]);
   });
 
@@ -311,6 +311,7 @@ describe('signed playback', () => {
   const expiresAt = plusSeconds(START, 120);
   const grant = (mechanism: PlaybackGrant['mechanism']): PlaybackGrant => ({
     dateId: DATE_ID,
+    streamPath: PATH,
     sessionScope: SESSION_SCOPE,
     claims: {
       sub: '01a0e700-0000-7000-8000-0000000000d1',
