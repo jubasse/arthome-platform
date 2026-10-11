@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { EdgeRenewalMode, QualityCap } from '@arthome/contracts/streaming';
 import { FixedClock, WatchScope, plusSeconds, toEpochMs } from '@arthome/core';
 
+import { MEDIAMTX_SPEC_ENV } from './mediamtx-env-fixtures.js';
 import { readMediaMtxEnv } from './mediamtx-env.js';
-import { MEDIAMTX_SPEC_ENV } from './mediamtx-spec-env.js';
 import { MediaMtxStreamingProvider } from './mediamtx-streaming-provider.js';
 import { PlaybackSigningUnavailable, type PlaybackGrant } from '../media-ports.js';
 

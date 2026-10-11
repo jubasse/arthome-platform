@@ -13,7 +13,7 @@ import {
 } from './media-tokens.js';
 import { MediaModule, mediaProviderOutsideProduction } from './media.module.js';
 import { CLOCK } from '../clock.js';
-import { MEDIAMTX_SPEC_ENV } from './mediamtx/mediamtx-spec-env.js';
+import { MEDIAMTX_SPEC_ENV } from './mediamtx/mediamtx-env-fixtures.js';
 import { MediaMtxStreamingProvider } from './mediamtx/mediamtx-streaming-provider.js';
 
 const clock = new FixedClock('2026-10-06T19:00:00.000Z');

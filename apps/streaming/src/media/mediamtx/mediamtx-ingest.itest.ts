@@ -8,11 +8,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { SystemClock } from '@arthome/core';
 
-import { startMediaServerStandIn, type MediaServerStandIn } from './media-server-stand-in.js';
 import { getPath, livePathOf } from './mediamtx-api.js';
 import { readMediaMtxEnv } from './mediamtx-env.js';
 import { MediaMtxHttp } from './mediamtx-http.js';
 import { MediaMtxStreamingProvider } from './mediamtx-streaming-provider.js';
+import {
+  startMediaServerStandIn,
+  type MediaServerStandIn,
+} from '../../itest/media-server-stand-in.js';
 import {
   IngestProtocol,
   type IngestDecision,

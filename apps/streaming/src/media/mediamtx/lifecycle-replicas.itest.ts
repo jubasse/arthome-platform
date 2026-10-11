@@ -10,9 +10,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { PUBLISHER_GRACE_SECONDS, SystemClock } from '@arthome/core';
 
-import { startMediaServerStandIn, type MediaServerStandIn } from './media-server-stand-in.js';
 import { readMediaMtxEnv } from './mediamtx-env.js';
 import { MediaMtxStreamingProvider } from './mediamtx-streaming-provider.js';
+import {
+  startMediaServerStandIn,
+  type MediaServerStandIn,
+} from '../../itest/media-server-stand-in.js';
 import {
   STARTUP_MS,
   feedOn,

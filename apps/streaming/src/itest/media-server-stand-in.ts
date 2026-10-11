@@ -2,11 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import {
-  attemptOf,
-  type MediaServerAuthorization,
-} from '../../media-server/media-server-attempt.js';
-import type { IngestAuthorizer } from '../media-ports.js';
+import type { IngestAuthorizer } from '../media/media-ports.js';
+import { attemptOf, type MediaServerAuthorization } from '../media-server/media-server-attempt.js';
 
 /**
  * MX1's route without the app: its Basic check and its own mapping (`attemptOf`), the decision a

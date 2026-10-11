@@ -5,11 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FixedClock, toEpochMs, type Instant } from '@arthome/core';
 
 import type { MediaMtxPath } from './mediamtx-api.js';
+import { MEDIAMTX_SPEC_ENV } from './mediamtx-env-fixtures.js';
 import { MediaMtxStreamingProvider } from './mediamtx-streaming-provider.js';
 import { PathWatcher } from './path-watcher.js';
 import { IngestProtocol, type PublisherOffline, type PublisherOnline } from '../media-ports.js';
 import { readMediaMtxEnv } from './mediamtx-env.js';
-import { MEDIAMTX_SPEC_ENV } from './mediamtx-spec-env.js';
 
 const NOW = '2026-10-11T19:00:00.000Z';
 const ONLINE_AT = '2026-10-11T18:59:58.123456789Z';

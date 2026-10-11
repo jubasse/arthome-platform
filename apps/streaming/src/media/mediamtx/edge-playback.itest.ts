@@ -12,9 +12,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { EdgeRenewalMode, QualityCap } from '@arthome/contracts/streaming';
 import { SystemClock, WatchScope, fromEpochMs, type Instant } from '@arthome/core';
 
-import { startMediaServerStandIn, type MediaServerStandIn } from './media-server-stand-in.js';
 import { readMediaMtxEnv } from './mediamtx-env.js';
 import { MediaMtxStreamingProvider } from './mediamtx-streaming-provider.js';
+import {
+  startMediaServerStandIn,
+  type MediaServerStandIn,
+} from '../../itest/media-server-stand-in.js';
 import type { PlaybackGrant } from '../media-ports.js';
 
 const STARTUP_MS = 240_000;
