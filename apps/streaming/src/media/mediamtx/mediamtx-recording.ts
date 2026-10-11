@@ -106,10 +106,18 @@ export class MediaMtxRecording implements RecordingProvider {
     return { ready: true, durationSec: Math.round(seconds) };
   }
 
-  /** The segments first, then the path's own configuration: a retry finds what is left. */
+  /**
+   * The path's own configuration first, which stops `record`, then the segments: none is written
+   *   after the listing. A retry still finds them, since the recordings are read from the disk.
+   */
   public async delete(ref: RecordingRef): Promise<void> {
     const { streamPath, start } = this.spanOf(ref);
     const name = livePathOf(streamPath);
+    await this.originApi.command({
+      operation: 'recording configuration delete',
+      method: 'DELETE',
+      path: `/v3/config/paths/delete/${name}`,
+    });
     const recordings = await this.originApi.json<Recordings>({
       operation: 'recording segments',
       path: `/v3/recordings/get/${name}`,
@@ -124,11 +132,6 @@ export class MediaMtxRecording implements RecordingProvider {
         query: { path: name, start: segment.start },
       });
     }
-    await this.originApi.command({
-      operation: 'recording configuration delete',
-      method: 'DELETE',
-      path: `/v3/config/paths/delete/${name}`,
-    });
   }
 
   private spanOf(ref: RecordingRef): RecordingSpan {
