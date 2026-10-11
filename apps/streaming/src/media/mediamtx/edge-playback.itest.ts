@@ -183,6 +183,26 @@ describe('playback through Envoy', () => {
   );
 
   it(
+    'refuses a token whose prefix is not one date in the shape the API signs',
+    async () => {
+      const { segment } = await playlistOfA();
+      const key = await importJWK({ ...signingKey.privateJwk }, 'ES256');
+      const signedFor = (prefix: string) =>
+        new SignJWT({ prefix })
+          .setProtectedHeader({ alg: 'ES256', kid: signingKey.keyId })
+          .setAudience('arthome.cdn')
+          .setExpirationTime('2m')
+          .sign(key);
+
+      for (const prefix of ['', '/', '/watch/', `/watch/${DATE_A}`]) {
+        expect((await get(segment, await signedFor(prefix))).status, `"${prefix}"`).toBe(401);
+      }
+      expect((await get(segment, await signedFor(`/watch/${DATE_A}/`))).status).toBe(200);
+    },
+    CASE_MS,
+  );
+
+  it(
     'refuses a token accepted while valid once it is past its exp',
     async () => {
       const shortLived = await tokenFor(DATE_A, inSeconds(4));

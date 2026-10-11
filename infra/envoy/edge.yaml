@@ -71,14 +71,16 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                       default_source_code:
                         # jwt_authn has no claim-to-path match: the token's `prefix` binds it to one
-                        # date. jwt_authn already dropped the token from the query (`forward: false`).
+                        # date, and only in the shape the API signs (`/watch/<date>/`). jwt_authn
+                        # already dropped the token from the query (`forward: false`).
                         inline_string: |
                           function envoy_on_request(handle)
                             local path = handle:headers():get(":path")
                             if path:sub(1, 7) ~= "/watch/" then return end
                             local claims = handle:streamInfo():dynamicMetadata():get("envoy.filters.http.jwt_authn")
                             local prefix = claims and claims["playback"] and claims["playback"]["prefix"]
-                            if type(prefix) ~= "string" or path:sub(1, #prefix) ~= prefix then
+                            if type(prefix) ~= "string" or not prefix:match("^/watch/[A-Za-z0-9_%-]+/$")
+                                or path:sub(1, #prefix) ~= prefix then
                               handle:respond({ [":status"] = "401" }, "")
                             end
                           end
