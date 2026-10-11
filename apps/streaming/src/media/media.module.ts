@@ -11,35 +11,59 @@ import {
   STREAMING_METRICS_PROVIDER,
 } from './media-tokens.js';
 import { CLOCK } from '../clock.js';
+import {
+  StreamingMediaProvider,
+  readMediaMtxEnv,
+  readStreamingMediaProvider,
+} from './mediamtx/mediamtx-env.js';
+import { MediaMtxStreamingProvider } from './mediamtx/mediamtx-streaming-provider.js';
+
+const SELECTED_MEDIA_PROVIDER: unique symbol = Symbol('SelectedMediaProvider');
 
 /**
- * The fake accepts whatever its authorizer accepts and signs playback with a published key: bound
- *   in production, it would serve nothing real under a key anyone holds. So a production boot of
- *   anything that imports the media ports fails here.
+ * Both providers are refused in production: the fake accepts whatever its authorizer accepts, and
+ *   both sign playback with a key whose published development value is their default. So a
+ *   production boot of anything that imports the media ports fails here until a real CDN's
+ *   provider is bound.
  */
-export function fakeOutsideProduction(
+export function mediaProviderOutsideProduction(
   clock: Clock,
   source: Record<string, string | undefined> = process.env,
-): FakeStreamingProvider {
+): FakeStreamingProvider | MediaMtxStreamingProvider {
+  const selected = readStreamingMediaProvider(source);
   if (isProductionEnvironment(source)) {
-    throw new Error('MediaModule: the fake streaming provider cannot be bound in production');
+    throw new Error(
+      `MediaModule: the ${selected} streaming provider cannot be bound in production`,
+    );
   }
-  return new FakeStreamingProvider({ signingKey: readPlaybackSigningKey(source), clock });
+  const signingKey = readPlaybackSigningKey(source);
+  return selected === StreamingMediaProvider.MEDIAMTX
+    ? new MediaMtxStreamingProvider({ env: readMediaMtxEnv(source), signingKey, clock })
+    : new FakeStreamingProvider({ signingKey, clock });
 }
 
-/** The four media ports, bound to the fake until a real provider's adapter replaces it here. */
+/**
+ * The four media ports on one provider, chosen by `STREAMING_MEDIA_PROVIDER` (the fake by default).
+ *   `FakeStreamingProvider` resolves to null when MediaMTX is bound: the suites drive the fake.
+ */
 @Module({
   providers: [
     { provide: CLOCK, useValue: new SystemClock() },
     {
-      provide: FakeStreamingProvider,
+      provide: SELECTED_MEDIA_PROVIDER,
       inject: [CLOCK],
-      useFactory: (clock: Clock): FakeStreamingProvider => fakeOutsideProduction(clock),
+      useFactory: (clock: Clock) => mediaProviderOutsideProduction(clock),
     },
-    { provide: LIVE_INGEST_PROVIDER, useExisting: FakeStreamingProvider },
-    { provide: PLAYBACK_PROVIDER, useExisting: FakeStreamingProvider },
-    { provide: RECORDING_PROVIDER, useExisting: FakeStreamingProvider },
-    { provide: STREAMING_METRICS_PROVIDER, useExisting: FakeStreamingProvider },
+    {
+      provide: FakeStreamingProvider,
+      inject: [SELECTED_MEDIA_PROVIDER],
+      useFactory: (provider: FakeStreamingProvider | MediaMtxStreamingProvider) =>
+        provider instanceof FakeStreamingProvider ? provider : null,
+    },
+    { provide: LIVE_INGEST_PROVIDER, useExisting: SELECTED_MEDIA_PROVIDER },
+    { provide: PLAYBACK_PROVIDER, useExisting: SELECTED_MEDIA_PROVIDER },
+    { provide: RECORDING_PROVIDER, useExisting: SELECTED_MEDIA_PROVIDER },
+    { provide: STREAMING_METRICS_PROVIDER, useExisting: SELECTED_MEDIA_PROVIDER },
   ],
   exports: [
     LIVE_INGEST_PROVIDER,

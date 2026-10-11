@@ -197,7 +197,7 @@ export class PlaybackDesk {
       return {
         session,
         resumedExistingSession,
-        signed: await this.sign(session),
+        signed: await this.sign(session, run?.streamPath ?? null),
         renewAfterSec: renewAfterSecondsOf(issue.scope, verdict.previewSecondsLeft),
         previewSecondsLeft: verdict.previewSecondsLeft,
         incident: run?.incident ?? null,
@@ -277,7 +277,7 @@ export class PlaybackDesk {
       if (renewed === null) throw new Error(`the locked lease ${lease.id} was not active`);
       return {
         session: renewed,
-        signed: await this.sign(renewed),
+        signed: await this.sign(renewed, run?.streamPath ?? null),
         renewAfterSec: renewAfterSecondsOf(issue.scope, verdict.previewSecondsLeft),
         previewSecondsLeft: verdict.previewSecondsLeft,
       };
@@ -353,9 +353,10 @@ export class PlaybackDesk {
     return { session, resumedExistingSession: true };
   }
 
-  private sign(session: PlaybackSession): Promise<SignedPlayback> {
+  private sign(session: PlaybackSession, streamPath: string | null): Promise<SignedPlayback> {
     return this.provider.sign({
       dateId: session.dateId,
+      streamPath,
       sessionScope: session.sessionScope,
       claims: playbackClaimsOf(
         {

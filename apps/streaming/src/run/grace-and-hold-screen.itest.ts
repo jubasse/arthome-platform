@@ -14,6 +14,7 @@ import {
   RunState,
 } from '@arthome/core';
 
+import { RunIngestListener } from './ingest-listener.js';
 import { SweepRunPresence } from './run-passes.js';
 import {
   CASE_MS,
@@ -28,6 +29,7 @@ import {
   type PreparedRun,
   type RunDesk,
 } from '../itest/run-desk.js';
+import { IngestProtocol } from '../media/media-ports.js';
 
 /**
  * A venue's feed lost and back, driven through the fake on the suite's clock: the grace absorbs a
@@ -227,6 +229,38 @@ describe('a worker that fails for good', () => {
         [run.runId],
       );
       expect(count?.incidents).toBe(1);
+    },
+    CASE_MS,
+  );
+});
+
+describe('one feed reported by several replicas', () => {
+  it(
+    'records the onset once: a report equal to the one recorded writes nothing',
+    async () => {
+      const run = await onAir();
+      await desk.fake.drop(run.streamPath);
+      desk.clock.advance(PUBLISHER_GRACE_SECONDS * 1000);
+      await sweep();
+      await desk.fake.resume(run.streamPath);
+      const written = (await outboxOf(desk, run.dateId)).length;
+      const [recorded] = await desk.dataSource.query<{ updated_at: Date }[]>(
+        'SELECT updated_at FROM run WHERE id = $1',
+        [run.runId],
+      );
+
+      await desk.app.get(RunIngestListener).publisherOnline({
+        streamPath: run.streamPath,
+        protocol: IngestProtocol.RTMPS,
+        at: desk.clock.now(),
+      });
+
+      const [after] = await desk.dataSource.query<{ updated_at: Date }[]>(
+        'SELECT updated_at FROM run WHERE id = $1',
+        [run.runId],
+      );
+      expect(after?.updated_at).toEqual(recorded?.updated_at);
+      expect(await typesSince(run, written)).toEqual([]);
     },
     CASE_MS,
   );

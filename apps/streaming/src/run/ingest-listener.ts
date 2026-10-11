@@ -55,7 +55,14 @@ export class RunIngestListener implements IngestLifecycleListener {
   public publisherOnline({ streamPath, protocol, at }: PublisherOnline): Promise<void> {
     const monitorPath = monitorPathOf(protocol, this.ingest.ingestCapabilities);
     return this.transactions.run(async ({ manager, runs }) => {
-      // The run's row locked by the sub-select, first, as every transaction here takes it.
+      // The run's row locked first, as every transaction here takes it. A provider polled by
+      // several replicas reports one feed's onset from each: only the first one is recorded.
+      const [locked] = await manager.query<{ already_reported: boolean }[]>(
+        `SELECT publisher_online_since IS NOT DISTINCT FROM $2 AS already_reported
+           FROM run WHERE stream_path = $1 FOR UPDATE`,
+        [streamPath, new Date(at)],
+      );
+      if (locked?.already_reported === true) return;
       const [back] = await updateReturning<BackOnline>(
         manager,
         `UPDATE run

@@ -311,6 +311,7 @@ describe('signed playback', () => {
   const expiresAt = plusSeconds(START, 120);
   const grant = (mechanism: PlaybackGrant['mechanism']): PlaybackGrant => ({
     dateId: DATE_ID,
+    streamPath: PATH,
     sessionScope: SESSION_SCOPE,
     claims: {
       sub: '01a0e700-0000-7000-8000-0000000000d1',
