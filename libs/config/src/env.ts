@@ -258,7 +258,7 @@ export interface SigningKey {
 
 const PLAYBACK_KEY_ID_PREFIX = 'play-';
 
-const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/);
+const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/, 'only base64url characters are allowed');
 
 const privateEcJwk = z.object({
   kty: z.literal('EC'),
@@ -394,6 +394,27 @@ export function readStreamKeySecret(
   return z
     .object({ STREAM_KEY_SECRET: secretOutside(DEVELOPMENT_STREAM_KEY_SECRET, source) })
     .parse(withDefault).STREAM_KEY_SECRET;
+}
+
+const DEVELOPMENT_MEDIA_SERVER_SECRET = 'development-media-server-secret-not-for-production';
+
+/**
+ * The shared secret the media server presents as its HTTP Basic password. It sits unescaped in the
+ *   userinfo of MediaMTX's `authHTTPAddress`, hence base64url characters alone. Distinct from
+ *   `STREAM_KEY_SECRET`: a leaked MediaMTX configuration must not mint stream keys.
+ */
+export function readMediaServerSecret(
+  source: Record<string, string | undefined> = process.env,
+): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { MEDIA_SERVER_SECRET: DEVELOPMENT_MEDIA_SERVER_SECRET, ...stripEmpty(source) };
+  return z
+    .object({
+      MEDIA_SERVER_SECRET: secretOutside(DEVELOPMENT_MEDIA_SERVER_SECRET, source).pipe(base64Url),
+    })
+    .parse(withDefault).MEDIA_SERVER_SECRET;
 }
 
 /**

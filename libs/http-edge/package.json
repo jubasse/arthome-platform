@@ -22,8 +22,8 @@
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
-    "@arthome/contracts": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0/arthome-contracts-0.2.0.tgz",
-    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.2.0/arthome-core-0.2.0.tgz",
+    "@arthome/contracts": "https://github.com/jubasse/arthome-core/releases/download/v0.3.0-rc.1/arthome-contracts-0.3.0-rc.1.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.3.0-rc.1/arthome-core-0.3.0-rc.1.tgz",
     "jose": "6.2.12",
     "rxjs": "7.8.2",
     "zod": "4.6.5"

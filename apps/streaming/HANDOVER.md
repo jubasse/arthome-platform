@@ -72,7 +72,7 @@ the suites import the fake; domain code imports the ports and the tokens.
   streamPath, presentedKey, protocol })` answers accept, or refuse with a reason, before anything
   is accepted; `IngestLifecycleListener` (`publisherOnline`, `publisherOffline`, `workerFailed`)
   reports with each instant and decides nothing (`adr-stream-entitlement.md` §6). PS1 implements
-  both and attaches them; a real media server's ingest route is the real adapter's slice.
+  both and attaches them; MediaMTX's ingest route is §0g.
 - **`PlaybackProvider`**: `playbackCapabilities` (`supportsSignedCookies`,
   `supportsQueryTokenRenewal`, `protocols`, `drmSystems`, `geoRestriction`) and `sign(grant)`: the
   grant names the date, the session scope, the token's claims (`sub` the profile, `did`, `dat`,
@@ -667,3 +667,50 @@ requested by the first pass.
 | `replay-asset/asset-deletion.itest.ts` | deletion at `expires_at` with `expired.v1`; deleted final; a withdrawal from recording (stop then delete, no event) and from ready (event); postponed untouched; a call failing twice retried on its backoff; one always failing `failed` after its bound with one error log; a recording unknown to the provider given up at once |
 | `replay-asset/asset-passes-plan.itest.ts` | the five reads on their index over 50,000 deleted assets |
 
+
+## 0g. Media server authorisation (MX1)
+
+`src/media-server/`: the route MediaMTX's origin asks before it accepts a feed, through its external
+HTTP authentication (`authMethod: http`). It is the HTTP adapter of PS1's `IngestAuthorizer`; hooks
+decide nothing (`adr-stream-entitlement.md` §6).
+
+- **The seam** (MX2 configures MediaMTX against it):
+  - `POST /v1/media-server/authorize` on port 3005, operationId `authorizeMediaServerAccess`, body
+    MediaMTX's JSON (`MediaServerAuthorization`, loose). Core's `mediaServer` identity: no internal
+    token, no deadline, so no 504.
+  - HTTP Basic: the password is `MEDIA_SERVER_SECRET`, the username is ignored (`mediamtx`).
+    MediaMTX takes it from the userinfo of `MTX_AUTHHTTPADDRESS`, e.g.
+    `http://mediamtx:${MEDIA_SERVER_SECRET}@host.docker.internal:3005/v1/media-server/authorize`
+    (on Linux, `extra_hosts: ["host.docker.internal:host-gateway"]`). Never in a committed file.
+  - `204` accepted, no body; `403 api.forbidden` refused; `401 api.unauthenticated` the secret
+    missing or wrong, a configuration fault to alert on; `400` a malformed body. MediaMTX reads
+    the status only, and a refusal's reason is logged, never answered.
+  - Accepted: `action: publish` on `live/<streamPath>` (one segment), `protocol` `webrtc` (WHIP)
+    or `srt`, the key in `token` when non-empty, else `password` (WHIP's Bearer, SRT's
+    `publish:live/<streamPath>:<user>:<key>` streamid), and `RunIngestAuthorizer` accepting it.
+    Everything else is refused 403, never 400 (critical rule 10): `rtmp` and `rtsp` publishes
+    until an RTMPS ingest adds its row, any other path, an empty key, and every other action
+    (`read`, `playback`, `api`, `metrics`, `pprof`, unknown). The origin lists those in
+    `authHTTPExclude`; viewers read on the edge instance behind Envoy, which never calls here.
+  - MediaMTX runs at `logLevel: info` or above: its debug log prints the payload, key included.
+- **The guard.** `MediaServerIdentity` joins the edge's guard table through `edgeProviders`'
+  `identities` option (`EDGE_PROVIDERS`). No header gives a 401 through `EndpointAccessGuard`; a
+  header that is not Basic, or a wrong password, throws `unauthenticated()`. The password and the
+  secret are compared as SHA-256 digests with `timingSafeEqual`.
+- **The secret's life.** `readMediaServerSecret()` (`@arthome-platform/config`) at boot: 32
+  base64url characters at least (it sits unescaped in a URL), required in production, the
+  development value refused there. Distinct from `STREAM_KEY_SECRET`: a leaked MediaMTX
+  configuration must not mint stream keys. Rotating it means restarting both the API and MediaMTX
+  with the new value; there is no overlap window.
+- **Logs.** One `warn` per mapping refusal (the action, the protocol, the reason), and
+  `RunIngestAuthorizer`'s own line (the reason, the run). Never the path, the user, the password,
+  the token, the query or the header.
+- **The second barrier, honestly.** The secret authenticates the caller; the run authorises the
+  feed (critical rule 5). In development the API listens on `0.0.0.0:3005`, so the secret is the
+  only barrier. Production needs a NetworkPolicy admitting only the MediaMTX pod to this port and
+  one Kubernetes Secret read by both pods: the deployment slice, no manifest yet. The API does not
+  boot in production while the fake provider is bound (`DenyInProductionGuard` stays).
+- **What proves it.** `media-server.identity.spec.ts`, `media-server-attempt.spec.ts` (each row),
+  `authorize-media-server.http.itest.ts` (204 over both protocols, 403 for a wrong key, a retired
+  generation, an ended run, a publisher online and a read, 401, 400, no deadline, the log capture),
+  and `boot.itest.ts` (`EndpointGuardsCheck` finds the identity bound).
