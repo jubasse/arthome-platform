@@ -18,6 +18,7 @@ import { DataSource } from 'typeorm';
 import { dataSource } from './data-source.js';
 import { EDGE_PROVIDERS } from './edge-providers.js';
 import { MediaModule } from './media/media.module.js';
+import { MediaServerModule } from './media-server/media-server.module.js';
 import { PlaybackModule } from './playback/playback.module.js';
 import { ProgressModule } from './progress/progress.module.js';
 import { RunModule } from './run/run.module.js';
@@ -26,7 +27,8 @@ import { SERVICE } from './service.js';
 /**
  * The API process. Readiness fails on the database alone; the slot, the publication and the outbox
  *   retention answer `degraded`, since a stopped connector must delay publishing, not take the API
- *   out of rotation. `MediaModule` binds the fake provider, so the API does not boot in production.
+ *   out of rotation. `MediaModule` binds the fake or MediaMTX, both refused in production, so the API
+ *   does not boot there.
  */
 @Module({
   controllers: [HealthController],
@@ -35,6 +37,7 @@ import { SERVICE } from './service.js';
     CqrsModule.forRoot(),
     MediaModule,
     RunModule,
+    MediaServerModule,
     PlaybackModule,
     ProgressModule,
   ],

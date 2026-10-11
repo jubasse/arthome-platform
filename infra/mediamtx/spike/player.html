@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>R0 player</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.3/dist/hls.min.js"></script>
+  </head>
+  <body>
+    <!-- Two players on the same edge path: through Envoy with the token, and direct. Each reads the
+         epoch milliseconds burned into the frame (test-encoder.sh) and compares them with its clock. -->
+    <video id="envoy" muted playsinline></video>
+    <video id="direct" muted playsinline></video>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const dateId = params.get('dateId');
+      const BITS = 24;
+      const MODULO = 2 ** BITS;
+      let token = '';
+      const players = {};
+
+      async function renew() {
+        token = await (await fetch('/token')).text();
+      }
+
+      function withToken(url) {
+        const target = new URL(url);
+        target.searchParams.set('token', token);
+        return target.toString();
+      }
+
+      function readClock(video, canvas) {
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        context.drawImage(video, 0, 0, 960, 40, 0, 0, 960, 40);
+        const { data } = context.getImageData(0, 0, 960, 40);
+        let value = 0;
+        for (let bit = 0; bit < BITS; bit += 1) {
+          const offset = (20 * 960 + bit * 40 + 20) * 4;
+          if (data[offset] > 128) value += 2 ** bit;
+        }
+        return value;
+      }
+
+      function start(name, base, setup) {
+        const video = document.getElementById(name);
+        const canvas = document.createElement('canvas');
+        canvas.width = 960;
+        canvas.height = 40;
+        const state = {
+          latencies: [],
+          errors: [],
+          waiting: 0,
+          lastSn: null,
+          snBackwards: 0,
+          snMaxJump: 0,
+          codecs: null,
+          frames: 0,
+        };
+        players[name] = state;
+        const hls = new Hls({ lowLatencyMode: true, xhrSetup: setup });
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          state.errors.push({
+            at: Date.now(),
+            type: data.type,
+            details: data.details,
+            fatal: data.fatal,
+          });
+          if (data.fatal) setTimeout(() => hls.startLoad(), 500);
+        });
+        hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+          state.codecs = data.levels.map((level) => [level.videoCodec, level.audioCodec]);
+        });
+        hls.on(Hls.Events.FRAG_CHANGED, (_event, { frag }) => {
+          if (state.lastSn !== null) {
+            if (frag.sn < state.lastSn) state.snBackwards += 1;
+            state.snMaxJump = Math.max(state.snMaxJump, frag.sn - state.lastSn);
+          }
+          state.lastSn = frag.sn;
+        });
+        video.addEventListener('waiting', () => (state.waiting += 1));
+        hls.loadSource(`${base}/watch/${dateId}/index.m3u8`);
+        hls.attachMedia(video);
+        video.play().catch(() => undefined);
+        const onFrame = (_now, metadata) => {
+          state.frames += 1;
+          if (state.frames % 15 === 0) {
+            const shown = Math.round(performance.timeOrigin + metadata.expectedDisplayTime);
+            const burned = readClock(video, canvas);
+            state.latencies.push(((((shown % MODULO) - burned) % MODULO) + MODULO) % MODULO);
+          }
+          video.requestVideoFrameCallback(onFrame);
+        };
+        video.requestVideoFrameCallback(onFrame);
+      }
+
+      function quantiles(values) {
+        const sorted = [...values].sort((a, b) => a - b);
+        const at = (q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+        return { n: sorted.length, p50: at(0.5), p95: at(0.95), p99: at(0.99), max: sorted.at(-1) };
+      }
+
+      window.r0Report = () =>
+        Object.fromEntries(
+          Object.entries(players).map(([name, { latencies, ...rest }]) => [
+            name,
+            { ...rest, glassToGlassMs: quantiles(latencies) },
+          ]),
+        );
+
+      renew().then(() => {
+        setInterval(renew, 60_000);
+        start('envoy', params.get('envoy'), (xhr, url) => xhr.open('GET', withToken(url), true));
+        start('direct', params.get('direct'), undefined);
+      });
+    </script>
+  </body>
+</html>

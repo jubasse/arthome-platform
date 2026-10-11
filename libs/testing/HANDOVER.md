@@ -320,3 +320,6 @@ mine.
   `inject(PROVIDED_REDIS_URL)` and takes `workerRedisUrl(url)`, flushed between tests.
 - **`vitest` is not declared as a dependency of this package.** It resolves from the repository
   root by walk-up, which is why the tests run. Declaring it needs an install.
+- **FX1, integration config.** `vitest.integration.config.mjs` reads the workspace sources through the `@arthome/source` condition, so the itests no longer need a built `libs/*/dist`.
+- **FX1, `createTopics` retries.** A retriable KafkaJS error (protocol error flagged `retriable`, connection error) is retried up to 5 attempts, 250 ms doubling; a non-retriable error throws at once.
+- **FX1, `provision:topics`.** With `KAFKA_BROKERS` set it provisions those brokers through KafkaJS's admin (and aligns an existing topic's retention); unset, it keeps the `docker compose exec kafka` path.

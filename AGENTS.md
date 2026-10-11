@@ -365,7 +365,7 @@ export class DatesController {
 | Process | Development port | Swagger UI | Operations |
 | --- | --- | --- | --- |
 | `bff-storefront` | 3003 | `http://localhost:3003/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink, signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification, getViewerContext |
-| `streaming` | 3005 | `http://localhost:3005/docs` | getRunConsole, runTechnicalCheck, rehearseRun, goOnAir, endRun, resetRun, raiseIncident, resolveIncident, openPlayback, renewPlaybackTicket, releasePlayback, recordPlaybackPosition, getViewerProgressBatch |
+| `streaming` | 3005 | `http://localhost:3005/docs` | getRunConsole, runTechnicalCheck, rehearseRun, goOnAir, endRun, resetRun, raiseIncident, resolveIncident, openPlayback, renewPlaybackTicket, releasePlayback, recordPlaybackPosition, getViewerProgressBatch, authorizeMediaServerAccess |
 
 `@nestjs/swagger` is a peer of `libs/http-edge`; `@fastify/static` serves the UI on Fastify, and
 `@scarf/scarf` (swagger-ui-dist's telemetry install script) is denied in `pnpm-workspace.yaml`.
@@ -998,6 +998,25 @@ inside the transaction, where a request is still waiting to be told.
 **A replication slot nobody consumes retains the write-ahead log.** Stopping the connector and
 leaving it registered makes the disk grow until it is full (`data-model.md` §7.4). `docker compose
 down -v` removes everything, slot included.
+
+### The media plane, in development (MediaMTX)
+
+`compose.media.yaml` is its own compose project, `arthome-media`, never the infrastructure's: a
+MediaMTX origin (ingest), a MediaMTX edge (the CDN's twin) and Envoy checking the playback token on
+every request. The streaming API asks nothing of it until `STREAMING_MEDIA_PROVIDER=mediamtx` and the
+`MEDIAMTX_*` URLs are set (`apps/streaming/.env.example`); the fake stays the default.
+
+```bash
+export MTX_AUTHHTTPADDRESS="http://mediamtx:${MEDIA_SERVER_SECRET:-development-media-server-secret-not-for-production}@host.docker.internal:3005/v1/media-server/authorize"
+docker compose -f compose.media.yaml up -d
+```
+
+The origin asks the streaming API's `authorizeMediaServerAccess` before each publish, so the API
+must listen on 3005 first. The fallback is the API's own development secret: a password that differs
+from the API's answers 401 to every publish. After regenerating the playback key set (`node tools/playback-jwks.mjs`),
+restart `playback-edge`: Envoy reads it at start only. Ports, publishing from OBS, and what the
+suites prove: `apps/streaming/HANDOVER.md` §0h. The suites start the same images with
+`startMediaStack` (`libs/testing`), never this project.
 
 ## What this repository is
 

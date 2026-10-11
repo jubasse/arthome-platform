@@ -32,6 +32,8 @@ import { CLOCK } from '../clock.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
 import { FakeStreamingProvider } from '../media/fake-streaming-provider.js';
 import { IngestProtocol } from '../media/media-ports.js';
+import { MEDIA_SERVER_SECRET } from '../media-server/media-server.identity.js';
+import { MediaServerModule } from '../media-server/media-server.module.js';
 import { READ_DATE_FACTS, type RunDateFacts } from '../run/date-facts.js';
 import { PrepareRun } from '../run/prepare-run.command.js';
 import { RunConsumerModule } from '../run/run-consumer.module.js';
@@ -52,6 +54,7 @@ export const NOW = '2026-09-29T19:00:00.000Z';
 export const OPERATOR = '01a0f0aa-0000-7000-8000-000000000001';
 export const CHANNEL = '01a0f0cc-0000-7000-8000-000000000001';
 export const STREAM_KEY_TEST_SECRET = 'the-run-desk-suites-stream-key-secret';
+export const MEDIA_SERVER_TEST_SECRET = 'the-run-desk-suites-media-server-secret';
 
 /**
  * No studio BFF mints yet, so the development key set names the storefront's key alone: the
@@ -97,11 +100,13 @@ export interface RunDeskOptions {
   readonly watch?: DeclaredResponses;
   /** PS2's own `readDateFacts` over its tables, rather than the suite's map. */
   readonly projectedByEntitlement?: boolean;
+  /** MediaMTX's route too, on `MEDIA_SERVER_TEST_SECRET`. */
+  readonly mediaServer?: boolean;
 }
 
 export async function startRunDesk(
   database: string,
-  { watch, projectedByEntitlement = false }: RunDeskOptions = {},
+  { watch, projectedByEntitlement = false, mediaServer = false }: RunDeskOptions = {},
 ): Promise<RunDesk> {
   const stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
   const created = await createDatabase(stack.postgres, database);
@@ -111,13 +116,19 @@ export async function startRunDesk(
   const readDateFacts = (_manager: EntityManager, dateId: string) =>
     Promise.resolve(dates.get(dateId) ?? null);
   const app = await httpApp({
-    imports: [RunModule, RunConsumerModule, RunSweeperModule],
+    imports: [
+      RunModule,
+      RunConsumerModule,
+      RunSweeperModule,
+      ...(mediaServer ? [MediaServerModule] : []),
+    ],
     providers: EDGE_PROVIDERS,
     dataSource,
     overrides: [
       [CLOCK, clock],
       ...(projectedByEntitlement ? [] : [[READ_DATE_FACTS, readDateFacts] as const]),
       [STREAM_KEY_SECRET, STREAM_KEY_TEST_SECRET],
+      [MEDIA_SERVER_SECRET, MEDIA_SERVER_TEST_SECRET],
       [InternalTokenVerifier, studioTokenVerifier(clock)],
     ],
     configure: (configured) => {

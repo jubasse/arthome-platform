@@ -39,8 +39,9 @@ interface BackOnline {
 
 /**
  * The provider's reports of a feed's life. Presence moves by conditional statements that leave the
- *   run's version alone, each refusing an instant older than the one recorded, since a report can
- *   arrive late; only lifting the hold screen when the feed returns (D-124) is a state change.
+ *   run's version alone, since a report can arrive late: an onset older than the recorded loss is
+ *   refused, a loss ends only the onset it names. Only lifting the hold screen when the feed
+ *   returns (D-124) is a state change.
  */
 @Injectable()
 export class RunIngestListener implements IngestLifecycleListener {
@@ -55,7 +56,14 @@ export class RunIngestListener implements IngestLifecycleListener {
   public publisherOnline({ streamPath, protocol, at }: PublisherOnline): Promise<void> {
     const monitorPath = monitorPathOf(protocol, this.ingest.ingestCapabilities);
     return this.transactions.run(async ({ manager, runs }) => {
-      // The run's row locked by the sub-select, first, as every transaction here takes it.
+      // The run's row locked first, as every transaction here takes it. A provider polled by
+      // several replicas reports one feed's onset from each: only the first one is recorded.
+      const [locked] = await manager.query<{ already_reported: boolean }[]>(
+        `SELECT publisher_online_since IS NOT DISTINCT FROM $2 AS already_reported
+           FROM run WHERE stream_path = $1 FOR UPDATE`,
+        [streamPath, new Date(at)],
+      );
+      if (locked?.already_reported === true) return;
       const [back] = await updateReturning<BackOnline>(
         manager,
         `UPDATE run
@@ -79,18 +87,18 @@ export class RunIngestListener implements IngestLifecycleListener {
     });
   }
 
-  public async publisherOffline({ streamPath, at }: PublisherOffline): Promise<void> {
+  public async publisherOffline({ streamPath, onlineSince, at }: PublisherOffline): Promise<void> {
     const lost = await updateReturning<{ id: string }>(
       this.dataSource.manager,
       `UPDATE run
           SET publisher_online_since = NULL, publisher_lost_at = $2, updated_at = now()
-        WHERE stream_path = $1 AND publisher_online_since IS NOT NULL
-          AND publisher_online_since <= $2
+        WHERE stream_path = $1 AND publisher_online_since = $3
        RETURNING id`,
-      [streamPath, new Date(at)],
+      [streamPath, new Date(at), new Date(onlineSince)],
     );
     if (lost.length === 0) {
-      this.logger.warn('a publisher offline on a run with none online, or reported late: ignored');
+      // Every replica but the first reports each loss: expected, not a fault.
+      this.logger.debug('a publisher offline on no onset it names: already ended, or a later one');
     }
   }
 

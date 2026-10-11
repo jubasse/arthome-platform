@@ -18,7 +18,10 @@ import { CLOCK } from '../clock.js';
 import { MediaModule } from '../media/media.module.js';
 import { StreamingTransactionsModule } from '../streaming-transactions.js';
 
-/** The run desk in the API process, and the ingest hooks it attaches to the media plane at boot. */
+/**
+ * The run desk in the API process, and the ingest hooks it attaches to the media plane at boot. Its
+ *   ingest authoriser also answers MediaMTX's route (`MediaServerModule`).
+ */
 @Module({
   imports: [StreamingTransactionsModule, MediaModule],
   controllers: [RunDeskController, IncidentsController],
@@ -34,5 +37,6 @@ import { StreamingTransactionsModule } from '../streaming-transactions.js';
     RunIngestListener,
     IngestHooksAttachment,
   ],
+  exports: [RunIngestAuthorizer],
 })
 export class RunModule {}

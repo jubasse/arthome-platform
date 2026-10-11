@@ -16,6 +16,7 @@ import {
   readPaymentWebhookSecret,
   readPlaybackSigningKey,
   readRedisUrl,
+  readMediaServerSecret,
   readStreamKeySecret,
   readConsumerEnv,
   readHttpServiceEnv,
@@ -305,5 +306,37 @@ describe('readStreamKeySecret', () => {
     expect(
       readStreamKeySecret({ NODE_ENV: 'production', STREAM_KEY_SECRET: 'x'.repeat(32) }),
     ).toHaveLength(32);
+  });
+});
+
+describe('readMediaServerSecret', () => {
+  it('defaults outside production, so MediaMTX is authenticated on a fresh clone', () => {
+    expect(readMediaServerSecret({ NODE_ENV: 'development' })).toBe(
+      'development-media-server-secret-not-for-production',
+    );
+  });
+
+  it('refuses in production no secret and the development default', () => {
+    const development = readMediaServerSecret({ NODE_ENV: 'development' });
+
+    expect(() => readMediaServerSecret({ NODE_ENV: 'production' })).toThrow(/MEDIA_SERVER_SECRET/);
+    expect(() =>
+      readMediaServerSecret({ NODE_ENV: 'production', MEDIA_SERVER_SECRET: development }),
+    ).toThrow(/development value/);
+    expect(
+      readMediaServerSecret({ NODE_ENV: 'production', MEDIA_SERVER_SECRET: 'x'.repeat(32) }),
+    ).toHaveLength(32);
+  });
+
+  it('refuses a short secret, or one that would need escaping in a URL userinfo', () => {
+    expect(() =>
+      readMediaServerSecret({ NODE_ENV: 'development', MEDIA_SERVER_SECRET: 'short' }),
+    ).toThrow(/MEDIA_SERVER_SECRET/);
+    expect(() =>
+      readMediaServerSecret({
+        NODE_ENV: 'development',
+        MEDIA_SERVER_SECRET: `${'x'.repeat(32)}@:`,
+      }),
+    ).toThrow(/base64url/);
   });
 });

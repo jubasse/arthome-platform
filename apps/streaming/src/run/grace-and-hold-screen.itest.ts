@@ -5,6 +5,7 @@ import { fromBinary } from '@bufbuild/protobuf';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  fromEpochMs,
   HOLD_SCREEN_AUTO_AFTER_SECONDS_DEFAULT,
   IncidentCause,
   IncidentKind,
@@ -14,6 +15,7 @@ import {
   RunState,
 } from '@arthome/core';
 
+import { RunIngestListener } from './ingest-listener.js';
 import { SweepRunPresence } from './run-passes.js';
 import {
   CASE_MS,
@@ -28,6 +30,7 @@ import {
   type PreparedRun,
   type RunDesk,
 } from '../itest/run-desk.js';
+import { IngestProtocol } from '../media/media-ports.js';
 
 /**
  * A venue's feed lost and back, driven through the fake on the suite's clock: the grace absorbs a
@@ -75,6 +78,15 @@ async function openIncidentOf(run: PreparedRun) {
     [run.runId],
   );
   return incident ?? null;
+}
+
+async function onlineSinceOf(run: PreparedRun): Promise<Date> {
+  const [row] = await desk.dataSource.query<{ publisher_online_since: Date | null }[]>(
+    'SELECT publisher_online_since FROM run WHERE id = $1',
+    [run.runId],
+  );
+  if (!row?.publisher_online_since) throw new Error('no publisher online');
+  return row.publisher_online_since;
 }
 
 async function typesSince(run: PreparedRun, count: number): Promise<string[]> {
@@ -227,6 +239,60 @@ describe('a worker that fails for good', () => {
         [run.runId],
       );
       expect(count?.incidents).toBe(1);
+    },
+    CASE_MS,
+  );
+});
+
+describe('one feed reported by several replicas', () => {
+  it(
+    'records the onset once: a report equal to the one recorded writes nothing',
+    async () => {
+      const run = await onAir();
+      await desk.fake.drop(run.streamPath);
+      desk.clock.advance(PUBLISHER_GRACE_SECONDS * 1000);
+      await sweep();
+      await desk.fake.resume(run.streamPath);
+      const written = (await outboxOf(desk, run.dateId)).length;
+      const [recorded] = await desk.dataSource.query<{ updated_at: Date }[]>(
+        'SELECT updated_at FROM run WHERE id = $1',
+        [run.runId],
+      );
+
+      await desk.app.get(RunIngestListener).publisherOnline({
+        streamPath: run.streamPath,
+        protocol: IngestProtocol.RTMPS,
+        at: desk.clock.now(),
+      });
+
+      const [after] = await desk.dataSource.query<{ updated_at: Date }[]>(
+        'SELECT updated_at FROM run WHERE id = $1',
+        [run.runId],
+      );
+      expect(after?.updated_at).toEqual(recorded?.updated_at);
+      expect(await typesSince(run, written)).toEqual([]);
+    },
+    CASE_MS,
+  );
+
+  it(
+    "ends only the onset a loss names: a slower replica's loss never ends the feed's return",
+    async () => {
+      const run = await onAir();
+      const firstOnset = await onlineSinceOf(run);
+      desk.clock.advance(5_000);
+      await desk.fake.drop(run.streamPath);
+      desk.clock.advance(1_000);
+      await desk.fake.resume(run.streamPath);
+      const returned = desk.clock.now();
+
+      await desk.app.get(RunIngestListener).publisherOffline({
+        streamPath: run.streamPath,
+        onlineSince: fromEpochMs(firstOnset.getTime()),
+        at: desk.clock.advance(200),
+      });
+
+      expect(await onlineSinceOf(run)).toEqual(new Date(returned));
     },
     CASE_MS,
   );

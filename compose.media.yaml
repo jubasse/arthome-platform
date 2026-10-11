@@ -1,0 +1,58 @@
+# The media plane in development: a real media server behind the four media ports
+# (`STREAMING_MEDIA_PROVIDER=mediamtx`). Its own project, never the infrastructure's (`arthome`):
+#
+#   docker compose -f compose.media.yaml up -d
+#
+# Encoders publish to the origin (WHIP, SRT); viewers read the edge through Envoy, which checks
+# the playback token on every request; no byte of video passes through NestJS. Every host port is
+# bound to 127.0.0.1. The origin asks the streaming API before each publish: set
+# MTX_AUTHHTTPADDRESS (MX1, apps/streaming/.env.example), the secret in its userinfo.
+
+name: arthome-media
+
+services:
+  mediamtx-origin:
+    image: bluenviron/mediamtx:1.21.2
+    environment:
+      MTX_AUTHHTTPADDRESS: ${MTX_AUTHHTTPADDRESS:?the streaming API's authorize URL, secret in the userinfo}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ./infra/mediamtx/origin.yml:/mediamtx.yml:ro
+      - recordings:/recordings
+    ports:
+      - 127.0.0.1:58889:8889 # WHIP, and WHEP for the studio monitor
+      - 127.0.0.1:58189:58189/udp # WebRTC media
+      - 127.0.0.1:58890:8890/udp # SRT
+      - 127.0.0.1:58887:8888 # studio monitor, LL-HLS
+      - 127.0.0.1:59997:9997 # Control API
+      - 127.0.0.1:59998:9998 # metrics
+      - 127.0.0.1:59996:9996 # playback server (recordings)
+    networks: [media]
+
+  mediamtx-edge:
+    image: bluenviron/mediamtx:1.21.2-ffmpeg
+    volumes:
+      - ./infra/mediamtx/edge.yml:/mediamtx.yml:ro
+      - ./infra/mediamtx/audio-worker.sh:/audio-worker.sh:ro
+    # Its HLS and RTSP ports stay on the media network: Envoy is the only door.
+    ports:
+      - 127.0.0.1:59995:9997 # Control API
+    networks: [media]
+
+  playback-edge:
+    image: envoyproxy/envoy:distroless-v1.39.3@sha256:7369b033550a14997e5d698677b7b51f0210a80754f5d084c5caa1a78268267b
+    command: [-c, /etc/envoy/edge.yaml, --log-level, warn]
+    volumes:
+      - ./infra/envoy/edge.yaml:/etc/envoy/edge.yaml:ro
+      - ./infra/mediamtx/playback-jwks.json:/etc/envoy/playback-jwks.json:ro
+    ports:
+      - 127.0.0.1:58888:8080
+    depends_on: [mediamtx-edge]
+    networks: [media]
+
+volumes:
+  recordings:
+
+networks:
+  media:

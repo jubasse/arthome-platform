@@ -192,13 +192,17 @@ const KAFKA_ENTRY_POINT = '/etc/kafka/docker/run';
  */
 const COMPOSE_FILE = new URL('../../../compose.yaml', import.meta.url);
 
-function composeBlock(service: string): string[] {
+/** The media plane's own project (`arthome-media`), read the same way. */
+export const MEDIA_COMPOSE_FILE: URL = new URL('../../../compose.media.yaml', import.meta.url);
+
+function composeBlock(service: string, file: URL = COMPOSE_FILE): string[] {
+  const name = file.pathname.split('/').at(-1) ?? file.pathname;
   let text: string;
   try {
-    text = readFileSync(COMPOSE_FILE, 'utf8');
+    text = readFileSync(file, 'utf8');
   } catch (cause) {
     throw new Error(
-      `the harness cannot read ${COMPOSE_FILE.pathname}: ${String(cause)}. ` +
+      `the harness cannot read ${file.pathname}: ${String(cause)}. ` +
         'That path is resolved from this module, so the failure is that libs/testing has ' +
         'moved relative to the repository root — not that anything is down.',
       { cause },
@@ -207,19 +211,19 @@ function composeBlock(service: string): string[] {
   const lines = text.split('\n');
   const start = lines.indexOf(`  ${service}:`);
   if (start === -1) {
-    throw new Error(`compose.yaml declares no service \`${service}\`; the harness reproduces it.`);
+    throw new Error(`${name} declares no service \`${service}\`; the harness reproduces it.`);
   }
   const rest = lines.slice(start + 1);
   const end = rest.findIndex((line) => /^ {2}\S/.test(line));
   return end === -1 ? rest : rest.slice(0, end);
 }
 
-export function composeImage(service: string): string {
-  for (const line of composeBlock(service)) {
+export function composeImage(service: string, file: URL = COMPOSE_FILE): string {
+  for (const line of composeBlock(service, file)) {
     const tag = /^ {4}image:\s*(\S+)\s*$/.exec(line)?.[1];
     if (tag !== undefined) return tag;
   }
-  throw new Error(`compose.yaml pins no image for \`${service}\`.`);
+  throw new Error(`${file.pathname.split('/').at(-1) ?? ''} pins no image for \`${service}\`.`);
 }
 
 function composeCommand(service: string): string[] {

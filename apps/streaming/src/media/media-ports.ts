@@ -68,6 +68,8 @@ export interface PublisherOnline {
 
 export interface PublisherOffline {
   readonly streamPath: string;
+  /** The onset this loss ends: a late report never ends a later one. */
+  readonly onlineSince: Instant;
   readonly at: Instant;
 }
 
@@ -117,6 +119,11 @@ export interface PlaybackCapabilities {
   readonly protocols: readonly PlaybackProtocol[];
   readonly drmSystems: readonly DrmSystem[];
   readonly geoRestriction: boolean;
+  /**
+   * The edge checks the token on every request, manifest and segments: a refused renewal stops
+   *   playback at `exp` (`adr-stream-entitlement.md` §3.3). False when only the manifest is checked.
+   */
+  readonly checksEveryRequest: boolean;
 }
 
 /** The playback token's claims (`adr-stream-entitlement.md` §3.1); `exp` is the grant's `expiresAt`. */
@@ -133,6 +140,8 @@ export interface PlaybackClaims {
 
 export interface PlaybackGrant {
   readonly dateId: string;
+  /** The run's, so the provider can route the date's edge to its feed; null before any run. */
+  readonly streamPath: string | null;
   readonly sessionScope: string;
   readonly claims: PlaybackClaims;
   readonly expiresAt: Instant;
