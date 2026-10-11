@@ -2,14 +2,15 @@ import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-import { accessorOf } from '@arthome/contracts/http';
-
-import { IngestProtocol, type IngestAuthorizer } from '../media-ports.js';
+import {
+  attemptOf,
+  type MediaServerAuthorization,
+} from '../../media-server/media-server-attempt.js';
+import type { IngestAuthorizer } from '../media-ports.js';
 
 /**
- * MX1's `POST /v1/media-server/authorize` as its seam states it (MX1 §6 S1 to S5), for the media
- *   suites until MX1 merges: Basic on a secret, `publish` on `live/<streamPath>` over webrtc or srt,
- *   the key in `token` else `password`, the decision the authorizer's; anything else 403.
+ * MX1's route without the app: its Basic check and its own mapping (`attemptOf`), the decision a
+ *   suite's authorizer. For the suites that need no database; the drill calls the real route.
  */
 export interface MediaServerStandIn {
   /** The origin's `MTX_AUTHHTTPADDRESS`, reached from a container. */
@@ -18,38 +19,19 @@ export interface MediaServerStandIn {
   close(): Promise<void>;
 }
 
-/** MediaMTX's own action names; MX1 declares the same accessor. */
-const MEDIA_SERVER_ACTIONS = ['publish', 'read', 'playback', 'api', 'metrics', 'pprof'] as const;
-const MediaServerAction = accessorOf(MEDIA_SERVER_ACTIONS);
-
-const PROTOCOL_OF: Readonly<Record<string, IngestProtocol>> = {
-  webrtc: IngestProtocol.WHIP,
-  srt: IngestProtocol.SRT,
-};
-
-interface Payload {
-  readonly action?: string;
-  readonly path?: string;
-  readonly protocol?: string;
-  readonly token?: string;
-  readonly password?: string;
-}
-
-async function bodyOf(request: IncomingMessage): Promise<Payload> {
+async function bodyOf(request: IncomingMessage): Promise<MediaServerAuthorization> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(chunk as Buffer);
-  return JSON.parse(Buffer.concat(chunks).toString() || '{}') as Payload;
+  return JSON.parse(Buffer.concat(chunks).toString()) as MediaServerAuthorization;
 }
 
-async function decide(payload: Payload, authorizer: IngestAuthorizer): Promise<number> {
-  const protocol = PROTOCOL_OF[payload.protocol ?? ''];
-  const streamPath = payload.path?.startsWith('live/') ? payload.path.slice(5) : '';
-  const presentedKey =
-    [payload.token, payload.password].find((key) => key !== undefined && key !== '') ?? '';
-  if (payload.action !== MediaServerAction.PUBLISH || protocol === undefined) return 403;
-  if (streamPath === '' || streamPath.includes('/') || presentedKey === '') return 403;
-  const decision = await authorizer.authorize({ streamPath, presentedKey, protocol });
-  return decision.accepted ? 204 : 403;
+async function decide(
+  request: MediaServerAuthorization,
+  authorizer: IngestAuthorizer,
+): Promise<number> {
+  const asked = attemptOf(request);
+  if (!('attempt' in asked)) return 403;
+  return (await authorizer.authorize(asked.attempt)).accepted ? 204 : 403;
 }
 
 export async function startMediaServerStandIn(

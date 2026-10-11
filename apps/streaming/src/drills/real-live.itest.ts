@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createServer, type AddressInfo } from 'node:net';
 
 import { readPlaybackSigningKey } from '@arthome-platform/config';
 import {
@@ -61,6 +62,7 @@ import {
   type Playback,
 } from '../itest/playback.js';
 import {
+  MEDIA_SERVER_TEST_SECRET,
   STREAM_KEY_TEST_SECRET,
   outboxOf,
   studioCall,
@@ -76,17 +78,14 @@ import {
   RECORDING_PROVIDER,
   STREAMING_METRICS_PROVIDER,
 } from '../media/media-tokens.js';
-import {
-  startMediaServerStandIn,
-  type MediaServerStandIn,
-} from '../media/mediamtx/media-server-stand-in.js';
 import { readMediaMtxEnv } from '../media/mediamtx/mediamtx-env.js';
 import { MediaMtxHttp } from '../media/mediamtx/mediamtx-http.js';
 import { MediaMtxStreamingProvider } from '../media/mediamtx/mediamtx-streaming-provider.js';
+import { MEDIA_SERVER_SECRET } from '../media-server/media-server.identity.js';
+import { MediaServerModule } from '../media-server/media-server.module.js';
 import { PlaybackModule } from '../playback/playback.module.js';
 import { ProgressModule } from '../progress/progress.module.js';
 import { ReplayAssetSweeperModule } from '../replay-asset/replay-asset-sweeper.module.js';
-import { RunIngestAuthorizer } from '../run/ingest-authorizer.js';
 import { PrepareRun } from '../run/prepare-run.command.js';
 import { RunConsumerModule } from '../run/run-consumer.module.js';
 import { SweepRunPresence } from '../run/run-passes.js';
@@ -142,7 +141,6 @@ interface LiveRun {
 
 let stack: StartedStack;
 let media: StartedMediaStack;
-let standIn: MediaServerStandIn;
 let dataSource: DataSource;
 let app: NestFastifyApplication;
 let provider: MediaMtxStreamingProvider;
@@ -158,10 +156,11 @@ beforeAll(async () => {
     await createDatabase(stack.postgres, 'streaming_real_live_drill'),
     STREAMING_SCHEMA,
   );
-  standIn = await startMediaServerStandIn({
-    authorize: (attempt) => app.get(RunIngestAuthorizer).authorize(attempt),
+  // MX1's route on the app itself: the origin asks it before each publish, as in development.
+  const apiPort = await freePort();
+  media = await startMediaStack({
+    authorizeUrl: `http://mediamtx:${MEDIA_SERVER_TEST_SECRET}@host.docker.internal:${String(apiPort)}/v1/media-server/authorize`,
   });
-  media = await startMediaStack({ authorizeUrl: standIn.authorizeUrl });
   const env = readMediaMtxEnv(media.providerEnv);
   originApi = new MediaMtxHttp('the origin', env.originApiUrl);
   edgeApi = new MediaMtxHttp('the edge', env.edgeApiUrl);
@@ -180,12 +179,14 @@ beforeAll(async () => {
       EntitlementConsumerModule,
       DevicesConsumerModule,
       ReplayAssetSweeperModule,
+      MediaServerModule,
     ],
     providers: EDGE_PROVIDERS,
     dataSource,
     overrides: [
       [CLOCK, clock],
       [STREAM_KEY_SECRET, STREAM_KEY_TEST_SECRET],
+      [MEDIA_SERVER_SECRET, MEDIA_SERVER_TEST_SECRET],
       [InternalTokenVerifier, studioTokenVerifier(clock)],
       [LIVE_INGEST_PROVIDER, provider],
       [PLAYBACK_PROVIDER, provider],
@@ -194,6 +195,7 @@ beforeAll(async () => {
     ],
     configure: serveEndpoints,
   });
+  await app.listen(apiPort, '0.0.0.0');
   const commands = app.get(CommandBus);
   // The suites' harness types: the fake is bound beside the overridden ports and stays unused.
   const fake = app.get(FakeStreamingProvider);
@@ -213,9 +215,19 @@ afterAll(async () => {
   await provider.beforeApplicationShutdown();
   await app.close();
   await media.stop();
-  await standIn.close();
   await stack.stop();
 }, MEDIA_STACK_STOP_MS);
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '0.0.0.0', () => {
+      const { port } = probe.address() as AddressInfo;
+      probe.close(() => resolve(port));
+    });
+  });
+}
 
 async function scheduledDate(replayPolicy: WireReplayPolicy): Promise<string> {
   const dateId = randomUUID();

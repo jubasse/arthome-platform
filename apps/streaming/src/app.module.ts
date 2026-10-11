@@ -27,7 +27,8 @@ import { SERVICE } from './service.js';
 /**
  * The API process. Readiness fails on the database alone; the slot, the publication and the outbox
  *   retention answer `degraded`, since a stopped connector must delay publishing, not take the API
- *   out of rotation. `MediaModule` binds the fake provider, so the API does not boot in production.
+ *   out of rotation. `MediaModule` binds the fake or MediaMTX, both refused in production, so the API
+ *   does not boot there.
  */
 @Module({
   controllers: [HealthController],
