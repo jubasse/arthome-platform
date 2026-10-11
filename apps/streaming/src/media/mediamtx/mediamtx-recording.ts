@@ -80,7 +80,9 @@ export class MediaMtxRecording implements RecordingProvider {
   public async status(ref: RecordingRef): Promise<RecordingStatus> {
     const { streamPath, start } = this.spanOf(ref);
     const name = livePathOf(streamPath);
-    const [configuration, spans] = await Promise.all([
+    // In parallel, within the domain's call timeout. While recording, the list may fail: the first
+    // segment is not on disk yet.
+    const [configuration, listed] = await Promise.allSettled([
       this.originApi.json<{ record: boolean }>({
         operation: 'recording status',
         path: `/v3/config/paths/get/${name}`,
@@ -91,7 +93,10 @@ export class MediaMtxRecording implements RecordingProvider {
         query: { path: name, start },
       }),
     ]);
-    if (configuration?.record === true) return { ready: false, durationSec: null };
+    if (configuration.status === 'rejected') throw configuration.reason;
+    if (configuration.value?.record === true) return { ready: false, durationSec: null };
+    if (listed.status === 'rejected') throw listed.reason;
+    const spans = listed.value;
     if (spans === null || spans.length === 0) throw new RecordingNotFound();
     const seconds = spans.reduce((sum, span) => sum + span.duration, 0);
     return { ready: true, durationSec: Math.round(seconds) };

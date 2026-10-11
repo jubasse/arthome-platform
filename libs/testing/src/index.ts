@@ -7,6 +7,15 @@
  *   `pnpm --filter @arthome-platform/testing run test:integration`.
  */
 
+export { startMediaStack } from './media-stack.js';
+export type {
+  EncoderProtocol,
+  EncoderRequest,
+  MediaStackRequest,
+  StartedEncoder,
+  StartedMediaStack,
+} from './media-stack.js';
+
 export {
   composeImage,
   startConnect,

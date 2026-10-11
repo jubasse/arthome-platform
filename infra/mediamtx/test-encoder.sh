@@ -1,7 +1,7 @@
 #!/bin/sh
-# A test encoder for the spike and the drill: H.264 baseline 720p30, keyframe every 2 s, Opus (or
-# AAC with `aac`), and the wall clock burned into the top-left strip as 24 bits of epoch
-# milliseconds (one 40-pixel box per bit, white for 1), read back at the player.
+# A test encoder for the spike, the media suites and the drill: H.264 baseline 720p30, keyframe
+# every 2 s, Opus (or AAC with `aac`), and the wall clock burned into the top-left strip as 24 bits
+# of epoch milliseconds (one 40-pixel box per bit, white for 1), read back at the player.
 #
 #   encoder.sh <output URL> [opus|aac] [ffmpeg output format] [output options...]
 

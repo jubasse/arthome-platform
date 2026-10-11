@@ -20,6 +20,6 @@ services:
     image: bluenviron/mediamtx:1.21.2-ffmpeg
     volumes:
       - ./infra/mediamtx/spike/.generated/encoder.yml:/mediamtx.yml:ro
-      - ./infra/mediamtx/spike/encoder.sh:/encoder.sh:ro
+      - ./infra/mediamtx/test-encoder.sh:/encoder.sh:ro
     depends_on: [mediamtx-origin]
     networks: [media]
