@@ -130,11 +130,12 @@ export class MediaMtxStreamingProvider
   /** Starts the watcher: the authorizer is MX1's route's, which the origin calls by itself. */
   public attachIngestHooks(hooks: IngestHooks): void {
     if (this.watch !== null) throw new Error('the ingest hooks are attached once, at boot');
-    const watcher = new PathWatcher(hooks.listener, this.clock, this.logger);
+    const watcher = new PathWatcher(hooks.listener, this.logger);
     this.watch = new WatchLoop(this.env.watchEveryMs, this.logger, async () => {
+      const readAt = this.clock.now();
       const origin = await listPaths(this.originApi, 'origin paths read');
       this.recordByteCounters(origin);
-      await watcher.observe(origin);
+      await watcher.observe(origin, readAt);
       await this.edgeRoutes.reconcile(origin, hooks.listener);
     });
   }

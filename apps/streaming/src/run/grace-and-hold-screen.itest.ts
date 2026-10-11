@@ -5,6 +5,7 @@ import { fromBinary } from '@bufbuild/protobuf';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  fromEpochMs,
   HOLD_SCREEN_AUTO_AFTER_SECONDS_DEFAULT,
   IncidentCause,
   IncidentKind,
@@ -77,6 +78,15 @@ async function openIncidentOf(run: PreparedRun) {
     [run.runId],
   );
   return incident ?? null;
+}
+
+async function onlineSinceOf(run: PreparedRun): Promise<Date> {
+  const [row] = await desk.dataSource.query<{ publisher_online_since: Date | null }[]>(
+    'SELECT publisher_online_since FROM run WHERE id = $1',
+    [run.runId],
+  );
+  if (!row?.publisher_online_since) throw new Error('no publisher online');
+  return row.publisher_online_since;
 }
 
 async function typesSince(run: PreparedRun, count: number): Promise<string[]> {
@@ -261,6 +271,28 @@ describe('one feed reported by several replicas', () => {
       );
       expect(after?.updated_at).toEqual(recorded?.updated_at);
       expect(await typesSince(run, written)).toEqual([]);
+    },
+    CASE_MS,
+  );
+
+  it(
+    "ends only the onset a loss names: a slower replica's loss never ends the feed's return",
+    async () => {
+      const run = await onAir();
+      const firstOnset = await onlineSinceOf(run);
+      desk.clock.advance(5_000);
+      await desk.fake.drop(run.streamPath);
+      desk.clock.advance(1_000);
+      await desk.fake.resume(run.streamPath);
+      const returned = desk.clock.now();
+
+      await desk.app.get(RunIngestListener).publisherOffline({
+        streamPath: run.streamPath,
+        onlineSince: fromEpochMs(firstOnset.getTime()),
+        at: desk.clock.advance(200),
+      });
+
+      expect(await onlineSinceOf(run)).toEqual(new Date(returned));
     },
     CASE_MS,
   );

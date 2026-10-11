@@ -156,8 +156,8 @@ describe('ingest', () => {
       { streamPath: PATH, protocol: IngestProtocol.RTMPS, at: plusSeconds(START, 11) },
     ]);
     expect(hooks.offline).toEqual([
-      { streamPath: PATH, at: plusSeconds(START, 10) },
-      { streamPath: PATH, at: plusSeconds(START, 71) },
+      { streamPath: PATH, onlineSince: START, at: plusSeconds(START, 10) },
+      { streamPath: PATH, onlineSince: plusSeconds(START, 11), at: plusSeconds(START, 71) },
     ]);
   });
 

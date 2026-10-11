@@ -90,8 +90,12 @@ interface Publish {
   readonly presentedKey: string;
 }
 
+interface Connection extends Publish {
+  readonly onlineSince: Instant;
+}
+
 interface Stream {
-  connected: Publish | null;
+  connected: Connection | null;
   lastPublish: Publish | null;
   offlineAtMs: number | null;
   workerFailed: boolean;
@@ -212,7 +216,7 @@ export class FakeStreamingProvider
       stream.offlineAtMs !== null &&
       nowMs < stream.offlineAtMs + this.workerGraceMs;
     if (!workerKept) stream.generation += 1;
-    stream.connected = { protocol, presentedKey };
+    stream.connected = { protocol, presentedKey, onlineSince: fromEpochMs(nowMs) };
     stream.lastPublish = stream.connected;
     stream.offlineAtMs = null;
     stream.workerFailed = false;
@@ -396,9 +400,10 @@ export class FakeStreamingProvider
     const listener = this.attachedHooks().listener;
     const stream = this.streamAt(streamPath);
     const nowMs = this.clock.nowMs();
+    const onlineSince = stream.connected?.onlineSince ?? fromEpochMs(nowMs);
     stream.connected = null;
     stream.offlineAtMs = nowMs;
-    await listener.publisherOffline({ streamPath, at: fromEpochMs(nowMs) });
+    await listener.publisherOffline({ streamPath, onlineSince, at: fromEpochMs(nowMs) });
   }
 
   private recordingOf(ref: RecordingRef): Recording {

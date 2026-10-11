@@ -39,8 +39,9 @@ interface BackOnline {
 
 /**
  * The provider's reports of a feed's life. Presence moves by conditional statements that leave the
- *   run's version alone, each refusing an instant older than the one recorded, since a report can
- *   arrive late; only lifting the hold screen when the feed returns (D-124) is a state change.
+ *   run's version alone, since a report can arrive late: an onset older than the recorded loss is
+ *   refused, a loss ends only the onset it names. Only lifting the hold screen when the feed
+ *   returns (D-124) is a state change.
  */
 @Injectable()
 export class RunIngestListener implements IngestLifecycleListener {
@@ -86,15 +87,14 @@ export class RunIngestListener implements IngestLifecycleListener {
     });
   }
 
-  public async publisherOffline({ streamPath, at }: PublisherOffline): Promise<void> {
+  public async publisherOffline({ streamPath, onlineSince, at }: PublisherOffline): Promise<void> {
     const lost = await updateReturning<{ id: string }>(
       this.dataSource.manager,
       `UPDATE run
           SET publisher_online_since = NULL, publisher_lost_at = $2, updated_at = now()
-        WHERE stream_path = $1 AND publisher_online_since IS NOT NULL
-          AND publisher_online_since <= $2
+        WHERE stream_path = $1 AND publisher_online_since = $3
        RETURNING id`,
-      [streamPath, new Date(at)],
+      [streamPath, new Date(at), new Date(onlineSince)],
     );
     if (lost.length === 0) {
       this.logger.warn('a publisher offline on a run with none online, or reported late: ignored');

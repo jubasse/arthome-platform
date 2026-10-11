@@ -68,6 +68,8 @@ export interface PublisherOnline {
 
 export interface PublisherOffline {
   readonly streamPath: string;
+  /** The onset this loss ends: a late report never ends a later one. */
+  readonly onlineSince: Instant;
   readonly at: Instant;
 }
 

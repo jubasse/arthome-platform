@@ -2,7 +2,7 @@ import { readPlaybackSigningKey } from '@arthome-platform/config';
 import { Logger } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { FixedClock } from '@arthome/core';
+import { FixedClock, toEpochMs, type Instant } from '@arthome/core';
 
 import type { MediaMtxPath } from './mediamtx-api.js';
 import { MediaMtxStreamingProvider } from './mediamtx-streaming-provider.js';
@@ -55,6 +55,42 @@ class Reports {
   };
 }
 
+/** `RunIngestListener`'s presence rules, one row per path; each report takes `takesMs` of the clock. */
+class RunPresence {
+  private readonly rows = new Map<
+    string,
+    { onlineSince: Instant | null; lostAt: Instant | null }
+  >();
+
+  public constructor(
+    private readonly clock: FixedClock,
+    private readonly takesMs: number,
+  ) {}
+
+  public onlineSinceOf(streamPath: string): Instant | null {
+    return this.rows.get(streamPath)?.onlineSince ?? null;
+  }
+
+  public readonly listener = {
+    publisherOnline: ({ streamPath, at }: PublisherOnline): Promise<void> => {
+      this.clock.advance(this.takesMs);
+      const row = this.rows.get(streamPath) ?? { onlineSince: null, lostAt: null };
+      if (row.lostAt === null || toEpochMs(row.lostAt) <= toEpochMs(at)) {
+        this.rows.set(streamPath, { ...row, onlineSince: at });
+      }
+      return Promise.resolve();
+    },
+    publisherOffline: ({ streamPath, onlineSince, at }: PublisherOffline): Promise<void> => {
+      this.clock.advance(this.takesMs);
+      if (this.rows.get(streamPath)?.onlineSince === onlineSince) {
+        this.rows.set(streamPath, { onlineSince: null, lostAt: at });
+      }
+      return Promise.resolve();
+    },
+    workerFailed: (): Promise<void> => Promise.resolve(),
+  };
+}
+
 const silent = new Logger('test');
 vi.spyOn(silent, 'warn').mockImplementation(() => undefined);
 vi.spyOn(silent, 'error').mockImplementation(() => undefined);
@@ -62,14 +98,14 @@ vi.spyOn(silent, 'error').mockImplementation(() => undefined);
 describe('PathWatcher', () => {
   it('reports a feed online once, at its onlineTime, with the protocol of its source', async () => {
     const reports = new Reports();
-    const watcher = new PathWatcher(reports.listener, new FixedClock(NOW), silent);
+    const watcher = new PathWatcher(reports.listener, silent);
     const paths = new Map([
       livePath('sp1'),
       livePath('sp2', { source: { type: 'srtConn', id: 'conn-2' } }),
     ]);
 
-    await watcher.observe(paths);
-    await watcher.observe(paths);
+    await watcher.observe(paths, NOW);
+    await watcher.observe(paths, NOW);
 
     expect(reports.online).toEqual([
       { streamPath: 'sp1', protocol: IngestProtocol.WHIP, at: '2026-10-11T18:59:58.123Z' },
@@ -77,26 +113,29 @@ describe('PathWatcher', () => {
     ]);
   });
 
-  it('reports a feed offline at the clock once it is gone or not online', async () => {
+  it('reports a feed offline at the read, with the onset it ends, once gone or not online', async () => {
     const reports = new Reports();
-    const watcher = new PathWatcher(reports.listener, new FixedClock(NOW), silent);
-    await watcher.observe(new Map([livePath('sp1'), livePath('sp2')]));
+    const watcher = new PathWatcher(reports.listener, silent);
+    await watcher.observe(new Map([livePath('sp1'), livePath('sp2')]), NOW);
 
-    await watcher.observe(new Map([livePath('sp2', { online: false })]));
-    await watcher.observe(new Map());
+    await watcher.observe(new Map([livePath('sp2', { online: false })]), NOW);
+    await watcher.observe(new Map(), NOW);
 
     expect(reports.offline).toEqual([
-      { streamPath: 'sp1', at: NOW },
-      { streamPath: 'sp2', at: NOW },
+      { streamPath: 'sp1', onlineSince: '2026-10-11T18:59:58.123Z', at: NOW },
+      { streamPath: 'sp2', onlineSince: '2026-10-11T18:59:58.123Z', at: NOW },
     ]);
   });
 
   it('reports a publisher back between two reads by its new onlineTime', async () => {
     const reports = new Reports();
-    const watcher = new PathWatcher(reports.listener, new FixedClock(NOW), silent);
-    await watcher.observe(new Map([livePath('sp1')]));
+    const watcher = new PathWatcher(reports.listener, silent);
+    await watcher.observe(new Map([livePath('sp1')]), NOW);
 
-    await watcher.observe(new Map([livePath('sp1', { onlineTime: '2026-10-11T18:59:59.500Z' })]));
+    await watcher.observe(
+      new Map([livePath('sp1', { onlineTime: '2026-10-11T18:59:59.500Z' })]),
+      NOW,
+    );
 
     expect(reports.online.map(({ at }) => at)).toEqual([
       '2026-10-11T18:59:58.123Z',
@@ -107,13 +146,14 @@ describe('PathWatcher', () => {
 
   it('ignores another source type, and paths outside live/', async () => {
     const reports = new Reports();
-    const watcher = new PathWatcher(reports.listener, new FixedClock(NOW), silent);
+    const watcher = new PathWatcher(reports.listener, silent);
 
     await watcher.observe(
       new Map([
         livePath('sp1', { source: { type: 'rtspSession', id: 'r' } }),
         ['watch/d1', { ...livePath('d1')[1], name: 'watch/d1' }],
       ]),
+      NOW,
     );
 
     expect(reports.online).toEqual([]);
@@ -121,19 +161,67 @@ describe('PathWatcher', () => {
 
   it('repeats a report the listener failed to take', async () => {
     const reports = new Reports();
-    const watcher = new PathWatcher(reports.listener, new FixedClock(NOW), silent);
+    const watcher = new PathWatcher(reports.listener, silent);
     reports.failNext = true;
 
-    await watcher.observe(new Map([livePath('sp1')]));
-    await watcher.observe(new Map([livePath('sp1')]));
+    await watcher.observe(new Map([livePath('sp1')]), NOW);
+    await watcher.observe(new Map([livePath('sp1')]), NOW);
 
     expect(reports.online).toHaveLength(1);
   });
 });
 
+function providerAt(clock: FixedClock): MediaMtxStreamingProvider {
+  return new MediaMtxStreamingProvider({
+    env: readMediaMtxEnv({ ...MEDIAMTX_SPEC_ENV, MEDIAMTX_WATCH_EVERY_MS: '100' }),
+    signingKey: readPlaybackSigningKey({ NODE_ENV: 'test' }),
+    clock,
+  });
+}
+
+/** Each origin read answers the next list, then the last one again. */
+function stubOriginReads(reads: readonly (readonly MediaMtxPath[])[]): void {
+  let next = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: URL) => {
+      if (url.pathname !== '/v3/paths/list' || url.port !== '59997') {
+        return Promise.resolve(Response.json({ pageCount: 1, items: [] }));
+      }
+      const items = reads[Math.min(next, reads.length - 1)];
+      next += 1;
+      return Promise.resolve(Response.json({ pageCount: 1, items }));
+    }),
+  );
+}
+
 describe('the watch loop', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('stamps a loss at the read, so a publisher back while the tick reports is not refused', async () => {
+    const back = '2026-10-11T19:00:00.700Z';
+    stubOriginReads([
+      [livePath('sp1')[1]],
+      [livePath('sp2', { onlineTime: '2026-10-11T19:00:00.400Z' })[1]],
+      [livePath('sp1', { onlineTime: back })[1], livePath('sp2')[1]],
+    ]);
+    const clock = new FixedClock(NOW);
+    const presence = new RunPresence(clock, 500);
+    const provider = providerAt(clock);
+
+    provider.attachIngestHooks({
+      authorizer: { authorize: () => Promise.resolve({ accepted: true }) },
+      listener: presence.listener,
+    });
+    try {
+      await vi.waitFor(() => {
+        expect(presence.onlineSinceOf('sp1')).toBe(back);
+      });
+    } finally {
+      await provider.beforeApplicationShutdown();
+    }
   });
 
   it('emits nothing while the origin is unreachable: never "every feed offline"', async () => {
@@ -148,11 +236,7 @@ describe('the watch loop', () => {
       }),
     );
     const reports = new Reports();
-    const provider = new MediaMtxStreamingProvider({
-      env: readMediaMtxEnv({ ...MEDIAMTX_SPEC_ENV, MEDIAMTX_WATCH_EVERY_MS: '100' }),
-      signingKey: readPlaybackSigningKey({ NODE_ENV: 'test' }),
-      clock: new FixedClock(NOW),
-    });
+    const provider = providerAt(new FixedClock(NOW));
 
     provider.attachIngestHooks({
       authorizer: { authorize: () => Promise.resolve({ accepted: true }) },
