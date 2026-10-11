@@ -14,6 +14,7 @@ import {
   preparedRun,
   startRunDesk,
   stopRunDesk,
+  studioCall,
   type PreparedRun,
   type RunDesk,
 } from '../itest/run-desk.js';
@@ -194,6 +195,30 @@ describe('authorizeMediaServerAccess', () => {
       const malformed = await ask({ path: `live/${run.streamPath}`, protocol: 'srt' });
       expect(malformed.statusCode).toBe(400);
       expect(malformed.json()).toMatchObject({ error: { code: ApiErrorCode.SCHEMA_INVALID } });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'answers 401 to an internal token on the media-server route, and to the media server credential on a run desk route',
+    async () => {
+      const run = await preparedRun(desk);
+
+      const internal = await studioCall(desk, 'POST', '/v1/media-server/authorize', {
+        body: {
+          action: MediaServerAction.PUBLISH,
+          path: `live/${run.streamPath}`,
+          protocol: 'srt',
+        },
+      });
+      expectRefused(internal, 401);
+
+      const onDesk = await desk.app.inject({
+        method: 'GET',
+        url: `/v1/dates/${run.dateId}/run`,
+        headers: { authorization: MEDIA_SERVER },
+      });
+      expectRefused(onDesk, 401);
     },
     CASE_MS,
   );

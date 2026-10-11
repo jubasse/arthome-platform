@@ -258,7 +258,7 @@ export interface SigningKey {
 
 const PLAYBACK_KEY_ID_PREFIX = 'play-';
 
-const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/);
+const base64Url = z.string().regex(/^[A-Za-z0-9_-]+$/, 'only base64url characters are allowed');
 
 const privateEcJwk = z.object({
   kty: z.literal('EC'),
@@ -412,9 +412,7 @@ export function readMediaServerSecret(
       : { MEDIA_SERVER_SECRET: DEVELOPMENT_MEDIA_SERVER_SECRET, ...stripEmpty(source) };
   return z
     .object({
-      MEDIA_SERVER_SECRET: secretOutside(DEVELOPMENT_MEDIA_SERVER_SECRET, source).pipe(
-        z.string().regex(/^[A-Za-z0-9_-]+$/, 'only base64url characters fit in a URL userinfo'),
-      ),
+      MEDIA_SERVER_SECRET: secretOutside(DEVELOPMENT_MEDIA_SERVER_SECRET, source).pipe(base64Url),
     })
     .parse(withDefault).MEDIA_SERVER_SECRET;
 }
