@@ -19,12 +19,23 @@ export const SIGNING_KEY: unique symbol = Symbol('SigningKey');
 export interface Caller {
   readonly accountId: string;
   readonly deviceId: string;
+  /** The profile the viewer watches as; a route that reads one refuses a token without it. */
+  readonly profileId?: string;
+}
+
+function claimsOf(caller: Caller | null): Record<string, string> {
+  if (caller === null) return {};
+  return {
+    sub: caller.accountId,
+    did: caller.deviceId,
+    ...(caller.profileId !== undefined && { pro: caller.profileId }),
+  };
 }
 
 /**
  * Mints the token each call to a service carries (`adr-auth.md` §8): ES256, this BFF as issuer, the
- *   service as audience, the account and its device, sixty seconds from the injected clock. One
- *   per call, never reused for another service.
+ *   service as audience, the account, its device and its profile when it names one, sixty seconds
+ *   from the injected clock. One per call, never reused for another service.
  */
 @Injectable()
 export class InternalTokenMinter {
@@ -41,7 +52,7 @@ export class InternalTokenMinter {
 
   public async mint(service: string, caller: Caller | null): Promise<string> {
     const issuedAt = Math.floor(this.clock.nowMs() / 1000);
-    return new SignJWT(caller === null ? {} : { sub: caller.accountId, did: caller.deviceId })
+    return new SignJWT(claimsOf(caller))
       .setProtectedHeader({ alg: INTERNAL_TOKEN_ALGORITHM, kid: this.signingKey.keyId })
       .setIssuer(InternalTokenIssuer.STOREFRONT_BFF)
       .setAudience(audienceOf(service))

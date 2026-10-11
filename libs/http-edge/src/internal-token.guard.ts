@@ -57,9 +57,9 @@ function presentedInternalToken(request: TokenCarrier): string | null {
 
 /**
  * Core's `service` identity (ADR contract model §9.1): the internal token a BFF mints for the end
- *   user, verified as `InternalTokenGuard` does. Its principal is core's, the calling service from
- *   the token's issuer and the end user from its subject; the verified claims are left where
- *   `principalOf` reads them too.
+ *   user, verified as `InternalTokenGuard` does. Its principal is core's, from the token's `iss`,
+ *   `sub`, `pro` and `did`, a claim the token lacks absent rather than null; the verified claims
+ *   are left where `principalOf` reads them too.
  */
 @Injectable()
 export class ServiceIdentity implements IdentityGuard {
@@ -73,6 +73,11 @@ export class ServiceIdentity implements IdentityGuard {
     if (token === null) return null;
     const verified = await this.verifier.verify(token);
     attachPrincipal(request, verified);
-    return { callingService: verified.issuer, userId: verified.accountId };
+    return {
+      callingService: verified.issuer,
+      userId: verified.accountId,
+      ...(verified.profileId !== null && { profileId: verified.profileId }),
+      ...(verified.deviceId !== null && { deviceId: verified.deviceId }),
+    };
   }
 }

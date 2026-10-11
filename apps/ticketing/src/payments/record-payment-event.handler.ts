@@ -36,8 +36,9 @@ export class RecordPaymentEventHandler implements ICommandHandler<RecordPaymentE
     if (event === null) throw schemaInvalidException([]);
     const inserted = await this.dataSource.query<unknown[]>(
       `INSERT INTO stripe_event_inbox
-              (event_id, kind, intent_ref, order_id, decline_code, occurred_at, payload, traceparent)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+              (event_id, kind, intent_ref, order_id, decline_code, occurred_at, payload, traceparent,
+               refund_ref, amount_refunded_minor, amount_refunded_currency_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (event_id) DO NOTHING
        RETURNING event_id`,
       [
@@ -49,6 +50,9 @@ export class RecordPaymentEventHandler implements ICommandHandler<RecordPaymentE
         new Date(event.occurredAt),
         rawBody,
         traceparent,
+        event.refundRef,
+        event.amountRefunded?.amountMinor ?? null,
+        event.amountRefunded?.currencyCode ?? null,
       ],
     );
     return { eventId: event.eventId, duplicate: inserted.length === 0 };

@@ -6,10 +6,17 @@ import {
   RefundReason,
   money,
   OrderState,
+  SeatCancelReason,
   SeatState,
 } from '@arthome/core';
 
-import { SeatOrder, type SeatIssue, type SeatOrderPlacement } from './seat-order.aggregate.js';
+import {
+  SeatOrder,
+  type OwedRefund,
+  type SeatIssue,
+  type SeatOrderPlacement,
+} from './seat-order.aggregate.js';
+import type { SeatCancelled } from './seat-order.events.js';
 import { NextActionKind } from '../payments/next-action.js';
 
 const NOW = '2026-09-28T10:00:00.000Z';
@@ -126,25 +133,41 @@ describe('SeatOrder', () => {
     expect(placed().recordIntent(INTENT, OrderState.AWAITING_ACTION, NOW)).toBe(false);
   });
 
-  it('owes back a payment it has no seat for, and takes no payment after that', () => {
+  it('owes back a payment it has no seat for, under its own key, and takes no payment after that (D-082)', () => {
     const order = placed();
     order.fail({ code: null, declineCode: null }, NOW);
 
-    order.oweRefund(RefundReason.HOLD_EXPIRED_CAPACITY_LOST, INTENT.ref, LATER);
+    const refundId = order.oweUnseatedPaymentBack(
+      RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
+      INTENT.ref,
+      LATER,
+    );
     order.pay(INTENT.ref, ISSUES, LATER);
 
     expect(order.owesRefund).toBe(true);
+    expect(order.acceptsPayment).toBe(false);
     expect(order.snapshot.seats).toEqual([]);
+    expect(order.snapshot.refunds).toEqual([
+      {
+        id: refundId,
+        amount: PLACEMENT.quote.total,
+        reason: RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
+        idempotencyKey: `refund:${refundId ?? ''}`,
+        seatId: null,
+        owedAt: LATER,
+        ref: null,
+        refundedAt: null,
+      },
+    ]);
+    expect(
+      order.oweUnseatedPaymentBack(RefundReason.HOLD_EXPIRED_CAPACITY_LOST, INTENT.ref, LATER),
+    ).toBeNull();
 
-    order.markRefunded('re_fake_1', LATER);
+    order.refundMade(refundId ?? '', 're_fake_1', LATER);
 
     expect(order.snapshot).toMatchObject({
       state: OrderState.REFUNDED,
-      refund: {
-        reason: RefundReason.HOLD_EXPIRED_CAPACITY_LOST,
-        ref: 're_fake_1',
-        refundedAt: LATER,
-      },
+      refunds: [{ ref: 're_fake_1', refundedAt: LATER }],
     });
     expect(order.owesRefund).toBe(false);
     expect(order.getUncommittedEvents().map(({ kind }) => kind)).toEqual([
@@ -192,5 +215,525 @@ describe('SeatOrder, its intent told in either order (review M4)', () => {
     order.recordIntent({ ...told, ref: 'pi_other' }, OrderState.AWAITING_ACTION, LATER);
 
     expect(order.snapshot).toMatchObject({ intent: told, version });
+  });
+});
+
+describe('SeatOrder, its refunds (the ledger PT1 and PT2 owe through)', () => {
+  const paid = (): SeatOrder => {
+    const order = placed();
+    order.pay(INTENT.ref, ISSUES, NOW);
+    return order;
+  };
+  const refundOf = (id: string, amountMinor: number, seatId: string | null): OwedRefund => ({
+    id,
+    amount: money(amountMinor, 'EUR'),
+    reason: RefundReason.VIEWER_REQUEST,
+    idempotencyKey: `refund:${id}`,
+    seatId,
+  });
+  const FIRST = refundOf('01a0f700-0000-7000-8000-0000000000f1', 2400, ISSUES[0]?.id ?? null);
+  const SECOND = refundOf('01a0f700-0000-7000-8000-0000000000f2', 2400, ISSUES[1]?.id ?? null);
+
+  it('is partially refunded by a first refund made, then refunded once they reach the total', () => {
+    const order = paid();
+
+    order.oweRefund(FIRST, LATER);
+    order.oweRefund(SECOND, LATER);
+    expect(order.refundableLeft).toEqual(money(0, 'EUR'));
+
+    order.refundMade(FIRST.id, 're_fake_1', LATER);
+    expect(order.snapshot.state).toBe(OrderState.PARTIALLY_REFUNDED);
+    expect(order.owesRefund).toBe(true);
+
+    order.refundMade(SECOND.id, 're_fake_2', LATER);
+    order.refundMade(SECOND.id, 're_fake_2', LATER);
+    expect(order.snapshot.state).toBe(OrderState.REFUNDED);
+    expect(order.owesRefund).toBe(false);
+
+    const events = order.getUncommittedEvents();
+    expect(events.map(({ kind }) => kind)).toEqual([
+      'SeatOrderPlaced',
+      'SeatOrderPaid',
+      'SeatOrderRefundOwed',
+      'SeatOrderRefundOwed',
+      'SeatOrderRefunded',
+      'SeatOrderRefunded',
+    ]);
+    expect(events.at(-1)).toMatchObject({ refundId: SECOND.id, amount: SECOND.amount });
+  });
+
+  it('refuses a refund past what is left, and one of nothing', () => {
+    const order = paid();
+    order.oweRefund(FIRST, LATER);
+
+    expect(order.refundableLeft).toEqual(money(2400, 'EUR'));
+    expect(() => {
+      order.oweRefund({ ...SECOND, amount: money(2401, 'EUR') }, LATER);
+    }).toThrow(
+      expect.objectContaining({
+        code: OrderErrorCode.REFUND_AMOUNT_EXCEEDS_REMAINING,
+        params: { remainingMinor: 2400, currencyCode: 'EUR' },
+      }),
+    );
+    expect(() => {
+      order.oweRefund({ ...SECOND, amount: money(0, 'EUR') }, LATER);
+    }).toThrow(/a refund of nothing/);
+    expect(order.snapshot.refunds).toHaveLength(1);
+  });
+
+  it('owes no refund on an order that holds no money, nor accepts a payment once one is owed', () => {
+    expect(() => {
+      placed().oweRefund(FIRST, LATER);
+    }).toThrow(/is pending: it holds no money to refund/);
+
+    const order = placed();
+    order.fail({ code: null, declineCode: null }, NOW);
+    order.oweUnseatedPaymentBack(RefundReason.HOLD_EXPIRED_CAPACITY_LOST, INTENT.ref, LATER);
+    expect(() => {
+      order.oweRefund(FIRST, LATER);
+    }).toThrow(/is failed/);
+  });
+
+  it('answers a refund owed again with the same facts, and refuses its id or key with others', () => {
+    const order = paid();
+    const first = order.oweRefund(FIRST, LATER);
+    const version = order.snapshot.version;
+
+    expect(order.oweRefund(FIRST, LATER)).toEqual(first);
+    expect(order.snapshot.refunds).toHaveLength(1);
+    expect(order.snapshot.version).toBe(version);
+    expect(() => {
+      order.oweRefund({ ...FIRST, amount: money(100, 'EUR') }, LATER);
+    }).toThrow(/already owes refund/);
+    expect(() => {
+      order.oweRefund({ ...SECOND, idempotencyKey: FIRST.idempotencyKey }, LATER);
+    }).toThrow(/already owes refund/);
+
+    order.refundMade(FIRST.id, 're_fake_1', LATER);
+    expect(order.oweRefund(FIRST, LATER)).toMatchObject({ id: FIRST.id, ref: 're_fake_1' });
+    expect(
+      order.getUncommittedEvents().filter(({ kind }) => kind === 'SeatOrderRefundOwed'),
+    ).toHaveLength(1);
+  });
+
+  it('refuses to mark made a refund it does not owe', () => {
+    expect(() => {
+      paid().refundMade(FIRST.id, 're_fake_1', LATER);
+    }).toThrow(/owes no refund/);
+  });
+});
+
+describe('SeatOrder, its seats leaving active (S1 to S3)', () => {
+  const THREE: SeatIssue[] = [
+    ...ISSUES,
+    { id: '01a0f700-0000-7000-8000-000000000503', code: 'ATH-9SN46P', cancelDeadline: null },
+  ];
+  const [FIRST_SEAT, SECOND_SEAT, THIRD_SEAT] = THREE.map(({ id }) => id) as [
+    string,
+    string,
+    string,
+  ];
+  const REFUND_ID = '01a0f700-0000-7000-8000-0000000000f3';
+  const paidForThree = (): SeatOrder => {
+    const order = SeatOrder.place(
+      {
+        ...PLACEMENT,
+        accountId: '01a0f700-0000-7000-8000-0000000000aa',
+        quantity: 3,
+        quote: { ...PLACEMENT.quote, tierTotal: money(7200, 'EUR'), total: money(7200, 'EUR') },
+      },
+      NOW,
+    );
+    order.pay(INTENT.ref, THREE, NOW);
+    return order;
+  };
+  const oweFor = (order: SeatOrder, seatId: string | null, amountMinor = 2400): void => {
+    order.oweRefund(
+      {
+        id: REFUND_ID,
+        amount: money(amountMinor, 'EUR'),
+        reason: RefundReason.VIEWER_REQUEST,
+        idempotencyKey: `refund:${REFUND_ID}`,
+        seatId,
+      },
+      LATER,
+    );
+  };
+  const statesOf = (order: SeatOrder) =>
+    Object.fromEntries(order.snapshot.seats.map(({ id, state }) => [id, state]));
+
+  it('cancels one seat of three at once, then refunds it when its refund is made', () => {
+    const order = paidForThree();
+    oweFor(order, FIRST_SEAT);
+
+    order.cancelSeats(
+      {
+        reason: SeatCancelReason.VIEWER_REQUEST,
+        refundId: REFUND_ID,
+        seats: [{ seatId: FIRST_SEAT, refundAmount: money(2400, 'EUR') }],
+      },
+      LATER,
+    );
+    expect(statesOf(order)).toEqual({
+      [FIRST_SEAT]: SeatState.CANCELLED,
+      [SECOND_SEAT]: SeatState.ACTIVE,
+      [THIRD_SEAT]: SeatState.ACTIVE,
+    });
+    expect(order.snapshot.seats[0]).toMatchObject({
+      endedAt: LATER,
+      cancelReason: SeatCancelReason.VIEWER_REQUEST,
+      refundId: REFUND_ID,
+      refundAmount: money(2400, 'EUR'),
+    });
+
+    order.refundMade(REFUND_ID, 're_fake_1', LATER);
+    expect(statesOf(order)).toEqual({
+      [FIRST_SEAT]: SeatState.REFUNDED,
+      [SECOND_SEAT]: SeatState.ACTIVE,
+      [THIRD_SEAT]: SeatState.ACTIVE,
+    });
+    expect(order.snapshot.state).toBe(OrderState.PARTIALLY_REFUNDED);
+    expect(order.snapshot.seats[0]?.endedAt).toBe(LATER);
+  });
+
+  it('writes one SeatCancelled per seat, on the date, for the seat’s account', () => {
+    const order = paidForThree();
+    oweFor(order, null, 4800);
+
+    order.cancelSeats(
+      {
+        reason: SeatCancelReason.DATE_CANCELLED,
+        refundId: REFUND_ID,
+        seats: [
+          { seatId: FIRST_SEAT, refundAmount: money(2400, 'EUR') },
+          { seatId: SECOND_SEAT, refundAmount: money(2400, 'EUR') },
+        ],
+      },
+      LATER,
+    );
+
+    const cancelled = order
+      .getUncommittedEvents()
+      .filter((event): event is SeatCancelled => event.kind === 'SeatCancelled');
+    expect(cancelled.map(({ seatId }) => seatId)).toEqual([FIRST_SEAT, SECOND_SEAT]);
+    expect(cancelled[0]).toMatchObject({
+      dateId: PLACEMENT.dateId,
+      accountId: '01a0f700-0000-7000-8000-0000000000aa',
+      reason: SeatCancelReason.DATE_CANCELLED,
+      occurredAt: LATER,
+    });
+    order.refundMade(REFUND_ID, 're_fake_1', LATER);
+    expect(statesOf(order)).toEqual({
+      [FIRST_SEAT]: SeatState.REFUNDED,
+      [SECOND_SEAT]: SeatState.REFUNDED,
+      [THIRD_SEAT]: SeatState.ACTIVE,
+    });
+  });
+
+  it('keeps a seat cancelled for good when nothing is given back, a share of nothing included', () => {
+    const order = paidForThree();
+    oweFor(order, null, 2);
+
+    order.cancelSeats(
+      {
+        reason: SeatCancelReason.DATE_CANCELLED,
+        refundId: REFUND_ID,
+        seats: [
+          { seatId: FIRST_SEAT, refundAmount: money(1, 'EUR') },
+          { seatId: SECOND_SEAT, refundAmount: money(1, 'EUR') },
+          { seatId: THIRD_SEAT, refundAmount: money(0, 'EUR') },
+        ],
+      },
+      LATER,
+    );
+    expect(order.snapshot.seats[2]).toMatchObject({ refundId: null, refundAmount: null });
+    order.refundMade(REFUND_ID, 're_fake_1', LATER);
+    expect(statesOf(order)[THIRD_SEAT]).toBe(SeatState.CANCELLED);
+
+    const disputed = paidForThree();
+    disputed.dispute();
+    disputed.cancelSeats(
+      {
+        reason: SeatCancelReason.VIEWER_REQUEST,
+        refundId: null,
+        seats: [{ seatId: FIRST_SEAT, refundAmount: null }],
+      },
+      LATER,
+    );
+    expect(disputed.snapshot.seats[0]).toMatchObject({
+      state: SeatState.CANCELLED,
+      refundId: null,
+      refundAmount: null,
+    });
+  });
+
+  it('refuses shares past the refund it names, or a refund it does not owe, and moves nothing', () => {
+    const order = paidForThree();
+    oweFor(order, null, 4800);
+    const version = order.snapshot.version;
+    const cancel = (refundId: string, shareMinor: number) => {
+      order.cancelSeats(
+        {
+          reason: SeatCancelReason.DATE_CANCELLED,
+          refundId,
+          seats: [
+            { seatId: FIRST_SEAT, refundAmount: money(2400, 'EUR') },
+            { seatId: SECOND_SEAT, refundAmount: money(shareMinor, 'EUR') },
+          ],
+        },
+        LATER,
+      );
+    };
+
+    expect(() => {
+      cancel(REFUND_ID, 2401);
+    }).toThrow(/shares exceed refund/);
+    expect(() => {
+      cancel('01a0f700-0000-7000-8000-0000000000f9', 2400);
+    }).toThrow(/owes no refund/);
+    expect(order.snapshot.version).toBe(version);
+    expect(Object.values(statesOf(order))).toEqual([
+      SeatState.ACTIVE,
+      SeatState.ACTIVE,
+      SeatState.ACTIVE,
+    ]);
+  });
+
+  it('bounds the shares across calls under one refund, refuses a negative share, moves nothing', () => {
+    const order = paidForThree();
+    oweFor(order, null, 4800);
+    const cancel = (seatId: string, shareMinor: number, second?: [string, number]) => {
+      order.cancelSeats(
+        {
+          reason: SeatCancelReason.DATE_CANCELLED,
+          refundId: REFUND_ID,
+          seats: [
+            { seatId, refundAmount: money(shareMinor, 'EUR') },
+            ...(second === undefined
+              ? []
+              : [{ seatId: second[0], refundAmount: money(second[1], 'EUR') }]),
+          ],
+        },
+        LATER,
+      );
+    };
+    cancel(FIRST_SEAT, 2400);
+    const version = order.snapshot.version;
+
+    expect(() => {
+      cancel(SECOND_SEAT, 2401);
+    }).toThrow(/shares exceed refund/);
+    expect(() => {
+      cancel(SECOND_SEAT, 2600, [THIRD_SEAT, -200]);
+    }).toThrow(/cannot be negative/);
+    expect(order.snapshot.version).toBe(version);
+    expect(statesOf(order)[SECOND_SEAT]).toBe(SeatState.ACTIVE);
+
+    cancel(SECOND_SEAT, 2400);
+    expect(order.snapshot.seats[1]).toMatchObject({
+      state: SeatState.CANCELLED,
+      refundId: REFUND_ID,
+      refundAmount: money(2400, 'EUR'),
+    });
+  });
+
+  it('refuses a seat named twice, and moves nothing', () => {
+    const order = paidForThree();
+    oweFor(order, null, 4800);
+    const version = order.snapshot.version;
+
+    expect(() => {
+      order.cancelSeats(
+        {
+          reason: SeatCancelReason.DATE_CANCELLED,
+          refundId: REFUND_ID,
+          seats: [
+            { seatId: FIRST_SEAT, refundAmount: money(2400, 'EUR') },
+            { seatId: FIRST_SEAT, refundAmount: money(2400, 'EUR') },
+          ],
+        },
+        LATER,
+      );
+    }).toThrow(/named twice/);
+    expect(order.snapshot.version).toBe(version);
+    expect(order.getUncommittedEvents().filter(({ kind }) => kind === 'SeatCancelled')).toEqual([]);
+  });
+
+  it('refuses a seat no longer active with seat.not_active and its state, and moves nothing', () => {
+    const order = paidForThree();
+    const cancel = (seatId: string) => {
+      order.cancelSeats(
+        {
+          reason: SeatCancelReason.VIEWER_REQUEST,
+          refundId: null,
+          seats: [{ seatId, refundAmount: null }],
+        },
+        LATER,
+      );
+    };
+    cancel(FIRST_SEAT);
+    const version = order.snapshot.version;
+
+    expect(() => {
+      cancel(FIRST_SEAT);
+    }).toThrow(
+      expect.objectContaining({
+        code: OrderErrorCode.SEAT_NOT_ACTIVE,
+        params: { state: SeatState.CANCELLED },
+      }),
+    );
+    expect(() => {
+      order.creditSeats(
+        {
+          creditId: '01a0f700-0000-7000-8000-0000000000c1',
+          seats: [
+            { seatId: SECOND_SEAT, creditAmount: money(2400, 'EUR') },
+            { seatId: FIRST_SEAT, creditAmount: money(2400, 'EUR') },
+          ],
+        },
+        LATER,
+      );
+    }).toThrow(expect.objectContaining({ code: OrderErrorCode.SEAT_NOT_ACTIVE }));
+    expect(order.snapshot.version).toBe(version);
+    expect(statesOf(order)[SECOND_SEAT]).toBe(SeatState.ACTIVE);
+  });
+
+  it('credits a seat whose share of the credit is nothing, as its order’s other seats', () => {
+    const order = paidForThree();
+
+    order.creditSeats(
+      {
+        creditId: '01a0f700-0000-7000-8000-0000000000c2',
+        seats: [
+          { seatId: FIRST_SEAT, creditAmount: money(1, 'EUR') },
+          { seatId: SECOND_SEAT, creditAmount: money(1, 'EUR') },
+          { seatId: THIRD_SEAT, creditAmount: money(0, 'EUR') },
+        ],
+      },
+      LATER,
+    );
+
+    expect(order.snapshot.seats[2]).toMatchObject({
+      state: SeatState.CREDITED,
+      creditAmount: money(0, 'EUR'),
+    });
+  });
+
+  it('credits seats with their shares, with no event for the wire', () => {
+    const order = paidForThree();
+    const creditId = '01a0f700-0000-7000-8000-0000000000c1';
+
+    order.creditSeats(
+      {
+        creditId,
+        seats: [
+          { seatId: FIRST_SEAT, creditAmount: money(2400, 'EUR') },
+          { seatId: SECOND_SEAT, creditAmount: money(2400, 'EUR') },
+        ],
+      },
+      LATER,
+    );
+
+    expect(order.snapshot.seats[0]).toMatchObject({
+      state: SeatState.CREDITED,
+      endedAt: LATER,
+      creditId,
+      creditAmount: money(2400, 'EUR'),
+    });
+    expect(statesOf(order)[THIRD_SEAT]).toBe(SeatState.ACTIVE);
+    expect(order.getUncommittedEvents().at(-1)).toMatchObject({
+      kind: 'SeatsCredited',
+      creditId,
+      seatIds: [FIRST_SEAT, SECOND_SEAT],
+    });
+  });
+
+  it('is disputed above refunded, its seats left active, and owes no refund after', () => {
+    const order = paidForThree();
+    const events = order.getUncommittedEvents().length;
+
+    expect(order.dispute()).toBe(true);
+    expect(order.dispute()).toBe(false);
+
+    expect(order.snapshot.state).toBe(OrderState.DISPUTED);
+    expect(Object.values(statesOf(order))).toEqual([
+      SeatState.ACTIVE,
+      SeatState.ACTIVE,
+      SeatState.ACTIVE,
+    ]);
+    expect(order.getUncommittedEvents()).toHaveLength(events);
+    expect(() => {
+      oweFor(order, FIRST_SEAT);
+    }).toThrow(/is disputed/);
+  });
+});
+
+describe('SeatOrder, the refunds a webhook may report made', () => {
+  const owe = (order: SeatOrder, id: string, amountMinor: number): void => {
+    order.oweRefund(
+      {
+        id,
+        amount: money(amountMinor, 'EUR'),
+        reason: RefundReason.GOODWILL,
+        idempotencyKey: `refund:${id}`,
+        seatId: null,
+      },
+      NOW,
+    );
+  };
+  const FIRST = '01a0f700-0000-7000-8000-0000000000e1';
+  const SECOND = '01a0f700-0000-7000-8000-0000000000e2';
+  const paidOwing = (firstMinor: number, secondMinor: number): SeatOrder => {
+    const order = placed();
+    order.pay(INTENT.ref, ISSUES, NOW);
+    owe(order, FIRST, firstMinor);
+    owe(order, SECOND, secondMinor);
+    return order;
+  };
+  const made = (order: SeatOrder) =>
+    order.snapshot.refunds.map(({ ref, refundedAt }) => [ref, refundedAt]);
+  const refundedEvents = (order: SeatOrder) =>
+    order.getUncommittedEvents().filter(({ kind }) => kind === 'SeatOrderRefunded');
+
+  it('marks nothing the provider did not make, two equal refunds, the newer made first', () => {
+    const order = paidOwing(500, 500);
+
+    expect(order.refundsTheProviderMayHaveMade(money(500, 'EUR'))).toEqual([FIRST, SECOND]);
+    order.refundMade(SECOND, 're_2', LATER);
+    expect(order.refundsTheProviderMayHaveMade(money(500, 'EUR'))).toEqual([]);
+    expect(made(order)).toEqual([
+      [null, null],
+      ['re_2', LATER],
+    ]);
+
+    order.refundMade(FIRST, 're_1', LATER);
+    expect(made(order)).toEqual([
+      ['re_1', LATER],
+      ['re_2', LATER],
+    ]);
+    expect(refundedEvents(order)).toHaveLength(2);
+  });
+
+  it('names the owed refunds the amount no refund made explains could cover, none past the ledger', () => {
+    const order = paidOwing(1000, 500);
+
+    expect(order.refundsTheProviderMayHaveMade(money(1501, 'EUR'))).toBeNull();
+    expect(order.refundsTheProviderMayHaveMade(money(999, 'EUR'))).toEqual([SECOND]);
+    expect(order.refundsTheProviderMayHaveMade(money(1500, 'EUR'))).toEqual([FIRST, SECOND]);
+    order.refundMade(FIRST, 're_1', LATER);
+    expect(order.refundsTheProviderMayHaveMade(money(1000, 'EUR'))).toEqual([]);
+    expect(order.refundsTheProviderMayHaveMade(money(1499, 'EUR'))).toEqual([]);
+    expect(made(order)).toEqual([
+      ['re_1', LATER],
+      [null, null],
+    ]);
+    expect(refundedEvents(order)).toHaveLength(1);
+  });
+
+  it('never names a refund already made, even one the unexplained amount would cover', () => {
+    const order = paidOwing(500, 1000);
+    order.refundMade(FIRST, 're_1', LATER);
+
+    expect(order.refundsTheProviderMayHaveMade(money(1000, 'EUR'))).toEqual([]);
   });
 });

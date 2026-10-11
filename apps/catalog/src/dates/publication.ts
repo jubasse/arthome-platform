@@ -4,6 +4,7 @@ import {
   PublicationPromise,
   PublicationState,
   assertCommandedTransition,
+  isEventDriven,
   publicationReadiness,
   type Instant,
   type PublicationChecklistItem,
@@ -23,9 +24,12 @@ export interface PublicationSnapshot {
   readonly replayOnlineAt: Instant | null;
 }
 
-export interface PublicationTransitioned {
+export interface PublicationLearned {
   readonly publication: Publication;
   readonly changed: PublicationStateChanged;
+}
+
+export interface PublicationTransitioned extends PublicationLearned {
   /** Null for every transition but the one that publishes. */
   readonly engaged: PublicationEngaged | null;
 }
@@ -67,6 +71,29 @@ export class Publication {
       });
     }
     return new Publication({ ...this.snapshot, version: version + 1 });
+  }
+
+  /** A transition another context caused (data-model.md §2.3): no screen to be stale, no promise. */
+  public learned(to: PublicationState, now: Instant): PublicationLearned {
+    const { state: from, version } = this.snapshot;
+    if (!isEventDriven(from, to)) {
+      throw new DomainError({
+        code: DomainErrorCode.PUBLICATION_TRANSITION_FORBIDDEN,
+        params: { from, to },
+      });
+    }
+    return {
+      publication: new Publication({ ...this.snapshot, state: to, version: version + 1 }),
+      changed: new PublicationStateChanged(
+        this.snapshot.dateId,
+        this.snapshot.channelId,
+        from,
+        to,
+        version + 1,
+        false,
+        now,
+      ),
+    };
   }
 
   /** A commanded transition, when core's rules allow it and, to publish, the checklist is complete. */

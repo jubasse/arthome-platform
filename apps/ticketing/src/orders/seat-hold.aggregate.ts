@@ -23,6 +23,8 @@ export interface SeatHoldSnapshot {
   readonly profileId: string | null;
   readonly tier: PriceTier;
   readonly quantity: number;
+  /** Of `quantity`, the seats drawn from the priority pool, written by the statement that took them. */
+  readonly poolSeats: number;
   readonly origin: SeatHoldOrigin;
   readonly originRef: string;
   /** The intent's own expiry, one instant for both (data-model.md §3.2). */
@@ -70,6 +72,7 @@ export class SeatHold extends AggregateRoot<SeatHoldEvent> {
       profileId: placement.profileId,
       tier: placement.tier,
       quantity,
+      poolSeats: 0,
       origin: placement.origin,
       originRef: placement.originRef,
       expiresAt,

@@ -4,8 +4,10 @@ import {
   DateSalesCapacitySetSchema,
   DateSalesPricingChangedSchema,
   PriceTier,
+  RunStartedSchema,
   TechnicalCheckPassedSchema,
 } from '@arthome-platform/events';
+import { Outcome } from '@arthome-platform/messaging';
 import {
   applyMigrations,
   createDatabase,
@@ -37,6 +39,7 @@ import {
 import { applyChecklistMessage } from './checklist-consumer.js';
 import { ChecklistConsumerModule } from './checklist-consumer.module.js';
 import { DatesModule } from './dates.module.js';
+import { applyRunMessage } from './run-consumer.js';
 import { Show } from '../catalog/show.entity.js';
 import { CLOCK } from '../clock.js';
 import { EDGE_PROVIDERS } from '../edge-providers.js';
@@ -60,6 +63,7 @@ const CHANNEL = 'channel-http';
 const SHOW_ID = '01a0e300-0000-7000-8000-000000000001';
 const VENUE_ID = '01a0e300-0000-7000-8000-000000000002';
 const DATE_ID = '01a0e300-0000-7000-8000-000000000101';
+const OTHER_DATE_ID = '01a0e300-0000-7000-8000-000000000102';
 
 let stack: StartedStack;
 let dataSource: DataSource;
@@ -152,43 +156,47 @@ afterAll(async () => {
   await stack?.stop();
 });
 
+async function draftedWithItsFacts(dateId: string): Promise<void> {
+  const drafted = await post(`/channels/${CHANNEL}/dates`, {
+    dateId,
+    showId: SHOW_ID,
+    venueId: VENUE_ID,
+    startsAt: '2026-11-04T19:30:00.000Z',
+    replayPolicy: ReplayPolicy.INCLUDED,
+    replayWindowHours: 72,
+  });
+  expect(drafted.statusCode).toBe(201);
+  const occurredAt = timestampFromDate(new Date(NOW));
+  for (const fact of [
+    reported('ticketing.date_sales.pricing_changed.v1', DateSalesPricingChangedSchema, {
+      dateId,
+      tiers: [{ tier: PriceTier.FULL, active: true }],
+      occurredAt,
+    }),
+    reported('ticketing.date_sales.capacity_set.v1', DateSalesCapacitySetSchema, {
+      dateId,
+      capacityTotal: 300,
+      occurredAt,
+    }),
+    reported('streaming.run.technical_check_passed.v1', TechnicalCheckPassedSchema, {
+      dateId,
+      passedAt: occurredAt,
+    }),
+    reported('chat.date_chat_policy.changed.v1', DateChatPolicyChangedSchema, {
+      dateId,
+      mode: ChatMode.OPEN,
+      occurredAt,
+    }),
+  ]) {
+    expect(await applyChecklistMessage(app.get(CommandBus), fact)).toBe('applied');
+  }
+}
+
 describe('the date routes over HTTP', () => {
   it(
     'postpones a published date, replays it under its key, refuses a stale screen, serves the sheet',
     async () => {
-      const drafted = await post(`/channels/${CHANNEL}/dates`, {
-        dateId: DATE_ID,
-        showId: SHOW_ID,
-        venueId: VENUE_ID,
-        startsAt: '2026-11-04T19:30:00.000Z',
-        replayPolicy: ReplayPolicy.INCLUDED,
-        replayWindowHours: 72,
-      });
-      expect(drafted.statusCode).toBe(201);
-      const occurredAt = timestampFromDate(new Date(NOW));
-      for (const fact of [
-        reported('ticketing.date_sales.pricing_changed.v1', DateSalesPricingChangedSchema, {
-          dateId: DATE_ID,
-          tiers: [{ tier: PriceTier.FULL, active: true }],
-          occurredAt,
-        }),
-        reported('ticketing.date_sales.capacity_set.v1', DateSalesCapacitySetSchema, {
-          dateId: DATE_ID,
-          capacityTotal: 300,
-          occurredAt,
-        }),
-        reported('streaming.run.technical_check_passed.v1', TechnicalCheckPassedSchema, {
-          dateId: DATE_ID,
-          passedAt: occurredAt,
-        }),
-        reported('chat.date_chat_policy.changed.v1', DateChatPolicyChangedSchema, {
-          dateId: DATE_ID,
-          mode: ChatMode.OPEN,
-          occurredAt,
-        }),
-      ]) {
-        expect(await applyChecklistMessage(app.get(CommandBus), fact)).toBe('applied');
-      }
+      await draftedWithItsFacts(DATE_ID);
       const published = await post(`/dates/${DATE_ID}/publication/transitions`, {
         to: PublicationState.SCHEDULED,
         expectedVersion: 1,
@@ -246,6 +254,35 @@ describe('the date routes over HTTP', () => {
         url: '/dates/01a0e300-0000-7000-8000-0000000009ff',
       });
       expect(missing.statusCode).toBe(404);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'learns a run start through the consumer module, moving a date under technical check live',
+    async () => {
+      await draftedWithItsFacts(OTHER_DATE_ID);
+      for (const [to, expectedVersion, acknowledgedPromiseCode] of [
+        [PublicationState.SCHEDULED, 1, PublicationPromise.PRICES_ENGAGED],
+        [PublicationState.TECHNICAL, 2, null],
+      ] as const) {
+        const moved = await post(`/dates/${OTHER_DATE_ID}/publication/transitions`, {
+          to,
+          expectedVersion,
+          acknowledgedPromiseCode,
+        });
+        expect(moved.statusCode).toBe(200);
+      }
+
+      const started = reported('streaming.run.started.v1', RunStartedSchema, {
+        dateId: OTHER_DATE_ID,
+      });
+      expect(await applyRunMessage(app.get(CommandBus), started)).toBe(Outcome.APPLIED);
+
+      const sheet = await app.inject({ method: 'GET', url: `/dates/${OTHER_DATE_ID}` });
+      expect(sheet.json()).toMatchObject({
+        data: { publication: { state: PublicationState.LIVE, version: 4 } },
+      });
     },
     CASE_MS,
   );

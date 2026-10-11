@@ -7,6 +7,7 @@
  *   gate is how the gate stops being run.
  */
 
+import { Redis } from 'ioredis';
 import { Kafka, logLevel } from 'kafkajs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -100,6 +101,36 @@ describe('startStack, asked for one container only', () => {
         expect(() => only.kafka).toThrow(/was not asked for kafka/);
       } finally {
         await only.stop();
+      }
+    },
+    STARTUP_BUDGET_MS,
+  );
+});
+
+describe('startStack, a service paused', () => {
+  it(
+    'freezes it on the same port with its data, then lets it answer again',
+    async () => {
+      // Its own Redis, never the run's: a paused shared server stalls every other file.
+      const stack = await startStack({ redis: true, startupTimeoutMs: STARTUP_BUDGET_MS });
+      const redis = new Redis(stack.redis.url, { maxRetriesPerRequest: 1, commandTimeout: 500 });
+      try {
+        await redis.set('probe', 'kept');
+        const port = stack.redis.port;
+
+        await stack.pause('redis');
+        try {
+          await expect(redis.get('probe')).rejects.toThrow(/timed out/i);
+        } finally {
+          await stack.unpause('redis');
+        }
+
+        expect(stack.redis.port).toBe(port);
+        expect(await redis.get('probe')).toBe('kept');
+        await expect(stack.pause('kafka')).rejects.toThrow(/was not asked for kafka/);
+      } finally {
+        redis.disconnect();
+        await stack.stop();
       }
     },
     STARTUP_BUDGET_MS,

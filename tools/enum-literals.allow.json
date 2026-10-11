@@ -12,6 +12,11 @@
   ],
   "allow": [
     {
+      "file": "apps/streaming/src/run/run.aggregate.ts",
+      "value": "none",
+      "reason": "`publication.transition_forbidden`'s `from` when no publication state is projected for the date (PS1 R7): an absence, which PUBLICATION_STATES has no member for. REPLAY_POLICIES, LANGUAGE_DEPENDENCIES, WATCH_SCOPES, WATCH_FALLBACK_ACTIONS and AUDIENCE_SANCTIONS each have a `none` about another concept; importing one would name the wrong thing."
+    },
+    {
       "file": "libs/config/src/env.ts",
       "value": "none",
       "reason": "TRUSTED_PROXIES' explicit word for 'no proxy fronts this BFF', a deployment setting. REPLAY_POLICIES, LANGUAGE_DEPENDENCIES, WATCH_SCOPES, WATCH_FALLBACK_ACTIONS and AUDIENCE_SANCTIONS each have a `none` member about a show, a viewer or a sanction; importing any of them to read an environment variable would name the wrong concept."
@@ -50,6 +55,21 @@
       "file": "libs/search-index/src/settings.ts",
       "value": "custom",
       "reason": "OpenSearch's normalizer type: a `custom` normalizer is one this index assembles from its own filters, a word of the OpenSearch settings API. SCHEMA_ISSUE_RULES' `custom` is the rule of a failed refinement in `api.schema_invalid`; importing it to configure an index would name the wrong concept."
+    },
+    {
+      "file": "apps/ticketing/src/payments/provider-call-queues.ts",
+      "value": "failed",
+      "reason": "BullMQ's worker event for a failed job, the name `@OnWorkerEvent` listens under (`WorkerListener`). ORDER_STATES' `failed` is an order that took no payment; importing OrderState.FAILED to name a queue event would be the NavigationEntry.JOURNAL mistake again."
+    },
+    {
+      "file": "apps/ticketing/src/payments/provider-call-queues.ts",
+      "value": "active",
+      "reason": "BullMQ's state of a job a worker is running (`JobState`), which the refund webhook's rerun pass reads. SEAT_STATES', SEAT_HOLD_STATES', SUBSCRIPTION_STATES', ACCOUNT_STATUSES' and PLAYBACK_SESSION_STATES' `active` are about a seat, a hold, a subscription, an account and a playback; importing any of them to read a queue's job would be the NavigationEntry.JOURNAL mistake again."
+    },
+    {
+      "file": "apps/ticketing/src/payments/provider-call-checks.ts",
+      "value": "ready",
+      "reason": "ioredis's connection status, the word its client reports once it answers commands. REPLAY_ASSET_STATES' `ready` is a replay that can be watched; importing ReplayAssetState.READY to read a Redis connection would be the NavigationEntry.JOURNAL mistake again."
     }
   ]
 }

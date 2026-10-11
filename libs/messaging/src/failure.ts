@@ -40,6 +40,20 @@ export function doublingDelays(firstMs: number, capMs: number, totalMs: number):
   return delays;
 }
 
+/**
+ * The jittered wait before the attempt after `attempts` failed ones, which `nextAttemptAt` adds to
+ *   now and a queue's backoff answers; null once the last one has failed.
+ */
+export function retryDelayAfter(
+  attempts: number,
+  delaysMs: readonly number[] = RETRY_DELAYS_MS,
+  random: () => number = Math.random,
+): number | null {
+  const delay = delaysMs[attempts - 1];
+  if (delay === undefined) return null;
+  return delay + Math.floor(delay * JITTER_RATIO * random());
+}
+
 /** When the attempt after `attempts` failed ones is due; null once the last one has failed. */
 export function nextAttemptAt(
   attempts: number,
@@ -47,9 +61,8 @@ export function nextAttemptAt(
   delaysMs: readonly number[] = RETRY_DELAYS_MS,
   random: () => number = Math.random,
 ): Date | null {
-  const delay = delaysMs[attempts - 1];
-  if (delay === undefined) return null;
-  return new Date(nowMs + delay + Math.floor(delay * JITTER_RATIO * random()));
+  const delay = retryDelayAfter(attempts, delaysMs, random);
+  return delay === null ? null : new Date(nowMs + delay);
 }
 
 /** One more than its delays: `nextAttemptAt` answers null after the last. */

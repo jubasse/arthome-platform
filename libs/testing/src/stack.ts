@@ -16,9 +16,19 @@ import {
   GenericContainer,
   Network,
   Wait,
+  getContainerRuntimeClient,
   type StartedNetwork,
   type StartedTestContainer,
 } from 'testcontainers';
+
+/**
+ * `docker pause`: the process frozen, its mapped port and its data kept. A stop and a start remap
+ *   the port, and a test would prove a reconnection to a new address rather than an outage.
+ */
+export interface Pausable {
+  pause(): Promise<void>;
+  unpause(): Promise<void>;
+}
 
 export interface PostgresEndpoint {
   readonly host: string;
@@ -39,7 +49,7 @@ export interface OpenSearchEndpoint {
   readonly url: string;
 }
 
-export interface StartedOpenSearch {
+export interface StartedOpenSearch extends Pausable {
   readonly endpoint: OpenSearchEndpoint;
   stop(): Promise<void>;
 }
@@ -51,12 +61,12 @@ export interface ConnectEndpoint {
   readonly postgresPortInsideNetwork: number;
 }
 
-export interface StartedConnect {
+export interface StartedConnect extends Pausable {
   readonly endpoint: ConnectEndpoint;
   stop(): Promise<void>;
 }
 
-export interface StartedPostgres {
+export interface StartedPostgres extends Pausable {
   readonly endpoint: PostgresEndpoint;
   stop(): Promise<void>;
 }
@@ -68,12 +78,12 @@ export interface RedisEndpoint {
   readonly url: string;
 }
 
-export interface StartedRedis {
+export interface StartedRedis extends Pausable {
   readonly endpoint: RedisEndpoint;
   stop(): Promise<void>;
 }
 
-export interface StartedKafka {
+export interface StartedKafka extends Pausable {
   readonly endpoint: KafkaEndpoint;
   stop(): Promise<void>;
 }
@@ -92,6 +102,8 @@ export interface StackRequest {
   readonly startupTimeoutMs?: number;
 }
 
+export type StackService = 'postgres' | 'kafka' | 'opensearch' | 'connect' | 'redis';
+
 /** Each endpoint throws if its container was not requested, rather than reading back dead. */
 export interface StartedStack {
   readonly postgres: PostgresEndpoint;
@@ -99,6 +111,8 @@ export interface StartedStack {
   readonly opensearch: OpenSearchEndpoint;
   readonly connect: ConnectEndpoint;
   readonly redis: RedisEndpoint;
+  pause(service: StackService): Promise<void>;
+  unpause(service: StackService): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -224,6 +238,19 @@ function composeCommand(service: string): string[] {
   return items;
 }
 
+function pausable(container: StartedTestContainer): Pausable {
+  const handle = async () =>
+    (await getContainerRuntimeClient()).container.getById(container.getId());
+  return {
+    pause: async (): Promise<void> => {
+      await (await handle()).pause();
+    },
+    unpause: async (): Promise<void> => {
+      await (await handle()).unpause();
+    },
+  };
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
@@ -274,6 +301,7 @@ export async function startPostgres(
       database: MAINTENANCE_DATABASE,
       url: `postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${host}:${port}/${MAINTENANCE_DATABASE}`,
     },
+    ...pausable(container),
     stop: async (): Promise<void> => {
       await container.stop();
     },
@@ -304,6 +332,7 @@ export async function startOpenSearch(
 
   return {
     endpoint: { host, port, url: `http://${host}:${port}` },
+    ...pausable(container),
     stop: async (): Promise<void> => {
       await container.stop();
     },
@@ -328,6 +357,7 @@ export async function startRedis(
 
   return {
     endpoint: { host, port, url: `redis://${host}:${port}` },
+    ...pausable(container),
     stop: async (): Promise<void> => {
       await container.stop();
     },
@@ -373,6 +403,7 @@ export async function startConnect(
       postgresHostInsideNetwork: POSTGRES_ALIAS,
       postgresPortInsideNetwork: POSTGRES_PORT,
     },
+    ...pausable(container),
     stop: async (): Promise<void> => {
       await container.stop();
     },
@@ -489,6 +520,7 @@ export async function startKafka(
 
   return {
     endpoint: { brokers: [broker] },
+    ...pausable(container),
     stop: async (): Promise<void> => {
       await container.stop();
     },
@@ -583,6 +615,21 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
     throw new Error(`the harness could not start the stack: ${failed.join('; ')}`);
   }
 
+  const containers: Readonly<Record<StackService, Pausable | null | undefined>> = {
+    postgres: postgres.status === 'fulfilled' ? postgres.value : undefined,
+    kafka: kafka.status === 'fulfilled' ? kafka.value : undefined,
+    opensearch: opensearch.status === 'fulfilled' ? opensearch.value : undefined,
+    connect: connect.status === 'fulfilled' ? connect.value : undefined,
+    redis: redis.status === 'fulfilled' ? redis.value : undefined,
+  };
+  const startedService = (service: StackService): Pausable => {
+    const container = containers[service];
+    if (container === null || container === undefined) {
+      throw new Error(`startStack was not asked for ${service}: pass { ${service}: true }.`);
+    }
+    return container;
+  };
+
   const postgresEndpoint = postgres.status === 'fulfilled' ? postgres.value?.endpoint : undefined;
   const kafkaEndpoint = kafka.status === 'fulfilled' ? kafka.value?.endpoint : undefined;
   const openSearchEndpoint =
@@ -621,6 +668,8 @@ export async function startStack(request: StackRequest): Promise<StartedStack> {
       }
       return redisEndpoint;
     },
+    pause: async (service) => startedService(service).pause(),
+    unpause: async (service) => startedService(service).unpause(),
     stop,
   };
 }

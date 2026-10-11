@@ -14,6 +14,8 @@ export const AUTHENTICATION_WRITE_BUDGET_MS = 2_000;
 /** transport.md §5.9's session validation, until identity's internal route declares it (D-121). */
 export const SESSION_VALIDATION_BUDGET_MS = 150;
 
+const SURFACE_HEADER = 'x-arthome-surface';
+
 /** What the BFF knows of the request a call to a service is made for. */
 export interface InboundRequest {
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
@@ -29,12 +31,14 @@ export function serviceCallFor(
   route?: Route,
 ): ServiceCall {
   const traceparent = request.headers.traceparent;
+  const surface = request.headers[SURFACE_HEADER];
   return {
     deadline: new Date(clock.nowMs() + budgetMs),
     // `TraceparentMiddleware` has written one on every request by now.
     traceparent: typeof traceparent === 'string' ? traceparent : '',
     callerLeft: whenCallerLeaves(response),
     caller,
+    ...(typeof surface === 'string' && { actorSurface: surface }),
     ...(route !== undefined && { route }),
   };
 }

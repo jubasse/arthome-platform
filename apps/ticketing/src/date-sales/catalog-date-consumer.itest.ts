@@ -218,6 +218,51 @@ describe('the catalog date consumer', () => {
   );
 
   it(
+    'writes a cancelled date its settlement row once, under its trace, and a postponement none',
+    async () => {
+      const cancelledId = '01a0f300-0000-7000-8000-000000000007';
+      const postponedId = '01a0f300-0000-7000-8000-000000000008';
+      const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+      await dispositionOf(drafted(cancelledId, CHANNEL, NOW));
+      await dispositionOf(drafted(postponedId, CHANNEL, NOW));
+      const cancellation = outcomeDeclared(
+        cancelledId,
+        WireDateOutcome.CANCELLED,
+        '2026-09-29T10:00:00.000Z',
+      );
+      const traced: CatalogMessage = {
+        ...cancellation,
+        headers: { ...cancellation.headers, traceparent },
+      };
+
+      expect(await dispositionOf(traced)).toBe(Outcome.APPLIED);
+      expect(await dispositionOf(traced)).toBe(Outcome.DUPLICATE);
+      expect(
+        await dispositionOf(
+          outcomeDeclared(postponedId, WireDateOutcome.POSTPONED, '2026-09-29T10:00:00.000Z'),
+        ),
+      ).toBe(Outcome.APPLIED);
+
+      const settlements = await dataSource.query<
+        { date_id: string; outcome: string; recorded_at: Date; traceparent: string | null }[]
+      >(
+        `SELECT date_id, outcome, recorded_at, traceparent FROM date_outcome_settlement
+          WHERE date_id = ANY($1)`,
+        [[cancelledId, postponedId]],
+      );
+      expect(settlements).toEqual([
+        {
+          date_id: cancelledId,
+          outcome: DateOutcome.CANCELLED,
+          recorded_at: new Date(NOW),
+          traceparent,
+        },
+      ]);
+    },
+    CASE_MS,
+  );
+
+  it(
     'ignores what catalog says that ticketing keeps nothing of',
     async () => {
       expect(

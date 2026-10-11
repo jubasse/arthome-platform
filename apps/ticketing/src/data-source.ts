@@ -4,6 +4,8 @@ import { DataSource } from 'typeorm';
 import { Service } from '@arthome/core';
 
 import { DateAvailabilityPublicationRow } from './availability/date-availability-publication.entity.js';
+import { CreditRow } from './credits/credit.entity.js';
+import { DateOutcomeSettlementRow } from './date-outcomes/date-outcome-settlement.entity.js';
 import { DateSalesRow } from './date-sales/date-sales.entity.js';
 import { env } from './env.js';
 import { Initial1790440000000 } from './migrations/1790440000000-initial.js';
@@ -18,12 +20,19 @@ import { SalesEnd1790440800000 } from './migrations/1790440800000-sales-end.js';
 import { SeatSalesCutoff1790440900000 } from './migrations/1790440900000-seat-sales-cutoff.js';
 import { ProviderCallRetries1790441000000 } from './migrations/1790441000000-provider-call-retries.js';
 import { SeatOrderHold1790441100000 } from './migrations/1790441100000-seat-order-hold.js';
+import { ProviderCallQueues1790441200000 } from './migrations/1790441200000-provider-call-queues.js';
+import { OneUnseatedRefundPerOrder1790441300000 } from './migrations/1790441300000-one-unseated-refund-per-order.js';
+import { SeatStates1790441350000 } from './migrations/1790441350000-seat-states.js';
+import { DateOutcomes1790441400000 } from './migrations/1790441400000-date-outcomes.js';
+import { Waitlist1791636734134 } from './migrations/1791636734134-waitlist.js';
+import { OrderRefundRow } from './orders/order-refund.entity.js';
 import { SeatHoldRow } from './orders/seat-hold.entity.js';
 import { SeatOrderRow } from './orders/seat-order.entity.js';
 import { SeatRow } from './orders/seat.entity.js';
+import { WaitlistEntryRow } from './waitlist/waitlist-entry.entity.js';
 
 /**
- * Used by the three processes AND by the migration CLI. `synchronize` stays false: it would drop
+ * Used by the four processes AND by the migration CLI. `synchronize` stays false: it would drop
  *   and recreate columns to match the entities, breaking the connector with no migration to
  *   review (data-model.md §7.4).
  */
@@ -36,8 +45,12 @@ export const dataSource: DataSource = new DataSource({
     SeatHoldRow,
     SeatOrderRow,
     SeatRow,
+    OrderRefundRow,
+    CreditRow,
+    DateOutcomeSettlementRow,
     ProcessedMessage,
     OutboxEvent,
+    WaitlistEntryRow,
   ],
   migrations: [
     Initial1790440000000,
@@ -52,6 +65,11 @@ export const dataSource: DataSource = new DataSource({
     SeatSalesCutoff1790440900000,
     ProviderCallRetries1790441000000,
     SeatOrderHold1790441100000,
+    ProviderCallQueues1790441200000,
+    OneUnseatedRefundPerOrder1790441300000,
+    SeatStates1790441350000,
+    DateOutcomes1790441400000,
+    Waitlist1791636734134,
   ],
   applicationName: Service.TICKETING,
 

@@ -9,13 +9,12 @@ import { PurchaseSeatHandler } from './purchase-seat.handler.js';
 import { QuoteSeatHandler } from './quote-seat.handler.js';
 import { CLOCK } from '../clock.js';
 import { PaymentsModule } from '../payments/payments.module.js';
-import { RefundsModule } from '../payments/refunds.module.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactionsModule } from '../ticketing-transactions.js';
 
 /** The storefront's side of a seat: its quote, its purchase and its order, in the API process. */
 @Module({
-  imports: [TicketingTransactionsModule, PaymentsModule, RefundsModule],
+  imports: [TicketingTransactionsModule, PaymentsModule],
   controllers: [OrdersController],
   providers: [
     QuoteSeatHandler,

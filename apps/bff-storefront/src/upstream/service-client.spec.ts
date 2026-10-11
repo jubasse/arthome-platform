@@ -12,6 +12,7 @@ import {
   FailureNature,
   OrderErrorCode,
   Service,
+  Surface,
   SystemClock,
   natureOf,
 } from '@arthome/core';
@@ -149,6 +150,32 @@ describe('a call to a service', () => {
     expect(received.authorization).not.toBe('Bearer forged');
     expect(received.authorization).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
     expect(received[DEADLINE_HEADER]).toBe(deadline.toISOString());
+  });
+});
+
+describe('the actor’s surface', () => {
+  const answered = z.looseObject({ data: z.looseObject({}) });
+
+  it('is sent on a write, where no relayed header can replace it', async () => {
+    await client.request(
+      { method: 'POST', path: '/ok', headers: { 'x-arthome-actor-surface': Surface.STUDIO_WEB } },
+      { ...callFor(), actorSurface: Surface.STOREFRONT_TV },
+      answered,
+    );
+
+    expect(received['x-arthome-actor-surface']).toBe(Surface.STOREFRONT_TV);
+  });
+
+  it('is not sent on a read, nor when the request named no surface', async () => {
+    await client.request(
+      { method: 'GET', path: '/ok' },
+      { ...callFor(), actorSurface: Surface.STOREFRONT_TV },
+      answered,
+    );
+    expect(received['x-arthome-actor-surface']).toBeUndefined();
+
+    await client.request({ method: 'POST', path: '/ok' }, callFor(), answered);
+    expect(received['x-arthome-actor-surface']).toBeUndefined();
   });
 });
 

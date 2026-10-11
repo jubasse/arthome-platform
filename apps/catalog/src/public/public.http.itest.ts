@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   ApiErrorCode,
+  DisplayState,
   FixedClock,
   LanguageDependency,
   Locale,
@@ -192,6 +193,28 @@ describe('the public reads over HTTP', () => {
       const missing = await get('/v1/dates/01a0e600-0000-7000-8000-0000000009ff');
       expect(missing.statusCode).toBe(404);
       expect(missing.json()).toMatchObject({ error: { code: ApiErrorCode.NOT_FOUND } });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'serves a date live from the on-air switch, before its start by the clock',
+    async () => {
+      const dates = dataSource.getRepository(DateDetailPublic);
+      await dates.update({ date_id: SECOND_DATE }, { publication_state: PublicationState.LIVE });
+      try {
+        const page = await get(`/v1/dates/${SECOND_DATE}`);
+
+        expect(page.statusCode).toBe(200);
+        expect(page.json()).toMatchObject({
+          data: { id: SECOND_DATE, displayState: DisplayState.LIVE },
+        });
+      } finally {
+        await dates.update(
+          { date_id: SECOND_DATE },
+          { publication_state: PublicationState.SCHEDULED },
+        );
+      }
     },
     CASE_MS,
   );

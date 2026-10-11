@@ -180,7 +180,7 @@ function connectorUses(tree: Tree, name: string): string[] {
 
 /**
  * When nothing else bears the name, its topics were declared before the service was built, as
- *   `arthome.streaming.run` is for catalog to consume: each is its own when `--topics` claims it
+ *   `arthome.chat.date` is for catalog to consume: each is its own when `--topics` claims it
  *   at its partitions. Otherwise they are a running service's.
  */
 function topicUses(

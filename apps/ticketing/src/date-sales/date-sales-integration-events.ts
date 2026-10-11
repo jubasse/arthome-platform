@@ -44,6 +44,7 @@ function integrationEventOf(
     case 'DateSalesEnded':
     case 'DateSalesReopened':
     case 'SeatsHeld':
+    case 'PriorityWindowOpened':
       return null;
     case 'DatePricesSet':
       return pricingChanged(event, false, context);

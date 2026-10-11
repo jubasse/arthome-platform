@@ -610,8 +610,8 @@ structure is authorial — a line per clause is what makes a prose diff reviewab
 corrected in place but not ours to restyle), the lockfile and every generated directory.
 
 **And it does not own a generated artefact's target either — the same boundary, one category further
-out.** `openapi/storefront.yaml` and `openapi/studio.yaml` are **generated** from the route
-declarations of `@arthome/contracts` (D-120), and the gate `check:openapi-generated` requires the
+out.** The documents under `openapi/`, the two surfaces' and one per service api, are **generated**
+from the route declarations of `@arthome/contracts` (D-120, D-121), and the gate `check:openapi-generated` requires the
 committed file to be byte for byte what the generator writes. That makes their formatting a property
 of the **generator**, not of the formatter: if Prettier restyles them, the generator has to learn to
 reproduce Prettier's YAML style, or the gate is never green.
@@ -2967,7 +2967,7 @@ The account's Actions quota is exhausted. No gate assumes a remote runner.
 | 17 | No French prose committed | `pnpm exec arthome-check-language` | `PASS` | D-024 |
 | 18 | **Contracts and domain share one vocabulary** | `python3 tools/check-vocabulary.py openapi/*.yaml` | `PASS` | §5.3.1 |
 | 19 | No warning sign, check mark or emoji | `pnpm exec arthome-check-symbols` | `PASS` | §5.10 |
-| 20 | **The documents are what the declarations generate** | `pnpm run check:openapi-generated` | `PASS` for both documents | D-120 |
+| 20 | **The documents are what the declarations generate** | `pnpm run check:openapi-generated` | `PASS` for every document | D-120 |
 | 21 | No surface bundles the contracts' docs or examples | `pnpm run check:contract-docs` | `PASS` twice | §5.12, D-122 |
 
 Gate 20 compares the whole of each committed document with what the route declarations of

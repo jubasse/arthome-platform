@@ -23,6 +23,9 @@ export class SeatHoldRow {
   @Column('integer')
   quantity!: number;
 
+  @Column('integer')
+  pool_seats!: number;
+
   @Column('text')
   origin!: SeatHoldOrigin;
 

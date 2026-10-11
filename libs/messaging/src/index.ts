@@ -4,6 +4,7 @@ export {
   deadLetterTopic,
   doublingDelays,
   nextAttemptAt,
+  retryDelayAfter,
   retryTopic,
   routeFailure,
 } from './failure.js';

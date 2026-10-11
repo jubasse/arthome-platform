@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { DateCardSchema } from '@arthome/contracts/catalog';
-import { DisplayState, PublicationState } from '@arthome/core';
+import { DisplayState, PublicationState, RunState } from '@arthome/core';
 
-import { dateCardOf } from './date-card.js';
+import { dateCardOf, runStateKnownFrom } from './date-card.js';
 import { publicDate } from './public-fixtures.js';
 
 const BEFORE_THE_ROOM_OPENS = '2026-11-04T18:00:00.000Z';
@@ -42,9 +42,61 @@ describe('dateCardOf', () => {
   });
 
   it('holds the state of a date fully over until an event, with no instant to re-run it at', () => {
-    const card = dateCardOf(publicDate(), '2026-11-08T00:00:00.000Z');
+    const card = dateCardOf(
+      publicDate({ publication_state: PublicationState.ENDED }),
+      '2026-11-08T00:00:00.000Z',
+    );
 
     expect(card).toMatchObject({ displayState: DisplayState.ENDED, displayStateValidUntil: null });
     expect(DateCardSchema.safeParse(card).success).toBe(true);
+  });
+});
+
+describe('runStateKnownFrom', () => {
+  it.each([
+    [PublicationState.DRAFT, null],
+    [PublicationState.RESERVE, null],
+    [PublicationState.SCHEDULED, RunState.IDLE],
+    [PublicationState.TECHNICAL, RunState.IDLE],
+    [PublicationState.LIVE, RunState.ON_AIR],
+    [PublicationState.ENDED, RunState.ENDED],
+    [PublicationState.REPLAY_ONLINE, RunState.ENDED],
+  ])('reads %s as %s', (state, run) => {
+    expect(runStateKnownFrom(state)).toBe(run);
+  });
+});
+
+describe('dateCardOf, from the run the publication records', () => {
+  it('shows a date live from the on-air switch, before its start by the clock', () => {
+    const card = dateCardOf(
+      publicDate({ publication_state: PublicationState.LIVE }),
+      BEFORE_THE_ROOM_OPENS,
+    );
+
+    expect(card.displayState).toBe(DisplayState.LIVE);
+  });
+
+  it('keeps a date room_open past its end while its run is known idle, until it moves', () => {
+    const card = dateCardOf(publicDate(), '2026-11-08T00:00:00.000Z');
+
+    expect(card.displayState).toBe(DisplayState.ROOM_OPEN);
+  });
+
+  it('shows a date ended once its run ended, whatever the clock says', () => {
+    const card = dateCardOf(
+      publicDate({ publication_state: PublicationState.ENDED }),
+      '2026-11-04T19:40:00.000Z',
+    );
+
+    expect(card).toMatchObject({ displayState: DisplayState.ENDED, displayStateValidUntil: null });
+  });
+
+  it('keeps a known idle run past its start room_open until it is on air', () => {
+    const card = dateCardOf(
+      publicDate({ publication_state: PublicationState.TECHNICAL }),
+      '2026-11-04T19:40:00.000Z',
+    );
+
+    expect(card.displayState).toBe(DisplayState.ROOM_OPEN);
   });
 });

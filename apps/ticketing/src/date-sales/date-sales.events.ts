@@ -134,6 +134,18 @@ export class SeatsHeld implements IEvent {
   ) {}
 }
 
+/** A tier set aside for the waiting list notified with it, until `priorityUntil` (D-083). */
+export class PriorityWindowOpened implements IEvent {
+  public readonly kind = 'PriorityWindowOpened';
+
+  public constructor(
+    public readonly dateId: string,
+    public readonly poolSeats: number,
+    public readonly priorityUntil: Instant,
+    public readonly occurredAt: Instant,
+  ) {}
+}
+
 /**
  * Every event of the aggregate. A mapping switches on `kind` and ends in `assertNever`, so an
  *   event without its case fails to compile rather than reach the wire as another.
@@ -148,4 +160,5 @@ export type DateSalesEvent =
   | DateOutcomeRecorded
   | DateSalesEnded
   | DateSalesReopened
-  | SeatsHeld;
+  | SeatsHeld
+  | PriorityWindowOpened;

@@ -1,20 +1,31 @@
 import { frozen } from '@arthome-platform/transactions';
 import { AggregateRoot } from '@nestjs/cqrs';
+import { v7 as uuidv7 } from 'uuid';
 
 import {
+  DomainError,
+  OrderErrorCode,
+  assertRefundWithinRemaining,
+  compare,
   type Instant,
   type Money,
   type PriceTier,
   type RefundReason,
   type OrderQuote as CoreOrderQuote,
   OrderState,
+  type SeatCancelReason,
   SeatState,
   orderStateMovesForward,
-  type OrderErrorCode,
+  refundIdempotencyKey,
+  refundableRemaining,
+  seatStateMayMove,
+  subtract,
+  sum,
 } from '@arthome/core';
 
 import { ORDER_STATES_AWAITING_PAYMENT } from './awaiting-payment.js';
 import {
+  SeatCancelled,
   SeatOrderFailed,
   SeatOrderHoldRenewed,
   SeatOrderIntentRecorded,
@@ -22,6 +33,7 @@ import {
   SeatOrderPlaced,
   SeatOrderRefundOwed,
   SeatOrderRefunded,
+  SeatsCredited,
   type SeatOrderEvent,
 } from './seat-order.events.js';
 import { type NextAction } from '../payments/next-action.js';
@@ -53,6 +65,30 @@ export interface SeatSnapshot {
   readonly state: SeatState;
   readonly cancelDeadline: Instant | null;
   readonly activatedAt: Instant;
+  /** When it left `active`. */
+  readonly endedAt: Instant | null;
+  readonly cancelReason: SeatCancelReason | null;
+  /** The refund giving its money back, `refunded` once made; null when nothing was given back. */
+  readonly refundId: string | null;
+  readonly refundAmount: Money | null;
+  readonly creditId: string | null;
+  readonly creditAmount: Money | null;
+}
+
+/**
+ * Seats cancelled at once, PT1's and PT2's one transition: each with its share of `refundId`, or
+ *   with nothing given back when the refund is null or its share is nothing.
+ */
+export interface SeatCancellation {
+  readonly reason: SeatCancelReason;
+  readonly refundId: string | null;
+  readonly seats: readonly { readonly seatId: string; readonly refundAmount: Money | null }[];
+}
+
+/** Seats exchanged for a credit on the account (PT1, an interrupted date). */
+export interface SeatCrediting {
+  readonly creditId: string;
+  readonly seats: readonly { readonly seatId: string; readonly creditAmount: Money }[];
 }
 
 /** A seat about to be created: its id and code drawn by the service, its deadline served. */
@@ -68,8 +104,16 @@ export interface OrderFailure {
   readonly declineCode: string | null;
 }
 
-export interface OrderRefund {
+/** A refund its caller decided; the key is the caller's too, core's `refundIdempotencyKey(id)`. */
+export interface OwedRefund {
+  readonly id: string;
+  readonly amount: Money;
   readonly reason: RefundReason;
+  readonly idempotencyKey: string;
+  readonly seatId: string | null;
+}
+
+export interface OrderRefund extends OwedRefund {
   readonly owedAt: Instant;
   readonly ref: string | null;
   readonly refundedAt: Instant | null;
@@ -93,7 +137,8 @@ export interface SeatOrderSnapshot {
   readonly state: OrderState;
   readonly intent: PaymentIntentRecord | null;
   readonly failure: OrderFailure | null;
-  readonly refund: OrderRefund | null;
+  /** In the order they were owed, made or not. */
+  readonly refunds: readonly OrderRefund[];
   /** When the order failed holding an intent the provider may still confirm (adr-ticketing.md §6). */
   readonly intentCancelOwedAt: Instant | null;
   readonly placedAt: Instant;
@@ -116,6 +161,23 @@ export interface SeatOrderPlacement {
   readonly holdId: string;
   readonly expiresAt: Instant;
 }
+
+function sameRefund(owed: OrderRefund, refund: OwedRefund): boolean {
+  return (
+    owed.id === refund.id &&
+    owed.idempotencyKey === refund.idempotencyKey &&
+    owed.reason === refund.reason &&
+    owed.seatId === refund.seatId &&
+    owed.amount.currencyCode === refund.amount.currencyCode &&
+    owed.amount.amountMinor === refund.amount.amountMinor
+  );
+}
+
+/** The money was taken and is still held, in part at least. */
+const STATES_OWING_REFUNDS: readonly OrderState[] = [
+  OrderState.PAID,
+  OrderState.PARTIALLY_REFUNDED,
+];
 
 /**
  * The intent as known, completed by what the provider tells of the same one: a webhook carries no
@@ -156,7 +218,7 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
       state: OrderState.PENDING,
       intent: null,
       failure: null,
-      refund: null,
+      refunds: [],
       intentCancelOwedAt: null,
       placedAt: now,
       paidAt: null,
@@ -181,8 +243,8 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
 
   /** Still waiting for its money, and owing none back: a confirmation pays it. */
   public get acceptsPayment(): boolean {
-    const { state, refund } = this.current;
-    return refund === null && orderStateMovesForward(state, OrderState.PAID);
+    const { state, refunds } = this.current;
+    return refunds.length === 0 && orderStateMovesForward(state, OrderState.PAID);
   }
 
   /** Placed, and no intent created for it yet: the purchase resumes by creating one. */
@@ -196,8 +258,10 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
    *   secret: the purchase resumes by asking the provider, who hands the same intent back with it.
    */
   public get awaitsClientSecret(): boolean {
-    const { intent, refund } = this.current;
-    return this.awaitsPayment && refund === null && intent !== null && intent.clientSecret === null;
+    const { intent, refunds } = this.current;
+    return (
+      this.awaitsPayment && refunds.length === 0 && intent !== null && intent.clientSecret === null
+    );
   }
 
   private get awaitsPayment(): boolean {
@@ -205,8 +269,19 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
   }
 
   public get owesRefund(): boolean {
-    const { refund, state } = this.current;
-    return refund !== null && state !== OrderState.REFUNDED;
+    return this.current.refunds.some(({ refundedAt }) => refundedAt === null);
+  }
+
+  /** The total less every refund owed or made. */
+  public get refundableLeft(): Money {
+    const { quote, refunds } = this.current;
+    return refundableRemaining(
+      quote.total,
+      sum(
+        refunds.map(({ amount }) => amount),
+        quote.total.currencyCode,
+      ),
+    );
   }
 
   /** The hold it resumes on, its first one given back while the provider did not answer. */
@@ -261,6 +336,12 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
       state: SeatState.ACTIVE,
       cancelDeadline: issue.cancelDeadline,
       activatedAt: now,
+      endedAt: null,
+      cancelReason: null,
+      refundId: null,
+      refundAmount: null,
+      creditId: null,
+      creditAmount: null,
     }));
     this.advance({
       state: OrderState.PAID,
@@ -296,32 +377,255 @@ export class SeatOrder extends AggregateRoot<SeatOrderEvent> {
     return true;
   }
 
-  /** The provider took the money and no seat can be given: it goes back (D-082). */
-  public oweRefund(reason: RefundReason, intentRef: string, now: Instant): void {
-    if (!this.acceptsPayment) return;
+  /**
+   * Money taken and still held, owed back in part or in whole; the worker's queue makes it. Owed
+   *   again with the same facts, a replay, it answers the refund already owed and changes nothing;
+   *   its id or its key already owed with other facts is refused.
+   */
+  public oweRefund(refund: OwedRefund, now: Instant): OrderRefund {
     const current = this.current;
-    this.advance({
-      intent: current.intent ?? { ref: intentRef, clientSecret: null, nextAction: null },
-      intentCancelOwedAt: null,
-      refund: { reason, owedAt: now, ref: null, refundedAt: null },
-    });
-    this.apply(new SeatOrderRefundOwed(current.id, reason, now));
+    const owed = current.refunds.find(
+      ({ id, idempotencyKey }) => id === refund.id || idempotencyKey === refund.idempotencyKey,
+    );
+    if (owed !== undefined) {
+      if (sameRefund(owed, refund)) return owed;
+      throw new Error(
+        `order ${current.id} already owes refund ${owed.id} under ${owed.idempotencyKey}, ` +
+          `not refund ${refund.id} under ${refund.idempotencyKey}`,
+      );
+    }
+    if (!STATES_OWING_REFUNDS.includes(current.state)) {
+      throw new Error(`order ${current.id} is ${current.state}: it holds no money to refund`);
+    }
+    if (refund.amount.amountMinor <= 0) {
+      throw new Error(`order ${current.id} cannot owe a refund of nothing`);
+    }
+    assertRefundWithinRemaining(refund.amount, this.refundableLeft);
+    return this.owe(refund, now, {});
   }
 
-  public markRefunded(refundRef: string, now: Instant): void {
-    const { id, channelId, quote, refund } = this.current;
-    if (refund === null || !this.owesRefund) return;
+  /**
+   * The provider took the money and no seat can be given: all of it goes back (D-082). The refund's
+   *   id, or null when the order takes no payment any more.
+   */
+  public oweUnseatedPaymentBack(
+    reason: RefundReason,
+    intentRef: string,
+    now: Instant,
+  ): string | null {
+    if (!this.acceptsPayment) return null;
+    const current = this.current;
+    const id = uuidv7();
+    this.owe(
+      {
+        id,
+        amount: current.quote.total,
+        reason,
+        idempotencyKey: refundIdempotencyKey(id),
+        seatId: null,
+      },
+      now,
+      {
+        intent: current.intent ?? { ref: intentRef, clientSecret: null, nextAction: null },
+        intentCancelOwedAt: null,
+      },
+    );
+    return id;
+  }
+
+  /**
+   * A refund the provider made: `refunded` once the refunds made reach the total,
+   *   `partially_refunded` before, forward only, and the seats it gives back `refunded`. Nothing
+   *   for one already made.
+   */
+  public refundMade(refundId: string, refundRef: string, now: Instant): void {
+    const current = this.current;
+    const refund = current.refunds.find(({ id }) => id === refundId);
+    if (refund === undefined) throw new Error(`order ${current.id} owes no refund ${refundId}`);
+    if (refund.refundedAt !== null) return;
+    const refunds = current.refunds.map((owed) =>
+      owed.id === refundId ? { ...owed, ref: refundRef, refundedAt: now } : owed,
+    );
+    const made = sum(
+      refunds.filter(({ refundedAt }) => refundedAt !== null).map(({ amount }) => amount),
+      current.quote.total.currencyCode,
+    );
+    const reached =
+      compare(made, current.quote.total) >= 0 ? OrderState.REFUNDED : OrderState.PARTIALLY_REFUNDED;
     this.advance({
-      state: OrderState.REFUNDED,
-      failure: null,
-      refund: { ...refund, ref: refundRef, refundedAt: now },
+      refunds,
+      seats: current.seats.map((seat) =>
+        seat.refundId === refundId && seatStateMayMove(seat.state, SeatState.REFUNDED)
+          ? { ...seat, state: SeatState.REFUNDED }
+          : seat,
+      ),
+      ...(orderStateMovesForward(current.state, reached) && { state: reached, failure: null }),
     });
-    this.apply(new SeatOrderRefunded(id, channelId, quote.total, refundRef, refund.reason, now));
+    this.apply(
+      new SeatOrderRefunded(
+        current.id,
+        current.channelId,
+        refundId,
+        refund.amount,
+        refundRef,
+        refund.reason,
+        now,
+      ),
+    );
+  }
+
+  /**
+   * A refund webhook's cumulative amount says how much was refunded, not which refunds: it marks
+   *   none made (R15, replaced). The refunds still owed that the amount no refund made explains
+   *   could cover, whose calls to re-run now; null past every refund the order holds, a refund
+   *   made outside the platform.
+   */
+  public refundsTheProviderMayHaveMade(amountRefunded: Money): readonly string[] | null {
+    const { refunds, quote } = this.current;
+    const currencyCode = quote.total.currencyCode;
+    const amountsOf = (held: readonly OrderRefund[]) =>
+      sum(
+        held.map(({ amount }) => amount),
+        currencyCode,
+      );
+    if (compare(amountRefunded, amountsOf(refunds)) > 0) return null;
+    const unmade = refunds.filter(({ refundedAt }) => refundedAt === null);
+    const made = refunds.filter(({ refundedAt }) => refundedAt !== null);
+    const unexplained = subtract(amountRefunded, amountsOf(made));
+    return unmade.filter(({ amount }) => compare(amount, unexplained) <= 0).map(({ id }) => id);
+  }
+
+  /**
+   * Each seat `cancelled` at once with its share of the refund, `refunded` when that refund is
+   *   made; one `SeatCancelled` each. A seat no longer active is refused `seat.not_active`,
+   *   naming its state, and nothing moves.
+   */
+  public cancelSeats({ reason, refundId, seats }: SeatCancellation, now: Instant): void {
+    const current = this.current;
+    const refund = current.refunds.find(({ id }) => id === refundId);
+    if (refundId !== null && refund === undefined) {
+      throw new Error(`order ${current.id} owes no refund ${refundId}`);
+    }
+    const givenBack = seats.flatMap(({ refundAmount }) =>
+      refundAmount === null ? [] : [refundAmount],
+    );
+    if (givenBack.some(({ amountMinor }) => amountMinor < 0)) {
+      throw new Error(`order ${current.id}: a seat's share of a refund cannot be negative`);
+    }
+    const heldAlready = current.seats.flatMap((seat) =>
+      seat.refundId === refundId && seat.refundAmount !== null ? [seat.refundAmount] : [],
+    );
+    if (
+      refund !== undefined &&
+      compare(sum([...heldAlready, ...givenBack], refund.amount.currencyCode), refund.amount) > 0
+    ) {
+      throw new Error(`order ${current.id}: the seats' shares exceed refund ${refund.id}`);
+    }
+    if (refundId === null && seats.some(({ refundAmount }) => refundAmount !== null)) {
+      throw new Error(`order ${current.id} cannot give a seat a share of no refund`);
+    }
+    this.assertSeatsMayMove(
+      seats.map(({ seatId }) => seatId),
+      SeatState.CANCELLED,
+    );
+    const shares = new Map(seats.map(({ seatId, refundAmount }) => [seatId, refundAmount]));
+    this.advance({
+      seats: current.seats.map((seat) => {
+        if (!shares.has(seat.id)) return seat;
+        const share = shares.get(seat.id) ?? null;
+        const givenBack = share !== null && share.amountMinor > 0 ? share : null;
+        return {
+          ...seat,
+          state: SeatState.CANCELLED,
+          endedAt: now,
+          cancelReason: reason,
+          refundId: givenBack === null ? null : refundId,
+          refundAmount: givenBack,
+        };
+      }),
+    });
+    for (const { seatId } of seats) {
+      this.apply(
+        new SeatCancelled(current.id, current.dateId, seatId, current.accountId, reason, now),
+      );
+    }
+  }
+
+  /** Each seat `credited` with its share of the credit; `seat.not_active` as `cancelSeats`. */
+  public creditSeats({ creditId, seats }: SeatCrediting, now: Instant): void {
+    const current = this.current;
+    this.assertSeatsMayMove(
+      seats.map(({ seatId }) => seatId),
+      SeatState.CREDITED,
+    );
+    const shares = new Map(seats.map(({ seatId, creditAmount }) => [seatId, creditAmount]));
+    this.advance({
+      seats: current.seats.map((seat) => {
+        const share = shares.get(seat.id);
+        if (share === undefined) return seat;
+        return { ...seat, state: SeatState.CREDITED, endedAt: now, creditId, creditAmount: share };
+      }),
+    });
+    this.apply(
+      new SeatsCredited(
+        current.id,
+        current.dateId,
+        creditId,
+        seats.map(({ seatId }) => seatId),
+        now,
+      ),
+    );
+  }
+
+  /**
+   * The buyer's bank disputed the charge: the provider holds the money, so no refund is owed any
+   *   more, and the seats stay active, "nothing on the viewer's side" (adr-payments.md §9). False
+   *   once disputed.
+   */
+  public dispute(): boolean {
+    if (!orderStateMovesForward(this.current.state, OrderState.DISPUTED)) return false;
+    this.advance({ state: OrderState.DISPUTED, failure: null });
+    return true;
   }
 
   public intentCancelled(): void {
     if (this.current.intentCancelOwedAt === null) return;
     this.advance({ intentCancelOwedAt: null });
+  }
+
+  private owe(refund: OwedRefund, now: Instant, changes: Partial<SeatOrderSnapshot>): OrderRefund {
+    const current = this.current;
+    const owed: OrderRefund = { ...refund, owedAt: now, ref: null, refundedAt: null };
+    this.advance({ ...changes, refunds: [...current.refunds, owed] });
+    this.apply(
+      new SeatOrderRefundOwed(
+        current.id,
+        refund.id,
+        refund.amount,
+        refund.reason,
+        refund.seatId,
+        now,
+      ),
+    );
+    return owed;
+  }
+
+  /** Each seat named once, held by the order and allowed to move to `to`: else nothing moves. */
+  private assertSeatsMayMove(seatIds: readonly string[], to: SeatState): void {
+    const current = this.current;
+    if (new Set(seatIds).size !== seatIds.length) {
+      throw new Error(`order ${current.id}: a seat is named twice`);
+    }
+    for (const seatId of seatIds) {
+      const seat = current.seats.find(({ id }) => id === seatId);
+      if (seat === undefined) throw new Error(`order ${current.id} holds no seat ${seatId}`);
+      if (!seatStateMayMove(seat.state, to)) {
+        throw new DomainError({
+          code: OrderErrorCode.SEAT_NOT_ACTIVE,
+          params: { state: seat.state },
+        });
+      }
+    }
   }
 
   private advance(changes: Partial<SeatOrderSnapshot>): void {

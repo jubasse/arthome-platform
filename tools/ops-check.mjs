@@ -5,9 +5,7 @@
 //
 //   Usage: NODE_ENV=development node tools/ops-check.mjs <service>
 
-import { Kafka } from 'kafkajs';
-
-import { readKafkaBrokers } from '@arthome-platform/config';
+import { readKafkaBrokers, readRedisUrl } from '@arthome-platform/config';
 import {
   checkDeadLetterDepth,
   checkOutboxRetention,
@@ -19,8 +17,9 @@ import {
   outboxSlotName,
   readPublishedMessageIds,
 } from '@arthome-platform/messaging';
+import { Kafka } from 'kafkajs';
 
-const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing']);
+const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing', 'streaming']);
 // The search indexer's topics are `arthome.search.*`, not `arthome.search-indexer.*`: its
 // consumer group is named for the index, and main.ts records why.
 const CONSUMERS = new Map([
@@ -28,6 +27,7 @@ const CONSUMERS = new Map([
   ['notifications', 'notifications'],
   ['search-indexer', 'search'],
   ['ticketing', 'ticketing'],
+  ['streaming', 'streaming'],
 ]);
 
 const [service] = process.argv.slice(2);
@@ -67,6 +67,15 @@ try {
     } finally {
       await admin.disconnect();
     }
+  }
+
+  if (service === 'ticketing') {
+    // From ticketing's build, which carries bullmq: the worker's queues (HANDOVER §0m).
+    const { checkProviderCallQueues, checkProviderCallsDead, checkProviderCallsWaiting } =
+      await import('../apps/ticketing/dist/payments/provider-call-checks.js');
+    results.push(await checkProviderCallsDead(dataSource));
+    results.push(await checkProviderCallsWaiting(dataSource));
+    results.push(await checkProviderCallQueues(readRedisUrl()));
   }
 } finally {
   await dataSource.destroy();

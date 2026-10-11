@@ -2,12 +2,10 @@
 // Finds outbox rows committed but absent from their topic, and republishes them under their
 // original id. Dry run by default: `--apply` republishes, then reconciles again to prove it.
 //
-//   Usage: NODE_ENV=development node tools/republish-outbox.mjs <identity|catalog|ticketing> [--apply]
+//   Usage: NODE_ENV=development node tools/republish-outbox.mjs <identity|catalog|ticketing|streaming> [--apply]
 //
 // Safe even when a row did arrive after all: the id is kept, so it is the same message-id, and
 // every consumer's deduplication absorbs it.
-
-import { Kafka } from 'kafkajs';
 
 import { readKafkaBrokers } from '@arthome-platform/config';
 import {
@@ -15,8 +13,9 @@ import {
   readPublishedMessageIds,
   republishOutboxRow,
 } from '@arthome-platform/messaging';
+import { Kafka } from 'kafkajs';
 
-const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing']);
+const PUBLISHERS = new Set(['identity', 'catalog', 'ticketing', 'streaming']);
 
 const [service, ...flags] = process.argv.slice(2);
 if (!PUBLISHERS.has(service)) {

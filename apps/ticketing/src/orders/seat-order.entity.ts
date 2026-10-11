@@ -1,11 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
-import {
-  type PriceTier,
-  type RefundReason,
-  type OrderErrorCode,
-  type OrderState,
-} from '@arthome/core';
+import { type PriceTier, type OrderErrorCode, type OrderState } from '@arthome/core';
 
 import { type NextAction } from '../payments/next-action.js';
 
@@ -97,18 +92,6 @@ export class SeatOrderRow {
   @Column('text', { nullable: true })
   decline_code!: string | null;
 
-  @Column('text', { nullable: true })
-  refund_reason!: RefundReason | null;
-
-  @Column('timestamptz', { nullable: true })
-  refund_owed_at!: Date | null;
-
-  @Column('text', { nullable: true })
-  refund_ref!: string | null;
-
-  @Column('timestamptz', { nullable: true })
-  refunded_at!: Date | null;
-
   /** Set when the order failed with an intent the provider may still hold; cleared once cancelled. */
   @Column('timestamptz', { nullable: true })
   intent_cancel_owed_at!: Date | null;
@@ -118,6 +101,10 @@ export class SeatOrderRow {
 
   @Column('timestamptz', { nullable: true })
   paid_at!: Date | null;
+
+  /** When its date's outcome was settled on it, whatever that gave it: the pass's mark, never the aggregate's. */
+  @Column('timestamptz', { nullable: true })
+  outcome_settled_at!: Date | null;
 
   /** What the purchase answered, replayed as it was under its key (transport.md §5.4). */
   @Column('integer', { nullable: true })

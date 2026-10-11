@@ -22,10 +22,10 @@ import { CLOCK } from '../clock.js';
 import { ApplyCatalogDateFactHandler } from '../date-sales/apply-catalog-date-fact.handler.js';
 import { OpenCapacityTierHandler } from '../date-sales/open-capacity-tier.handler.js';
 import { SetDatePricesHandler } from '../date-sales/set-date-prices.handler.js';
+import { withoutRowLockWait } from '../itest/locks.js';
 import { purchaseOf, putOnSale, ITEST_BUYER_ACCOUNT_ID } from '../itest/sales.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { FakePaymentProvider, FakePaymentScenario } from '../payments/fake-payment-provider.js';
-import { OwedRefunds } from '../payments/owed-refunds.js';
 import { PAYMENT_PORT } from '../payments/payment-tokens.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
@@ -107,7 +107,6 @@ beforeAll(async () => {
       ExpireDueHoldsHandler,
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: clock },
-      OwedRefunds,
       { provide: PAYMENT_PORT, useValue: fake },
       { provide: PUBLIC_WEB_ORIGIN, useValue: 'http://storefront.test' },
     ],
@@ -191,9 +190,7 @@ describe('a pass of the hold expiry', () => {
       try {
         await payment.query('SELECT id FROM seat_order WHERE id = $1 FOR UPDATE', [orderId]);
 
-        const started = Date.now();
-        expect(await expire()).toBe(0);
-        expect(Date.now() - started).toBeLessThan(1_000);
+        expect(await withoutRowLockWait(dataSource, expire())).toBe(0);
       } finally {
         await payment.commitTransaction();
         await payment.release();

@@ -9,6 +9,7 @@ import {
   TECHNICAL_PROVISION_THRESHOLD,
   isDomainError,
   money,
+  priorityUntilOf,
   provisionRevisableUntil,
   type DomainError,
   type TierPrice,
@@ -36,6 +37,8 @@ function restored(overrides: Partial<DateSalesSnapshot> = {}): DateSales {
     seatsAvailable: 0,
     seatsSold: 0,
     waitlistCount: 0,
+    priorityPoolSeats: 0,
+    priorityUntil: null,
     priceTiers: [],
     pricesLockedAt: null,
     salesClosedAt: null,
@@ -125,7 +128,7 @@ describe('openCapacityTier', () => {
   it('sets the first capacity, and the seats available with it', () => {
     const sales = restored();
 
-    sales.openCapacityTier(3, 200, NOW);
+    sales.openCapacityTier(3, 200, true, NOW);
 
     expect(sales.snapshot).toMatchObject({
       capacityTotal: 200,
@@ -154,7 +157,7 @@ describe('openCapacityTier', () => {
       seatsSold: 170,
     });
 
-    sales.openCapacityTier(3, 50, NOW);
+    sales.openCapacityTier(3, 50, true, NOW);
 
     expect(sales.snapshot.capacityTotal).toBe(250);
     expect(sales.snapshot.seatsAvailable).toBe(76);
@@ -164,7 +167,7 @@ describe('openCapacityTier', () => {
   it('opens up to the threshold with no provision recorded', () => {
     const sales = restored({ capacityTotal: TECHNICAL_PROVISION_THRESHOLD - 1 });
 
-    sales.openCapacityTier(3, 1, NOW);
+    sales.openCapacityTier(3, 1, true, NOW);
 
     expect(sales.snapshot.capacityTotal).toBe(TECHNICAL_PROVISION_THRESHOLD);
   });
@@ -172,7 +175,7 @@ describe('openCapacityTier', () => {
   it('refuses a capacity past the threshold no provision covers, naming the deadline', () => {
     const sales = restored({ capacityTotal: TECHNICAL_PROVISION_THRESHOLD, startsAt: STARTS_AT });
 
-    const refusal = refusalOf(() => sales.openCapacityTier(3, 1, NOW));
+    const refusal = refusalOf(() => sales.openCapacityTier(3, 1, true, NOW));
 
     expect(refusal.code).toBe(CatalogErrorCode.TECHNICAL_PROVISION_REQUIRED);
     expect(refusal.params).toEqual({
@@ -184,13 +187,15 @@ describe('openCapacityTier', () => {
   });
 
   it('refuses a tier that does not widen, with the code core gives', () => {
-    const refusal = refusalOf(() => restored({ capacityTotal: 200 }).openCapacityTier(3, 0, NOW));
+    const refusal = refusalOf(() =>
+      restored({ capacityTotal: 200 }).openCapacityTier(3, 0, true, NOW),
+    );
 
     expect(refusal.code).toBe(DomainErrorCode.CAPACITY_TIER_MUST_WIDEN);
   });
 
   it('refuses a stale screen', () => {
-    expect(refusalOf(() => restored().openCapacityTier(4, 10, NOW)).code).toBe(
+    expect(refusalOf(() => restored().openCapacityTier(4, 10, true, NOW)).code).toBe(
       DomainErrorCode.STATE_CONFLICT,
     );
   });
@@ -203,7 +208,7 @@ describe('openCapacityTier', () => {
       salesClosedAt: STATED_AT,
     });
 
-    const refusal = refusalOf(() => sales.openCapacityTier(3, 10, NOW));
+    const refusal = refusalOf(() => sales.openCapacityTier(3, 10, true, NOW));
 
     expect(refusal.code).toBe(CatalogErrorCode.OUTCOME_FINAL);
     expect(refusal.params).toEqual({ outcome: DateOutcome.CANCELLED });
@@ -213,7 +218,7 @@ describe('openCapacityTier', () => {
   it('keeps widening a postponed date, whose sale goes on', () => {
     const sales = restored({ outcome: DateOutcome.POSTPONED, outcomeStatedAt: STATED_AT });
 
-    sales.openCapacityTier(3, 10, NOW);
+    sales.openCapacityTier(3, 10, true, NOW);
 
     expect(sales.snapshot.capacityTotal).toBe(10);
   });
@@ -274,7 +279,7 @@ describe('a capacity past the threshold', () => {
       startsAt: STARTS_AT,
     });
 
-    sales.openCapacityTier(3, 2_000, NOW);
+    sales.openCapacityTier(3, 2_000, true, NOW);
 
     expect(sales.snapshot.capacityTotal).toBe(12_000);
     expect(sales.getUncommittedEvents()).toMatchObject([
@@ -295,7 +300,7 @@ describe('a capacity past the threshold', () => {
       provisionedCapacity: 11_000,
     });
 
-    const refusal = refusalOf(() => sales.openCapacityTier(3, 2_000, NOW));
+    const refusal = refusalOf(() => sales.openCapacityTier(3, 2_000, true, NOW));
 
     expect(refusal.code).toBe(CatalogErrorCode.TECHNICAL_PROVISION_REQUIRED);
     expect(refusal.params).toEqual({
@@ -548,5 +553,77 @@ describe('a hold the aggregate decides (review m3)', () => {
     expect(refusalOf(() => restored({ pricesLockedAt: NOW }).holdSeats(0, NOW)).code).toBe(
       DomainErrorCode.HOLD_QUANTITY_INVALID,
     );
+  });
+});
+
+describe('openCapacityTier and the waiting list (PT3, D-083, D-094)', () => {
+  const LISTED = {
+    capacityTotal: 200,
+    capacityTiers: [{ id: 'first', capacity: 200, openedAt: '2026-09-20T10:00:00.000Z' }],
+    seatsAvailable: 0,
+    seatsSold: 200,
+    waitlistCount: 12,
+  };
+
+  it('sets a notified tier aside as the pool and opens the window, the public still sold out', () => {
+    const sales = restored(LISTED);
+
+    const priorityUntil = sales.openCapacityTier(3, 40, true, NOW);
+
+    expect(priorityUntil).toBe(priorityUntilOf(NOW));
+    expect(sales.snapshot).toMatchObject({
+      capacityTotal: 240,
+      seatsAvailable: 0,
+      priorityPoolSeats: 40,
+      priorityUntil: priorityUntilOf(NOW),
+      version: 4,
+    });
+    expect(sales.getUncommittedEvents().map(({ kind }) => kind)).toEqual([
+      'CapacityTierOpened',
+      'PriorityWindowOpened',
+    ]);
+  });
+
+  it('extends an open window and adds to its pool with a second notified tier', () => {
+    const opened = '2026-09-27T09:00:00.000Z';
+    const sales = restored({
+      ...LISTED,
+      capacityTotal: 240,
+      priorityPoolSeats: 15,
+      priorityUntil: priorityUntilOf(opened),
+    });
+
+    expect(sales.openCapacityTier(3, 10, true, NOW)).toBe(priorityUntilOf(NOW));
+
+    expect(sales.snapshot).toMatchObject({ priorityPoolSeats: 25, seatsAvailable: 0 });
+  });
+
+  it.each([
+    ['notifyWaitlist false', { waitlistCount: 12 }, false],
+    ['nobody on the list', { waitlistCount: 0 }, true],
+  ] as const)('puts the tier on public sale with %s', (_case, list, notify) => {
+    const sales = restored({ ...LISTED, ...list });
+
+    expect(sales.openCapacityTier(3, 40, notify, NOW)).toBeNull();
+
+    expect(sales.snapshot).toMatchObject({
+      seatsAvailable: 40,
+      priorityPoolSeats: 0,
+      priorityUntil: null,
+    });
+    expect(sales.getUncommittedEvents().map(({ kind }) => kind)).toEqual(['CapacityTierOpened']);
+  });
+
+  it('keeps an open window’s pool and end when a tier goes on public sale', () => {
+    const priorityUntil = priorityUntilOf('2026-09-27T09:00:00.000Z');
+    const sales = restored({ ...LISTED, priorityPoolSeats: 5, priorityUntil });
+
+    sales.openCapacityTier(3, 40, false, NOW);
+
+    expect(sales.snapshot).toMatchObject({
+      seatsAvailable: 40,
+      priorityPoolSeats: 5,
+      priorityUntil,
+    });
   });
 });

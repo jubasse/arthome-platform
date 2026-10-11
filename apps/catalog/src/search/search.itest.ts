@@ -9,7 +9,14 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Client } from '@opensearch-project/opensearch';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ApiErrorCode, DisplayState, FixedClock, ReplayPolicy, Service } from '@arthome/core';
+import {
+  ApiErrorCode,
+  DisplayState,
+  FixedClock,
+  PublicationState,
+  ReplayPolicy,
+  Service,
+} from '@arthome/core';
 
 import { OPENSEARCH } from './search-catalog.handler.js';
 import { dateDocument } from './search-fixtures.js';
@@ -28,7 +35,7 @@ import { EDGE_PROVIDERS } from '../edge-providers.js';
 const STARTUP_MS = 240_000;
 const CASE_MS = 30_000;
 
-/** Nuit blanche's first date is in its replay window; Le Lac des cygnes is over. */
+/** Nuit blanche's first date has ended; Le Lac des cygnes is over. */
 const NOW = '2026-11-05T12:00:00.000Z';
 
 const SHOW_A = '01a0e500-0000-7000-8000-0000000000a1';
@@ -66,7 +73,9 @@ function date(
 }
 
 const DATES: readonly ServableDateDocument[] = [
-  date('01a0e500-0000-7000-8000-000000000a01', SHOW_A, '2026-11-04T19:30:00.000Z'),
+  date('01a0e500-0000-7000-8000-000000000a01', SHOW_A, '2026-11-04T19:30:00.000Z', {
+    publication_state: PublicationState.ENDED,
+  }),
   date('01a0e500-0000-7000-8000-000000000a02', SHOW_A, '2026-11-10T19:30:00.000Z'),
   date('01a0e500-0000-7000-8000-000000000a03', SHOW_A, '2026-11-20T19:30:00.000Z', {
     venue_country: 'BE',
@@ -172,7 +181,7 @@ describe('GET /v1/search against a real index', () => {
         matchingDatesCount: 3,
         representativeDate: {
           id: '01a0e500-0000-7000-8000-000000000a01',
-          displayState: DisplayState.REPLAY,
+          displayState: DisplayState.ENDED,
         },
       });
       expect(body.page).toMatchObject({ hasMore: false, approximateTotal: 2 });

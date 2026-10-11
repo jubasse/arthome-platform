@@ -1,5 +1,7 @@
 import type { EntityManager } from 'typeorm';
 
+import type { Instant } from '@arthome/core';
+
 import { dateSalesPaneOf, type DateSalesPane } from './date-sales-pane.js';
 import { DateSalesRow } from './date-sales.entity.js';
 
@@ -10,7 +12,8 @@ import { DateSalesRow } from './date-sales.entity.js';
 export async function readDateSalesPane(
   manager: EntityManager,
   dateId: string,
+  now: Instant,
 ): Promise<DateSalesPane | null> {
   const row = await manager.findOneBy(DateSalesRow, { date_id: dateId });
-  return row === null ? null : dateSalesPaneOf(row);
+  return row === null ? null : dateSalesPaneOf(row, now);
 }

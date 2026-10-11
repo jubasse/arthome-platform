@@ -450,7 +450,7 @@ describe('openCapacityTier', () => {
           'UPDATE date_sales SET seats_available = seats_available - 5 WHERE date_id = $1',
           [dateId],
         );
-        sales.openCapacityTier(2, 10, NOW);
+        sales.openCapacityTier(2, 10, true, NOW);
         await dateSales.save(sales);
       });
 

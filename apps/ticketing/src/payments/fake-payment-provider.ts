@@ -5,6 +5,7 @@ import { z } from 'zod';
 import {
   PAYMENT_WEBHOOK_TOLERANCE_SECONDS,
   fromEpochMs,
+  money,
   toEpochMs,
   type Clock,
   type Instant,
@@ -16,6 +17,7 @@ import {
   type PaymentIntentRequest,
   type PaymentPort,
   type PaymentWebhookPort,
+  type Money,
   type RefundRequest,
 } from '@arthome/core';
 
@@ -50,9 +52,21 @@ const EVENT_KIND_OF_TYPE: Readonly<Record<string, PaymentEventKind>> = {
   'payment_intent.canceled': PaymentEventKind.INTENT_CANCELLED,
 };
 
-const TYPE_OF_EVENT_KIND: Readonly<Partial<Record<PaymentEventKind, string>>> = Object.fromEntries(
-  Object.entries(EVENT_KIND_OF_TYPE).map(([type, kind]) => [kind, type]),
-);
+/** Stripe's names for the two facts about a charge already taken. */
+const REFUNDED_TYPE = 'charge.refunded';
+const DISPUTED_TYPE = 'charge.dispute.created';
+
+const TYPE_OF_EVENT_KIND: Readonly<Partial<Record<PaymentEventKind, string>>> = {
+  ...Object.fromEntries(Object.entries(EVENT_KIND_OF_TYPE).map(([type, kind]) => [kind, type])),
+  [PaymentEventKind.REFUND_SUCCEEDED]: REFUNDED_TYPE,
+  [PaymentEventKind.DISPUTE_OPENED]: DISPUTED_TYPE,
+};
+
+const KIND_OF_TYPE: Readonly<Record<string, PaymentEventKind>> = {
+  ...EVENT_KIND_OF_TYPE,
+  [REFUNDED_TYPE]: PaymentEventKind.REFUND_SUCCEEDED,
+  [DISPUTED_TYPE]: PaymentEventKind.DISPUTE_OPENED,
+};
 
 const FakeEventSchema = z.object({
   id: z.string().min(1),
@@ -63,6 +77,9 @@ const FakeEventSchema = z.object({
       id: z.string().min(1),
       metadata: z.object({ order_id: z.string().nullable() }),
       last_payment_error: z.object({ decline_code: z.string() }).nullable(),
+      latest_refund: z.string().min(1).optional(),
+      amount_refunded: z.int().min(0).optional(),
+      currency: z.string().length(3).optional(),
     }),
   }),
 });
@@ -76,6 +93,12 @@ interface FakeIntent {
   readonly orderId: string;
   readonly intent: PaymentIntent;
   canceled: boolean;
+}
+
+interface FakeRefund {
+  readonly ref: string;
+  readonly intentRef: string;
+  readonly amount: Money;
 }
 
 /**
@@ -97,7 +120,9 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
   public readonly calls: string[] = [];
 
   private readonly intentsByOrder = new Map<string, FakeIntent>();
-  private readonly refundsByKey = new Map<string, string>();
+  /** In the order they were made, one per idempotency key. */
+  private readonly refundsByKey = new Map<string, FakeRefund>();
+  private readonly disputedIntentRefs = new Set<string>();
   private events = 0;
 
   public constructor(
@@ -139,19 +164,28 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
 
   public cancelIntent(intentRef: string, idempotencyKey: string): Promise<void> {
     return this.answer(`cancelIntent ${idempotencyKey}`, () => {
-      const found = this.intentByRef(intentRef);
+      const found = this.intentAskedOf(intentRef);
       if (found.intent.status !== IntentStatus.SUCCEEDED) found.canceled = true;
     });
   }
 
-  public refund({ intentRef, idempotencyKey }: RefundRequest): Promise<{ refundRef: string }> {
+  /** A charge under dispute is refused, as Stripe refuses it: a refusal, never an outage. */
+  public refund({
+    intentRef,
+    amount,
+    idempotencyKey,
+  }: RefundRequest): Promise<{ refundRef: string }> {
     return this.answer(`refund ${idempotencyKey}`, () => {
-      if (this.intentByRef(intentRef).intent.status !== IntentStatus.SUCCEEDED) {
+      const made = this.refundsByKey.get(idempotencyKey);
+      if (made !== undefined) return { refundRef: made.ref };
+      if (this.intentAskedOf(intentRef).intent.status !== IntentStatus.SUCCEEDED) {
         throw new Error(`fake provider: intent ${intentRef} has taken no money to refund`);
       }
-      const refundRef =
-        this.refundsByKey.get(idempotencyKey) ?? `re_fake_${digest(idempotencyKey)}`;
-      this.refundsByKey.set(idempotencyKey, refundRef);
+      if (this.disputedIntentRefs.has(intentRef)) {
+        throw new Error(`fake provider: the charge of intent ${intentRef} is disputed`);
+      }
+      const refundRef = `re_fake_${digest(idempotencyKey)}`;
+      this.refundsByKey.set(idempotencyKey, { ref: refundRef, intentRef, amount });
       return { refundRef };
     });
   }
@@ -159,6 +193,11 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
   /** The refunds actually made, one per idempotency key however often it was asked. */
   public get refundsMade(): number {
     return this.refundsByKey.size;
+  }
+
+  /** What the refund made under `idempotencyKey` gave back, null when none was made under it. */
+  public refundedUnder(idempotencyKey: string): Money | null {
+    return this.refundsByKey.get(idempotencyKey)?.amount ?? null;
   }
 
   public isCanceled(intentRef: string): boolean {
@@ -176,8 +215,42 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
     return this.webhookOf(intentRef, PaymentEventKind.INTENT_FAILED);
   }
 
+  /**
+   * The webhook of a refund made, carrying what was refunded on its charge up to it: what the
+   *   provider sends whether or not its answer reached the caller.
+   */
+  public refundSucceededWebhookOf(refundRef: string): SignedWebhook {
+    const made = [...this.refundsByKey.values()];
+    const index = made.findIndex(({ ref }) => ref === refundRef);
+    const refund = made[index];
+    if (refund === undefined) throw new Error(`fake provider: no refund ${refundRef}`);
+    const refunded = made
+      .slice(0, index + 1)
+      .filter(({ intentRef }) => intentRef === refund.intentRef)
+      .reduce((total, { amount }) => total + amount.amountMinor, 0);
+    return this.webhookOf(refund.intentRef, PaymentEventKind.REFUND_SUCCEEDED, {
+      latest_refund: refundRef,
+      amount_refunded: refunded,
+      currency: refund.amount.currencyCode.toLowerCase(),
+    });
+  }
+
+  /**
+   * The buyer's bank disputes the charge: the intent is confirmed, since only a charge taken can be
+   *   disputed, its refunds refused from now on, and the dispute's webhook returned.
+   */
+  public disputeOpened(intentRef: string): SignedWebhook {
+    this.settle(intentRef, IntentStatus.SUCCEEDED);
+    this.disputedIntentRefs.add(intentRef);
+    return this.webhookOf(intentRef, PaymentEventKind.DISPUTE_OPENED);
+  }
+
   /** A new event about the intent, as the provider would send it, signed now. */
-  public webhookOf(intentRef: string, kind: PaymentEventKind): SignedWebhook {
+  public webhookOf(
+    intentRef: string,
+    kind: PaymentEventKind,
+    chargeFacts: Readonly<Record<string, unknown>> = {},
+  ): SignedWebhook {
     const { orderId, intent } = this.intentByRef(intentRef);
     this.events += 1;
     const body = Buffer.from(
@@ -191,6 +264,7 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
             metadata: { order_id: orderId },
             last_payment_error:
               intent.declineCode === null ? null : { decline_code: intent.declineCode },
+            ...chargeFacts,
           },
         },
       }),
@@ -228,13 +302,21 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
     const parsed = FakeEventSchema.safeParse(json);
     if (!parsed.success) return null;
     const { id, type, created, data } = parsed.data;
+    const kind = KIND_OF_TYPE[type] ?? PaymentEventKind.UNHANDLED;
+    const { latest_refund: refundRef, amount_refunded: refunded, currency } = data.object;
+    const refundFacts = kind === PaymentEventKind.REFUND_SUCCEEDED;
     return {
       eventId: id,
-      kind: EVENT_KIND_OF_TYPE[type] ?? PaymentEventKind.UNHANDLED,
+      kind,
       intentRef: data.object.id,
       orderId: data.object.metadata.order_id,
       occurredAt: fromEpochMs(created * 1_000),
       declineCode: data.object.last_payment_error?.decline_code ?? null,
+      refundRef: refundFacts ? (refundRef ?? null) : null,
+      amountRefunded:
+        refundFacts && refunded !== undefined && currency !== undefined
+          ? money(refunded, currency.toUpperCase())
+          : null,
     };
   }
 
@@ -270,6 +352,31 @@ export class FakePaymentProvider implements PaymentPort, PaymentWebhookPort {
     throw new Error(`fake provider: no intent ${intentRef}`);
   }
 
+  /**
+   * For the two calls a worker makes, `refund` and `cancelIntent`: an intent another instance
+   *   created, the API's, is known by its reference, its order's, as confirmed, which is what the
+   *   running fake makes of every intent. The test helpers stay strict.
+   */
+  private intentAskedOf(intentRef: string): FakeIntent {
+    const known = [...this.intentsByOrder.values()].find(({ intent }) => intent.ref === intentRef);
+    if (known !== undefined) return known;
+    const orderId = orderIdOfIntentRef(intentRef);
+    if (orderId === null) throw new Error(`fake provider: no intent ${intentRef}`);
+    const confirmed: FakeIntent = {
+      orderId,
+      intent: {
+        ref: intentRef,
+        status: IntentStatus.SUCCEEDED,
+        clientSecret: `${intentRef}_secret`,
+        nextAction: null,
+        declineCode: null,
+      },
+      canceled: false,
+    };
+    this.intentsByOrder.set(orderId, confirmed);
+    return confirmed;
+  }
+
   private mac(seconds: string, body: Uint8Array): Buffer {
     return createHmac('sha256', this.webhookSecret).update(`${seconds}.`).update(body).digest();
   }
@@ -285,6 +392,13 @@ const STATUS_OF_SCENARIO: Readonly<
 
 export function intentRefOf(orderId: string): string {
   return `pi_fake_${orderId.replaceAll('-', '')}`;
+}
+
+const INTENT_REF = /^pi_fake_([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/;
+
+function orderIdOfIntentRef(intentRef: string): string | null {
+  const parts = INTENT_REF.exec(intentRef);
+  return parts === null ? null : parts.slice(1).join('-');
 }
 
 function digest(value: string): string {

@@ -1,12 +1,21 @@
 // Aliased because `@arthome-platform/events` is a flat barrel: a wire enum and core's
 // vocabulary share each name, and they are a number and a string.
 import {
+  CreditOrigin as WireCreditOrigin,
   DateOutcome as WireDateOutcome,
   PriceTier as WirePriceTier,
   RefundReason as WireRefundReason,
+  SeatCancelReason as WireSeatCancelReason,
 } from '@arthome-platform/events';
 
-import { DATE_OUTCOMES, DateOutcome, PriceTier, RefundReason } from '@arthome/core';
+import {
+  CreditOrigin,
+  DATE_OUTCOMES,
+  DateOutcome,
+  PriceTier,
+  RefundReason,
+  SeatCancelReason,
+} from '@arthome/core';
 
 /**
  * The domain's members → the wire's numbers. `satisfies` points at the domain: a new member in
@@ -27,6 +36,18 @@ export const WIRE_REFUND_REASON = {
   [RefundReason.DISPUTE]: WireRefundReason.DISPUTE,
   [RefundReason.HOLD_EXPIRED_CAPACITY_LOST]: WireRefundReason.HOLD_EXPIRED_CAPACITY_LOST,
 } satisfies Record<RefundReason, WireRefundReason>;
+
+/** `PAYMENT_FAILED` has no domain member: a seat exists only once its order is paid (D-077). */
+export const WIRE_SEAT_CANCEL_REASON = {
+  [SeatCancelReason.VIEWER_REQUEST]: WireSeatCancelReason.VIEWER_REQUEST,
+  [SeatCancelReason.DATE_CANCELLED]: WireSeatCancelReason.DATE_CANCELLED,
+  [SeatCancelReason.ACCOUNT_DELETION]: WireSeatCancelReason.ACCOUNT_DELETION,
+} satisfies Record<SeatCancelReason, WireSeatCancelReason>;
+
+export const WIRE_CREDIT_ORIGIN = {
+  [CreditOrigin.INTERRUPTED_DATE]: WireCreditOrigin.INTERRUPTED_DATE,
+  [CreditOrigin.GOODWILL]: WireCreditOrigin.GOODWILL,
+} satisfies Record<CreditOrigin, WireCreditOrigin>;
 
 const WIRE_DATE_OUTCOME = {
   [DateOutcome.POSTPONED]: WireDateOutcome.POSTPONED,

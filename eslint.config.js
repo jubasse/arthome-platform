@@ -32,6 +32,29 @@ export default defineConfig([
 
   // 3. local overrides
   {
+    // Workspace packages sort with the external packages whether or not libs/*/dist is built.
+    // Left to the resolver they are internal with a dist and external without, and import-x/order
+    // flips its verdict. This is the core rule's options plus one pathGroup.
+    files: ['**/*.{ts,mjs}'],
+    rules: {
+      'import-x/order': [
+        'error',
+        {
+          groups: ['builtin', 'external', 'internal', ['parent', 'sibling', 'index']],
+          pathGroups: [
+            { pattern: '@arthome/**', group: 'internal', position: 'before' },
+            { pattern: '@arthome-platform/**', group: 'external', position: 'before' },
+          ],
+          pathGroupsExcludedImportTypes: ['builtin'],
+          distinctGroup: false,
+          'newlines-between': 'always',
+          alphabetize: { order: 'asc', caseInsensitive: true },
+        },
+      ],
+    },
+  },
+
+  {
     // The repository's own tools are standalone Node scripts: no TypeScript
     // project, and writing to standard output is their job.
     files: ['tools/**/*.mjs'],

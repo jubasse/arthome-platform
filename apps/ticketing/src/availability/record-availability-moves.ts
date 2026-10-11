@@ -23,6 +23,7 @@ function movesAvailability(event: DateSalesEvent): boolean {
     case 'DateScheduleRecorded':
     case 'TechnicalProvisionSet':
     case 'SeatsHeld':
+    case 'PriorityWindowOpened':
       return false;
     default:
       return assertNever(event);

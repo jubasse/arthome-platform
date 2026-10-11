@@ -48,7 +48,6 @@ import {
   intentRefOf,
 } from '../payments/fake-payment-provider.js';
 import { NextActionKind } from '../payments/next-action.js';
-import { OwedRefunds } from '../payments/owed-refunds.js';
 import { PAYMENT_PORT } from '../payments/payment-tokens.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
@@ -154,7 +153,6 @@ beforeAll(async () => {
       GetOrderHandler,
       { provide: DataSource, useValue: dataSource },
       { provide: CLOCK, useValue: clock },
-      OwedRefunds,
       { provide: PAYMENT_PORT, useValue: fake },
       { provide: PUBLIC_WEB_ORIGIN, useValue: ORIGIN },
     ],
@@ -618,7 +616,7 @@ describe('quoteSeat and getOrder', () => {
       const dateId = await dateOnSale();
 
       const quote = await queries.execute(
-        new QuoteSeat(dateId, { tier: PriceTier.FULL, quantity: 3 }),
+        new QuoteSeat(dateId, { tier: PriceTier.FULL, quantity: 3 }, ITEST_BUYER_ACCOUNT_ID),
       );
 
       expect(quote.data).toEqual({
@@ -628,7 +626,9 @@ describe('quoteSeat and getOrder', () => {
       });
       expect(quote.validUntil).toBe(plusSeconds(NOW, 60));
       await expect(
-        queries.execute(new QuoteSeat(dateId, { tier: PriceTier.REDUCED, quantity: 1 })),
+        queries.execute(
+          new QuoteSeat(dateId, { tier: PriceTier.REDUCED, quantity: 1 }, ITEST_BUYER_ACCOUNT_ID),
+        ),
       ).rejects.toMatchObject({ refusal: { code: ApiErrorCode.NOT_FOUND } });
     },
     CASE_MS,
@@ -734,7 +734,7 @@ describe('a buyer arriving after the start (D-089)', () => {
       const soon = plusSeconds(NOW, 30);
       const upcoming = await dateOnSale(10, soon);
       const before = await queries.execute(
-        new QuoteSeat(upcoming, { tier: PriceTier.FULL, quantity: 1 }),
+        new QuoteSeat(upcoming, { tier: PriceTier.FULL, quantity: 1 }, ITEST_BUYER_ACCOUNT_ID),
       );
       expect(before.data).not.toHaveProperty('lateEntry');
       expect(before.validUntil).toBe(soon);
@@ -742,7 +742,7 @@ describe('a buyer arriving after the start (D-089)', () => {
       const startsAt = plusMinutes(NOW, -10);
       const started = await dateOnSale(10, startsAt);
       const late = await queries.execute(
-        new QuoteSeat(started, { tier: PriceTier.FULL, quantity: 1 }),
+        new QuoteSeat(started, { tier: PriceTier.FULL, quantity: 1 }, ITEST_BUYER_ACCOUNT_ID),
       );
       expect(late.data.lateEntry).toEqual({
         startedAt: startsAt,
@@ -753,7 +753,9 @@ describe('a buyer arriving after the start (D-089)', () => {
 
       const over = await dateOnSale(10, plusMinutes(NOW, -30));
       await expect(
-        queries.execute(new QuoteSeat(over, { tier: PriceTier.FULL, quantity: 1 })),
+        queries.execute(
+          new QuoteSeat(over, { tier: PriceTier.FULL, quantity: 1 }, ITEST_BUYER_ACCOUNT_ID),
+        ),
       ).rejects.toMatchObject({ refusal: { code: OrderErrorCode.SALES_CLOSED } });
     },
     CASE_MS,

@@ -162,6 +162,8 @@ no service is left. The integration suites assert what they did before the migra
 | `performance-date.repository.ts`                       | the port: an abstract class, domain types only, one for both rows                                         |
 | `performance-date.typeorm-repository.ts`               | the adapter and its row ↔ snapshot mappings                                                               |
 | `performance-date.entity.ts`, `publication.entity.ts`  | `PerformanceDateRow` and `PublicationRow`, the persistence model                                          |
+| `run-consumer.ts`                                      | `applyRunMessage`: the two run types to `LearnRunFact`, every other type to the checklist consumer         |
+| `learn-run-fact.command.ts`, `learn-run-fact.handler.ts` | `LearnRunFact extends Command<Outcome>`, its handler: `technical -> live -> ended` from the run (§0g)     |
 
 Messages carry no suffix (`DeclareOutcome`, `GetDateSheet`); handlers do.
 
@@ -285,12 +287,13 @@ and a failure after the save deliver nothing (measured: 3 events with `commit()`
 listings make two instances. Shows and venues carry no `IdempotentRequest`, since the contract gives
 their routes no key, and the shows controller maps its body to core's types (§2(g)).
 
-**The checklist consumer dispatches too.** `consumer.ts` boots `ConsumerModule`
+**The consumer dispatches too, checklist facts and run facts.** `consumer.ts` boots `ConsumerModule`
 (`consumer.module.ts`: TypeORM, `CqrsModule.forRoot()`, `ChecklistConsumerModule`, and
 `@arthome-platform/messaging/nest`'s `ConsumerHostModule.forRoot({ service, topics, apply })`, whose
 `ConsumerHost` runs the consumers over an injected `Kafka`) as an application context, without HTTP,
-and `applyChecklistMessage` turns each message it reads as a fact into `RecordChecklistFact`, whose
-handler claims `processed_message` in the command's transaction. The host starts Kafka in
+and `applyRunMessage` sends `streaming.run.started.v1` and `streaming.run.ended.v1` to `LearnRunFact`
+(§0g) and every other type to `applyChecklistMessage`, which turns each message it reads as a fact
+into `RecordChecklistFact`; both handlers claim `processed_message` in the command's transaction. The host starts Kafka in
 `onApplicationBootstrap` and stops it in `onApplicationShutdown`, which Nest runs for the modules the
 root imports before the global TypeORM module closes the pool; `enableShutdownHooks` on SIGTERM and
 SIGINT with `useProcessExit` exits 0 once closed, as before. The routing of a failure stays
@@ -405,6 +408,52 @@ Known and left as they are:
 - `satisfiedChecklistItems`, the input of publishing's checklist rule, is computed in
   `date-sheet.ts`, the sheet's shaping module; moving it beside the aggregate would make the read
   model depend on the write side rather than the reverse.
+
+## 0g. Run facts: `run.started`, `run.ended` and the card's runState (2026-10-06, PC1)
+
+The consumer (`applyRunMessage`, `dates/run-consumer.ts`) reads `streaming.run.started.v1` and
+`streaming.run.ended.v1` on `arthome.streaming.run` and sends every other type to
+`applyChecklistMessage`, unchanged. `LearnRunFact` claims the message, loads the date as every date
+command does (`loadDate`: the publication's row, then the show's `FOR NO KEY UPDATE`), applies the
+aggregate's method, saves on the version-conditional write and records the date's events (the public
+row and the outbox row), all in one transaction at catalog's clock.
+
+- **`technical -> live`** on a start and **`live -> ended`** on an end, through `Publication.learned`,
+  which asserts core's `isEventDriven`. The change is `catalog.publication.state_changed.v1`, not
+  irreversible, with no actor, and counts one more version. Publication learns going on air, it never
+  commands it (data-model.md §2.3).
+- **Ignored**: a start on `live`, `ended` or `replay_online`; an end on `ended` or `replay_online`.
+- **Dead-lettered with the code** (`publication.transition_forbidden`): a start or an end on `draft`,
+  `reserve` or `scheduled`. A start on `scheduled` is the one a studio can cause, moving `technical ->
+  scheduled` within the projection's lag, because goOnAir is refused unless the projected publication
+  is `technical`; the dead-letter check alerts on it.
+- **Retried**: an end on `technical` (`RunEndedBeforeStarted`: a retry topic reordered the two, the
+  start applies first on the next attempt), and a `state.conflict` from the version-conditional save.
+  Both are transient, dead-lettered only at the retry bound.
+- **An unknown date** is dead-lettered ("unknown here"): catalog drafts every date before streaming
+  knows it.
+- **An outcome does not stop them**: a cancelled or interrupted date still goes `live -> ended`.
+- `ChecklistConsumerModule` and `checklist-consumer.ts` keep their names though they now host run
+  facts too: a rename would touch every import for no behaviour.
+- The monotonic order (`technical`, `live`, `ended`) is the ordering guard; no new lock.
+- `dates.http.itest.ts` pushes a `run.started` through `ChecklistConsumerModule`. Measured: without
+  `LearnRunFactHandler` in its `providers`, it fails on "No handler found for the command"; in
+  production that would read as transient and retry every run fact for about six minutes.
+- The outbox row of the move carries the inbound message's `traceparent` header, as received.
+- A `date_id` that is not a UUID is dead-lettered at once beside the decode check; Postgres would
+  otherwise refuse it as `22P02` and the retry schedule would run to its end.
+- `ChecklistConsumerModule` now provides `CLOCK` and `PUBLIC_WEB_ORIGIN`: the consumer process reads
+  `PUBLIC_WEB_ORIGIN` like the API (required in production, defaulted in development).
+
+**The card's runState is derived, not stored** (`runStateKnownFrom`, `public/date-card.ts`):
+`scheduled` and `technical` are `idle`, `live` is `on_air`, `ended` and `replay_online` are `ended`,
+`draft` and `reserve` are unknown. Catalog learns the run only through these two events and its
+publication records exactly them, so deriving reaches the date page, the artist page, link resolution
+and the search cards at once (both sources carry `publication_state`), with no column, no index field
+and no search-indexer change. Core's `displayStateOf` does the rest: an on-air date shows `live` before
+`startsAt`; a known idle run keeps its date `room_open` past `startsAt` until it moves; a null run
+keeps the clock. An ended run shows `ended` at once, so no card shows `replay` until the replay slice
+learns the asset.
 
 ## 1. What was built
 
@@ -907,7 +956,8 @@ exist.
   carries `traceId` too, which §2(e) recorded as owed: the same parse that validates the inbound
   `traceparent` yields the 32-hex trace-id `transport.md` §5.5 defines it as.
 - ~~**No consumer.**~~ **DONE** (2026-09-26): `dist/consumer.js` projects the publication checklist
-  from `arthome.ticketing.date_sales`, `arthome.streaming.run` and `arthome.chat.date`, retrying and
+  from `arthome.ticketing.date_sales`, `arthome.streaming.run` and `arthome.chat.date`, and moves a
+  date `technical -> live -> ended` from `run.started` and `run.ended` (§0g), retrying and
   dead-lettering on `arthome.catalog.retry` / `.dlq`.
 - **Dates and publication, partly.** Built on 2026-09-26: `Date`, `Publication` (the commanded
   transitions, the version condition, the checklist gate), `Venue`, and the events `DateDrafted`,

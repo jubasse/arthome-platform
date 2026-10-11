@@ -9,6 +9,7 @@ export class QuoteSeat extends Query<PerishableResponse<SeatQuoteView>> {
   public constructor(
     public readonly dateId: string,
     public readonly body: QuoteSeatBody,
+    public readonly accountId: string,
   ) {
     super();
   }

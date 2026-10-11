@@ -9,7 +9,8 @@ from reading.
 
 | File | What it gives |
 | --- | --- |
-| `src/stack.ts` | `startPostgres`, `startKafka`, `startOpenSearch`, `startConnect`, `startRedis`, `startStack`, `composeImage`. Containers, and a `stop()`. |
+| `src/stack.ts` | `startPostgres`, `startKafka`, `startOpenSearch`, `startConnect`, `startRedis`, `startStack`, `composeImage`. Containers, a `stop()`, and `pause(service)` and `unpause(service)` on the stack (and `pause()`, `unpause()` on each container): a `docker pause`, which keeps the mapped port and the data, so an outage drill tests the same address coming back. A drill pauses a stack of its own, never the run's shared Redis. |
+| `src/connector.ts` | `registerOutboxConnector(stack.connect, service, database)`: posts `infra/debezium/<service>-outbox.json` as committed but for its database, the suite's own on the stack's Postgres as Connect reaches it inside Docker, and returns once the task runs and its slot streams, so a row committed afterwards reaches its topic. The slot name is the file's, and slots are per server: one registration per service per stack. |
 | `src/redis.ts` | `provideRedisForRun` (a Vitest `globalSetup`: one Redis per run), `workerRedisUrl` (a database index per worker, 1 to 15), `flushRedisDatabase`. |
 | `src/kafka.ts` | `createTopics`, `waitForMessage`, `headersOf`. The waiting an event test cannot do without. |
 | `src/database.ts` | `createDatabase`, `applyMigrations`, `truncateAll`. |

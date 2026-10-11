@@ -159,14 +159,14 @@ describe('service, named in core', () => {
     async () => {
       const tree = await testRunner().runSchematic(
         'service',
-        { ...LIGHTING, name: 'streaming', topics: 'run:12' },
+        { ...LIGHTING, name: 'chat', topics: 'date:12' },
         repositoryTree(),
       );
-      expect(tree.readText('/apps/streaming/src/service.ts')).toContain(
-        'export const SERVICE = Service.STREAMING;',
+      expect(tree.readText('/apps/chat/src/service.ts')).toContain(
+        'export const SERVICE = Service.CHAT;',
       );
       const names = json<Topics>(tree, '/infra/kafka/topics.json').topics.map(({ name }) => name);
-      expect(names.filter((name) => name === 'arthome.streaming.run')).toHaveLength(1);
+      expect(names.filter((name) => name === 'arthome.chat.date')).toHaveLength(1);
     },
     RUN_MS,
   );
@@ -253,9 +253,9 @@ describe('service, refused', () => {
   it(
     'owns a topic declared before the service only at its partitions, and no failure topic',
     async () => {
-      for (const topics of ['run:6', 'session:3']) {
-        expect(String(await refusal({ name: 'streaming', topics }))).toContain(
-          'topic arthome.streaming.run in infra/kafka/topics.json (--topics run:12 owns it)',
+      for (const topics of ['date:6', 'room:3']) {
+        expect(String(await refusal({ name: 'chat', topics }))).toContain(
+          'topic arthome.chat.date in infra/kafka/topics.json (--topics date:12 owns it)',
         );
       }
       expect(String(await refusal({ topics: 'rig:3,retry:3' }))).toContain('failure topic');

@@ -11,6 +11,7 @@ import {
 
 import { SystemClock, type Clock } from '@arthome/core';
 
+import { CallerServiceRule } from './caller-service.rule.js';
 import { DenyInProductionGuard } from './deny-in-production.guard.js';
 import { endpointProviders } from './endpoint-providers.js';
 import { ErrorEnvelopeFilter } from './error-envelope.filter.js';
@@ -48,14 +49,15 @@ export function edgeProviders({
 }: EdgeOptions): Provider[] {
   return [
     ...endpointProviders({
-      inject: [ServiceIdentity],
-      useFactory: (identity: ServiceIdentity) => ({
+      inject: [ServiceIdentity, CallerServiceRule],
+      useFactory: (identity: ServiceIdentity, callerService: CallerServiceRule) => ({
         identities: { service: identity },
-        rules: {},
+        rules: { callerService },
         publicAllowed: publicRoutes,
       }),
     }),
     ServiceIdentity,
+    CallerServiceRule,
     // Global rather than `@UsePipes` on a method, where the schema would run on every parameter
     //   of the handler, `@Param('id')` included.
     {

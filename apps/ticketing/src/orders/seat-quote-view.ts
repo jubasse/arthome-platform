@@ -19,14 +19,16 @@ export interface SeatQuoteLine {
 }
 
 /**
- * storefront.yaml's `SeatQuote`, with D-089's `lateEntry`, present
- *   once the live has started; no `vatIncluded` while the tax model awaits counsel.
+ * storefront.yaml's `SeatQuote`, with D-089's `lateEntry`, present once the live has started, and
+ *   D-083's `priorityUntil` for a buyer quoting from an open pool; no `vatIncluded` while the tax
+ *   model awaits counsel.
  */
 export interface SeatQuoteView {
   readonly lines: readonly SeatQuoteLine[];
   readonly total: Money;
   readonly validUntil: Instant;
   readonly lateEntry?: LateEntry;
+  readonly priorityUntil?: Instant;
 }
 
 /** The addends of the total, a zero one left out: the tier always, a fee or a discount when any. */
@@ -34,6 +36,7 @@ export function seatQuoteViewOf(
   quote: SeatQuote,
   validUntil: Instant,
   lateEntry: LateEntry | null,
+  priorityUntil: Instant | null,
 ): SeatQuoteView {
   const lines: SeatQuoteLine[] = [{ kind: QuoteLineKind.TIER, amount: quote.tierTotal }];
   if (!isZero(quote.serviceFee)) {
@@ -45,5 +48,11 @@ export function seatQuoteViewOf(
       amount: { ...quote.discount, amountMinor: -quote.discount.amountMinor },
     });
   }
-  return { lines, total: quote.total, validUntil, ...(lateEntry !== null && { lateEntry }) };
+  return {
+    lines,
+    total: quote.total,
+    validUntil,
+    ...(lateEntry !== null && { lateEntry }),
+    ...(priorityUntil !== null && { priorityUntil }),
+  };
 }

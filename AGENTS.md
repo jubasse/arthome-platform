@@ -33,7 +33,8 @@ debugging NestJS code, load `nestjs-how-to` and the skills it routes to.** Alway
   `apps/ticketing`, `libs/transactions`, `libs/testing`'s `httpApp` and
   `@arthome-platform/messaging/nest`'s `ConsumerHostModule`, whose conventions are
   `apps/catalog/HANDOVER.md` §0f) ·
-  `nestjs-ddd` (catalog's aggregates and repository ports, which `nestjs-cqrs` routes to)
+  `nestjs-ddd` (catalog's aggregates and repository ports, which `nestjs-cqrs` routes to) ·
+  `nestjs-queues` (bullmq, @nestjs/bullmq, ticketing's worker)
 
 Project decisions — the ADRs and `DECISIONS.md` in arthome-core — take precedence over these
 community defaults, and a recorded decision is never reopened.
@@ -132,12 +133,18 @@ NestJS skips them; this block is what makes loading systematic rather than remem
     defect only where it is used; `updateReturning` is in ticketing's payment inbox and messaging's
     `republishOutboxRow`, and `search-indexer`'s artist consumer still destructures its own):
     `updateReturning` (`@arthome-platform/transactions`) reads an UPDATE's or a DELETE's RETURNING rows, and
-    `nextAttemptAt`, `doublingDelays` and `attemptsAllowedBy` (`@arthome-platform/messaging`) are
-    the one retry schedule, consumers and provider calls alike.
+    `nextAttemptAt`, `retryDelayAfter`, `doublingDelays` and `attemptsAllowedBy`
+    (`@arthome-platform/messaging`) are the one retry schedule, consumers and provider calls alike,
+    the provider-call queues' backoff included.
   - **The local plugin's `meta.version` is the SHA-256 of the rule file, computed when the config
     loads**, never bumped by hand: `eslint --cache` keys its results on it, so editing a rule in
     `tools/eslint/` re-checks every file. A new rule file goes into the hash in
     `tools/eslint/plugin.mjs`.
+
+**GitHub Actions are pinned by commit SHA**, with the version in a comment (`uses:
+actions/checkout@<sha> # v7.0.1`). A tag can be moved to other code; a commit cannot. To bump an
+action, resolve the new release's commit (`gh api repos/<owner>/<action>/commits/<tag> -q .sha`) and
+update the SHA and the comment together. Python dependencies of the workflows are pinned by version.
 
 ## The commands
 
@@ -146,7 +153,7 @@ NestJS skips them; this block is what makes loading systematic rather than remem
 | `pnpm run use-core <version>` | points every `@arthome/*` spec at the arthome-core release `v<version>`, refreshes the lockfile, builds every lib |
 | `pnpm run bootstrap` | local mode: packs the sibling arthome-core into `vendor/`, installs, then builds every lib (`build:libs`) |
 | `pnpm run check:core-specs` | every `@arthome/*` spec is one build of one source; `--require-release` also refuses a `file:` spec |
-| `pnpm run build:libs` | `tsc -p tsconfig.build.json` in every `libs/*`; also what makes their `dist/` exist for ESLint's `import-x/order` (see below) |
+| `pnpm run build:libs` | `tsc -p tsconfig.build.json` in every `libs/*`; builds each lib's `dist/` |
 | `pnpm run verify` | everything below, in order, stopping at the first failure — cached |
 | `pnpm run verify:full` | the same, every cache off; what `.githooks/pre-push` runs before a push |
 | `pnpm run verify:offline` | the subset needing no install — core specs, versions, tsconfig, enums, language, symbols |
@@ -215,8 +222,8 @@ README, this file or a tool is a warning to act on, not a failure. Nothing is ev
 renamed, and a file that exists is refused. So is a service name used anywhere: an app directory, a
 database, a topic (its retry and dead-letter ones included), a connector's name, slot or
 publication, a consumer group. The one exception is a topic declared before its service, as
-`arthome.streaming.run` is for catalog to consume: `--topics run:12` owns it, at exactly its
-declared partitions.
+`arthome.chat.date` is for catalog to consume: `--topics date:12` owns it, at exactly its
+declared partitions (`streaming` was generated that way, owning `arthome.streaming.run`).
 
 The collection is ESM TypeScript loaded without a build: the engine's `require()` reaches it
 through Node's `require(esm)` and type stripping, so its code stays erasable (no enum, no parameter
@@ -283,7 +290,9 @@ export class DatesController {
   the route. `refusalOf(code, params)` stays for code no route reaches.
 - **Only the storefront BFF binds the public contract.** Catalog and ticketing keep their own
   routes until their INTERNAL contracts exist (their paths and headers differ); they are not bound
-  here and serve no Swagger UI.
+  here and serve no Swagger UI. Streaming is born on its internal one,
+  `@arthome/contracts/streaming-service-api` (D-121): its routes bind it, and it mounts that
+  contract's Swagger UI (`mountStreamingDocs`).
 - **Access comes from the route** (ADR contract model §4.5). A route declared through the builder
   with `.identity(...)`, `.public()` or `.optionalAuth()` and its `requires` is guarded by
   `EndpointAccessGuard`: the identity's guard first, bound under the identity's name, then each
@@ -296,7 +305,10 @@ export class DatesController {
   counts nothing and fails the boot on a bucket with no cap, the global `AuthThrottlerGuard` counts
   the caps of the buckets the route's contract declares); every service binds `service` (`ServiceIdentity`: the internal token,
   verified as `InternalTokenGuard` does, which leaves a route declaring an access to it; the
-  principal is core's `{ callingService, userId }`, from the token's issuer and subject). On a
+  principal is core's `{ callingService, userId, profileId?, deviceId? }`, from the token's `iss`,
+  `sub`, `pro` and `did`, a claim the token lacks absent, never null) and `callerService`
+  (`CallerServiceRule`: a calling BFF the rule does not name is refused 403 `api.forbidden`, and a
+  rule naming no issuer, or one no BFF mints as, fails the boot). On a
   service, a route the contract declares public, or optional (which lets a call without a token
   in as well), fails the boot unless `edgeProviders`' `publicRoutes` names it (empty today):
   reached in the cluster without TLS, a service has the token as its only authorisation
@@ -353,6 +365,7 @@ export class DatesController {
 | Process | Development port | Swagger UI | Operations |
 | --- | --- | --- | --- |
 | `bff-storefront` | 3003 | `http://localhost:3003/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink, signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification, getViewerContext |
+| `streaming` | 3005 | `http://localhost:3005/docs` | getRunConsole, runTechnicalCheck, rehearseRun, goOnAir, endRun, resetRun, raiseIncident, resolveIncident, openPlayback, renewPlaybackTicket, releasePlayback, recordPlaybackPosition, getViewerProgressBatch |
 
 `@nestjs/swagger` is a peer of `libs/http-edge`; `@fastify/static` serves the UI on Fastify, and
 `@scarf/scarf` (swagger-ui-dist's telemetry install script) is denied in `pnpm-workspace.yaml`.
@@ -415,17 +428,18 @@ error, lint error and failing test, tried one at a time against the cached commi
 still caught, then reverted; a cross-file type-aware lint error and a staged deletion, tried against
 the cached commit hook, were each missed as designed and then caught by `pre-push`'s `verify:full`.
 
-**Why `bootstrap` builds the libs.** `pnpm run build:libs`, now inside `bootstrap`, exists because
-ESLint's `import-x/order` resolves a workspace import through the package's `exports` map's `default`
-condition, i.e. `dist/` — absent in a fresh worktree, which used to fail lint on
-`tools/ops-check.mjs` and `tools/republish-outbox.mjs`.
+**Lint does not depend on `libs/*/dist`.** `eslint.config.js` gives `import-x/order` a pathGroup
+that sorts `@arthome-platform/**` with the external packages, so the verdict is the same in a fresh
+worktree and after `build:libs`. Before, a workspace import was internal with a `dist/` and external
+without, and `tools/ops-check.mjs` and `tools/republish-outbox.mjs` flipped. Keep workspace imports
+in alphabetical order among the external ones.
 
 ## Running the event path
 
 The event path is three containers: Postgres 18 with `wal_level=logical`, Kafka in KRaft mode, and
 Kafka Connect carrying Debezium. OpenSearch serves the search, and Redis 8.8 holds the storefront
-BFF's authentication caps and waits for ticketing's queues and waiting room, with no eviction and an
-append-only file (`nestjs-queues` rule 6). **Postgres publishes on 55432, not 5432, and Redis on 56379, not 6379** — the
+BFF's authentication caps and the queues of ticketing's worker, the one process that queues there
+(the waiting room, T6, is to come), with no eviction and an append-only file (`nestjs-queues` rule 6). **Postgres publishes on 55432, not 5432, and Redis on 56379, not 6379** — the
 conventional port was taken by another project, and a development stack that fights for well-known
 ports is one you cannot run beside anything else.
 
@@ -437,9 +451,10 @@ pnpm --filter @arthome-platform/identity      run migration:auth   # better-auth
 pnpm --filter @arthome-platform/notifications run migration:run
 pnpm --filter @arthome-platform/catalog       run migration:run
 pnpm --filter @arthome-platform/search-indexer run migration:run
-pnpm --filter @arthome-platform/ticketing     run migration:run   # its three processes stopped first
+pnpm --filter @arthome-platform/ticketing     run migration:run   # its four processes stopped first
+pnpm --filter @arthome-platform/streaming     run migration:run
 pnpm run provision:topics          # BEFORE the connectors, and before any consumer
-for c in identity catalog ticketing; do
+for c in identity catalog ticketing streaming; do
   curl -s -X POST -H 'Content-Type: application/json' \
     --data @infra/debezium/$c-outbox.json http://localhost:8083/connectors
 done
@@ -448,7 +463,8 @@ done
 **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
 anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`, `PUBLIC_WEB_ORIGIN`,
 `OPENSEARCH_URL`, `REDIS_URL`, `PAYMENT_WEBHOOK_SECRET`, `IDENTITY_URL`, `JWKS_URL`,
-`INTERNAL_TOKEN_SIGNING_KEY`, `BETTER_AUTH_SECRET`, `CSRF_SECRET` — is filled from a local default
+`INTERNAL_TOKEN_SIGNING_KEY`, `BETTER_AUTH_SECRET`, `CSRF_SECRET`, `PLAYBACK_SIGNING_KEY`,
+`STREAM_KEY_SECRET` — is filled from a local default
 **only outside production**, and `NODE_ENV` is
 what selects that. Defaulting it to `development` would make an unset variable open the
 production-guarded write routes and point a migration at localhost; both fail loudly instead, naming
@@ -581,7 +597,8 @@ What should then be true, and what is worth checking because each step can fail 
 ### The catalog date path
 
 `catalog` runs two processes from `apps/catalog`: the API (`node dist/main.js`, on `PORT`) and the
-checklist consumer (`node dist/consumer.js`). A date goes from draft to published through the
+consumer (`node dist/consumer.js`), which projects the checklist facts and, from `streaming.run.started.v1`
+and `streaming.run.ended.v1`, takes a date `technical -> live -> ended`. A date goes from draft to published through the
 studio's commands, each carrying an `Idempotency-Key`:
 
 ```
@@ -594,9 +611,12 @@ PATCH /v1/channels/:channelId/identity        { expectedVersion, publicName, slu
 ```
 
 Publishing answers `publication.checklist_incomplete` until ticketing, streaming and chat have
-reported their four facts. None of those services exists yet, so in development send the facts by
-hand on `arthome.ticketing.date_sales`, `arthome.streaming.run` and `arthome.chat.date`, keyed by the
-date id, with a `message-id` and a `type` header.
+reported their four facts. Chat does not exist yet, and streaming's run desk (PS1) publishes its
+facts only from a feed its in-process fake receives, which no development route drives; so in
+development send the facts by hand on `arthome.ticketing.date_sales`,
+`arthome.streaming.run` and `arthome.chat.date`, keyed by the date id, with a `message-id` and a
+`type` header. A `streaming.run.started.v1` sent the same way on a date under technical check makes
+its card `live`; `streaming.run.ended.v1` ends it.
 
 Proven on the running stack on 2026-09-26:
 
@@ -673,11 +693,14 @@ a bare producer script prints it too.
 
 ### The ticketing date sales path
 
-`ticketing` runs three processes from `apps/ticketing`, all on its own database `ticketing`: the API
-(`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`)
-and the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
-nobody paid, closes each sale thirty minutes after its start (D-089, HANDOVER §0l), and needs
-Postgres alone. Its connector is `infra/debezium/ticketing-outbox.json`, registered with the loop above.
+`ticketing` runs four processes from `apps/ticketing`, all on its own database `ticketing`: the API
+(`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`),
+the sweeper (`node dist/sweeper.js`), which publishes `availability_changed`, expires the holds
+nobody paid, closes each sale thirty minutes after its start (D-089, HANDOVER §0l), settles a
+cancelled date's refunds and an interrupted one's credits and ends its waiting list (HANDOVER §0n),
+ends each waiting list's priority window (HANDOVER §0p), and needs Postgres alone, and the worker (`node dist/worker.js`, `REDIS_URL`), which makes every call owed to
+the payment provider from BullMQ's queues (HANDOVER §0m) and alone holds Redis. Its connector is
+`infra/debezium/ticketing-outbox.json`, registered with the loop above.
 
 A date catalog drafts is opened in ticketing by the consumer; the studio then gives it capacity and
 prices, each with an `Idempotency-Key` and the version the pane served:
@@ -689,6 +712,19 @@ PUT  /v1/dates/:dateId/technical-provision  { provisionedCapacity, expectedVersi
 GET  /v1/dates/:dateId/panes/tickets
 GET  /v1/dates/:dateId/availability     x-arthome-deadline required; 404 unless on sale
 ```
+
+The storefront's waiting list on a sold-out date (D-083, HANDOVER §0p), for the token's account:
+
+```
+PUT    /v1/dates/:dateId/waitlist   Idempotency-Key; 409 waitlist.not_sold_out while public seats remain
+DELETE /v1/dates/:dateId/waitlist   Idempotency-Key; { joined: false }, replayed or not
+GET    /v1/dates/:dateId/waitlist   x-arthome-deadline required; state, and the window while notified
+```
+
+With `notifyWaitlist: true` and someone on the list, a tier becomes a priority pool only the
+notified accounts buy for `WAITLIST_PRIORITY_HOURS`, named in `waitlist.notified` on
+`arthome.ticketing.date_sales`; the public still sees the date sold out until the sweeper ends the
+window and puts the rest on sale.
 
 Each command writes `capacity_set` or `pricing_changed` on `arthome.ticketing.date_sales`, keyed by
 the date, which catalog's checklist consumer reads: with them, catalog's by-hand
@@ -748,7 +784,12 @@ POST /v1/dates/:dateId/seat-quote   { tier, quantity }                 x-arthome
 POST /v1/orders/seats               { dateId, tier, quantity, expectedTotal }   Idempotency-Key required,
                                                     X-Arthome-Late-Entry-Acknowledged after the start
 GET  /v1/orders/:orderId                                                x-arthome-deadline required
+POST /v1/seats/:seatId/cancel       { cancelReasonCode? }               Idempotency-Key required
+POST /v1/seats/:seatId/refund       { refundReasonCode, partialAmountMinor? }   the studio's; Idempotency-Key
 ```
+
+A seat's cancellation and its refund, and the provider's refund and dispute webhooks, are
+`apps/ticketing/HANDOVER.md` §0o.
 
 `purchaseSeat` answers 201 with the tickets and the order once paid, 202 with the payment handoff
 while the buyer has to act, 409 `order.sold_out`, `order.price_stale` or `order.payment_declined`,
@@ -759,8 +800,10 @@ Seats sell until thirty minutes after the live's start (D-089): from the start t
 cutoff, the quote and the purchase answer 409 `order.sales_closed`.
 The provider's webhooks arrive on `POST /v1/payments/webhook`, verified on their raw bytes, recorded
 in `stripe_event_inbox` and answered at once; the API process's payment worker applies them every
-second, refunds at once a payment confirmed after its hold expired with no seat left (D-082), and
-cancels the intents of expired orders (`apps/ticketing/HANDOVER.md` §0j, §0k).
+second. A payment confirmed after its hold expired with no seat left owes its refund (D-082), and an
+expired order its intent's cancellation: rows in Postgres, which the worker process's relay
+enqueues and its queues make, rate-limited and retried, then given up on with a dead row that
+`ops:check ticketing` reports (`apps/ticketing/HANDOVER.md` §0j, §0k, §0m).
 
 The capacity invariant is proven by `orders/capacity.itest.ts` on a real Postgres (adr-ticketing.md
 §3): 300 purchases at once on 100 seats hold exactly 100, never below zero, and all 100 come back at
@@ -793,11 +836,32 @@ started ten minutes before and one thirty-one minutes before, each opened by cat
 | a purchase there, without then with `X-Arthome-Late-Entry-Acknowledged: true` | 409 `order.late_entry_unacknowledged` with the three facts, no hold nor order left; then 201 |
 | the date past its cutoff | closed by the sweeper at its end, its last availability published; purchase and quote 409 `order.sales_closed` with `salesEndAt` |
 
+The worker beside the three (HANDOVER §0m) was proven on 2026-10-06 at PT0's PR B, on an isolated
+copy of this stack: compose's own services under `docker compose -p pt0-proof` with an override
+publishing Postgres, Kafka and Redis on ports of their own, the migrations to `1790441200000` run on
+an empty `ticketing`, the topics provisioned (`COMPOSE_PROJECT_NAME=pt0-proof pnpm run
+provision:topics`: the tool runs `docker compose exec kafka`, so without it the shared stack's
+broker is the one provisioned), the four processes started from that build. Two failed orders whose
+holds had expired were seeded on a date with no seat left, then the fake's signed
+`payment_intent.succeeded` was posted for each:
+
+| Check | Result |
+| --- | --- |
+| the first confirmation | 200; applied by the API's payment worker, its refund owed under `refund:{orderId}` with the webhook's `traceparent`; made by the worker 1.1 s after the webhook was answered, the order `refunded`, one `order.refunded` under that trace |
+| Redis paused 28 s, the second confirmation posted | 200, readiness unchanged; the refund owed and not enqueued; each relay pass failed on `Command timed out` within its 2 s, nine in all; `ops:check ticketing` answered `provider_call_queues` degraded, `provider_calls_dead` up |
+| Redis resumed | the second refund made 37 ms later, once, one `order.refunded`; `provider_call_queues` up, every count 0 |
+| SIGTERM to the four | all exited, no ticketing connection left in `pg_stat_activity`; then `down -v` |
+
+The second refund ran from the job its failed pass had sent: the commands sat on the socket during
+the pause and ran when Redis came back, so the row was made without ever being stamped, which is the
+crash between the add and the commit the job ids absorb.
+
 Tx A, the provider call between two transactions, tx B, and why the key is the order's, are
 `apps/ticketing/HANDOVER.md` §0h. A hold nobody paid expires in the sweeper within a second of its
 instant, its seats back and its order failed (§0i). Run `migration:run` for `1790440500000` to
-`1790440900000` with the three processes stopped, as for every ticketing migration; the last one
-writes each scheduled sale's end, and the sweeper closes those already past it on its first pass.
+`1790440900000` with the processes stopped (four since the worker), as for every ticketing
+migration; the last one writes each scheduled sale's end, and the sweeper closes those already past
+it on its first pass.
 
 ### Search, the date page and link resolution, from the storefront BFF
 
