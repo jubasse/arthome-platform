@@ -7,6 +7,12 @@
 import { randomUUID } from 'node:crypto';
 
 import { header } from '@arthome-platform/messaging';
+import {
+  KafkaJSConnectionError,
+  KafkaJSNumberOfRetriesExceeded,
+  KafkaJSProtocolError,
+  KafkaJSTopicMetadataNotLoaded,
+} from 'kafkajs';
 import type { EachMessagePayload, Kafka } from 'kafkajs';
 
 export interface TopicSpec {
@@ -34,6 +40,26 @@ export interface WaitForMessageOptions {
 }
 
 const DEFAULT_WAIT_MS = 30_000;
+const CREATE_TOPICS_ATTEMPTS = 5;
+const CREATE_TOPICS_FIRST_DELAY_MS = 250;
+
+/**
+ * Right after the container starts the broker answers "leader not available" or
+ *   drops the connection while the controller settles: the same call succeeds a
+ *   moment later. Anything else (an authorization error, a bad config) will not.
+ */
+function isTransient(error: unknown): boolean {
+  if (
+    error instanceof KafkaJSConnectionError ||
+    error instanceof KafkaJSNumberOfRetriesExceeded ||
+    error instanceof KafkaJSTopicMetadataNotLoaded
+  ) {
+    return true;
+  }
+  return error instanceof KafkaJSProtocolError && error.retriable;
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Debezium renders a NULL column as the four characters `null`, not as a
@@ -67,13 +93,15 @@ function observe(payload: EachMessagePayload): ObservedMessage {
  *   subscribe to a missing topic: KafkaJS says "This server does not host this
  *   topic-partition", which reads like a broker fault.
  *
- * `waitForLeaders` makes this mean "ready" rather than "requested".
+ * `waitForLeaders` makes this mean "ready" rather than "requested". A transient
+ *   failure is retried up to 5 times with a doubling delay; an existing topic is
+ *   success (`createTopics` answers `false`, it does not throw).
  */
 export async function createTopics(kafka: Kafka, topics: readonly TopicSpec[]): Promise<void> {
   const admin = kafka.admin();
   try {
     await admin.connect();
-    await admin.createTopics({
+    const request = {
       waitForLeaders: true,
       topics: topics.map((spec) => ({
         topic: spec.topic,
@@ -81,7 +109,16 @@ export async function createTopics(kafka: Kafka, topics: readonly TopicSpec[]): 
         // One broker in the harness: the one setting deliberately not production's.
         replicationFactor: 1,
       })),
-    });
+    };
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await admin.createTopics(request);
+        return;
+      } catch (error) {
+        if (!isTransient(error) || attempt === CREATE_TOPICS_ATTEMPTS) throw error;
+        await sleep(CREATE_TOPICS_FIRST_DELAY_MS * 2 ** (attempt - 1));
+      }
+    }
   } finally {
     await admin.disconnect();
   }
