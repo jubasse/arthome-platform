@@ -15,6 +15,7 @@ export {
   readPlaybackSigningKey,
   readPublicWebOrigin,
   readRedisUrl,
+  readMediaServerSecret,
   readStreamKeySecret,
   readConsumerEnv,
   readHttpServiceEnv,

@@ -1,5 +1,10 @@
 import { isProductionEnvironment, readJwksSource } from '@arthome-platform/config';
-import { StandardSchemaValidationPipe, type InjectionToken, type Provider } from '@nestjs/common';
+import {
+  StandardSchemaValidationPipe,
+  type InjectionToken,
+  type Provider,
+  type Type,
+} from '@nestjs/common';
 import {
   APP_FILTER,
   APP_GUARD,
@@ -13,6 +18,7 @@ import { SystemClock, type Clock } from '@arthome/core';
 
 import { CallerServiceRule } from './caller-service.rule.js';
 import { DenyInProductionGuard } from './deny-in-production.guard.js';
+import type { IdentityGuard } from './endpoint-access.js';
 import { endpointProviders } from './endpoint-providers.js';
 import { ErrorEnvelopeFilter } from './error-envelope.filter.js';
 import { InternalTokenGuard, ServiceIdentity } from './internal-token.guard.js';
@@ -35,7 +41,14 @@ export interface EdgeOptions {
    *   being outside the contracts.
    */
   readonly publicRoutes?: readonly string[];
+  /**
+   * The guards of the identities other than `service` this service's routes declare, by identity
+   *   name: an infrastructure caller such as the media server. The app provides their dependencies.
+   */
+  readonly identities?: Readonly<Record<string, Type<IdentityGuard>>>;
 }
+
+const SERVICE_IDENTITY = 'service';
 
 /**
  * A service's global enhancers and its system clock, bound by its root module and by its HTTP
@@ -46,18 +59,31 @@ export function edgeProviders({
   clock,
   uniqueViolations = [],
   publicRoutes = [],
+  identities = {},
 }: EdgeOptions): Provider[] {
+  if (SERVICE_IDENTITY in identities) {
+    throw new Error(`The "${SERVICE_IDENTITY}" identity is the internal token's, bound already.`);
+  }
+  const others = Object.entries(identities);
   return [
     ...endpointProviders({
-      inject: [ServiceIdentity, CallerServiceRule],
-      useFactory: (identity: ServiceIdentity, callerService: CallerServiceRule) => ({
-        identities: { service: identity },
+      inject: [ServiceIdentity, CallerServiceRule, ...others.map(([, guard]) => guard)],
+      useFactory: (
+        identity: ServiceIdentity,
+        callerService: CallerServiceRule,
+        ...guards: IdentityGuard[]
+      ) => ({
+        identities: {
+          [SERVICE_IDENTITY]: identity,
+          ...Object.fromEntries(others.map(([name], index) => [name, guards[index]])),
+        },
         rules: { callerService },
         publicAllowed: publicRoutes,
       }),
     }),
     ServiceIdentity,
     CallerServiceRule,
+    ...others.map(([, guard]) => guard),
     // Global rather than `@UsePipes` on a method, where the schema would run on every parameter
     //   of the handler, `@Param('id')` included.
     {

@@ -396,6 +396,29 @@ export function readStreamKeySecret(
     .parse(withDefault).STREAM_KEY_SECRET;
 }
 
+const DEVELOPMENT_MEDIA_SERVER_SECRET = 'development-media-server-secret-not-for-production';
+
+/**
+ * The shared secret the media server presents as its HTTP Basic password. It sits unescaped in the
+ *   userinfo of MediaMTX's `authHTTPAddress`, hence base64url characters alone. Distinct from
+ *   `STREAM_KEY_SECRET`: a leaked MediaMTX configuration must not mint stream keys.
+ */
+export function readMediaServerSecret(
+  source: Record<string, string | undefined> = process.env,
+): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { MEDIA_SERVER_SECRET: DEVELOPMENT_MEDIA_SERVER_SECRET, ...stripEmpty(source) };
+  return z
+    .object({
+      MEDIA_SERVER_SECRET: secretOutside(DEVELOPMENT_MEDIA_SERVER_SECRET, source).pipe(
+        z.string().regex(/^[A-Za-z0-9_-]+$/, 'only base64url characters fit in a URL userinfo'),
+      ),
+    })
+    .parse(withDefault).MEDIA_SERVER_SECRET;
+}
+
 /**
  * `TRUSTED_PROXIES`: the addresses or subnets whose `X-Forwarded-For` a BFF believes, comma
  * separated, or `none` when clients reach it directly (`nestjs-web-security` rule 7). Required in
