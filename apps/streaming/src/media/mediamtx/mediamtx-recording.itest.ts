@@ -1,5 +1,9 @@
 import { readPlaybackSigningKey } from '@arthome-platform/config';
-import { startMediaStack, type StartedMediaStack } from '@arthome-platform/testing';
+import {
+  MEDIA_STACK_STOP_MS,
+  startMediaStack,
+  type StartedMediaStack,
+} from '@arthome-platform/testing';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { SystemClock } from '@arthome/core';
@@ -49,7 +53,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await stack.stop();
   await standIn.close();
-});
+}, MEDIA_STACK_STOP_MS);
 
 describe('recording at the origin', () => {
   it(

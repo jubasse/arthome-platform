@@ -15,6 +15,7 @@ import {
   applyMigrations,
   createDatabase,
   httpApp,
+  MEDIA_STACK_STOP_MS,
   startMediaStack,
   startStack,
   type EncoderProtocol,
@@ -214,7 +215,7 @@ afterAll(async () => {
   await media.stop();
   await standIn.close();
   await stack.stop();
-});
+}, MEDIA_STACK_STOP_MS);
 
 async function scheduledDate(replayPolicy: WireReplayPolicy): Promise<string> {
   const dateId = randomUUID();

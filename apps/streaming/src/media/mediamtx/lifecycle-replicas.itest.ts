@@ -1,6 +1,10 @@
 import { readPlaybackSigningKey } from '@arthome-platform/config';
 import { RunStateChangedSchema } from '@arthome-platform/events';
-import { startMediaStack, type StartedMediaStack } from '@arthome-platform/testing';
+import {
+  MEDIA_STACK_STOP_MS,
+  startMediaStack,
+  type StartedMediaStack,
+} from '@arthome-platform/testing';
 import { fromBinary } from '@bufbuild/protobuf';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -53,7 +57,7 @@ afterAll(async () => {
   await stack.stop();
   await standIn.close();
   await stopRunDesk(desk);
-});
+}, MEDIA_STACK_STOP_MS);
 
 describe('two API replicas watching one origin', () => {
   it(

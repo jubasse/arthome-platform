@@ -1,5 +1,9 @@
 import { readPlaybackSigningKey } from '@arthome-platform/config';
-import { startMediaStack, type StartedMediaStack } from '@arthome-platform/testing';
+import {
+  MEDIA_STACK_STOP_MS,
+  startMediaStack,
+  type StartedMediaStack,
+} from '@arthome-platform/testing';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { SystemClock } from '@arthome/core';
@@ -68,7 +72,7 @@ afterAll(async () => {
   await provider.beforeApplicationShutdown();
   await stack.stop();
   await standIn.close();
-});
+}, MEDIA_STACK_STOP_MS);
 
 function onlineOn(streamPath: string): PublisherOnline[] {
   return online.filter((event) => event.streamPath === streamPath);

@@ -1,7 +1,11 @@
 import { request } from 'node:http';
 
 import { readPlaybackSigningKey } from '@arthome-platform/config';
-import { startMediaStack, type StartedMediaStack } from '@arthome-platform/testing';
+import {
+  MEDIA_STACK_STOP_MS,
+  startMediaStack,
+  type StartedMediaStack,
+} from '@arthome-platform/testing';
 import { SignJWT, importJWK } from 'jose';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -137,7 +141,7 @@ afterAll(async () => {
   await provider.beforeApplicationShutdown();
   await stack.stop();
   await standIn.close();
-});
+}, MEDIA_STACK_STOP_MS);
 
 describe('playback through Envoy', () => {
   it('serves LL-HLS on a valid token, AAC for a WHIP feed', async () => {

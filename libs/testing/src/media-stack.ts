@@ -21,6 +21,9 @@ const ORIGIN_ALIAS = 'mediamtx-origin';
 const EDGE_ALIAS = 'mediamtx-edge';
 const STARTUP_MS = 120_000;
 
+/** A suite's `afterAll` timeout for `stop()`: four containers under a parallel run's load overran Vitest's 10 s. */
+export const MEDIA_STACK_STOP_MS = 60_000;
+
 export interface MediaStackRequest {
   /**
    * The origin's `MTX_AUTHHTTPADDRESS` as the origin reaches it: MX1's route or a suite's stand-in,
