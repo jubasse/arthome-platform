@@ -9,6 +9,9 @@
 //   original behaviour: `docker compose exec kafka` on the local compose broker, where
 //   a disagreement is reported and nothing is changed.
 
+// alterConfigs is non-incremental: it resets every other override on the topic, so a new
+//   topics.json key must move to incrementalAlterConfigs or be listed in that call.
+
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';

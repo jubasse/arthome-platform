@@ -1,4 +1,9 @@
-import { KafkaJSConnectionError, KafkaJSProtocolError } from 'kafkajs';
+import {
+  KafkaJSConnectionError,
+  KafkaJSNumberOfRetriesExceeded,
+  KafkaJSProtocolError,
+  KafkaJSTopicMetadataNotLoaded,
+} from 'kafkajs';
 import type { EachMessagePayload, Kafka } from 'kafkajs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -78,6 +83,10 @@ describe('createTopics', () => {
       .fn()
       .mockRejectedValueOnce(transient())
       .mockRejectedValueOnce(new KafkaJSConnectionError('down'))
+      .mockRejectedValueOnce(
+        new KafkaJSNumberOfRetriesExceeded(new Error('x'), { retryCount: 5, retryTime: 1 }),
+      )
+      .mockRejectedValueOnce(new KafkaJSTopicMetadataNotLoaded('no metadata', { topic: 't' }))
       .mockResolvedValue(true);
     const { kafka, disconnect } = kafkaWith(stub);
 
@@ -85,7 +94,7 @@ describe('createTopics', () => {
     await vi.runAllTimersAsync();
     await done;
 
-    expect(stub).toHaveBeenCalledTimes(3);
+    expect(stub).toHaveBeenCalledTimes(5);
     expect(disconnect).toHaveBeenCalledOnce();
   });
 

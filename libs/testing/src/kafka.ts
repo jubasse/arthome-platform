@@ -7,7 +7,12 @@
 import { randomUUID } from 'node:crypto';
 
 import { header } from '@arthome-platform/messaging';
-import { KafkaJSConnectionError, KafkaJSProtocolError } from 'kafkajs';
+import {
+  KafkaJSConnectionError,
+  KafkaJSNumberOfRetriesExceeded,
+  KafkaJSProtocolError,
+  KafkaJSTopicMetadataNotLoaded,
+} from 'kafkajs';
 import type { EachMessagePayload, Kafka } from 'kafkajs';
 
 export interface TopicSpec {
@@ -44,7 +49,13 @@ const CREATE_TOPICS_FIRST_DELAY_MS = 250;
  *   moment later. Anything else (an authorization error, a bad config) will not.
  */
 function isTransient(error: unknown): boolean {
-  if (error instanceof KafkaJSConnectionError) return true;
+  if (
+    error instanceof KafkaJSConnectionError ||
+    error instanceof KafkaJSNumberOfRetriesExceeded ||
+    error instanceof KafkaJSTopicMetadataNotLoaded
+  ) {
+    return true;
+  }
   return error instanceof KafkaJSProtocolError && error.retriable;
 }
 
