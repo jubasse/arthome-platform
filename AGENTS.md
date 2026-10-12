@@ -715,6 +715,9 @@ GET  /v1/dates/:dateId/panes/tickets
 GET  /v1/dates/:dateId/availability     x-arthome-deadline required; 404 unless on sale
 ```
 
+When an `included` date's live ends, catalog's `catalog.replay.state_changed.v1` (`pending`) gives
+each of its active seats one `replay_access` row, and a withdrawal revokes them (HANDOVER §0r).
+
 The storefront's waiting list on a sold-out date (D-083, HANDOVER §0p), for the token's account:
 
 ```

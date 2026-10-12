@@ -8,6 +8,7 @@ import { Service } from '@arthome/core';
 import { dataSource } from './data-source.js';
 import { applyCatalogDateMessage } from './date-sales/catalog-date-messages.js';
 import { CatalogFactsModule } from './date-sales/catalog-facts.module.js';
+import { ReplayAccessModule } from './replay-access/replay-access.module.js';
 
 /** Keyed by `date_id` (events.md §3): a date's facts arrive in the order catalog committed them. */
 export const CATALOG_DATE_TOPIC = 'arthome.catalog.date';
@@ -18,6 +19,7 @@ export const CATALOG_DATE_TOPIC = 'arthome.catalog.date';
     TypeOrmModule.forRoot(dataSource.options),
     CqrsModule.forRoot(),
     CatalogFactsModule,
+    ReplayAccessModule,
     ConsumerHostModule.forRoot({
       service: Service.TICKETING,
       topics: [CATALOG_DATE_TOPIC],

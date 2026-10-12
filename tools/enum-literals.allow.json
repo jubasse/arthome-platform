@@ -85,6 +85,11 @@
       "file": "apps/catalog/src/replays/replay.entity.ts",
       "value": "replay",
       "reason": "The `Replay` aggregate's table name (`@Entity('replay')`, data-model.md §2.2). DISPLAY_STATES' `replay` is what a card shows and DATE_PANES' a studio pane; neither names a table."
+    },
+    {
+      "file": "apps/ticketing/src/replay-access/replay-access.entity.ts",
+      "value": "replay_access",
+      "reason": "The table's name (RT1 §8), one row per ReplayAccess. TAX_SUPPLY_KINDS' `replay_access` is what a unit purchase is taxed as; importing TaxSupplyKind.REPLAY_ACCESS to name a table would tie a schema to a tax vocabulary."
     }
   ]
 }
