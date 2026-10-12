@@ -5,7 +5,9 @@ The storefront's BFF (`context-map.md`: one BFF per product, owned by its surfac
 `GET /v1/search`, `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`. From
 identity (auth slice A, D-107, 2026-10-03): `/v1/auth/sign-up`, `sign-in`, `sign-out`, `verify-email`,
 `verify-email/resend` and `GET /v1/viewer-context`; with PB1 (2026-10-12), `DELETE
-/v1/me/devices/:deviceId` and `DELETE /v1/me/device-sessions/:sessionId`.
+/v1/me/devices/:deviceId` and `DELETE /v1/me/device-sessions/:sessionId`. From streaming, with
+PB2 (2026-10-12): `POST /v1/playback/:dateId/open` and `POST
+/v1/playback/sessions/:sessionId/renew` and `/release`.
 Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10-03.
 
 ## 1. What was built
@@ -21,6 +23,7 @@ Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10
 | `src/auth/auth-rate-limits.ts`, `throttler-storage.ts` | the caps of core's `AuthRateLimit`, counted in Redis, refused as `api.rate_limited` |
 | `src/session/` | the session's two carriers, the browser's device cookie and descriptor, the viewer, `ViewerIdentity`, `CsrfGuard` and the plugins they rely on |
 | `src/devices/` | `revokeDevice` and `signOutProfile`, relayed to identity (§5) |
+| `src/playback/` | `openPlayback`, `renewPlaybackTicket` and `releasePlayback`, relayed to streaming, and the ticket cookie's relay (§6) |
 | `src/viewer-context/` | `getViewerContext` and the composition `SessionEstablished` reuses |
 | `src/dates/dates.controller.ts` | `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`, relayed from catalog |
 | `src/conditional-get.ts` | the `ETag` and the `onSend` hook that answers a matching `If-None-Match` with 304 |
@@ -257,3 +260,47 @@ session's profile, `profiles` that one profile until a picker lists the account'
   logged).
 - **Later**: the device cookie can key the sign-in caps (OWASP's device cookies, §2 "No lockout per
   email").
+
+## 6. Playback (PB2)
+
+The player's three routes (`playback/playback.controller.ts`), relayed to streaming's C3 routes by
+`playback/streaming.client.ts`: the viewer named by the internal token alone (`sub`, `did`, `pro`
+from `callerOf`), the body of `openPlayback` sent as the browser wrote it, the request's
+`x-arthome-surface` on the opening and the gateway's country (`viewerCountryOf`) on the opening and
+the renewal. Every answer is `no-store`; the routes' declared refusals are relayed
+(`watch.concurrent_limit_reached`, `watch.replay_expired`, `identity.signed_out_elsewhere` on the
+renewal) and anything else is `api.upstream_unavailable`, `api.upstream_timeout` past the budget,
+never retried. All three are cookie writes: a cookie call without its CSRF token is a 403 before
+streaming is asked; a bearer call needs none. The BFF never fills `deviceId` or `profileId`:
+streaming refuses a body that disagrees with the token.
+
+- **The ticket cookie** (`adr-stream-entitlement.md` §3.2): for a web surface streaming signs the
+  ticket as a cookie (`arthome_playback`, `Secure; HttpOnly; SameSite=None`, on the date's path), and
+  a renewal re-sets it by a same-origin call with no URL change. `ServiceClient` hands back a
+  success's `Set-Cookie` lines in order (`setCookies`); `playback/playback-cookies.ts` relays a line
+  only when its `Path` starts with one of `PLAYBACK_COOKIE_PATH_PREFIXES` (`/playback/` for the fake
+  and CDN providers, `/watch/` for MediaMTX's edge, PM1), it is `Secure` and `HttpOnly`, it names no
+  `Domain` of its own, and its name is neither `__Host-`/`__Secure-` prefixed nor one of this BFF's
+  cookies. Why: the relay writes on the browser's behalf, so a service must not be able to plant or
+  overwrite the session, its CSRF pair or the device cookie, nor widen a cookie past the domain this
+  BFF chose. A dropped line is logged once by name and reason, never its value. The relayed lines
+  are appended after any `Set-Cookie` the reply already holds.
+- **`PLAYBACK_COOKIE_DOMAIN`**: appended as `; Domain=<domain>`, so the media edge receives the
+  cookie. A browser keeps it only when it is the host it called (storefront-web's same-origin proxy,
+  W2) or a parent of it, so production's must be a common parent of the storefront host and the
+  edge host (`arthome.tv` for `www.` and `edge.`); required there, and a scheme, port or path is
+  refused at boot. Unset outside production: host-only, and `localhost` covers every port.
+- **The budget**: `transport.md` §5.9 lists `streaming.openPlayback` (1 s) alone; renewal and
+  release take the same `OPEN_PLAYBACK_BUDGET_MS` until a core row gives them their own.
+- **Release** answers streaming's 204 with no body and relays no cookie.
+- **Known gap (core)**: core's params schema for `watch.concurrent_limit_reached` types each
+  `activeSessions` entry as an empty object, so the relay, which keeps the contract's params only,
+  hands the browser one empty entry per session. Typing the entries with `ActivePlaybackSessionSchema`
+  in core fixes it with no change here.
+- **What proves it**: `playback/playback-cookies.spec.ts` (each relay rule, the `Domain`, the append),
+  `upstream/service-client.spec.ts` (the `Set-Cookie` lines in order, none on a refusal, a 204),
+  `libs/config/src/env.spec.ts` (both readers), and `playback/playback.e2e.spec.ts` (the whole app
+  against a stand-in identity and streaming: the ticket and its cookie, the token's claims, the
+  surface, the country and the deadline, each relayed refusal, the 502 and the 504, CSRF, 401,
+  bearer, and no cookie value or token in a log). PE1 proves it end to end: the browser's cookie
+  reaching the media edge through the same-origin proxy, and the edge serving on it.

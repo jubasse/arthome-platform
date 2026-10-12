@@ -14,10 +14,12 @@ import {
   readOpenSearchUrl,
   readPublicWebOrigin,
   readPaymentWebhookSecret,
+  readPlaybackCookieDomain,
   readPlaybackSigningKey,
   readRedisUrl,
   readMediaServerSecret,
   readStreamKeySecret,
+  readStreamingUrl,
   readConsumerEnv,
   readHttpServiceEnv,
   readSearchIndexerEnv,
@@ -207,6 +209,49 @@ describe('readBffEnv', () => {
   it('refuses a production deployment with no CATALOG_URL', () => {
     expect(() => readBffEnv({ NODE_ENV: 'production', PORT: '3003' })).toThrow(/CATALOG_URL/);
   });
+});
+
+describe('readStreamingUrl', () => {
+  it('points at the local streaming outside production', () => {
+    expect(readStreamingUrl({ NODE_ENV: 'development' })).toBe('http://localhost:3005');
+  });
+
+  it('refuses a production deployment with no STREAMING_URL instead of using localhost', () => {
+    expect(() => readStreamingUrl({ NODE_ENV: 'production' })).toThrow(/STREAMING_URL/);
+    expect(
+      readStreamingUrl({ NODE_ENV: 'production', STREAMING_URL: 'http://streaming.internal:3005' }),
+    ).toBe('http://streaming.internal:3005');
+  });
+});
+
+describe('readPlaybackCookieDomain', () => {
+  it('is host-only outside production when unset', () => {
+    expect(readPlaybackCookieDomain({ NODE_ENV: 'development' })).toBeNull();
+  });
+
+  it('refuses a production deployment with no PLAYBACK_COOKIE_DOMAIN', () => {
+    expect(() => readPlaybackCookieDomain({ NODE_ENV: 'production' })).toThrow(
+      /PLAYBACK_COOKIE_DOMAIN/,
+    );
+  });
+
+  it('accepts a bare domain, with or without its leading dot', () => {
+    expect(
+      readPlaybackCookieDomain({ NODE_ENV: 'production', PLAYBACK_COOKIE_DOMAIN: 'arthome.tv' }),
+    ).toBe('arthome.tv');
+    expect(
+      readPlaybackCookieDomain({ NODE_ENV: 'development', PLAYBACK_COOKIE_DOMAIN: '.arthome.tv' }),
+    ).toBe('.arthome.tv');
+  });
+
+  it.each(['https://arthome.tv', 'arthome.tv:443', 'arthome.tv/watch', 'localhost'])(
+    'refuses %s: a scheme, a port, a path or a single label',
+    (domain) => {
+      expect(() =>
+        readPlaybackCookieDomain({ NODE_ENV: 'development', PLAYBACK_COOKIE_DOMAIN: domain }),
+      ).toThrow(/PLAYBACK_COOKIE_DOMAIN/);
+    },
+  );
 });
 
 describe('readPaymentWebhookSecret', () => {
