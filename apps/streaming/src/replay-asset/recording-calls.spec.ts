@@ -1,17 +1,21 @@
 import { nextAttemptAt } from '@arthome-platform/messaging';
+import { Logger } from '@nestjs/common';
+import type { DataSource } from 'typeorm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ReplayAssetState } from '@arthome/core';
+import { FixedClock, ReplayAssetState } from '@arthome/core';
 
 import {
   RECORDING_ATTEMPTS_MAX,
   RECORDING_CALL_TIMEOUT_MS,
+  ORPHAN_DELETE_ATTEMPTS,
   RECORDING_RETRY_DELAYS_MS,
+  RecordingCalls,
   RecordingCallTimedOut,
   withinTimeout,
 } from './recording-calls.js';
 import { RecordingCall, callDue, type ReplayAssetSnapshot } from './replay-asset.js';
-import { recordingRefOf } from '../media/media-ports.js';
+import { recordingRefOf, type RecordingProvider } from '../media/media-ports.js';
 
 const NOW = '2026-09-29T19:00:00.000Z';
 
@@ -93,5 +97,72 @@ describe('a provider call', () => {
   it('answers as the provider does within the timeout', async () => {
     await expect(withinTimeout(Promise.resolve('answer'))).resolves.toBe('answer');
     await expect(withinTimeout(Promise.reject(new Error('down')))).rejects.toThrow('down');
+  });
+});
+
+describe('a recording the asset did not keep', () => {
+  const DATE_ID = '01a0d200-0000-7000-8000-000000000001';
+  const REF = recordingRefOf('rec_secret');
+
+  function callsWith(remove: () => Promise<void>) {
+    const query = vi.fn().mockResolvedValue([]);
+    const dataSource = { query } as unknown as DataSource;
+    const deletion = vi.fn(remove);
+    const provider = { delete: deletion } as unknown as RecordingProvider;
+    const calls = new RecordingCalls(dataSource, new FixedClock(NOW), provider);
+    return { calls, query, deletion };
+  }
+
+  /** The private pass a start answering late or an unwritten outcome reaches. */
+  function deleteOrphan(calls: RecordingCalls): Promise<void> {
+    return (
+      calls as unknown as { deleteOrphan(dateId: string, ref: typeof REF): Promise<void> }
+    ).deleteOrphan(DATE_ID, REF);
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('logs its deletion at info, and leaves no orphan row', async () => {
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { calls, query } = callsWith(() => Promise.resolve());
+
+    await deleteOrphan(calls);
+
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(error).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('logs an error after three failed deletions and keeps one row, outside any transaction', async () => {
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { calls, query, deletion } = callsWith(() => Promise.reject(new Error('rec_secret')));
+
+    await deleteOrphan(calls);
+
+    expect(deletion).toHaveBeenCalledTimes(ORPHAN_DELETE_ATTEMPTS);
+    expect(log).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(String(query.mock.calls[0]?.[0])).toContain('ON CONFLICT (recording_ref) DO NOTHING');
+    expect(query.mock.calls[0]?.[1]).toEqual([DATE_ID, REF, ORPHAN_DELETE_ATTEMPTS]);
+  });
+
+  it('logs the date id only when the row cannot be written', async () => {
+    const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { calls, query } = callsWith(() => Promise.reject(new Error('down')));
+    query.mockRejectedValue(new Error(`duplicate ${REF}`));
+
+    await deleteOrphan(calls);
+
+    const lines = error.mock.calls.map(([line]) => String(line));
+    expect(lines).toHaveLength(2);
+    expect(lines.join('\n')).toContain(DATE_ID);
+    expect(lines.join('\n')).not.toContain('rec_');
   });
 });

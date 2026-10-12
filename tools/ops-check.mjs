@@ -69,6 +69,19 @@ try {
     }
   }
 
+  if (service === 'streaming') {
+    const { checkOrphanRecordings, checkReplayAssetsFailed, checkRoomsIdle } =
+      await import('../apps/streaming/dist/replay-asset/replay-asset-checks.js');
+    results.push(await checkReplayAssetsFailed(dataSource));
+    results.push(await checkOrphanRecordings(dataSource));
+    results.push(
+      await checkRoomsIdle(dataSource, {
+        nowMs: () => Date.now(),
+        now: () => new Date().toISOString(),
+      }),
+    );
+  }
+
   if (service === 'ticketing') {
     // From ticketing's build, which carries bullmq: the worker's queues (HANDOVER §0m).
     const { checkProviderCallQueues, checkProviderCallsDead, checkProviderCallsWaiting } =

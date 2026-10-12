@@ -837,3 +837,35 @@ the same run; glass-to-glass p50 about 1 s on the cookie, query and direct playe
 127.0.0.1): fine on a laptop, not on a shared host (the sandbox slice). After an abrupt loss the
 origin refuses a reconnecting encoder until it times the dead session out (about 8 s for SRT).
 
+
+## 0i. Streaming ops checks (SO1)
+
+Three checks, built on `boundedCheck(..., 'degraded', ...)` in `replay-asset/replay-asset-checks.ts`.
+They are in `AppModule`'s readiness list and in `ops:check streaming`: any of them degraded leaves
+`/health/readiness` at 200 with the detail in the body, never `down`. Each logs one `warn` line
+(`name degraded key=value ...`) on its first degraded evaluation, then at most every 10 minutes while
+it stays so (`loggedWhenDegraded`); it starts over after a recovery.
+
+| Check | Degraded when | Detail |
+| --- | --- | --- |
+| `replay_assets_failed` | any `replay_asset` is `failed` (a call given up) | `{ failed, oldestDateId }` |
+| `orphan_recordings` | any `orphan_recording` row exists | `{ orphans, oldestDateId }`, never the reference |
+| `rooms_idle` | a run `idle` or `rehearsal` whose date began more than `ROOM_IDLE_AFTER_MS` (30 min, an alerting floor with no product meaning) ago, with no outcome or `postponed` | `{ rooms, oldestDateId }` |
+
+**An orphan row.** `RecordingCalls.deleteOrphan` gives a recording the asset did not keep three
+attempts. After the third failure it writes one `orphan_recording` row (`ON CONFLICT (recording_ref)
+DO NOTHING`, outside any transaction) and logs the date id only. The recording is still at the
+provider. The operator finds the reference in the column (`SELECT recording_ref FROM orphan_recording`,
+never pasted into a log or ticket), deletes the recording at the provider, then deletes the row. The
+service neither retries nor reaps it. A successful orphan deletion now logs at info, not error.
+
+A `failed` asset is the operator's too (§0f): read its `failed_call` and `call_dead_at`, fix the
+cause at the provider, and set it back by hand. A partial index `replay_asset_failed` serves its count.
+
+**What proves it.** `replay-asset-checks.spec.ts` (up on none, degraded with the detail, never down
+when the query throws, the threshold read from the clock, the log throttle), `recording-calls.spec.ts`
+(the log level, the orphan row written once with the conflict clause, the date id only when the row
+cannot be written), `ops-checks.itest.ts` (each fault on a real Postgres turns the API's readiness
+degraded at 200, the orphan insert repeated leaves one row), `asset-ready-kafka.itest.ts` (the
+`asset_ready` fact through Debezium: key the date id, `type` and `message-id` headers, the committed
+row's duration and dates, no `rec_` in the bytes).

@@ -163,7 +163,7 @@ update the SHA and the comment together. Python dependencies of the workflows ar
 | `pnpm run test:integration` | the container suites (`*.itest.ts`) that `verify` skips; needs Docker. Run it after touching a consumer, the outbox or `libs/testing` |
 | `pnpm run test:integration:affected` | the same suites, limited to packages changed against `origin/develop` and their dependents |
 | `pnpm run purge:retention <service>` | what the retention job would delete; `--apply` to do it |
-| `pnpm run ops:check <service>` | the operational checks; exits 1 when anything is degraded |
+| `pnpm run ops:check <service>` | the operational checks (streaming adds failed assets, orphan recordings, idle rooms, `apps/streaming/HANDOVER.md` §0i); exits 1 when anything is degraded |
 | `pnpm run republish:outbox <service>` | outbox rows never published to their topic; `--apply` republishes them |
 | `pnpm --config.verify-deps-before-run=false exec schematics ./tools/schematics:<generator>` | the generators below; a dry run unless `--no-dry-run` |
 

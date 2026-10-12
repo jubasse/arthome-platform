@@ -4,6 +4,7 @@ import {
   applyMigrations,
   createDatabase,
   startStack,
+  type PostgresEndpoint,
   type StartedStack,
 } from '@arthome-platform/testing';
 import type { INestApplicationContext } from '@nestjs/common';
@@ -44,6 +45,7 @@ export const CHANNEL = '01a0f0cc-0000-7000-8000-000000000001';
 
 export interface ReplayDesk {
   readonly stack: StartedStack;
+  readonly database: PostgresEndpoint;
   readonly dataSource: DataSource;
   readonly app: INestApplicationContext;
   readonly clock: FixedClock;
@@ -52,8 +54,18 @@ export interface ReplayDesk {
   readonly calls: RecordingCalls;
 }
 
-export async function startReplayDesk(database: string): Promise<ReplayDesk> {
-  const stack = await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
+export interface ReplayDeskOptions {
+  /** Kafka and Connect beside Postgres, for a suite that reads a topic. */
+  readonly connect?: boolean;
+}
+
+export async function startReplayDesk(
+  database: string,
+  { connect = false }: ReplayDeskOptions = {},
+): Promise<ReplayDesk> {
+  const stack = connect
+    ? await startStack({ connect: true, startupTimeoutMs: STARTUP_MS })
+    : await startStack({ postgres: true, startupTimeoutMs: STARTUP_MS });
   const created = await createDatabase(stack.postgres, database);
   const dataSource = await applyMigrations(created, STREAMING_SCHEMA);
   const clock = new FixedClock(NOW);
@@ -75,6 +87,7 @@ export async function startReplayDesk(database: string): Promise<ReplayDesk> {
   await app.init();
   return {
     stack,
+    database: created,
     dataSource,
     app,
     clock,
