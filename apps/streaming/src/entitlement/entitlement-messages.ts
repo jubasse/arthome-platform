@@ -97,6 +97,7 @@ export const ENTITLEMENT_READERS: Readonly<Record<string, Reader>> = {
       state: subscriptionStateOf(event.state),
       openings: openingsOf(event.opens),
       paidThrough: event.paidThrough === undefined ? null : timestampDate(event.paidThrough),
+      version: event.version === 0n ? null : event.version,
       statedAt: instantOf(event.occurredAt, 'occurred_at'),
     });
   },

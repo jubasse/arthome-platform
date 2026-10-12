@@ -14,6 +14,8 @@ export interface SubscriptionFact {
   readonly openings: readonly PlanOpening[];
   /** The end of the last paid period, what `planOpeningsOf` reads (D-125); null when none was paid. */
   readonly paidThrough: Date | null;
+  /** Ticketing's version after the change, the guard before `statedAt`; null when the wire left it unset. */
+  readonly version: bigint | null;
   readonly statedAt: Date;
 }
 
