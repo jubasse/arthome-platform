@@ -3,7 +3,7 @@
 //   node r0.mjs gen <streamPath> <key> [opus|aac]   writes .generated/{encoder.yml,envoy-timed.yaml,envoy-echo.yaml}
 //   node r0.mjs token <dateId> <ttlSec> [aud] [prefix]
 //   node r0.mjs serve <port> <dateId>                player page + ticket renewal (cookie and body), another origin
-//   node r0.mjs play <minutes> <dateId>              headless Chrome on the page, JSON on stdout
+//   node r0.mjs play <minutes> <dateId>              headless Chrome on the page, JSON on stdout (R0_PLAYERS)
 //   node r0.mjs envoy-times < access.log             Envoy's own time per request and per host, quantiles
 //   node r0.mjs probe                                every token source and CORS case on envoy-echo.yaml
 //   node r0.mjs probe-edge <dateId>                  CORS on the real edge's answers (envoy-timed.yaml)
@@ -269,6 +269,7 @@ async function play(minutes, dateId) {
     cookieEnvoy: ENVOY_BY_COOKIE,
     direct: DIRECT,
     dateId,
+    players: process.env.R0_PLAYERS ?? 'cookie,query,direct',
   });
   await send('Page.navigate', { url: `${PAGE_ORIGIN}/?${query}` }, sessionId);
 

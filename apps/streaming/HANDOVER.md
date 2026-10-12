@@ -796,7 +796,10 @@ serves it (D-121).
 
 **Envoy's measured cost** (R0, 10 min of LL-HLS in headless Chrome, 13,674 requests): its own time
 per request p50 0.58 ms, p99 1.53 ms; glass-to-glass +13 ms against direct edge access; no blocking
-reload cut by the 10 s route timeout.
+reload cut by the 10 s route timeout. By cookie (PM1's R0, 10 min, three players at once, 23,855
+requests): its own time p50 0.26 ms, p99 0.72 ms by cookie and p50 0.27 ms, p99 0.75 ms by query on
+the same run; glass-to-glass p50 about 1 s on the cookie, query and direct players alike, within
+3 ms of each other; the cookie on every request, no preflight.
 
 **What proves it**
 
