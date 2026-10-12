@@ -7,6 +7,7 @@ import {
 } from '@arthome-platform/identity/src/itest/identity-app.js';
 import { newestLinkTokenTo } from '@arthome-platform/identity/src/itest/verification-links.js';
 import { guardDeclaredResponses, startStack, type StartedStack } from '@arthome-platform/testing';
+import type { LoggerService } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -36,6 +37,7 @@ import {
   CSRF_COOKIE,
   CSRF_HEADER,
   CSRF_SECRET_COOKIE,
+  DEVICE_COOKIE,
   SESSION_COOKIE,
 } from '../session/session-carriers.js';
 
@@ -66,6 +68,20 @@ let emails = 0;
 /** The pauses sign-in asked for, recorded rather than waited out. */
 const pauses: number[] = [];
 
+/** Every line the BFF logs, so a case can prove a secret never reaches one. */
+const logged: string[] = [];
+const capturingLogger: LoggerService = {
+  log: (...parts: unknown[]) => logged.push(JSON.stringify(parts, errorFields)),
+  error: (...parts: unknown[]) => logged.push(JSON.stringify(parts, errorFields)),
+  warn: (...parts: unknown[]) => logged.push(JSON.stringify(parts, errorFields)),
+  debug: (...parts: unknown[]) => logged.push(JSON.stringify(parts, errorFields)),
+  verbose: (...parts: unknown[]) => logged.push(JSON.stringify(parts, errorFields)),
+};
+
+function errorFields(_key: string, value: unknown): unknown {
+  return value instanceof Error ? { ...value, message: value.message, stack: value.stack } : value;
+}
+
 beforeAll(async () => {
   identity = await startIdentity('bff_auth_e2e_identity', clock);
   await identity.app.listen({ port: 0, host: '127.0.0.1' });
@@ -88,7 +104,7 @@ beforeAll(async () => {
     })
     .compile();
   app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), {
-    logger: false,
+    logger: capturingLogger,
   });
   serveEndpoints(app);
   responses.watch(app);
@@ -226,10 +242,14 @@ describe('signing up in cookie mode', () => {
       const { data } = (await signUp(nextEmail(), SessionMode.COOKIE, randomUUID(), TV)).json<{
         data: { viewerContext: Record<string, unknown> };
       }>();
+      const { currentProfileId, account } = data.viewerContext as {
+        currentProfileId: string;
+        account: { publicHandle: string };
+      };
       expect(data.viewerContext).toMatchObject({
         signedIn: true,
-        currentProfileId: null,
-        profiles: [],
+        currentProfileId: expect.any(String) as string,
+        profiles: [{ id: currentProfileId, name: account.publicHandle, kind: 'adult' }],
         account: { emailVerified: false },
         constants: {
           chatRateLimitPerSecond:
@@ -237,6 +257,102 @@ describe('signing up in cookie mode', () => {
         },
       });
       expect(data.viewerContext).not.toHaveProperty('plan');
+    },
+    CASE_MS,
+  );
+});
+
+describe('the browser’s device', () => {
+  /** Every device token a case was handed, which no log line may hold. */
+  const deviceTokens: string[] = [];
+
+  function signIn(email: string, mode: string, headers: Record<string, string> = {}) {
+    return post('/v1/auth/sign-in', { email, password: 'a-long-password', mode }, headers);
+  }
+
+  function deviceIdOf(answer: { json: <T>() => T }): string {
+    return answer.json<{ data: { viewerContext: { deviceId: string } } }>().data.viewerContext
+      .deviceId;
+  }
+
+  function deviceCookieOf(answer: { cookies: unknown }): SetCookie | undefined {
+    const cookie = cookiesOf(answer).get(DEVICE_COOKIE);
+    if (cookie !== undefined) deviceTokens.push(cookie.value);
+    return cookie;
+  }
+
+  it(
+    'is registered at sign-up, its token in a hardened cookie and nowhere in the body',
+    async () => {
+      const signedUp = await signUp(nextEmail(), SessionMode.COOKIE);
+
+      const device = deviceCookieOf(signedUp);
+      expect(device).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Lax', path: '/' });
+      expect(device?.maxAge).toBeGreaterThan(30 * 24 * 60 * 60);
+      expect(signedUp.body).not.toContain(device?.value ?? 'no device cookie');
+    },
+    CASE_MS,
+  );
+
+  it(
+    'keeps its device across a sign-out, its token rotated at each sign-in that presents it',
+    async () => {
+      const email = nextEmail();
+      const signedUp = await signUp(email, SessionMode.COOKIE);
+      const deviceId = deviceIdOf(signedUp);
+      const first = deviceCookieOf(signedUp)?.value ?? '';
+
+      const signedIn = await signIn(email, SessionMode.COOKIE, {
+        cookie: `${DEVICE_COOKIE}=${first}`,
+      });
+      expect(signedIn.statusCode).toBe(200);
+      expect(deviceIdOf(signedIn)).toBe(deviceId);
+      const rotated = deviceCookieOf(signedIn)?.value ?? '';
+      expect(rotated).not.toBe('');
+      expect(rotated).not.toBe(first);
+
+      const session = cookiesOf(signedIn).get(SESSION_COOKIE)?.value ?? '';
+      const signedOut = await post('/v1/auth/sign-out', undefined, {
+        cookie: `${SESSION_COOKIE}=${session}; ${DEVICE_COOKIE}=${rotated}`,
+        'idempotency-key': randomUUID(),
+      });
+      expect(signedOut.statusCode).toBe(200);
+      expect(cookiesOf(signedOut).has(DEVICE_COOKIE)).toBe(false);
+      expect(cookiesOf(signedOut).get(SESSION_COOKIE)?.value).toBe('');
+
+      const again = await signIn(email, SessionMode.COOKIE, {
+        cookie: `${DEVICE_COOKIE}=${rotated}`,
+      });
+      expect(deviceIdOf(again)).toBe(deviceId);
+      deviceCookieOf(again);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'is never handed to a bearer surface: no cookie, and no token in the body',
+    async () => {
+      const email = nextEmail();
+      await signUp(email, SessionMode.COOKIE);
+      const signedIn = await signIn(email, SessionMode.BEARER);
+
+      expect(signedIn.statusCode).toBe(200);
+      expect(signedIn.headers['set-cookie']).toBeUndefined();
+      const { data } = signedIn.json<{ data: Record<string, unknown> }>();
+      expect(Object.keys(data).sort()).toEqual(
+        ['accessToken', 'expiresAt', 'mode', 'refreshToken', 'viewerContext'].sort(),
+      );
+      expect(JSON.stringify(data.viewerContext)).not.toMatch(/token/i);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'never reaches a log line',
+    () => {
+      expect(deviceTokens.length).toBeGreaterThan(2);
+      const lines = logged.join('\n');
+      for (const token of deviceTokens) expect(lines).not.toContain(token);
     },
     CASE_MS,
   );

@@ -20,10 +20,13 @@ import { FailedSignIns } from './failed-sign-ins.js';
 import { viewerCountryOf } from './viewer-country.js';
 import { CLOCK } from '../clock.js';
 import type { SessionOpened } from '../identity/identity-answers.schema.js';
-import { IdentityClient } from '../identity/identity.client.js';
+import { IdentityClient, type PresentedDevice } from '../identity/identity.client.js';
+import { deviceDescriptorOf } from '../session/device-descriptor.js';
 import {
   clearSessionCookies,
+  presentedDeviceToken,
   presentedSession,
+  setDeviceCookie,
   setSessionCookies,
   type CookieCarrier,
   type CsrfReply,
@@ -54,6 +57,20 @@ function replacedSession(request: Inbound): PresentedSession | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The device the viewer signs in from. Only a browser's cookie carries a device token: a bearer or
+ *   device mode presents none, and the body's `deviceId` is an assertion no credential backs.
+ */
+function presentedDeviceOf(
+  mode: RouteBody<typeof signIn>['mode'],
+  request: Inbound,
+): PresentedDevice {
+  return {
+    token: mode === SessionMode.COOKIE ? presentedDeviceToken(request) : null,
+    ...deviceDescriptorOf(request.headers),
+  };
 }
 
 function isWrongPassword(error: unknown): boolean {
@@ -108,6 +125,7 @@ export class AuthController {
         country: viewerCountryOf(request.headers, this.countryHeader),
         acceptedTermsVersion: body.acceptedTermsVersion,
       },
+      presentedDeviceOf(body.mode, request),
       idempotencyKeyOf(headers['idempotency-key']),
       this.anonymousCall(request, reply, signUp),
     );
@@ -136,6 +154,7 @@ export class AuthController {
       opened = await this.identity.signIn(
         body.email,
         body.password,
+        presentedDeviceOf(body.mode, request),
         this.anonymousCall(request, reply, signIn),
       );
     } catch (error) {
@@ -151,7 +170,8 @@ export class AuthController {
 
   /**
    * Closes the presented session and nothing else, and succeeds again on a replay: a session already
-   *   gone is still signed out. In cookie mode the cookies leave with the attributes that set them.
+   *   gone is still signed out. In cookie mode the session's cookies leave with the attributes that
+   *   set them; the device cookie stays, so the browser keeps its device.
    */
   @Endpoint(signOut)
   @Header('cache-control', 'no-store')
@@ -240,7 +260,11 @@ export class AuthController {
     );
   }
 
-  /** The mode is the surface's explicit choice (D-023), never inferred from its `User-Agent`. */
+  /**
+   * The mode is the surface's explicit choice (D-023), never inferred from its `User-Agent`. The
+   *   device token reaches the browser's cookie alone: a bearer answer drops it, and a replayed
+   *   sign-up, answered none, leaves the cookie the browser holds.
+   */
   private established(
     mode: RouteBody<typeof signUp>['mode'],
     opened: SessionOpened,
@@ -251,6 +275,7 @@ export class AuthController {
     const viewerContext = viewerContextOf(opened.session, opened.account, surface);
     if (mode === SessionMode.COOKIE) {
       setSessionCookies(reply, request, opened.session, this.clock.nowMs());
+      if (opened.device.token !== null) setDeviceCookie(reply, opened.device.token);
       return { mode, viewerContext };
     }
     return {

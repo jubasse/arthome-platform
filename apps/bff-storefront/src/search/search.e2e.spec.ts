@@ -71,7 +71,9 @@ beforeAll(async () => {
           ? {
               accountId: '01a0e700-0000-7000-8000-0000000000c1',
               deviceId: '01a0e700-0000-7000-8000-0000000000d1',
+              deviceSessionId: '01a0e700-0000-7000-8000-0000000000e1',
               expiresAt: '2026-11-05T10:00:00.000Z',
+              profile: { id: '01a0e700-0000-7000-8000-0000000000f1', name: 'Marie', kind: 'adult' },
               account: { publicHandle: '@marie', emailVerified: true },
             }
           : null;

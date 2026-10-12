@@ -364,7 +364,7 @@ export class DatesController {
 
 | Process | Development port | Swagger UI | Operations |
 | --- | --- | --- | --- |
-| `bff-storefront` | 3003 | `http://localhost:3003/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink, signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification, getViewerContext |
+| `bff-storefront` | 3003 | `http://localhost:3003/docs` | search, getDateDetail, getArtistDetail, resolvePublicLink, signUp, signIn, signOut, confirmEmailVerification, resendEmailVerification, getViewerContext, revokeDevice, signOutProfile |
 | `streaming` | 3005 | `http://localhost:3005/docs` | getRunConsole, runTechnicalCheck, rehearseRun, goOnAir, endRun, resetRun, raiseIncident, resolveIncident, openPlayback, renewPlaybackTicket, releasePlayback, recordPlaybackPosition, getViewerProgressBatch, authorizeMediaServerAccess |
 
 `@nestjs/swagger` is a peer of `libs/http-edge`; `@fastify/static` serves the UI on Fastify, and

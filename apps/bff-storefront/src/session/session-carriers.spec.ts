@@ -6,9 +6,13 @@ import { SessionMode } from '@arthome/contracts/identity';
 import {
   CSRF_COOKIE,
   CSRF_SECRET_COOKIE,
+  DEVICE_COOKIE,
   SESSION_COOKIE,
+  clearDeviceCookie,
   clearSessionCookies,
+  presentedDeviceToken,
   presentedSession,
+  setDeviceCookie,
   setSessionCookies,
   type CookieReply,
   type CsrfReply,
@@ -114,5 +118,42 @@ describe('the session cookies', () => {
       sameSite: 'lax',
     });
     expect(clearCookie).toHaveBeenCalledWith(CSRF_SECRET_COOKIE, expect.anything());
+  });
+
+  it('leave the device cookie when they are cleared', () => {
+    const { reply, clearCookie } = cookieReply();
+    clearSessionCookies(reply);
+    expect(clearCookie).not.toHaveBeenCalledWith(DEVICE_COOKIE, expect.anything());
+  });
+});
+
+describe('the device cookie', () => {
+  const deviceAttributes = { path: '/', httpOnly: true, secure: true, sameSite: 'lax' };
+
+  it('is __Host-, out of the page’s reach, and lives the device token’s lifetime', () => {
+    const setCookie = vi.fn<CookieReply['setCookie']>();
+    setDeviceCookie({ setCookie, clearCookie: vi.fn() }, 'device-token');
+    expect(DEVICE_COOKIE).toBe('__Host-arthome_device');
+    expect(setCookie).toHaveBeenCalledExactlyOnceWith(DEVICE_COOKIE, 'device-token', {
+      ...deviceAttributes,
+      maxAge: 180 * 24 * 60 * 60,
+    });
+  });
+
+  it('is cleared with the attributes that set it', () => {
+    const clearCookie = vi.fn<CookieReply['clearCookie']>();
+    clearDeviceCookie({ setCookie: vi.fn(), clearCookie });
+    expect(clearCookie).toHaveBeenCalledExactlyOnceWith(DEVICE_COOKIE, deviceAttributes);
+  });
+
+  it('presents its token, or none when absent, empty, or longer than identity issues', () => {
+    expect(presentedDeviceToken({ headers: {}, cookies: { [DEVICE_COOKIE]: 'held' } })).toBe(
+      'held',
+    );
+    expect(presentedDeviceToken({ headers: {} })).toBeNull();
+    expect(presentedDeviceToken({ headers: {}, cookies: { [DEVICE_COOKIE]: '' } })).toBeNull();
+    expect(
+      presentedDeviceToken({ headers: {}, cookies: { [DEVICE_COOKIE]: 'x'.repeat(513) } }),
+    ).toBeNull();
   });
 });
