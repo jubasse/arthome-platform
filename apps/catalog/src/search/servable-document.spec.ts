@@ -8,8 +8,13 @@ import {
   worldwideRights,
 } from '@arthome/core';
 
-import { dateDocument } from './search-fixtures.js';
 import { publicDateOf, type ServableDateDocument } from './servable-document.js';
+import type {
+  DateProjection,
+  ScheduledDateFields,
+} from '../../../search-indexer/src/consumer/date-projection.entity.js';
+import type { ShowProjection } from '../../../search-indexer/src/consumer/show-projection.entity.js';
+import { dateDocumentOf } from '../../../search-indexer/src/index/compose.js';
 import { dateCardOf } from '../public/date-card.js';
 import type { DateDetailPublic } from '../public/date-detail-public.entity.js';
 import { publicDateOfRow } from '../public/date-detail.js';
@@ -18,6 +23,7 @@ const ORIGIN = 'https://arthome.test';
 const STARTS_AT = '2026-11-04T19:30:00.000Z';
 const CLOSES_AT = '2026-11-07T21:20:00.000Z';
 const ONLINE_AT = '2026-11-04T22:00:00.000Z';
+const LIVE_ENDED_AT = '2026-11-04T21:05:00.000Z';
 const NOW = '2026-11-05T12:00:00.000Z';
 
 function row(overrides: Partial<DateDetailPublic> = {}): DateDetailPublic {
@@ -62,41 +68,88 @@ function row(overrides: Partial<DateDetailPublic> = {}): DateDetailPublic {
   };
 }
 
-/** The document the indexer writes for the same facts as `source`, and no more than it holds. */
+/**
+ * The document the indexer writes for the same facts as `source`: the projections the indexer
+ * would hold, through its own composition, so a replay field it drops or mis-maps fails here.
+ */
 function documentOf(source: DateDetailPublic) {
-  const date = publicDateOfRow(source, ORIGIN);
-  return dateDocument({
-    date_id: date.date_id,
-    show_id: date.show_id,
-    channel_id: date.channel_id,
-    venue_id: date.venue_id,
-    venue_city: date.venue_city,
-    venue_country: date.venue_country,
-    venue_timezone: date.venue_timezone,
-    starts_at: date.starts_at,
-    runtime_min: date.runtime_min,
-    replay_policy: date.replay_policy,
-    replay_window_hours: date.replay_window_hours,
-    rights_scope: date.rights_scope,
-    blackout_countries: [...date.blackout_countries],
-    canonical_url: date.canonical_url,
-    show_slug: date.show_slug,
-    slug: date.slug,
-    publication_state: date.publication_state,
-    artist_id: date.artist_id,
-    artist_name: date.artist_name,
-    category_id: date.category_id,
-    genre_ids: [...date.genre_ids],
-    tag_ids: [...date.tag_ids],
-    language_dependency: date.language_dependency,
-    title_fr: date.title_fr,
-    title_en: date.title_en,
-    media: { wide: [], poster: [] },
-    replay_state: date.replay_state ?? null,
-    replay_closes_at: date.replay_closes_at ?? null,
-    replay_online_at: date.replay_online_at ?? null,
-    replay_duration_sec: date.replay_duration_sec ?? null,
-  });
+  const startsAt = source.starts_at.toISOString();
+  const scheduled: ScheduledDateFields = {
+    show_id: source.show_id,
+    channel_id: source.channel_id,
+    venue_id: source.venue_id,
+    venue_timezone: source.venue_timezone,
+    venue_city: source.venue_city,
+    venue_country: source.venue_country,
+    starts_at: startsAt,
+    runtime_min: source.runtime_min,
+    replay_policy: source.replay_policy,
+    replay_window_hours: source.replay_window_hours,
+    rights_scope: source.rights.scope,
+    blackout_countries: source.rights.blackoutCountries,
+    canonical_url: publicDateOfRow(source, ORIGIN).canonical_url,
+    show_slug: source.show_slug,
+    slug: source.slug,
+  };
+  const projection: DateProjection = {
+    date_id: source.date_id,
+    show_id: source.show_id,
+    scheduled,
+    scheduled_version: '1',
+    publication_state: source.publication_state,
+    publication_version: null,
+    outcome: source.outcome,
+    outcome_rescheduled_to: source.rescheduled_to,
+    outcome_version: null,
+    moved_starts_at: null,
+    moved_slug: null,
+    moved_canonical_url: null,
+    moved_version: null,
+    replay_state: source.replay_state,
+    replay_live_ended_at: new Date(LIVE_ENDED_AT),
+    replay_closes_at: source.replay_closes_at,
+    replay_online_at: source.replay_online_at,
+    replay_duration_sec: source.replay_duration_sec,
+    replay_version: source.replay_state === null ? null : '1',
+    doc_version: '1',
+    indexed_at: new Date(NOW),
+  };
+  const show: ShowProjection = {
+    show_id: source.show_id,
+    version: '1',
+    traceparent: null,
+    published: {
+      channel_id: source.channel_id,
+      artist_id: source.artist_id,
+      category_id: source.category_id,
+      runtime_min: source.runtime_min,
+      spoken_languages: source.spoken_languages,
+      subtitle_languages: source.subtitle_languages,
+      surtitle_languages: source.surtitle_languages,
+      published_at: NOW,
+    },
+    published_version: '1',
+    updatable: {
+      genre_ids: source.genre_ids,
+      tag_ids: source.tag_ids,
+      language_dependency: source.language_dependency,
+      media: { wide: [], poster: [] },
+      title: source.title,
+      synopsis: source.synopsis,
+    },
+    updatable_version: '1',
+    indexed_at: new Date(NOW),
+  };
+  const document = dateDocumentOf(
+    { ...projection, scheduled },
+    show,
+    { artist_id: source.artist_id, public_name: source.artist_name ?? '' },
+    new Date(NOW),
+  );
+  const { publication_state, replay_policy, rights_scope } = document;
+  if (publication_state === null || replay_policy === null || rights_scope === null)
+    throw new Error('the indexer left a required field of the card empty');
+  return { ...document, publication_state, replay_policy, rights_scope };
 }
 
 /** The index holds no venue name: the cards differ by that one field and no other. */

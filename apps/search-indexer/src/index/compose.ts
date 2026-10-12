@@ -64,8 +64,8 @@ function replayFacts(date: DateProjection) {
 
 /**
  * The instant the date leaves search. The Replay's event states it: the real closing, or the
- * live's end when no replay will exist. An unknown state keeps the scheduled bound; with no
- * fact yet, the date's live has not ended and the scheduled bound is the best known.
+ * live's end when no replay will exist. With no fact yet, the date's live has not ended and the
+ * scheduled bound is the best known.
  */
 function overAt(date: DateProjection, scheduledBound: string): string {
   switch (date.replay_state) {

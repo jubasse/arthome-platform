@@ -166,7 +166,7 @@ describe('dateDocumentOf — a postponed date', () => {
       });
     });
 
-    it('keeps the scheduled bound for a replay state it does not know', () => {
+    it('keeps the scheduled bound while no replay fact has arrived', () => {
       expect(documentFor(scheduled, { ...stated, replay_state: null })).toMatchObject({
         over_at: '2026-11-07T21:05:00.000Z',
         replay_state: null,

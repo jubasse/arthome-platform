@@ -78,7 +78,7 @@ export type DateFact =
       readonly dateId: string;
       /** The Replay's own version after the transition. */
       readonly version: number;
-      readonly state: ReplayState | null;
+      readonly state: ReplayState;
       readonly liveEndedAt: Date;
       readonly closesAt: Date;
       readonly onlineAt: Date | null;
@@ -142,7 +142,7 @@ export function dateFactOf(type: string, value: Uint8Array): DateFact {
       type: REPLAY_STATE_CHANGED,
       dateId: event.dateId,
       version: Number(event.version),
-      state: replayStateOf(event.toState),
+      state: replayStateOf(event.toState) ?? refusedState(event.dateId, event.toState),
       liveEndedAt: stated(event.liveEndedAt, `the replay of date ${event.dateId} live_ended_at`),
       closesAt: stated(event.closesAt, `the replay of date ${event.dateId} closes_at`),
       onlineAt: event.onlineAt === undefined ? null : timestampDate(event.onlineAt),
@@ -156,6 +156,13 @@ export function dateFactOf(type: string, value: Uint8Array): DateFact {
     version: Number(event.version),
     state: publicationStateOf(event.toState),
   };
+}
+
+/** A replay state the indexer cannot read would move over_at backwards: the message waits for a reader that knows it. */
+function refusedState(dateId: string, wire: unknown): never {
+  throw new Error(
+    `the replay of date ${dateId} states ${String(wire)}, which this reader does not know`,
+  );
 }
 
 /**

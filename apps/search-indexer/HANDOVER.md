@@ -11,7 +11,7 @@ Wave 2, agent C. Everything below `apps/search-indexer/` and nothing else was wr
   `replay_duration_sec`, `replay_version` (migration `1790430400000-replay`, all nullable, no
   backfill). A newer version replaces the five facts at once; a reordered `pending` after `online`
   is `superseded`. A replay fact before `DateScheduled` is kept, never indexed alone. An unknown
-  `ReplayState` is kept as `null`; a missing `closes_at` or `live_ended_at` is a permanent error.
+  `ReplayState`, a missing `closes_at` or a missing `live_ended_at` is a permanent error (dead-lettered).
 - **Document**: `replay_state`, `replay_closes_at`, `replay_online_at`, `replay_duration_sec`,
   the names of catalog's `PublicDate`, so `servable-document.ts`'s spread carries them into the card.
 - **`over_at`** is the instant the date leaves search: the event's `closes_at` for `pending`,

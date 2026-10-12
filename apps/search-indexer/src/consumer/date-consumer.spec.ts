@@ -272,13 +272,13 @@ describe('a replay', () => {
     });
   });
 
-  it('keeps an unknown state as unknown, and refuses a closing it is not told', () => {
-    expect(
+  it('refuses a replay state it does not know, and a closing it is not told', () => {
+    expect(() =>
       dateFactOf(
         REPLAY_CHANGED,
         replayChanged(WireReplayState.UNSPECIFIED, 3, { closesAt: CLOSES }),
       ),
-    ).toMatchObject({ state: null });
+    ).toThrow(/does not know/);
     expect(() => dateFactOf(REPLAY_CHANGED, replayChanged(WireReplayState.PENDING, 1))).toThrow(
       /closes_at/,
     );
