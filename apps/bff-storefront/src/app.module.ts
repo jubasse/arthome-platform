@@ -39,6 +39,7 @@ import {
 import { CLOCK } from './clock.js';
 import { ContractRoutesOnly } from './contract-routes-only.js';
 import { DatesModule } from './dates/dates.module.js';
+import { DevicesModule } from './devices/devices.module.js';
 import { authEnv } from './env.js';
 import { IdentityModule } from './identity/identity.module.js';
 import { SearchModule } from './search/search.module.js';
@@ -56,6 +57,7 @@ import { TraceparentMiddleware } from './traceparent.middleware.js';
     DatesModule,
     IdentityModule,
     AuthModule,
+    DevicesModule,
     ThrottlerModule.forRootAsync({
       imports: [ThrottlerRedisModule],
       inject: [Reflector, THROTTLER_REDIS],

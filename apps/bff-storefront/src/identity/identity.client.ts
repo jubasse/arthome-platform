@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { Service } from '@arthome/core';
+import { Service, type DeviceKind } from '@arthome/core';
 
 import {
   AddressVerifiedSchema,
+  DeviceRevokedAnswerSchema,
+  DeviceSessionClosedAnswerSchema,
   SessionOpenedSchema,
   SessionResolvedSchema,
   SignedOutSchema,
@@ -27,6 +29,16 @@ export interface SignUpRequest {
 }
 
 /**
+ * The device a viewer signs in from: the browser's token, when its cookie holds one, and how it
+ *   is shown in the account's device list. Identity registers it, or rotates the presented token.
+ */
+export interface PresentedDevice {
+  readonly token: string | null;
+  readonly kind: DeviceKind;
+  readonly label: string;
+}
+
+/**
  * The adapter to identity (`adr-auth.md` §8.2): the relayed authentication calls, and the session
  *   this BFF validates on every call that needs a viewer. A session token rides in a body, never in a
  *   header: `authorization` carries this BFF's own token.
@@ -41,6 +53,7 @@ export class IdentityClient {
 
   public async signUp(
     body: SignUpRequest,
+    device: PresentedDevice,
     idempotencyKey: string,
     call: ServiceCall,
   ): Promise<ServiceAnswer<SessionOpened>> {
@@ -48,7 +61,7 @@ export class IdentityClient {
       {
         method: 'POST',
         path: '/v1/auth/sign-up',
-        body,
+        body: { ...body, device },
         headers: { 'idempotency-key': idempotencyKey },
       },
       call,
@@ -57,9 +70,14 @@ export class IdentityClient {
     return { body: answer.body.data, replayed: answer.replayed };
   }
 
-  public async signIn(email: string, password: string, call: ServiceCall): Promise<SessionOpened> {
+  public async signIn(
+    email: string,
+    password: string,
+    device: PresentedDevice,
+    call: ServiceCall,
+  ): Promise<SessionOpened> {
     const answer = await this.client.request(
-      { method: 'POST', path: '/v1/auth/sign-in', body: { email, password } },
+      { method: 'POST', path: '/v1/auth/sign-in', body: { email, password, device } },
       call,
       SessionOpenedSchema,
     );
@@ -82,6 +100,41 @@ export class IdentityClient {
       call,
       SignedOutSchema,
     );
+  }
+
+  /** The caller's account and device ride in the call's internal token, never in a body. */
+  public async revokeDevice(
+    deviceId: string,
+    idempotencyKey: string,
+    call: ServiceCall,
+  ): Promise<ServiceAnswer<{ readonly revoked: boolean }>> {
+    const answer = await this.client.request(
+      {
+        method: 'POST',
+        path: `/v1/devices/${encodeURIComponent(deviceId)}/revoke`,
+        headers: { 'idempotency-key': idempotencyKey },
+      },
+      call,
+      DeviceRevokedAnswerSchema,
+    );
+    return { body: answer.body.data, replayed: answer.replayed };
+  }
+
+  public async closeDeviceSession(
+    sessionId: string,
+    idempotencyKey: string,
+    call: ServiceCall,
+  ): Promise<ServiceAnswer<{ readonly closed: boolean }>> {
+    const answer = await this.client.request(
+      {
+        method: 'POST',
+        path: `/v1/device-sessions/${encodeURIComponent(sessionId)}/close`,
+        headers: { 'idempotency-key': idempotencyKey },
+      },
+      call,
+      DeviceSessionClosedAnswerSchema,
+    );
+    return { body: answer.body.data, replayed: answer.replayed };
   }
 
   public async resendVerification(
