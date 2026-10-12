@@ -3,14 +3,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import type { Clock } from '@arthome/core';
+import { DEVICE_TOKEN_LIFETIME_SECONDS, type Clock } from '@arthome/core';
 
 import { digestOf, newDeviceToken } from './device-token.js';
 import type { PresentedDevice } from './presented-device.schema.js';
 import { CLOCK } from '../clock.js';
-
-/** Core's `DEVICE_TOKEN_LIFETIME_SECONDS` from 0.4.0-rc.1 (CB1): this line goes when PI1 takes it. */
-const DEVICE_TOKEN_LIFETIME_SECONDS = 180 * 24 * 60 * 60;
 
 /** Two binds of one (device, profile) can race; the loser's second attempt replaces the winner. */
 const BIND_ATTEMPTS = 2;
