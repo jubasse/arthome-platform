@@ -5,11 +5,8 @@ import { Artist } from '../artists/artist.entity.js';
 import { holdChannelFace } from '../artists/channel-face-lock.js';
 import { assertNever } from '../assert-never.js';
 import type { Show } from '../catalog/show.entity.js';
-import {
-  DateScheduled,
-  type PerformanceDateEvent,
-  type PublicDateFacts,
-} from '../dates/performance-date.events.js';
+import { DateScheduled, type PublicDateFacts } from '../dates/performance-date.events.js';
+import type { DateKeyedEvent, ReplayEvent, ReplayStateChanged } from '../replays/replay.events.js';
 import type { Venue } from '../venues/venue.entity.js';
 
 const APPLIED = { version: () => 'version + 1', applied_at: () => 'now()' };
@@ -38,7 +35,18 @@ export async function projectShowCopy(
 }
 
 type DateChanges = Partial<
-  Pick<DateDetailPublic, 'outcome' | 'rescheduled_to' | 'starts_at' | 'slug' | 'publication_state'>
+  Pick<
+    DateDetailPublic,
+    | 'outcome'
+    | 'rescheduled_to'
+    | 'starts_at'
+    | 'slug'
+    | 'publication_state'
+    | 'replay_state'
+    | 'replay_closes_at'
+    | 'replay_online_at'
+    | 'replay_duration_sec'
+  >
 >;
 
 /** What a date's row copies from its show and its venue. */
@@ -53,24 +61,54 @@ export interface DateCopies {
  */
 export async function projectDateEvents(
   manager: EntityManager,
-  events: readonly PerformanceDateEvent[],
+  events: readonly DateKeyedEvent[],
   copies: DateCopies,
 ): Promise<void> {
-  const changes = events.reduce<DateChanges>(
-    (merged, event) => ({ ...merged, ...changesOf(event) }),
-    {},
-  );
+  const changes = mergedChangesOf(events);
   const scheduled = events.find((event) => event instanceof DateScheduled);
   if (scheduled !== undefined) {
     await insertPublicDate(manager, scheduled.facts, copies, changes);
     return;
   }
+  await updatePublicDate(manager, events, changes);
+}
+
+/** A command that moved the `Replay` alone, which copies nothing from the show or the venue. */
+export async function projectReplayEvents(
+  manager: EntityManager,
+  events: readonly ReplayEvent[],
+): Promise<void> {
+  await updatePublicDate(manager, events, mergedChangesOf(events));
+}
+
+function mergedChangesOf(events: readonly DateKeyedEvent[]): DateChanges {
+  return events.reduce<DateChanges>((merged, event) => ({ ...merged, ...changesOf(event) }), {});
+}
+
+async function updatePublicDate(
+  manager: EntityManager,
+  events: readonly DateKeyedEvent[],
+  changes: DateChanges,
+): Promise<void> {
   const [first] = events;
   if (first === undefined || Object.keys(changes).length === 0) return;
   await manager.update(DateDetailPublic, { date_id: first.dateId }, { ...changes, ...APPLIED });
 }
 
-function changesOf(event: PerformanceDateEvent): DateChanges {
+const dateOf = (instant: string | null): Date | null =>
+  instant === null ? null : new Date(instant);
+
+/** Exactly what the transition's event carries, so the page and `state_changed` never differ. */
+function replayChangesOf(event: ReplayStateChanged): DateChanges {
+  return {
+    replay_state: event.to,
+    replay_closes_at: new Date(event.closesAt),
+    replay_online_at: dateOf(event.onlineAt),
+    replay_duration_sec: event.durationSec,
+  };
+}
+
+function changesOf(event: DateKeyedEvent): DateChanges {
   switch (event.kind) {
     case 'PublicationStateChanged':
       return { publication_state: event.to };
@@ -82,6 +120,8 @@ function changesOf(event: PerformanceDateEvent): DateChanges {
       };
     case 'DateRescheduled':
       return { starts_at: new Date(event.newStartsAt), slug: event.newSlug };
+    case 'ReplayStateChanged':
+      return replayChangesOf(event);
     // A draft has no public row, `DateScheduled` writes it whole, and the lock shows on no page.
     case 'DateDrafted':
     case 'DateScheduled':

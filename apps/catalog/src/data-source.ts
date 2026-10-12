@@ -20,8 +20,10 @@ import { DateDetailPublic1790420600000 } from './migrations/1790420600000-date-d
 import { DateOutcome1790420700000 } from './migrations/1790420700000-date-outcome.js';
 import { Artist1790420800000 } from './migrations/1790420800000-artist.js';
 import { PublicSlugs1790420900000 } from './migrations/1790420900000-public-slugs.js';
+import { Replay1790421000000 } from './migrations/1790421000000-replay.js';
 import { DateDetailPublic } from './public/date-detail-public.entity.js';
 import { SlugAlias } from './public/slug-alias.entity.js';
+import { ReplayRow } from './replays/replay.entity.js';
 import { Venue } from './venues/venue.entity.js';
 
 /**
@@ -39,6 +41,7 @@ export const dataSource: DataSource = new DataSource({
     PerformanceDateRow,
     PublicationRow,
     PublicationChecklistFact,
+    ReplayRow,
     DateDetailPublic,
     Artist,
     SlugAlias,
@@ -57,6 +60,7 @@ export const dataSource: DataSource = new DataSource({
     DateOutcome1790420700000,
     Artist1790420800000,
     PublicSlugs1790420900000,
+    Replay1790421000000,
   ],
   applicationName: Service.CATALOG,
 

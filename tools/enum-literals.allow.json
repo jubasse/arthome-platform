@@ -80,6 +80,11 @@
       "file": "apps/streaming/src/replay-asset/recording-calls.ts",
       "value": "withdrawn",
       "reason": "Reads `Readiness`'s tag, the same local discriminant as in replay-asset.ts, not catalog's `Replay` state."
+    },
+    {
+      "file": "apps/catalog/src/replays/replay.entity.ts",
+      "value": "replay",
+      "reason": "The `Replay` aggregate's table name (`@Entity('replay')`, data-model.md §2.2). DISPLAY_STATES' `replay` is what a card shows and DATE_PANES' a studio pane; neither names a table."
     }
   ]
 }

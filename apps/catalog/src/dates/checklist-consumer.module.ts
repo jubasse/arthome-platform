@@ -8,6 +8,7 @@ import { RecordChecklistFactHandler } from './record-checklist-fact.handler.js';
 import { CatalogTransactionsModule } from '../catalog-transactions.js';
 import { CLOCK } from '../clock.js';
 import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
+import { LearnReplayAssetFactHandler } from '../replays/learn-replay-asset-fact.handler.js';
 
 /** What the consumer dispatches to, in its own process beside the API. */
 @Module({
@@ -15,6 +16,7 @@ import { PUBLIC_WEB_ORIGIN } from '../public-web-origin.js';
   providers: [
     RecordChecklistFactHandler,
     LearnRunFactHandler,
+    LearnReplayAssetFactHandler,
     { provide: CLOCK, useValue: new SystemClock() },
     { provide: PUBLIC_WEB_ORIGIN, useValue: readPublicWebOrigin() },
   ],

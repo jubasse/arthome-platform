@@ -5,15 +5,16 @@ import {
   DomainConstant,
   Locale,
   PublicationState,
+  ReplayState,
   RunState,
   publicDisplayStateOf,
-  replayEndsAt,
   roomOpensAt,
   type DateTiming,
   type DateOutcome,
   type Instant,
   type LanguageDependency,
   type MediaSet,
+  type ReplayDisplayInput,
   type ReplayPolicy,
   type RightsScope,
 } from '@arthome/core';
@@ -56,6 +57,14 @@ export interface PublicDate {
   readonly title_fr: string;
   readonly title_en: string;
   readonly media: MediaSet;
+  /**
+   * The date's `Replay` as its last `catalog.replay.state_changed.v1` carried it, absent or null
+   *   before its live ended. Optional, so the search index's document fills them under these names.
+   */
+  readonly replay_state?: ReplayState | null;
+  readonly replay_closes_at?: Instant | null;
+  readonly replay_online_at?: Instant | null;
+  readonly replay_duration_sec?: number | null;
 }
 
 export function timingOf(date: PublicDate): DateTiming {
@@ -93,18 +102,47 @@ export function runStateKnownFrom(publicationState: PublicationState): RunState 
   }
 }
 
+function replayDisplayOf(date: PublicDate): ReplayDisplayInput | null {
+  const state = date.replay_state ?? null;
+  const closesAt = date.replay_closes_at ?? null;
+  return state === null || closesAt === null ? null : { state, closesAt };
+}
+
+const SHOWS_ITS_WINDOW: ReadonlySet<ReplayState> = new Set([
+  ReplayState.ONLINE,
+  ReplayState.CLOSED,
+]);
+
+/** The `Replay`'s facts, never the scheduled timing's: a window shows once it was online or closed. */
+function replayOf(date: PublicDate) {
+  const promise = { policy: date.replay_policy, windowHours: date.replay_window_hours };
+  const state = date.replay_state ?? null;
+  if (state === null || !SHOWS_ITS_WINDOW.has(state)) return promise;
+  const onlineAt = date.replay_online_at ?? null;
+  const closesAt = date.replay_closes_at ?? null;
+  const durationSec = date.replay_duration_sec ?? null;
+  return {
+    ...promise,
+    ...(onlineAt !== null && { availableFrom: onlineAt }),
+    ...(closesAt !== null && { expiresAt: closesAt }),
+    ...(durationSec !== null && { durationSec }),
+  };
+}
+
 /**
  * The public card, anonymous: no per-viewer overlay, and the title in its own language, because a
  *   public read has no viewer language to choose another.
  */
 export function dateCardOf(date: PublicDate, now: Instant): DateCard {
   const timing = timingOf(date);
+  const replay = replayDisplayOf(date);
   const display = publicDisplayStateOf({
     publicationState: date.publication_state,
     runState: runStateKnownFrom(date.publication_state),
     outcome: date.outcome,
     timing,
     now,
+    ...(replay !== null && { replay }),
   });
   const french = servedInFrench(date);
   const venueClock = venueClockAt(date.venue_timezone, date.starts_at);
@@ -138,11 +176,7 @@ export function dateCardOf(date: PublicDate, now: Instant): DateCard {
     displayStateValidUntil: display.validUntil,
     ...(date.outcome !== null && { outcome: date.outcome }),
     ...(date.rescheduled_to !== null && { rescheduledTo: date.rescheduled_to }),
-    replay: {
-      policy: date.replay_policy,
-      windowHours: date.replay_window_hours,
-      expiresAt: replayEndsAt(timing),
-    },
+    replay: replayOf(date),
     rights: {
       scope: date.rights_scope,
       blackoutCountries: [...date.blackout_countries],
