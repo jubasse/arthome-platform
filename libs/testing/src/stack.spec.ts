@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { composeImage } from './stack.js';
+import { composeEnvironmentValue, composeImage, connectEnvironment } from './stack.js';
 
 /**
  * The `compose.yaml` reader, asserted without a container: it is the one part of
@@ -26,5 +26,13 @@ describe('composeImage', () => {
 
   it('says so rather than guessing when the service is not there', () => {
     expect(() => composeImage('nothing-declares-this')).toThrow(/declares no service/);
+  });
+});
+
+describe('the Connect worker environment', () => {
+  it('sets the same rebalance delay in the harness as compose.yaml does', () => {
+    const key = 'CONNECT_SCHEDULED_REBALANCE_MAX_DELAY_MS';
+    expect(composeEnvironmentValue('connect', key)).toBeDefined();
+    expect(connectEnvironment('g')[key]).toBe(composeEnvironmentValue('connect', key));
   });
 });

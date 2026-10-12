@@ -954,13 +954,12 @@ adr-ticketing.md §12's races and failure drills, on real Postgres, Redis, Kafka
   and readiness stays up; once Kafka is back every outbox row reaches its topic in commit order per
   key, a consumer claiming by `message-id` applies each once (redeliveries happen), and the catalog
   consumer, never restarted, applies a cancellation produced after it and answers its redelivery
-  `DUPLICATE`. **Found, not fixed**: past the Connect worker's session the
-  broker, resuming, may evict it, and its connector then waits Connect's
-  `scheduled.rebalance.max.delay.ms` (five minutes by default) before it is assigned again: the
-  last row arrived 1.5 s, 300.9 s and 302.5 s after the resume over three runs. Nothing is lost,
-  but the freshness transport.md §5.9 promises is not kept for those minutes; a single-worker
-  Connect can set that delay far lower (`CONNECT_SCHEDULED_REBALANCE_MAX_DELAY_MS`), a deployment
-  decision left open.
+  `DUPLICATE`. **Found, fixed**: past the Connect worker's session the
+  broker, resuming, may evict it, and its connector then waited Connect's
+  `scheduled.rebalance.max.delay.ms` (five minutes by default) before it was assigned again: the
+  last row arrived 1.5 s, 300.9 s and 302.5 s after the resume over three runs. The delay is now
+  20 s (`CONNECT_SCHEDULED_REBALANCE_MAX_DELAY_MS`) in `compose.yaml` and in the test harness, a
+  spec keeps the two equal, and the drill waits 140 s for the last row (20 s plus 120 s of margin).
 - **The flaky timings made causal**: `publish-due-availability.itest.ts`' three (§0e) and
   `expire-due-holds.itest.ts`' skip (§0i). The publisher's suite passed 20 runs in a row
   while ticketing's whole integration suite (37 files) ran beside it, the load average at 25 to 54
