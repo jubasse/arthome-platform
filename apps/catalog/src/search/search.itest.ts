@@ -186,7 +186,7 @@ describe('GET /v1/search against a real index', () => {
         matchingDatesCount: 3,
         representativeDate: {
           id: '01a0e500-0000-7000-8000-000000000a01',
-          displayState: DisplayState.ENDED,
+          displayState: DisplayState.REPLAY,
         },
       });
       expect(body.page).toMatchObject({ hasMore: false, approximateTotal: 2 });
