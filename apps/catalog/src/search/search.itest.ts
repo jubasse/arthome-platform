@@ -15,6 +15,7 @@ import {
   FixedClock,
   PublicationState,
   ReplayPolicy,
+  ReplayState,
   Service,
 } from '@arthome/core';
 
@@ -75,6 +76,10 @@ function date(
 const DATES: readonly ServableDateDocument[] = [
   date('01a0e500-0000-7000-8000-000000000a01', SHOW_A, '2026-11-04T19:30:00.000Z', {
     publication_state: PublicationState.ENDED,
+    replay_state: ReplayState.ONLINE,
+    replay_closes_at: '2026-11-07T21:05:00.000Z',
+    replay_online_at: '2026-11-05T09:00:00.000Z',
+    replay_duration_sec: 5400,
   }),
   date('01a0e500-0000-7000-8000-000000000a02', SHOW_A, '2026-11-10T19:30:00.000Z'),
   date('01a0e500-0000-7000-8000-000000000a03', SHOW_A, '2026-11-20T19:30:00.000Z', {
@@ -181,7 +186,7 @@ describe('GET /v1/search against a real index', () => {
         matchingDatesCount: 3,
         representativeDate: {
           id: '01a0e500-0000-7000-8000-000000000a01',
-          displayState: DisplayState.ENDED,
+          displayState: DisplayState.REPLAY,
         },
       });
       expect(body.page).toMatchObject({ hasMore: false, approximateTotal: 2 });

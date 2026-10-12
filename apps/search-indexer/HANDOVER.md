@@ -2,6 +2,26 @@
 
 Wave 2, agent C. Everything below `apps/search-indexer/` and nothing else was written.
 
+## 0a. Since RS1: the index learns the replay (2026-10-12)
+
+`catalog.replay.state_changed.v1` (on `arthome.catalog.date`, key `date_id`) is now a fourth fact of
+`date_projection`, guarded by the `Replay`'s own `version` like the publication's state.
+
+- **Columns**: `replay_state`, `replay_live_ended_at`, `replay_closes_at`, `replay_online_at`,
+  `replay_duration_sec`, `replay_version` (migration `1790430400000-replay`, all nullable, no
+  backfill). A newer version replaces the five facts at once; a reordered `pending` after `online`
+  is `superseded`. A replay fact before `DateScheduled` is kept, never indexed alone. An unknown
+  `ReplayState`, a missing `closes_at` or a missing `live_ended_at` is a permanent error (dead-lettered).
+- **Document**: `replay_state`, `replay_closes_at`, `replay_online_at`, `replay_duration_sec`,
+  the names of catalog's `PublicDate`, so `servable-document.ts`'s spread carries them into the card.
+- **`over_at`** is the instant the date leaves search: the event's `closes_at` for `pending`,
+  `online` and `closed`; the event's `live_ended_at` for `withdrawn`; the scheduled bound before any
+  replay fact. A pending replay stays searchable until its closing, its card saying `ended`.
+- **The `replays` tab** (catalog) lists `replay_state = online` and `replay_closes_at > now`.
+- **Mapping**: four additive properties, put on boot by `ensureIndices`; no reindex. A document
+  indexed before this release has no replay fields and yields a card without a replay facet; it
+  gains them when its next fact arrives.
+
 ## 0. Since wave 2: a read model, and the date index (2026-09-26)
 
 The indexer now keeps its own copy of shows and dates, fed only by events, and composes every

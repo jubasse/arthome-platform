@@ -1,6 +1,13 @@
 import type { DateDocument, ShowDocument } from '@arthome-platform/search-index';
 
-import { DomainConstant, ReplayPolicy, endsAt, replayEndsAt, type DateTiming } from '@arthome/core';
+import {
+  DomainConstant,
+  ReplayPolicy,
+  ReplayState,
+  endsAt,
+  replayEndsAt,
+  type DateTiming,
+} from '@arthome/core';
 
 import type { ArtistProjection } from '../consumer/artist-projection.entity.js';
 import type { DateProjection, ScheduledDateFields } from '../consumer/date-projection.entity.js';
@@ -46,6 +53,33 @@ function timingOf(scheduled: ScheduledDateFields, startsAt: string): DateTiming 
   };
 }
 
+function replayFacts(date: DateProjection) {
+  return {
+    state: date.replay_state,
+    closesAt: date.replay_closes_at?.toISOString() ?? null,
+    onlineAt: date.replay_online_at?.toISOString() ?? null,
+    durationSec: date.replay_duration_sec,
+  };
+}
+
+/**
+ * The instant the date leaves search. The Replay's event states it: the real closing, or the
+ * live's end when no replay will exist. With no fact yet, the date's live has not ended and the
+ * scheduled bound is the best known.
+ */
+function overAt(date: DateProjection, scheduledBound: string): string {
+  switch (date.replay_state) {
+    case ReplayState.PENDING:
+    case ReplayState.ONLINE:
+    case ReplayState.CLOSED:
+      return date.replay_closes_at?.toISOString() ?? scheduledBound;
+    case ReplayState.WITHDRAWN:
+      return date.replay_live_ended_at?.toISOString() ?? scheduledBound;
+    default:
+      return scheduledBound;
+  }
+}
+
 export function dateDocumentOf(
   date: DateProjection & { readonly scheduled: ScheduledDateFields },
   show: ShowProjection | null,
@@ -58,6 +92,7 @@ export function dateDocumentOf(
   const startsAt = date.moved_starts_at?.toISOString() ?? scheduled.starts_at;
   const timing = timingOf(scheduled, startsAt);
   const endedAt = endsAt(timing);
+  const replay = replayFacts(date);
   return {
     date_id: date.date_id,
     show_id: scheduled.show_id,
@@ -79,7 +114,11 @@ export function dateDocumentOf(
     outcome: date.outcome,
     rescheduled_to: date.outcome_rescheduled_to?.toISOString() ?? null,
     ends_at: endedAt,
-    over_at: replayEndsAt(timing) ?? endedAt,
+    over_at: overAt(date, replayEndsAt(timing) ?? endedAt),
+    replay_state: replay.state,
+    replay_closes_at: replay.closesAt,
+    replay_online_at: replay.onlineAt,
+    replay_duration_sec: replay.durationSec,
 
     // The channel's face when the indexer holds it, else the artist the show named.
     artist_id: artist?.artist_id ?? show?.published?.artist_id ?? null,

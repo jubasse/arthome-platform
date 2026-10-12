@@ -1,6 +1,12 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
-import type { DateOutcome, PublicationState, ReplayPolicy, RightsScope } from '@arthome/core';
+import type {
+  DateOutcome,
+  PublicationState,
+  ReplayPolicy,
+  ReplayState,
+  RightsScope,
+} from '@arthome/core';
 
 /** What DateScheduled states about a date. */
 export interface ScheduledDateFields {
@@ -73,6 +79,28 @@ export class DateProjection {
 
   @Column('bigint', { nullable: true })
   moved_version!: string | null;
+
+  /**
+   * CatalogReplayStateChanged's facts, all replaced together: the event carries every field at
+   * its value. Versioned by the Replay's own `version`.
+   */
+  @Column('text', { nullable: true })
+  replay_state!: ReplayState | null;
+
+  @Column('timestamptz', { nullable: true })
+  replay_live_ended_at!: Date | null;
+
+  @Column('timestamptz', { nullable: true })
+  replay_closes_at!: Date | null;
+
+  @Column('timestamptz', { nullable: true })
+  replay_online_at!: Date | null;
+
+  @Column('integer', { nullable: true })
+  replay_duration_sec!: number | null;
+
+  @Column('bigint', { nullable: true })
+  replay_version!: string | null;
 
   /**
    * Bumped under the row lock each time the document is recomposed, whichever input changed:
