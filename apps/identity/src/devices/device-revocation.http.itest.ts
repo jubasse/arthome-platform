@@ -42,7 +42,6 @@ import { startIdentity, type IdentityHarness } from '../itest/identity-app.js';
 const STARTUP_MS = 240_000;
 const CASE_MS = 60_000;
 const LOCK_WAIT_MS = 10_000;
-const DAY_MS = 86_400_000;
 
 const clock = new FixedClock('2026-10-12T12:00:00.000Z');
 let identity: IdentityHarness;
@@ -232,8 +231,8 @@ describe('revoking a device', () => {
       const lapsed = await signedIn(identity, neighbour.email, presenting(owner.device.token));
       const { deviceId } = owner.session;
       await identity.dataSource.query(
-        `UPDATE ${AUTH_SCHEMA}.session SET "expiresAt" = $2 WHERE id = $1`,
-        [await authSessionIdOf(lapsed.session.deviceSessionId), new Date(clock.nowMs() - DAY_MS)],
+        `UPDATE ${AUTH_SCHEMA}.session SET "expiresAt" = now() - interval '1 day' WHERE id = $1`,
+        [await authSessionIdOf(lapsed.session.deviceSessionId)],
       );
       expect(await resolved(identity, lapsed.session.token)).toBeNull();
 

@@ -28,18 +28,19 @@ const BIND_ATTEMPTS = 2;
 /**
  * Another account holds the device while one of its bindings there still resolves, as the resolve
  *   reads it: open, its better-auth session unexpired, its account still signing in. A binding no
- *   one closed after its session lapsed holds nothing.
+ *   one closed after its session lapsed holds nothing. Expiry is better-auth's, on the wall clock
+ *   rather than identity's `Clock`.
  */
 const STILL_HELD_SQL = `
   SELECT EXISTS (
     SELECT 1
       FROM device_session ds
       JOIN account a ON a.id = ds.account_id
-      JOIN ${AUTH_SCHEMA}.session s ON s.id = ds.auth_session_id AND s."userId" = ds.account_id
+      JOIN ${AUTH_SCHEMA}.session s ON s.id = ds.auth_session_id AND s."userId" = ds.account_id::text
      WHERE ds.device_id = $1
        AND ds.closed_at IS NULL
        AND a.status = ANY($2)
-       AND s."expiresAt" > $3
+       AND s."expiresAt" > now()
   ) AS held`;
 
 const CLOSED_BINDING_COLUMNS = 'id, device_id, account_id, profile_id, auth_session_id';
@@ -199,7 +200,6 @@ export class DevicesService {
     const [{ held }] = await manager.query<[{ held: boolean }]>(STILL_HELD_SQL, [
       deviceId,
       SIGNING_IN_STATUSES,
-      now,
     ]);
     if (!held) {
       await manager.update(Device, { id: deviceId }, { revoked_at: now });
