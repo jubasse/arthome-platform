@@ -1010,10 +1010,13 @@ adr-ticketing.md §12's races and failure drills, on real Postgres, Redis, Kafka
   The seat foreign key takes `FOR KEY SHARE` on each granted seat, which only a delete or a key
   change of the seat waits on, and no path makes either: a refund's or a cancellation's update
   passes, and a grant passes a refund holding its order, the date and the seat (tested).
-- **Measured** (`replay-access.itest.ts`): 5,000 active seats granted in one fact's transaction in
-  220 to 290 ms at a load average of 7 to 12, and up to 1.5 s with the machine saturated (load 16
-  to 22) by other suites; the seat foreign key's checks are about half of it. The bound is one
-  second: above it, the grant moves to a sweeper batch, as §0n's settlement.
+- **Measured** (`replay-access.itest.ts`): one fact's transaction granting 5,000 active seats
+  took 221 to 292 ms at a load average of 7 to 12, 0.8 to 1.5 s at 16 to 22, and 1.1 s beside
+  ticketing's whole integration suite at 40; the seat foreign key's checks are about half of it,
+  kept for a money record's integrity. The budget is one second on a normal host; above it, the
+  grant moves to a sweeper batch, as §0n's settlement. The suite proves the shape rather than a
+  wall clock: 50 and 5,000 seats are granted in the same number of statements, with a 5 s smoke
+  guard.
 
 ## 1. What proves it
 

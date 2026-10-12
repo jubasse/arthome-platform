@@ -20,7 +20,7 @@ import { CommandBus, CqrsModule } from '@nestjs/cqrs';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { Kafka, logLevel, type Producer } from 'kafkajs';
 import { DataSource } from 'typeorm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   FixedClock,
@@ -58,8 +58,11 @@ import { TicketingTransactions } from '../ticketing-transactions.js';
 const STARTUP_MS = 240_000;
 const CASE_MS = 60_000;
 const BOUND_CASE_MS = 120_000;
-/** Above it the grant moves to a sweeper batch (RT1 §6.10). */
-const GRANT_BOUND_MS = 1_000;
+/**
+ * A smoke guard only: the one-second budget (RT1 §6.10) is met on a quiet host, and a wall clock
+ *   under load measures the machine; the shape is proved by counting statements.
+ */
+const SMOKE_BOUND_MS = 5_000;
 
 const CHANNEL = 'channel-replay-itest';
 const NOW = '2026-10-11T08:00:00.000Z';
@@ -108,6 +111,30 @@ async function dateWithSeats(
     [dateId],
   );
   return seats.map(({ id }) => id);
+}
+
+/** Every statement `work` sends, through the transactions' query runners. */
+async function counted<T>(
+  work: () => Promise<T>,
+): Promise<{ result: T; statements: number; elapsedMs: number }> {
+  let statements = 0;
+  const createQueryRunner = dataSource.createQueryRunner.bind(dataSource);
+  const spy = vi.spyOn(dataSource, 'createQueryRunner').mockImplementation((mode) => {
+    const runner = createQueryRunner(mode);
+    const query = runner.query.bind(runner);
+    runner.query = ((...args: Parameters<typeof query>) => {
+      statements += 1;
+      return query(...args);
+    }) as typeof runner.query;
+    return runner;
+  });
+  const startedAt = performance.now();
+  try {
+    const result = await work();
+    return { result, statements, elapsedMs: performance.now() - startedAt };
+  } finally {
+    spy.mockRestore();
+  }
 }
 
 const ENDED_SEAT = `UPDATE seat SET state = $2, ended_at = now() WHERE id = $1`;
@@ -341,23 +368,38 @@ describe('the included replay accesses', () => {
   );
 
   it(
-    'grants 5,000 seats within the bound',
+    'grants 50 or 5,000 seats in the same statements, within a smoke bound',
     async () => {
-      const dateId = '01a0f500-0000-7000-8000-000000000007';
+      const few = '01a0f500-0000-7000-8000-000000000007';
+      const many = '01a0f500-0000-7000-8000-000000000008';
       await dateWithSeats(
-        dateId,
+        few,
         '01a0f507',
+        Array.from({ length: 10 }, () => 5),
+      );
+      await dateWithSeats(
+        many,
+        '01a0f508',
         Array.from({ length: 1_000 }, () => 5),
       );
 
-      const message = delivered(pending(dateId));
-      const startedAt = performance.now();
-      expect(await applyCatalogDateMessage(commands, message)).toBe(Outcome.APPLIED);
-      const elapsedMs = performance.now() - startedAt;
+      const grantFew = await counted(() =>
+        applyCatalogDateMessage(commands, delivered(pending(few))),
+      );
+      const grantMany = await counted(() =>
+        applyCatalogDateMessage(commands, delivered(pending(many))),
+      );
 
-      console.warn(`granted 5,000 replay accesses in ${elapsedMs.toFixed(0)} ms`);
-      expect(await accessesOf(dateId)).toHaveLength(5_000);
-      expect(elapsedMs).toBeLessThan(GRANT_BOUND_MS);
+      console.warn(
+        `granted 50 accesses in ${grantFew.elapsedMs.toFixed(0)} ms, ` +
+          `5,000 in ${grantMany.elapsedMs.toFixed(0)} ms`,
+      );
+      expect([grantFew.result, grantMany.result]).toEqual([Outcome.APPLIED, Outcome.APPLIED]);
+      expect(await accessesOf(few)).toHaveLength(50);
+      expect(await accessesOf(many)).toHaveLength(5_000);
+      expect(grantFew.statements).toBeGreaterThan(0);
+      expect(grantMany.statements).toBe(grantFew.statements);
+      expect(grantMany.elapsedMs).toBeLessThan(SMOKE_BOUND_MS);
     },
     BOUND_CASE_MS,
   );
