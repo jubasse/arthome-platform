@@ -70,9 +70,10 @@ function routed(row: DeviceEventRow): WireMessage {
   };
 }
 
-async function deliveredFrom(deviceId: string): Promise<Outcome[]> {
+/** The device's events past the first `delivered`, which streaming has applied already. */
+async function deliveredFrom(deviceId: string, delivered = 0): Promise<Outcome[]> {
   const outcomes: Outcome[] = [];
-  for (const row of await deviceEventsOf(identity, deviceId)) {
+  for (const row of (await deviceEventsOf(identity, deviceId)).slice(delivered)) {
     outcomes.push(await playback.apply(routed(row)));
   }
   return outcomes;
@@ -131,28 +132,33 @@ async function expectRenewalRefused(viewer: Viewer, sessionId: string): Promise<
 
 describe("identity's device events, read by streaming", () => {
   it(
-    'a revoked device ends the leases of every account on it, and no lease elsewhere',
+    "a device revoked by one account ends that account's leases on it, the last one's too",
     async () => {
       const { owner, neighbour, leases } = await sharedTelevision();
+      const { deviceId } = owner.session;
 
-      const revoked = await revokeDevice(
-        identity,
-        playback.clock,
-        callerOf(owner),
-        owner.session.deviceId,
-      );
-      expect(revoked.statusCode).toBe(200);
-      expect(await deliveredFrom(owner.session.deviceId)).toEqual([
-        Outcome.APPLIED,
-        Outcome.APPLIED,
-      ]);
+      expect(
+        (await revokeDevice(identity, playback.clock, callerOf(owner), deviceId)).statusCode,
+      ).toBe(200);
+      expect(await deliveredFrom(deviceId)).toEqual([Outcome.APPLIED]);
+
+      expect(await statesOf(owner.session.accountId, neighbour.session.accountId)).toEqual({
+        [leases.owner]: REVOKED,
+        [leases.neighbour]: ACTIVE,
+        [leases.ownerElsewhere]: ACTIVE,
+      });
+      await expectRenewalRefused(viewerOf(owner), leases.owner);
+
+      expect(
+        (await revokeDevice(identity, playback.clock, callerOf(neighbour), deviceId)).statusCode,
+      ).toBe(200);
+      expect(await deliveredFrom(deviceId, 1)).toEqual([Outcome.APPLIED, Outcome.APPLIED]);
 
       expect(await statesOf(owner.session.accountId, neighbour.session.accountId)).toEqual({
         [leases.owner]: REVOKED,
         [leases.neighbour]: REVOKED,
         [leases.ownerElsewhere]: ACTIVE,
       });
-      await expectRenewalRefused(viewerOf(owner), leases.owner);
       await expectRenewalRefused(viewerOf(neighbour), leases.neighbour);
     },
     CASE_MS,

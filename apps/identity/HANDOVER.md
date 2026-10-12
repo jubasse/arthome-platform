@@ -179,12 +179,16 @@ both (`apps/streaming/src/devices/`) and refuses the next renewal `identity.sign
 
 | Act | Rows | Event |
 | --- | --- | --- |
-| `POST /v1/devices/{deviceId}/revoke` | `device.revoked_at`; every open binding on the device closed, whichever account holds it | one `identity.device.revoked.v1` **per account** whose binding closed: streaming cuts leases by (account, device), so one event per account is what ends every lease on the device |
+| `POST /v1/devices/{deviceId}/revoke` | the caller's open bindings on the device closed; `device.revoked_at` only once no other account holds an open binding there | one `identity.device_session.closed.v1` per binding closed; `identity.device.revoked.v1` once, with the caller's account, when the device is revoked |
 | `POST /v1/device-sessions/{sessionId}/close` | that binding's `closed_at` | one `identity.device_session.closed.v1` with its `profile_id`; `self_initiated` when the token's `did` is the binding's device |
 | `POST /v1/sessions/revoke` (sign-out) | the session's binding closed | the same close event, `self_initiated: true`, the actor being the session's own account |
 
-- **No cross-account reach.** A revoke needs an open binding of the caller on the device; a close
-  needs the caller's own binding. Anything else, an unknown id and a device revoked already answer
+- **One device, several accounts.** A `device` row has no account: a browser keeps one device
+  across sign-outs, so accounts share it. A revoke closes only the caller's bindings and never
+  cuts another account's leases; the device is revoked by the last account holding it.
+- **No cross-account reach.** A revoke needs an open binding of the caller on the device, read by
+  the closing `UPDATE` itself under the device's row lock, so a close that wins the race leaves the
+  revoke a 404; a close needs the caller's own binding. Anything else, an unknown id and a device revoked already answer
   `404 api.not_found`, and write nothing. A close of a binding closed already answers `200` with no
   event; a replayed key answers the first `200` with no second event.
 - **What writes no event.** A sign-in of the same profile on the same device replaces the first

@@ -148,9 +148,12 @@ export class DevicesService {
   }
 
   /**
-   * Revokes the device and closes every open binding on it, whichever account holds it, with one
-   *   `identity.device.revoked.v1` per account: streaming cuts leases by (account, device). Unknown,
-   *   revoked, or holding no open binding of the caller: 404, as another account's device answers.
+   * Closes the caller's open bindings on the device, one `identity.device_session.closed.v1` each,
+   *   and revokes the device, with its `identity.device.revoked.v1`, once no other account holds an
+   *   open binding there: a browser keeps one device across accounts, and one account never signs
+   *   another out. The closing UPDATE is the check, under the device's row lock: unknown, revoked,
+   *   or none of the caller's bindings left open (a concurrent close included): 404, as another
+   *   account's device answers.
    */
   public async revoke(
     manager: EntityManager,
@@ -162,25 +165,30 @@ export class DevicesService {
       lock: { mode: 'pessimistic_write' },
     });
     if (device?.revoked_at !== null) throw notFound();
-    const held = await manager.existsBy(DeviceSession, {
-      device_id: deviceId,
-      account_id: act.accountId,
-      closed_at: IsNull(),
-    });
-    if (!held) throw notFound();
     const now = new Date(this.clock.nowMs());
-    await manager.update(Device, { id: deviceId }, { revoked_at: now });
     const closed = (
       await updateReturning<ClosedBindingRow>(
         manager,
-        `UPDATE device_session SET closed_at = $2
-          WHERE device_id = $1 AND closed_at IS NULL
+        `UPDATE device_session SET closed_at = $3
+          WHERE device_id = $1 AND account_id = $2 AND closed_at IS NULL
       RETURNING ${CLOSED_BINDING_COLUMNS}`,
-        [deviceId, now],
+        [deviceId, act.accountId, now],
       )
     ).map(closedBindingOf);
-    for (const accountId of new Set(closed.map((binding) => binding.accountId))) {
-      await recordDeviceRevoked(manager, { deviceId, accountId, kind: device.kind }, act, now);
+    if (closed.length === 0) throw notFound();
+    for (const binding of closed) await recordDeviceSessionClosed(manager, binding, act, now);
+    const stillHeld = await manager.existsBy(DeviceSession, {
+      device_id: deviceId,
+      closed_at: IsNull(),
+    });
+    if (!stillHeld) {
+      await manager.update(Device, { id: deviceId }, { revoked_at: now });
+      await recordDeviceRevoked(
+        manager,
+        { deviceId, accountId: act.accountId, kind: device.kind },
+        act,
+        now,
+      );
     }
     return closed;
   }

@@ -72,7 +72,7 @@ function actorOf(act: DeviceAct) {
   return create(ActorSchema, { accountId: act.accountId, surface: act.surface });
 }
 
-/** One per account whose binding the revocation closed: streaming keys on (account, device). */
+/** Once per device, by the last account holding it: streaming keys on (account, device). */
 export async function recordDeviceRevoked(
   manager: EntityManager,
   revoked: { readonly deviceId: string; readonly accountId: string; readonly kind: DeviceKind },

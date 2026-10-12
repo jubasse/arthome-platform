@@ -594,7 +594,7 @@ What should then be true, and what is worth checking because each step can fail 
 | its headers | all five: `message-id`, `type`, `traceparent`, `actor-id`, `occurred-at` — the traceparent being the one the request carried. Debezium renders a NULL column as the four characters `null`, not as an absent header |
 | `notifications.welcome_email` | one row, holding that same traceparent; nothing reads the verification topic yet |
 | replaying the message | the consumer says `duplicate` and the row count does **not** move |
-| signing out (`POST /v1/sessions/revoke`) | one `identity.device_session.closed.v1` on `arthome.identity.device`, key = the device id, `self_initiated` true: streaming ends that profile's leases on the device; a device revocation writes one `identity.device.revoked.v1` per account on it (`apps/identity/HANDOVER.md` §0c) |
+| signing out (`POST /v1/sessions/revoke`) | one `identity.device_session.closed.v1` on `arthome.identity.device`, key = the device id, `self_initiated` true: streaming ends that profile's leases on the device; a device revocation closes the caller's bindings on it, one close event each, and writes `identity.device.revoked.v1` once the last account holding it revokes it (`apps/identity/HANDOVER.md` §0c) |
 
 ### The catalog date path
 
