@@ -113,6 +113,8 @@ const REMOTE_ADDRESS = '10.77.0.1';
 /** Envoy's clock skew allowance on `exp`, with a margin for the machine. */
 const EDGE_SKEW_MS = 5_000;
 const LEASE_LAPSE_MS = 95_000;
+const LEASE_POLL_MS = 5_000;
+const SEGMENT_URL = /\.(mp4|m4s|ts|aac)(\?|$)/;
 const DEVICE_TOPIC = 'arthome.identity.device';
 const PLAYBACK_COOKIE = 'arthome_playback';
 
@@ -345,19 +347,33 @@ beforeAll(async () => {
 }, STARTUP_MS);
 
 afterAll(async () => {
-  await bff?.close();
-  await stopConsumers?.();
-  await provider?.beforeApplicationShutdown();
-  await streaming?.close();
-  await identity?.close();
-  if (connectorName !== undefined) {
-    await fetch(`${stack.connect.url}/connectors/${connectorName}`, { method: 'DELETE' }).catch(
-      () => undefined,
-    );
+  const failures: unknown[] = [];
+  const settle = async (close: Promise<unknown> | undefined) => {
+    try {
+      await close;
+    } catch (error) {
+      failures.push(error);
+    }
+  };
+  try {
+    await settle(bff?.close());
+    await settle(stopConsumers?.());
+    await settle(provider?.beforeApplicationShutdown());
+    await settle(streaming?.close());
+    await settle(identity?.close());
+    if (connectorName !== undefined) {
+      await fetch(`${stack.connect.url}/connectors/${connectorName}`, { method: 'DELETE' }).catch(
+        () => undefined,
+      );
+    }
+    await settle(live?.encoder?.stop());
+  } finally {
+    await settle(media?.stop());
+    await settle(stack?.stop());
   }
-  await live?.encoder?.stop();
-  await media?.stop();
-  await stack?.stop();
+  if (failures.length > 0) {
+    throw failures[0];
+  }
 }, MEDIA_STACK_STOP_MS);
 
 function call(
@@ -445,6 +461,7 @@ async function edgeServes(manifestUrl: string, by: { cookie: string } | { token:
     .filter((line) => line !== '' && !line.startsWith('#'))
     .at(-1);
   expect(part, 'the playlist lists a part').toBeDefined();
+  expect(segment, 'the playlist lists a segment').toBeDefined();
   const partAnswer = await get(new URL(part ?? '', mediaUrl).href);
   const segmentAnswer = await get(new URL(segment ?? '', mediaUrl).href);
   await partAnswer.arrayBuffer();
@@ -487,6 +504,7 @@ async function hold(minutes: number, viewerEmail: string, dateId: string): Promi
     `Hold ends     ${endsAt.toISOString()}`,
     'Sign in at the storefront, watch, then LEAVE THE PAGE (this releases the browser lease)',
     'before the hold ends: the drill then reopens its own playback and goes on to the revoke.',
+    "Hold mode exposes streaming's test-secret API on all of this machine's network interfaces.",
     '',
   ];
   process.stdout.write(`${lines.join('\n')}\n`);
@@ -608,9 +626,11 @@ describe('a viewer from sign-up to a cut device', () => {
       expect(lines[0]).toContain(`Path=/watch/${live.dateId}/`);
       renewedCookie = cookieValueOf(lines);
       expect(renewedCookie).not.toBe('');
+      expect(expiryMsOf(renewedCookie)).toBeGreaterThanOrEqual(expiryMsOf(opened.cookie));
 
       const read = await mediaPlaylist(opened.ticket.manifestUrl, renewedCookie);
       expect(read.status).toBe(200);
+      expect(read.segment, 'the playlist lists a segment').toMatch(SEGMENT_URL);
       servedSegment = read.segment;
       expect((await viaCookie(servedSegment, renewedCookie)).status).toBe(200);
     },
@@ -635,8 +655,11 @@ describe('a viewer from sign-up to a cut device', () => {
       let reopened = await attemptOpen();
       if (reopened.statusCode !== 200) {
         expect(errorOf(reopened).code).toBe(WatchDenialReason.CONCURRENT_LIMIT_REACHED);
-        await sleep(LEASE_LAPSE_MS);
-        reopened = await attemptOpen();
+        const deadline = Date.now() + LEASE_LAPSE_MS;
+        while (reopened.statusCode !== 200 && Date.now() < deadline) {
+          await sleep(LEASE_POLL_MS);
+          reopened = await attemptOpen();
+        }
       }
       expect(reopened.statusCode, reopened.body).toBe(200);
       const ticket = reopened.json<{ data: Ticket }>().data;
