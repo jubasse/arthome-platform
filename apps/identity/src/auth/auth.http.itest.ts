@@ -185,7 +185,13 @@ describe('sign-up', () => {
 
       expect(replay.statusCode).toBe(201);
       expect(replay.headers['idempotency-replayed']).toBe('true');
-      expect(replay.body).toBe(first.body);
+      // The device token alone differs: a replay sets no cookie again (PI1 S2).
+      const { device, ...firstData } = first.json<{ data: { device: unknown } }>().data;
+      expect(replay.json()).toEqual({
+        ...first.json<object>(),
+        data: { ...firstData, device: { token: null } },
+      });
+      expect(device).not.toEqual({ token: null });
 
       const otherPassword = await signUp(email, key, { password: 'another-long-password' });
       expect(otherPassword.statusCode).toBe(409);
