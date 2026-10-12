@@ -1,18 +1,47 @@
 import { randomUUID } from 'node:crypto';
 
+import { notFound } from '@arthome-platform/http-edge';
 import { updateReturning } from '@arthome-platform/transactions';
 import { Inject, Injectable } from '@nestjs/common';
-import type { EntityManager } from 'typeorm';
+import { IsNull, type EntityManager } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { DEVICE_TOKEN_LIFETIME_SECONDS, type Clock } from '@arthome/core';
 
+import {
+  recordDeviceRevoked,
+  recordDeviceSessionClosed,
+  type ClosedBinding,
+  type DeviceAct,
+} from './device-events.js';
+import { DeviceSession } from './device-session.entity.js';
 import { digestOf, newDeviceToken } from './device-token.js';
+import { Device } from './device.entity.js';
 import type { PresentedDevice } from './presented-device.schema.js';
 import { CLOCK } from '../clock.js';
 
 /** Two binds of one (device, profile) can race; the loser's second attempt replaces the winner. */
 const BIND_ATTEMPTS = 2;
+
+const CLOSED_BINDING_COLUMNS = 'id, device_id, account_id, profile_id, auth_session_id';
+
+interface ClosedBindingRow {
+  readonly id: string;
+  readonly device_id: string;
+  readonly account_id: string;
+  readonly profile_id: string;
+  readonly auth_session_id: string;
+}
+
+function closedBindingOf(row: ClosedBindingRow): ClosedBinding {
+  return {
+    deviceSessionId: row.id,
+    deviceId: row.device_id,
+    accountId: row.account_id,
+    profileId: row.profile_id,
+    authSessionId: row.auth_session_id,
+  };
+}
 
 export interface RegisteredDevice {
   readonly deviceId: string;
@@ -118,11 +147,96 @@ export class DevicesService {
     );
   }
 
-  /** Closes the session's binding: it resolves to nothing from now on. */
-  public async close(manager: EntityManager, authSessionId: string): Promise<void> {
-    await manager.query(
-      'UPDATE device_session SET closed_at = $2 WHERE auth_session_id = $1 AND closed_at IS NULL',
-      [authSessionId, new Date(this.clock.nowMs())],
+  /**
+   * Revokes the device and closes every open binding on it, whichever account holds it, with one
+   *   `identity.device.revoked.v1` per account: streaming cuts leases by (account, device). Unknown,
+   *   revoked, or holding no open binding of the caller: 404, as another account's device answers.
+   */
+  public async revoke(
+    manager: EntityManager,
+    deviceId: string,
+    act: DeviceAct,
+  ): Promise<readonly ClosedBinding[]> {
+    const device = await manager.findOne(Device, {
+      where: { id: deviceId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (device?.revoked_at !== null) throw notFound();
+    const held = await manager.existsBy(DeviceSession, {
+      device_id: deviceId,
+      account_id: act.accountId,
+      closed_at: IsNull(),
+    });
+    if (!held) throw notFound();
+    const now = new Date(this.clock.nowMs());
+    await manager.update(Device, { id: deviceId }, { revoked_at: now });
+    const closed = (
+      await updateReturning<ClosedBindingRow>(
+        manager,
+        `UPDATE device_session SET closed_at = $2
+          WHERE device_id = $1 AND closed_at IS NULL
+      RETURNING ${CLOSED_BINDING_COLUMNS}`,
+        [deviceId, now],
+      )
+    ).map(closedBindingOf);
+    for (const accountId of new Set(closed.map((binding) => binding.accountId))) {
+      await recordDeviceRevoked(manager, { deviceId, accountId, kind: device.kind }, act, now);
+    }
+    return closed;
+  }
+
+  /**
+   * Closes one of the caller's device sessions, with its `identity.device_session.closed.v1`. Null
+   *   when it was closed already, which writes nothing; another account's or an unknown one: 404.
+   */
+  public async closeSession(
+    manager: EntityManager,
+    deviceSessionId: string,
+    act: DeviceAct,
+  ): Promise<ClosedBinding | null> {
+    const binding = await manager.findOne(DeviceSession, {
+      where: { id: deviceSessionId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (binding?.account_id !== act.accountId) throw notFound();
+    if (binding.closed_at !== null) return null;
+    const now = new Date(this.clock.nowMs());
+    await manager.update(DeviceSession, { id: deviceSessionId }, { closed_at: now });
+    const closed: ClosedBinding = {
+      deviceSessionId,
+      deviceId: binding.device_id,
+      accountId: binding.account_id,
+      profileId: binding.profile_id,
+      authSessionId: binding.auth_session_id,
+    };
+    await recordDeviceSessionClosed(manager, closed, act, now);
+    return closed;
+  }
+
+  /**
+   * Closes the signed-out session's binding, the device itself asking, and says so to streaming.
+   *   A session with no open binding writes nothing: one never bound, or one closed already.
+   */
+  public async signOut(
+    manager: EntityManager,
+    authSessionId: string,
+    act: Omit<DeviceAct, 'fromDeviceId'>,
+  ): Promise<void> {
+    const now = new Date(this.clock.nowMs());
+    const [closed] = await updateReturning<ClosedBindingRow>(
+      manager,
+      `UPDATE device_session SET closed_at = $2
+        WHERE auth_session_id = $1 AND closed_at IS NULL
+    RETURNING ${CLOSED_BINDING_COLUMNS}`,
+      [authSessionId, now],
+    );
+    if (closed === undefined) return;
+    const binding = closedBindingOf(closed);
+    await recordDeviceSessionClosed(
+      manager,
+      binding,
+      { ...act, fromDeviceId: binding.deviceId },
+      now,
     );
   }
 }

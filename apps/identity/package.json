@@ -20,6 +20,7 @@
     "@arthome-platform/http-edge": "workspace:*",
     "@arthome-platform/messaging": "workspace:*",
     "@arthome-platform/transactions": "workspace:*",
+    "@arthome/contracts": "https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz",
     "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz",
     "@bufbuild/protobuf": "2.15.0",
     "@nestjs/common": "12.0.3",

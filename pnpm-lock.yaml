@@ -381,6 +381,9 @@ importers:
       '@arthome-platform/transactions':
         specifier: workspace:*
         version: link:../../libs/transactions
+      '@arthome/contracts':
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
         specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
         version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)

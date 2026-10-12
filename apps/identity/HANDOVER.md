@@ -133,8 +133,8 @@ map to no refusal code.
 | --- | --- |
 | `POST /v1/auth/sign-up`, `/v1/auth/sign-in` | optional `device: { token: string \| null, kind, label }` (`kind` one of core's `DEVICE_KINDS`, `label` 1 to 80 characters); absent means `{ token: null, kind: 'desktop', label: 'unknown' }`. The answer adds `session.deviceSessionId`, `session.profile { id, name, kind }` and `device: { token }`, the token the BFF sets now |
 | `POST /v1/sessions/resolve` | the session adds `deviceSessionId` and `profile`; `deviceId` is the registered device (UUIDv7) |
-| `POST /v1/sessions/revoke` | also closes the session's binding |
-| `POST /v1/devices/{deviceId}/revoke`, `/v1/device-sessions/{sessionId}/close` | declared for PI2, not served yet |
+| `POST /v1/sessions/revoke` | also closes the session's binding, with its close event (§0c) |
+| `POST /v1/devices/{deviceId}/revoke`, `/v1/device-sessions/{sessionId}/close` | served since PI2 (§0c) |
 
 **The token's life.** 256 random bits in base64url (`devices/device-token.ts`), SHA-256 hex at
 rest; the raw token appears in the sign-up and sign-in answer only, never in a row, a log or the
@@ -169,6 +169,45 @@ keeps `deviceId` and `profile` with a new `deviceSessionId`.
 fail-closed resolve, the replay, the two races, a log capture holding neither token),
 `profiles/default-profile.itest.ts` (the backfill, `up` twice, the race on a missing default),
 `devices/device-token.spec.ts`, and the BFF's `auth/auth.e2e.itest.ts` unchanged.
+
+## 0c. Revocation (PI2)
+
+Two acts the storefront BFF relays for the account its internal token names (`sub`), each under
+its `idempotency-key`, each writing its rows and its events in one transaction through the outbox
+(`devices/device-events.ts`), on `arthome.identity.device`, key = the device id. Streaming consumes
+both (`apps/streaming/src/devices/`) and refuses the next renewal `identity.signed_out_elsewhere`.
+
+| Act | Rows | Event |
+| --- | --- | --- |
+| `POST /v1/devices/{deviceId}/revoke` | `device.revoked_at`; every open binding on the device closed, whichever account holds it | one `identity.device.revoked.v1` **per account** whose binding closed: streaming cuts leases by (account, device), so one event per account is what ends every lease on the device |
+| `POST /v1/device-sessions/{sessionId}/close` | that binding's `closed_at` | one `identity.device_session.closed.v1` with its `profile_id`; `self_initiated` when the token's `did` is the binding's device |
+| `POST /v1/sessions/revoke` (sign-out) | the session's binding closed | the same close event, `self_initiated: true`, the actor being the session's own account |
+
+- **No cross-account reach.** A revoke needs an open binding of the caller on the device; a close
+  needs the caller's own binding. Anything else, an unknown id and a device revoked already answer
+  `404 api.not_found`, and write nothing. A close of a binding closed already answers `200` with no
+  event; a replayed key answers the first `200` with no second event.
+- **What writes no event.** A sign-in of the same profile on the same device replaces the first
+  binding (§0b) and says nothing: that pair stays signed in. A sign-out of a session already gone
+  writes nothing, nor does the revoke of a session whose bind failed.
+- **The actor.** `revoked_by` and `closed_by` carry the caller and the relayed
+  `x-arthome-actor-surface`, unspecified when absent or unknown; the outbox row's `actor_id` is the
+  verified caller.
+- **After the commit**, the closed bindings' better-auth sessions are deleted, best effort, a
+  failure logged with the binding ids: they resolve to nothing already (§0b).
+- **The exposure window.** A revoked device keeps playing until its playback token's next renewal,
+  at most 120 s (`adr-stream-entitlement.md` §3.3), plus the consumer's lag (Debezium, Kafka,
+  streaming's consumer). Streaming bounds a profile's close by `occurred_at` against its own clock,
+  so a lease opened within the skew between the two clocks may survive the close until its own
+  expiry (accepted); a device revocation is unbounded for that reason.
+
+**What proves it**: `devices/device-revocation.http.itest.ts` (both acts, the shared device, the
+404s, the replay, sign-out's close and the replacement's silence, a commit that fails after the
+insert leaving neither row nor event), `devices/device-events.itest.ts` (identity's rows shaped as
+`infra/debezium/identity-outbox.json` places their columns, read by streaming's consumer: the
+leases end and the renewal answers `403 identity.signed_out_elsewhere`),
+`devices/device-events.spec.ts` (the wire maps, the payloads read back). PE1 proves the same through
+the real connector and broker.
 
 ## 1. What is here
 

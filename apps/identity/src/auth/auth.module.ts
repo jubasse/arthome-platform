@@ -19,8 +19,10 @@ import { SignInService } from './sign-in.service.js';
 import { SignUpService } from './sign-up.service.js';
 import { ViewerService } from './viewer.service.js';
 import { CLOCK } from '../clock.js';
+import { DeviceRevocations } from '../devices/device-revocations.js';
 import { DeviceSession } from '../devices/device-session.entity.js';
 import { Device } from '../devices/device.entity.js';
+import { DevicesController } from '../devices/devices.controller.js';
 import { DevicesService } from '../devices/devices.service.js';
 import { Profile } from '../profiles/profile.entity.js';
 
@@ -43,7 +45,7 @@ function databaseUrlOf(dataSource: DataSource): string {
 
 @Module({
   imports: [TypeOrmModule.forFeature([Account, EmailVerification, Profile, Device, DeviceSession])],
-  controllers: [AuthController],
+  controllers: [AuthController, DevicesController],
   providers: [
     {
       provide: AUTH_POOL,
@@ -78,6 +80,7 @@ function databaseUrlOf(dataSource: DataSource): string {
     EmailVerificationsService,
     ViewerService,
     DevicesService,
+    DeviceRevocations,
   ],
 })
 export class AuthModule {}

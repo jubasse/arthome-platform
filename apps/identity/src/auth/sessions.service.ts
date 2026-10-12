@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 
+import { Surface as WireSurface } from '@arthome-platform/events';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, type EntityManager } from 'typeorm';
@@ -11,6 +12,7 @@ import { BETTER_AUTH } from './auth.tokens.js';
 import type { Auth } from './better-auth.js';
 import { invalidCredentials } from './refusals.js';
 import type { Viewer } from './viewer.service.js';
+import type { ClosedBinding } from '../devices/device-events.js';
 import { DevicesService } from '../devices/devices.service.js';
 import type { PresentedDevice } from '../devices/presented-device.schema.js';
 import { defaultProfileOf, type ProfileSummary } from '../profiles/default-profile.js';
@@ -21,6 +23,18 @@ const SIGNING_IN_STATUSES: readonly AccountStatus[] = [
   AccountStatus.ACTIVE,
   AccountStatus.DELETION_REQUESTED,
 ];
+
+/** Where a sign-out comes from, as the BFF relays it. */
+export interface SignOutContext {
+  readonly surface: WireSurface;
+  readonly traceparent: string | null;
+}
+
+/** A session identity revokes itself, before any bind: nothing closes, so no event. */
+const UNTRACED_SIGN_OUT: SignOutContext = {
+  surface: WireSurface.UNSPECIFIED,
+  traceparent: null,
+};
 
 /** What the BFF needs to know about a session it was handed. */
 export interface ResolvedSession {
@@ -220,14 +234,40 @@ export class SessionsService {
   }
 
   /**
-   * Closes this session alone, and its binding: better-auth's `signOut` is not the right gesture on
-   *   a shared screen. The binding goes first, so a failure in between still resolves to nothing.
+   * Better-auth sessions of bindings a revocation or a close ended, once committed. Best effort:
+   *   none resolves any more, its binding being closed.
    */
-  public async revoke(token: string): Promise<void> {
+  public async forgetClosed(bindings: readonly ClosedBinding[]): Promise<void> {
+    for (const accountId of new Set(bindings.map((binding) => binding.accountId))) {
+      const closed = bindings.filter((binding) => binding.accountId === accountId);
+      try {
+        const context = await this.auth.$context;
+        const ended = new Set(closed.map(({ authSessionId }) => authSessionId));
+        const sessions = await context.internalAdapter.listSessions(accountId);
+        await context.internalAdapter.deleteSessions(
+          sessions.filter(({ id }) => ended.has(id)).map(({ token }) => token),
+        );
+      } catch (error) {
+        const ids = closed.map(({ deviceSessionId }) => deviceSessionId).join(', ');
+        this.logger.warn(
+          `the sessions of closed bindings ${ids} outlived them: ${messageOf(error)}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Closes this session alone, and its binding: better-auth's `signOut` is not the right gesture on
+   *   a shared screen. The binding goes first, with its close event, so a failure in between still
+   *   resolves to nothing. The account acting is the session's own.
+   */
+  public async revoke(token: string, signOut: SignOutContext = UNTRACED_SIGN_OUT): Promise<void> {
     if (token === '') return;
     const found = await this.find(token);
     if (found === null) return;
-    await this.devices.close(this.dataSource.manager, found.session.id);
+    await this.dataSource.transaction((manager) =>
+      this.devices.signOut(manager, found.session.id, { accountId: found.user.id, ...signOut }),
+    );
     const context = await this.auth.$context;
     await context.internalAdapter.deleteSession(found.session.token);
   }
