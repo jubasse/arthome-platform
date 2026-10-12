@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { notFound } from '@arthome-platform/http-edge';
 import { updateReturning } from '@arthome-platform/transactions';
 import { Inject, Injectable } from '@nestjs/common';
-import { IsNull, type EntityManager } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { DEVICE_TOKEN_LIFETIME_SECONDS, type Clock } from '@arthome/core';
@@ -18,10 +18,29 @@ import { DeviceSession } from './device-session.entity.js';
 import { digestOf, newDeviceToken } from './device-token.js';
 import { Device } from './device.entity.js';
 import type { PresentedDevice } from './presented-device.schema.js';
+import { AUTH_SCHEMA } from '../auth/better-auth.js';
+import { SIGNING_IN_STATUSES } from '../auth/signing-in-statuses.js';
 import { CLOCK } from '../clock.js';
 
 /** Two binds of one (device, profile) can race; the loser's second attempt replaces the winner. */
 const BIND_ATTEMPTS = 2;
+
+/**
+ * Another account holds the device while one of its bindings there still resolves, as the resolve
+ *   reads it: open, its better-auth session unexpired, its account still signing in. A binding no
+ *   one closed after its session lapsed holds nothing.
+ */
+const STILL_HELD_SQL = `
+  SELECT EXISTS (
+    SELECT 1
+      FROM device_session ds
+      JOIN account a ON a.id = ds.account_id
+      JOIN ${AUTH_SCHEMA}.session s ON s.id = ds.auth_session_id AND s."userId" = ds.account_id
+     WHERE ds.device_id = $1
+       AND ds.closed_at IS NULL
+       AND a.status = ANY($2)
+       AND s."expiresAt" > $3
+  ) AS held`;
 
 const CLOSED_BINDING_COLUMNS = 'id, device_id, account_id, profile_id, auth_session_id';
 
@@ -149,11 +168,11 @@ export class DevicesService {
 
   /**
    * Closes the caller's open bindings on the device, one `identity.device_session.closed.v1` each,
-   *   and revokes the device, with its `identity.device.revoked.v1`, once no other account holds an
-   *   open binding there: a browser keeps one device across accounts, and one account never signs
-   *   another out. The closing UPDATE is the check, under the device's row lock: unknown, revoked,
-   *   or none of the caller's bindings left open (a concurrent close included): 404, as another
-   *   account's device answers.
+   *   and revokes the device, with its `identity.device.revoked.v1`, once no other account holds a
+   *   binding there that still resolves: a browser keeps one device across accounts, and one
+   *   account never signs another out. The closing UPDATE is the check, under the device's row
+   *   lock: unknown, revoked, or none of the caller's bindings left open (a concurrent close
+   *   included): 404, as another account's device answers.
    */
   public async revoke(
     manager: EntityManager,
@@ -177,11 +196,12 @@ export class DevicesService {
     ).map(closedBindingOf);
     if (closed.length === 0) throw notFound();
     for (const binding of closed) await recordDeviceSessionClosed(manager, binding, act, now);
-    const stillHeld = await manager.existsBy(DeviceSession, {
-      device_id: deviceId,
-      closed_at: IsNull(),
-    });
-    if (!stillHeld) {
+    const [{ held }] = await manager.query<[{ held: boolean }]>(STILL_HELD_SQL, [
+      deviceId,
+      SIGNING_IN_STATUSES,
+      now,
+    ]);
+    if (!held) {
       await manager.update(Device, { id: deviceId }, { revoked_at: now });
       await recordDeviceRevoked(
         manager,

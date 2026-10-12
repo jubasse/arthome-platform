@@ -5,24 +5,17 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, type EntityManager } from 'typeorm';
 
-import { AccountStatus } from '@arthome/core';
-
 import { Account } from './account.entity.js';
 import { BETTER_AUTH } from './auth.tokens.js';
 import type { Auth } from './better-auth.js';
 import { invalidCredentials } from './refusals.js';
+import { SIGNING_IN_STATUSES } from './signing-in-statuses.js';
 import type { Viewer } from './viewer.service.js';
 import type { ClosedBinding } from '../devices/device-events.js';
 import { DevicesService } from '../devices/devices.service.js';
 import type { PresentedDevice } from '../devices/presented-device.schema.js';
 import { defaultProfileOf, type ProfileSummary } from '../profiles/default-profile.js';
 import type { ProfileKind } from '../profiles/profile-kind.js';
-
-/** The statuses whose credential still opens a session: a deletion request is undone by signing in. */
-const SIGNING_IN_STATUSES: readonly AccountStatus[] = [
-  AccountStatus.ACTIVE,
-  AccountStatus.DELETION_REQUESTED,
-];
 
 /** Where a sign-out comes from, as the BFF relays it. */
 export interface SignOutContext {

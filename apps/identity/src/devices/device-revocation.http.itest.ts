@@ -7,14 +7,16 @@ import {
   Surface as WireSurface,
 } from '@arthome-platform/events';
 import { fromBinary } from '@bufbuild/protobuf';
+import type { EntityManager } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ApiErrorCode, FixedClock } from '@arthome/core';
 
-import { DEVICE_REVOKED, DEVICE_SESSION_CLOSED } from './device-events.js';
+import { DEVICE_REVOKED, DEVICE_SESSION_CLOSED, type DeviceAct } from './device-events.js';
+import { DevicesService } from './devices.service.js';
 import { BETTER_AUTH } from '../auth/auth.tokens.js';
-import type { Auth } from '../auth/better-auth.js';
+import { AUTH_SCHEMA, type Auth } from '../auth/better-auth.js';
 import {
   TRACEPARENT,
   callerOf,
@@ -27,6 +29,7 @@ import {
   signedIn,
   signedUp,
   type DeviceEventRow,
+  type SignedIn,
 } from '../itest/device-acts.js';
 import { startIdentity, type IdentityHarness } from '../itest/identity-app.js';
 
@@ -38,6 +41,8 @@ import { startIdentity, type IdentityHarness } from '../itest/identity-app.js';
 
 const STARTUP_MS = 240_000;
 const CASE_MS = 60_000;
+const LOCK_WAIT_MS = 10_000;
+const DAY_MS = 86_400_000;
 
 const clock = new FixedClock('2026-10-12T12:00:00.000Z');
 let identity: IdentityHarness;
@@ -81,6 +86,59 @@ async function openBindingsOn(deviceId: string): Promise<number> {
 async function authSessionIdsOf(accountId: string): Promise<string[]> {
   const { internalAdapter } = await identity.app.get<Auth>(BETTER_AUTH).$context;
   return (await internalAdapter.listSessions(accountId)).map(({ id }) => id);
+}
+
+async function authSessionIdOf(deviceSessionId: string): Promise<string> {
+  const [row] = await identity.dataSource.query<{ auth_session_id: string }[]>(
+    'SELECT auth_session_id FROM device_session WHERE id = $1',
+    [deviceSessionId],
+  );
+  if (row === undefined) throw new Error(`no binding ${deviceSessionId}`);
+  return row.auth_session_id;
+}
+
+/** Until `count` backends of this database wait on a lock: the competing acts are queued. */
+async function lockWaiters(count: number): Promise<void> {
+  await vi.waitFor(
+    async () => {
+      const [row] = await identity.dataSource.query<{ waiting: string }[]>(
+        `SELECT count(*) AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+      );
+      expect(Number(row?.waiting)).toBe(count);
+    },
+    { timeout: LOCK_WAIT_MS, interval: 50 },
+  );
+}
+
+/** Runs `held` in a transaction kept open until `competing` is queued behind its locks. */
+async function holding<T>(
+  held: (manager: EntityManager) => Promise<unknown>,
+  competing: () => Promise<T>,
+  waiters: number,
+): Promise<T> {
+  const runner = identity.dataSource.createQueryRunner();
+  await runner.connect();
+  try {
+    await runner.startTransaction();
+    await held(runner.manager);
+    const outcome = competing();
+    await lockWaiters(waiters);
+    await runner.commitTransaction();
+    return await outcome;
+  } finally {
+    if (runner.isTransactionActive) await runner.rollbackTransaction();
+    await runner.release();
+  }
+}
+
+function actOf({ session }: SignedIn): DeviceAct {
+  return {
+    accountId: session.accountId,
+    fromDeviceId: session.deviceId,
+    surface: WireSurface.STOREFRONT_WEB,
+    traceparent: TRACEPARENT,
+  };
 }
 
 describe('revoking a device', () => {
@@ -162,6 +220,30 @@ describe('revoking a device', () => {
       expect(rest).toEqual([]);
       expect(closedOf(neighbourClosed).accountId).toBe(neighbour.session.accountId);
       expect(revokedOf(revoked).accountId).toBe(neighbour.session.accountId);
+    },
+    CASE_MS,
+  );
+
+  it(
+    "revokes it when the other account's session there has lapsed, though nothing closed its binding",
+    async () => {
+      const owner = await signedUp(identity);
+      const neighbour = await signedUp(identity);
+      const lapsed = await signedIn(identity, neighbour.email, presenting(owner.device.token));
+      const { deviceId } = owner.session;
+      await identity.dataSource.query(
+        `UPDATE ${AUTH_SCHEMA}.session SET "expiresAt" = $2 WHERE id = $1`,
+        [await authSessionIdOf(lapsed.session.deviceSessionId), new Date(clock.nowMs() - DAY_MS)],
+      );
+      expect(await resolved(identity, lapsed.session.token)).toBeNull();
+
+      expect((await revokeDevice(identity, clock, callerOf(owner), deviceId)).statusCode).toBe(200);
+
+      expect(await revokedAt(deviceId)).toEqual(new Date(clock.nowMs()));
+      const [ownerClosed, revoked, ...rest] = await deviceEventsOf(identity, deviceId);
+      expect(rest).toEqual([]);
+      expect(closedOf(ownerClosed).accountId).toBe(owner.session.accountId);
+      expect(revokedOf(revoked).accountId).toBe(owner.session.accountId);
     },
     CASE_MS,
   );
@@ -249,11 +331,13 @@ describe('closing a device session', () => {
     async () => {
       const viewer = await signedUp(identity);
       const { deviceId, deviceSessionId } = viewer.session;
+      const authSessionId = await authSessionIdOf(deviceSessionId);
 
       const closed = await closeDeviceSession(identity, clock, callerOf(viewer), deviceSessionId);
       expect(closed.statusCode).toBe(200);
       expect(closed.json<{ data: unknown }>().data).toEqual({ closed: true });
       expect(await resolved(identity, viewer.session.token)).toBeNull();
+      expect(await authSessionIdsOf(viewer.session.accountId)).not.toContain(authSessionId);
 
       const again = await closeDeviceSession(identity, clock, callerOf(viewer), deviceSessionId);
       expect(again.statusCode).toBe(200);
@@ -301,6 +385,56 @@ describe('closing a device session', () => {
       }
       expect(await resolved(identity, viewer.session.token)).not.toBeNull();
       expect(await deviceEventsOf(identity, viewer.session.deviceId)).toEqual([]);
+    },
+    CASE_MS,
+  );
+});
+
+describe('racing a revoke', () => {
+  it(
+    'answers 404 when a close of the same binding commits first, and writes that close alone',
+    async () => {
+      const owner = await signedUp(identity);
+      const { deviceId, deviceSessionId } = owner.session;
+      const devices = identity.app.get(DevicesService);
+
+      const revoke = await holding(
+        (manager) => devices.closeSession(manager, deviceSessionId, actOf(owner)),
+        () => revokeDevice(identity, clock, callerOf(owner), deviceId),
+        1,
+      );
+
+      expect(revoke.statusCode).toBe(404);
+      expect(await revokedAt(deviceId)).toBeNull();
+      const [closed, ...none] = await deviceEventsOf(identity, deviceId);
+      expect(none).toEqual([]);
+      expect(closedOf(closed).accountId).toBe(owner.session.accountId);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'serves two revokes of one device one after the other: one 200, one 404, one set of rows',
+    async () => {
+      const owner = await signedUp(identity);
+      const { deviceId } = owner.session;
+
+      const revokes = await holding(
+        (manager) => manager.query('SELECT id FROM device WHERE id = $1 FOR UPDATE', [deviceId]),
+        () =>
+          Promise.all([
+            revokeDevice(identity, clock, callerOf(owner), deviceId),
+            revokeDevice(identity, clock, callerOf(owner), deviceId),
+          ]),
+        2,
+      );
+
+      expect(revokes.map(({ statusCode }) => statusCode).sort()).toEqual([200, 404]);
+      expect(await revokedAt(deviceId)).toEqual(new Date(clock.nowMs()));
+      const [closed, revoked, ...rest] = await deviceEventsOf(identity, deviceId);
+      expect(rest).toEqual([]);
+      expect(closedOf(closed).accountId).toBe(owner.session.accountId);
+      expect(revokedOf(revoked).accountId).toBe(owner.session.accountId);
     },
     CASE_MS,
   );

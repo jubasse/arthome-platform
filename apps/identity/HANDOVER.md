@@ -179,13 +179,16 @@ both (`apps/streaming/src/devices/`) and refuses the next renewal `identity.sign
 
 | Act | Rows | Event |
 | --- | --- | --- |
-| `POST /v1/devices/{deviceId}/revoke` | the caller's open bindings on the device closed; `device.revoked_at` only once no other account holds an open binding there | one `identity.device_session.closed.v1` per binding closed; `identity.device.revoked.v1` once, with the caller's account, when the device is revoked |
+| `POST /v1/devices/{deviceId}/revoke` | the caller's open bindings on the device closed; `device.revoked_at` only once no other account holds a binding there that still resolves | one `identity.device_session.closed.v1` per binding closed; `identity.device.revoked.v1` once, with the caller's account, when the device is revoked |
 | `POST /v1/device-sessions/{sessionId}/close` | that binding's `closed_at` | one `identity.device_session.closed.v1` with its `profile_id`; `self_initiated` when the token's `did` is the binding's device |
 | `POST /v1/sessions/revoke` (sign-out) | the session's binding closed | the same close event, `self_initiated: true`, the actor being the session's own account |
 
 - **One device, several accounts.** A `device` row has no account: a browser keeps one device
   across sign-outs, so accounts share it. A revoke closes only the caller's bindings and never
-  cuts another account's leases; the device is revoked by the last account holding it.
+  cuts another account's leases; the device is revoked by the last account holding it. Another
+  account holds it only through a binding that still resolves (open, its better-auth session
+  unexpired, its account still signing in): a binding left open after its session lapsed holds
+  nothing, so it never keeps the device alive.
 - **No cross-account reach.** A revoke needs an open binding of the caller on the device, read by
   the closing `UPDATE` itself under the device's row lock, so a close that wins the race leaves the
   revoke a 404; a close needs the caller's own binding. Anything else, an unknown id and a device revoked already answer
@@ -203,11 +206,15 @@ both (`apps/streaming/src/devices/`) and refuses the next renewal `identity.sign
   at most 120 s (`adr-stream-entitlement.md` §3.3), plus the consumer's lag (Debezium, Kafka,
   streaming's consumer). Streaming bounds a profile's close by `occurred_at` against its own clock,
   so a lease opened within the skew between the two clocks may survive the close until its own
-  expiry (accepted); a device revocation is unbounded for that reason.
+  expiry (accepted); a device revocation is unbounded for that reason. On a device another
+  account still holds, the revoke writes no `identity.device.revoked.v1`: the caller's leases
+  there end through the `occurred_at`-bounded close events, and only the last account's revoke is
+  unbounded.
 
-**What proves it**: `devices/device-revocation.http.itest.ts` (both acts, the shared device, the
-404s, the replay, sign-out's close and the replacement's silence, a commit that fails after the
-insert leaving neither row nor event), `devices/device-events.itest.ts` (identity's rows shaped as
+**What proves it**: `devices/device-revocation.http.itest.ts` (both acts, the shared device, one
+whose other session lapsed, the 404s, a close or a second revoke racing the revoke, the replay,
+sign-out's close and the replacement's silence, a commit that fails after the insert leaving
+neither row nor event), `devices/device-events.itest.ts` (identity's rows shaped as
 `infra/debezium/identity-outbox.json` places their columns, read by streaming's consumer: the
 leases end and the renewal answers `403 identity.signed_out_elsewhere`),
 `devices/device-events.spec.ts` (the wire maps, the payloads read back). PE1 proves the same through
