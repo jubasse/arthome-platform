@@ -21,6 +21,21 @@ describe('the device a browser is described as', () => {
     expect(deviceDescriptorOf({ 'user-agent': '   ' }).label).toBe('unknown');
   });
 
+  it('replaces tabs and control or invisible format characters with a space, and collapses runs', () => {
+    expect(deviceDescriptorOf({ 'user-agent': 'Foo\tBar\u0000Baz' }).label).toBe('Foo Bar Baz');
+    expect(deviceDescriptorOf({ 'user-agent': 'Foo\u200B\u200DBar' }).label).toBe('Foo Bar');
+    expect(deviceDescriptorOf({ 'user-agent': 'Foo\u202EBar\u2066 Baz\u0085' }).label).toBe(
+      'Foo Bar Baz',
+    );
+    expect(deviceDescriptorOf({ 'user-agent': 'a   \t  b' }).label).toBe('a b');
+  });
+
+  it('is unknown when the User-Agent holds only control or invisible characters', () => {
+    expect(deviceDescriptorOf({ 'user-agent': '\t\u0000\u200B\u202E \u2066' }).label).toBe(
+      'unknown',
+    );
+  });
+
   it('is a phone by the mobile client hint, or by an agent holding Mobi', () => {
     expect(deviceDescriptorOf({ 'sec-ch-ua-mobile': '?1', 'user-agent': DESKTOP_AGENT }).kind).toBe(
       DeviceKind.MOBILE,
