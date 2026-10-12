@@ -76,9 +76,10 @@ export class ProfilesAndDevices1791800000000 implements MigrationInterface {
         ON device_session (device_id) WHERE closed_at IS NULL
     `);
 
+    // uuidv7() is native from Postgres 18: core's ProfileIdSchema refuses any other version.
     await queryRunner.query(`
       INSERT INTO profile (id, account_id, name, kind, is_default)
-      SELECT gen_random_uuid(), a.id, a.public_handle::text, '${ProfileKind.ADULT}', true
+      SELECT uuidv7(), a.id, a.public_handle::text, '${ProfileKind.ADULT}', true
         FROM account a
        WHERE NOT EXISTS (SELECT 1 FROM profile p WHERE p.account_id = a.id AND p.is_default)
     `);

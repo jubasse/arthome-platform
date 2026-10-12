@@ -1,9 +1,21 @@
 import { randomUUID } from 'node:crypto';
 
+import { readJwksSource } from '@arthome-platform/config';
+import { InternalTokenVerifier } from '@arthome-platform/http-edge';
+import { mintInternalToken } from '@arthome-platform/testing';
 import { Logger } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { AccountStatus, ApiErrorCode, DeviceKind, FixedClock, Locale } from '@arthome/core';
+import {
+  AccountStatus,
+  ApiErrorCode,
+  DeviceKind,
+  FixedClock,
+  InternalTokenIssuer,
+  Locale,
+  Service,
+} from '@arthome/core';
+import { DeviceIdSchema, ProfileIdSchema } from '@arthome/core/schema';
 
 import { digestOf } from './device-token.js';
 import { DevicesService } from './devices.service.js';
@@ -20,7 +32,6 @@ import { startIdentity, type IdentityHarness } from '../itest/identity-app.js';
 const STARTUP_MS = 240_000;
 const CASE_MS = 60_000;
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const PASSWORD = 'a-long-password';
 
 const clock = new FixedClock('2026-10-12T12:00:00.000Z');
@@ -133,14 +144,14 @@ describe('sign-up', () => {
     async () => {
       const { session, device } = await signedUp();
 
-      expect(session.deviceId).toMatch(UUID_V7);
-      expect(session.deviceSessionId).toMatch(UUID_V4);
+      expect(DeviceIdSchema.safeParse(session.deviceId).success).toBe(true);
+      expect(session.deviceSessionId).toMatch(UUID_V7);
       expect(session.profile).toEqual({
         id: expect.any(String) as unknown,
         name: 'Marie J.',
         kind: 'adult',
       });
-      expect(session.profile.id).toMatch(UUID_V4);
+      expect(ProfileIdSchema.safeParse(session.profile.id).success).toBe(true);
       expect(device.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
 
       const rows = await identity.dataSource.query<Record<string, unknown>[]>(
@@ -156,6 +167,33 @@ describe('sign-up', () => {
         }),
       ]);
       expect(JSON.stringify(rows)).not.toContain(device.token);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'mints a profile and a device a service accepts in the internal token the BFF signs',
+    async () => {
+      const { session } = await signedUp();
+      const token = await mintInternalToken({
+        service: Service.STREAMING,
+        clock,
+        accountId: session.accountId,
+        deviceId: session.deviceId,
+        profileId: session.profile.id,
+      });
+      const verifier = new InternalTokenVerifier(
+        Service.STREAMING,
+        readJwksSource({ NODE_ENV: 'test' }),
+        clock,
+      );
+
+      await expect(verifier.verify(token)).resolves.toEqual({
+        accountId: session.accountId,
+        profileId: session.profile.id,
+        deviceId: session.deviceId,
+        issuer: InternalTokenIssuer.STOREFRONT_BFF,
+      });
     },
     CASE_MS,
   );

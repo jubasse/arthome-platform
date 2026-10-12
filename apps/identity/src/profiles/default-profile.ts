@@ -1,6 +1,5 @@
-import { randomUUID } from 'node:crypto';
-
 import type { EntityManager } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import { ProfileKind } from './profile-kind.js';
 
@@ -25,7 +24,7 @@ export async function defaultProfileOf(
        FROM account a
       WHERE a.id = $2
      ON CONFLICT (account_id) WHERE is_default DO NOTHING`,
-    [randomUUID(), accountId, name ?? null, ProfileKind.ADULT],
+    [uuidv7(), accountId, name ?? null, ProfileKind.ADULT],
   );
   const [profile] = await manager.query<ProfileSummary[]>(
     'SELECT id, name, kind FROM profile WHERE account_id = $1 AND is_default',

@@ -12,6 +12,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { Locale } from '@arthome/core';
+import { ProfileIdSchema } from '@arthome/core/schema';
 
 import { defaultProfileOf } from './default-profile.js';
 import { IDENTITY_SCHEMA } from '../itest/schema.js';
@@ -86,6 +87,8 @@ describe('the default profile', () => {
         },
       ]);
       expect(await profilesOf(second)).toHaveLength(1);
+      const [backfilled] = await profilesOf(first);
+      expect(ProfileIdSchema.safeParse(backfilled?.id).success).toBe(true);
 
       const [before] = await dataSource.query<{ count: string }[]>('SELECT count(*) FROM profile');
       await runProfilesMigration();
@@ -112,6 +115,7 @@ describe('the default profile', () => {
         name: 'Marie J.',
         kind: 'adult',
       });
+      expect(ProfileIdSchema.safeParse(profiles[0]?.id).success).toBe(true);
       expect(await profilesOf(accountId)).toHaveLength(1);
     },
     CASE_MS,
