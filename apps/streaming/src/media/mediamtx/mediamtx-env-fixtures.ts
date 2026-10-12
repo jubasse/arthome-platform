@@ -9,5 +9,5 @@ export const MEDIAMTX_SPEC_ENV: Readonly<Record<string, string>> = {
   MEDIAMTX_WEBRTC_URL: 'http://127.0.0.1:58889',
   MEDIAMTX_SRT_URL: 'srt://127.0.0.1:58890',
   MEDIAMTX_MONITOR_HLS_URL: 'http://127.0.0.1:58887',
-  MEDIAMTX_PLAYBACK_EDGE_URL: 'http://127.0.0.1:58888',
+  MEDIAMTX_PLAYBACK_EDGE_URL: 'http://localhost:58888',
 };

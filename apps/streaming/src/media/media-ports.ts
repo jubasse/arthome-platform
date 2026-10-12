@@ -148,6 +148,9 @@ export interface PlaybackGrant {
   readonly mechanism: EdgeRenewalMode;
 }
 
+/** The browser's ticket cookie; `infra/envoy/edge.yaml` repeats it (`edge-config.spec.ts`). */
+export const PLAYBACK_COOKIE = 'arthome_playback';
+
 export interface PlaybackCookie {
   readonly name: string;
   /** The signed token: never logged. */

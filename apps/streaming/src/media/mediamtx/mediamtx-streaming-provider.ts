@@ -22,7 +22,7 @@ import {
   IngestProtocol,
   MediaCodec,
   MonitorPath,
-  PlaybackSigningUnavailable,
+  PLAYBACK_COOKIE,
   type FeedSample,
   type IngestHooks,
   type LiveIngestCapabilities,
@@ -49,8 +49,8 @@ export const MEDIAMTX_INGEST_CAPABILITIES: LiveIngestCapabilities = {
 };
 
 export const MEDIAMTX_PLAYBACK_CAPABILITIES: PlaybackCapabilities = {
-  supportsSignedCookies: false,
-  // The player re-applies the current token to each request (`adr-stream-entitlement.md` §3.2).
+  // Envoy reads the same token from the cookie (browsers) or `?token=` (native players), §3.2.
+  supportsSignedCookies: true,
   supportsQueryTokenRenewal: true,
   protocols: [PlaybackProtocol.HLS],
   drmSystems: [],
@@ -191,16 +191,17 @@ export class MediaMtxStreamingProvider
   }
 
   public async sign(grant: PlaybackGrant): Promise<SignedPlayback> {
-    if (grant.mechanism === EdgeRenewalMode.SIGNED_COOKIE) {
-      throw new PlaybackSigningUnavailable(grant.mechanism);
-    }
     assertUrlSafeSegment(grant.dateId);
     if (grant.streamPath !== null) this.edgeRoutes.remember(grant.dateId, grant.streamPath);
     const prefix = `/${watchPathOf(grant.dateId)}/`;
+    const token = await this.signer.sign(grant, prefix);
+    const byCookie = grant.mechanism === EdgeRenewalMode.SIGNED_COOKIE;
     return {
       manifestUrl: `${this.env.playbackEdgeUrl}${prefix}index.m3u8`,
-      queryToken: await this.signer.sign(grant, prefix),
-      cookies: [],
+      queryToken: byCookie ? null : token,
+      cookies: byCookie
+        ? [{ name: PLAYBACK_COOKIE, value: token, path: prefix, expiresAt: grant.expiresAt }]
+        : [],
       keyId: this.signer.keyId,
     };
   }
