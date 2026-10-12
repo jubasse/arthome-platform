@@ -1,0 +1,478 @@
+import { randomUUID } from 'node:crypto';
+
+import {
+  DeviceKind as WireDeviceKind,
+  DeviceRevokedSchema,
+  DeviceSessionClosedSchema,
+  Surface as WireSurface,
+} from '@arthome-platform/events';
+import { fromBinary } from '@bufbuild/protobuf';
+import type { EntityManager } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { ApiErrorCode, FixedClock } from '@arthome/core';
+
+import { DEVICE_REVOKED, DEVICE_SESSION_CLOSED, type DeviceAct } from './device-events.js';
+import { DevicesService } from './devices.service.js';
+import { BETTER_AUTH } from '../auth/auth.tokens.js';
+import { AUTH_SCHEMA, type Auth } from '../auth/better-auth.js';
+import {
+  TRACEPARENT,
+  callerOf,
+  closeDeviceSession,
+  deviceEventsOf,
+  presenting,
+  resolved,
+  revokeDevice,
+  signOut,
+  signedIn,
+  signedUp,
+  type DeviceEventRow,
+  type SignedIn,
+} from '../itest/device-acts.js';
+import { startIdentity, type IdentityHarness } from '../itest/identity-app.js';
+
+/**
+ * PI2 over HTTP as the storefront BFF calls it: revoking a device closes the caller's bindings on
+ *   it, and revokes it once no other account holds it; a closed device session and a sign-out each
+ *   say so once, and no account reaches another's device or session.
+ */
+
+const STARTUP_MS = 240_000;
+const CASE_MS = 60_000;
+const LOCK_WAIT_MS = 10_000;
+
+const clock = new FixedClock('2026-10-12T12:00:00.000Z');
+let identity: IdentityHarness;
+
+beforeAll(async () => {
+  identity = await startIdentity('identity_device_revocation_itest', clock);
+}, STARTUP_MS);
+
+afterAll(async () => {
+  await identity?.close();
+});
+
+function revokedOf(row: DeviceEventRow | undefined) {
+  if (row === undefined) throw new Error('no device event was written');
+  expect(row.type).toBe(DEVICE_REVOKED);
+  return fromBinary(DeviceRevokedSchema, new Uint8Array(row.payload));
+}
+
+function closedOf(row: DeviceEventRow | undefined) {
+  if (row === undefined) throw new Error('no device event was written');
+  expect(row.type).toBe(DEVICE_SESSION_CLOSED);
+  return fromBinary(DeviceSessionClosedSchema, new Uint8Array(row.payload));
+}
+
+async function revokedAt(deviceId: string): Promise<Date | null> {
+  const [row] = await identity.dataSource.query<{ revoked_at: Date | null }[]>(
+    'SELECT revoked_at FROM device WHERE id = $1',
+    [deviceId],
+  );
+  return row?.revoked_at ?? null;
+}
+
+async function openBindingsOn(deviceId: string): Promise<number> {
+  const [row] = await identity.dataSource.query<{ count: string }[]>(
+    'SELECT count(*) FROM device_session WHERE device_id = $1 AND closed_at IS NULL',
+    [deviceId],
+  );
+  return Number(row?.count);
+}
+
+async function authSessionIdsOf(accountId: string): Promise<string[]> {
+  const { internalAdapter } = await identity.app.get<Auth>(BETTER_AUTH).$context;
+  return (await internalAdapter.listSessions(accountId)).map(({ id }) => id);
+}
+
+async function authSessionIdOf(deviceSessionId: string): Promise<string> {
+  const [row] = await identity.dataSource.query<{ auth_session_id: string }[]>(
+    'SELECT auth_session_id FROM device_session WHERE id = $1',
+    [deviceSessionId],
+  );
+  if (row === undefined) throw new Error(`no binding ${deviceSessionId}`);
+  return row.auth_session_id;
+}
+
+/** Until `count` backends of this database wait on a lock: the competing acts are queued. */
+async function lockWaiters(count: number): Promise<void> {
+  await vi.waitFor(
+    async () => {
+      const [row] = await identity.dataSource.query<{ waiting: string }[]>(
+        `SELECT count(*) AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+      );
+      expect(Number(row?.waiting)).toBe(count);
+    },
+    { timeout: LOCK_WAIT_MS, interval: 50 },
+  );
+}
+
+/** Runs `held` in a transaction kept open until `competing` is queued behind its locks. */
+async function holding<T>(
+  held: (manager: EntityManager) => Promise<unknown>,
+  competing: () => Promise<T>,
+  waiters: number,
+): Promise<T> {
+  const runner = identity.dataSource.createQueryRunner();
+  await runner.connect();
+  try {
+    await runner.startTransaction();
+    await held(runner.manager);
+    const outcome = competing();
+    await lockWaiters(waiters);
+    await runner.commitTransaction();
+    return await outcome;
+  } finally {
+    if (runner.isTransactionActive) await runner.rollbackTransaction();
+    await runner.release();
+  }
+}
+
+function actOf({ session }: SignedIn): DeviceAct {
+  return {
+    accountId: session.accountId,
+    fromDeviceId: session.deviceId,
+    surface: WireSurface.STOREFRONT_WEB,
+    traceparent: TRACEPARENT,
+  };
+}
+
+describe('revoking a device', () => {
+  it(
+    'revokes it, closes its binding, deletes the session and says both once, traced',
+    async () => {
+      const owner = await signedUp(identity);
+      const { deviceId } = owner.session;
+      const [authSessionId] = await authSessionIdsOf(owner.session.accountId);
+
+      const response = await revokeDevice(identity, clock, callerOf(owner), deviceId);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.json<{ data: unknown }>().data).toEqual({ revoked: true });
+      expect(await revokedAt(deviceId)).toEqual(new Date(clock.nowMs()));
+      expect(await openBindingsOn(deviceId)).toBe(0);
+      expect(await resolved(identity, owner.session.token)).toBeNull();
+      expect(await authSessionIdsOf(owner.session.accountId)).not.toContain(authSessionId);
+
+      const rows = await deviceEventsOf(identity, deviceId);
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row).toMatchObject({
+          aggregatetype: 'identity.device',
+          aggregateid: deviceId,
+          tracecontext: TRACEPARENT,
+          actor_id: owner.session.accountId,
+        });
+      }
+      const [closedRow, revokedRow] = rows;
+      expect(closedOf(closedRow)).toMatchObject({
+        deviceId,
+        accountId: owner.session.accountId,
+        profileId: owner.session.profile.id,
+        closedBy: { accountId: owner.session.accountId, surface: WireSurface.STOREFRONT_WEB },
+      });
+      expect(revokedOf(revokedRow)).toMatchObject({
+        deviceId,
+        accountId: owner.session.accountId,
+        kind: WireDeviceKind.DESKTOP,
+        revokedBy: { accountId: owner.session.accountId, surface: WireSurface.STOREFRONT_WEB },
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    "leaves another account's session and the device to that account, which revokes it last",
+    async () => {
+      const owner = await signedUp(identity);
+      const neighbour = await signedUp(identity);
+      const onTheSameDevice = await signedIn(
+        identity,
+        neighbour.email,
+        presenting(owner.device.token),
+      );
+      const { deviceId } = owner.session;
+      expect(onTheSameDevice.session.deviceId).toBe(deviceId);
+
+      expect((await revokeDevice(identity, clock, callerOf(owner), deviceId)).statusCode).toBe(200);
+
+      expect(await revokedAt(deviceId)).toBeNull();
+      expect(await openBindingsOn(deviceId)).toBe(1);
+      expect(await resolved(identity, owner.session.token)).toBeNull();
+      expect(await resolved(identity, onTheSameDevice.session.token)).not.toBeNull();
+      const [ownerClosed, ...none] = await deviceEventsOf(identity, deviceId);
+      expect(none).toEqual([]);
+      expect(closedOf(ownerClosed).accountId).toBe(owner.session.accountId);
+
+      const last = await revokeDevice(identity, clock, callerOf(onTheSameDevice), deviceId);
+      expect(last.statusCode).toBe(200);
+
+      expect(await revokedAt(deviceId)).toEqual(new Date(clock.nowMs()));
+      expect(await openBindingsOn(deviceId)).toBe(0);
+      expect(await resolved(identity, onTheSameDevice.session.token)).toBeNull();
+      expect(await resolved(identity, neighbour.session.token)).not.toBeNull();
+      const [, neighbourClosed, revoked, ...rest] = await deviceEventsOf(identity, deviceId);
+      expect(rest).toEqual([]);
+      expect(closedOf(neighbourClosed).accountId).toBe(neighbour.session.accountId);
+      expect(revokedOf(revoked).accountId).toBe(neighbour.session.accountId);
+    },
+    CASE_MS,
+  );
+
+  it(
+    "revokes it when the other account's session there has lapsed, though nothing closed its binding",
+    async () => {
+      const owner = await signedUp(identity);
+      const neighbour = await signedUp(identity);
+      const lapsed = await signedIn(identity, neighbour.email, presenting(owner.device.token));
+      const { deviceId } = owner.session;
+      await identity.dataSource.query(
+        `UPDATE ${AUTH_SCHEMA}.session SET "expiresAt" = now() - interval '1 day' WHERE id = $1`,
+        [await authSessionIdOf(lapsed.session.deviceSessionId)],
+      );
+      expect(await resolved(identity, lapsed.session.token)).toBeNull();
+
+      expect((await revokeDevice(identity, clock, callerOf(owner), deviceId)).statusCode).toBe(200);
+
+      expect(await revokedAt(deviceId)).toEqual(new Date(clock.nowMs()));
+      const [ownerClosed, revoked, ...rest] = await deviceEventsOf(identity, deviceId);
+      expect(rest).toEqual([]);
+      expect(closedOf(ownerClosed).accountId).toBe(owner.session.accountId);
+      expect(revokedOf(revoked).accountId).toBe(owner.session.accountId);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'answers 404 and writes nothing for a device the caller holds no session on, an unknown one or a revoked one',
+    async () => {
+      const owner = await signedUp(identity);
+      const stranger = await signedUp(identity);
+      const { deviceId } = owner.session;
+
+      const refusals = [
+        await revokeDevice(identity, clock, callerOf(stranger), deviceId),
+        await revokeDevice(identity, clock, callerOf(owner), uuidv7()),
+      ];
+      expect(await revokedAt(deviceId)).toBeNull();
+      expect(await deviceEventsOf(identity, deviceId)).toEqual([]);
+
+      expect((await revokeDevice(identity, clock, callerOf(owner), deviceId)).statusCode).toBe(200);
+      refusals.push(await revokeDevice(identity, clock, callerOf(owner), deviceId));
+
+      for (const refusal of refusals) {
+        expect(refusal.statusCode).toBe(404);
+        expect(refusal.json<{ error: { code: string } }>().error.code).toBe(ApiErrorCode.NOT_FOUND);
+      }
+      expect(await deviceEventsOf(identity, deviceId)).toHaveLength(2);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'answers a replayed key with the first 200 and writes no second event',
+    async () => {
+      const owner = await signedUp(identity);
+      const key = randomUUID();
+      const { deviceId } = owner.session;
+
+      const first = await revokeDevice(identity, clock, callerOf(owner), deviceId, key);
+      const replay = await revokeDevice(identity, clock, callerOf(owner), deviceId, key);
+
+      expect(replay.statusCode).toBe(200);
+      expect(replay.headers['idempotency-replayed']).toBe('true');
+      expect(replay.json()).toEqual(first.json());
+      expect(await deviceEventsOf(identity, deviceId)).toHaveLength(2);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'leaves neither the revocation nor its event when the transaction fails after the insert',
+    async () => {
+      const owner = await signedUp(identity);
+      const { deviceId } = owner.session;
+      await identity.dataSource.query(
+        `CREATE FUNCTION refuse_device_event_itest() RETURNS trigger LANGUAGE plpgsql AS
+           $$ BEGIN RAISE EXCEPTION 'the commit refused by the test'; END $$`,
+      );
+      // Deferred to the commit: the event and the rows are all written when it fails.
+      await identity.dataSource.query(
+        `CREATE CONSTRAINT TRIGGER refuse_device_event_itest AFTER INSERT ON outbox_event
+           DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+           WHEN (NEW.aggregateid = '${deviceId}') EXECUTE FUNCTION refuse_device_event_itest()`,
+      );
+      try {
+        const response = await revokeDevice(identity, clock, callerOf(owner), deviceId);
+        expect(response.statusCode).toBe(500);
+      } finally {
+        await identity.dataSource.query(
+          'DROP TRIGGER refuse_device_event_itest ON outbox_event; DROP FUNCTION refuse_device_event_itest()',
+        );
+      }
+
+      expect(await deviceEventsOf(identity, deviceId)).toEqual([]);
+      expect(await revokedAt(deviceId)).toBeNull();
+      expect(await openBindingsOn(deviceId)).toBe(1);
+      expect(await resolved(identity, owner.session.token)).not.toBeNull();
+    },
+    CASE_MS,
+  );
+});
+
+describe('closing a device session', () => {
+  it(
+    'closes its own session once, self-initiated from the same device only',
+    async () => {
+      const viewer = await signedUp(identity);
+      const { deviceId, deviceSessionId } = viewer.session;
+      const authSessionId = await authSessionIdOf(deviceSessionId);
+
+      const closed = await closeDeviceSession(identity, clock, callerOf(viewer), deviceSessionId);
+      expect(closed.statusCode).toBe(200);
+      expect(closed.json<{ data: unknown }>().data).toEqual({ closed: true });
+      expect(await resolved(identity, viewer.session.token)).toBeNull();
+      expect(await authSessionIdsOf(viewer.session.accountId)).not.toContain(authSessionId);
+
+      const again = await closeDeviceSession(identity, clock, callerOf(viewer), deviceSessionId);
+      expect(again.statusCode).toBe(200);
+      expect(again.json<{ data: unknown }>().data).toEqual({ closed: true });
+
+      const [row, ...others] = await deviceEventsOf(identity, deviceId);
+      expect(others).toEqual([]);
+      expect(row).toMatchObject({ tracecontext: TRACEPARENT, actor_id: viewer.session.accountId });
+      expect(closedOf(row)).toMatchObject({
+        deviceId,
+        accountId: viewer.session.accountId,
+        profileId: viewer.session.profile.id,
+        selfInitiated: true,
+        closedBy: { accountId: viewer.session.accountId, surface: WireSurface.STOREFRONT_WEB },
+      });
+
+      const elsewhere = await signedUp(identity);
+      const fromAnotherDevice = { ...callerOf(elsewhere), deviceId: uuidv7() };
+      expect(
+        (
+          await closeDeviceSession(
+            identity,
+            clock,
+            fromAnotherDevice,
+            elsewhere.session.deviceSessionId,
+          )
+        ).statusCode,
+      ).toBe(200);
+      const [fromElsewhere] = await deviceEventsOf(identity, elsewhere.session.deviceId);
+      expect(closedOf(fromElsewhere).selfInitiated).toBe(false);
+    },
+    CASE_MS,
+  );
+
+  it(
+    "answers 404 for another account's session or an unknown one, and closes nothing",
+    async () => {
+      const viewer = await signedUp(identity);
+      const stranger = await signedUp(identity);
+
+      for (const sessionId of [viewer.session.deviceSessionId, randomUUID()]) {
+        const refusal = await closeDeviceSession(identity, clock, callerOf(stranger), sessionId);
+        expect(refusal.statusCode).toBe(404);
+        expect(refusal.json<{ error: { code: string } }>().error.code).toBe(ApiErrorCode.NOT_FOUND);
+      }
+      expect(await resolved(identity, viewer.session.token)).not.toBeNull();
+      expect(await deviceEventsOf(identity, viewer.session.deviceId)).toEqual([]);
+    },
+    CASE_MS,
+  );
+});
+
+describe('racing a revoke', () => {
+  it(
+    'answers 404 when a close of the same binding commits first, and writes that close alone',
+    async () => {
+      const owner = await signedUp(identity);
+      const { deviceId, deviceSessionId } = owner.session;
+      const devices = identity.app.get(DevicesService);
+
+      const revoke = await holding(
+        (manager) => devices.closeSession(manager, deviceSessionId, actOf(owner)),
+        () => revokeDevice(identity, clock, callerOf(owner), deviceId),
+        1,
+      );
+
+      expect(revoke.statusCode).toBe(404);
+      expect(await revokedAt(deviceId)).toBeNull();
+      const [closed, ...none] = await deviceEventsOf(identity, deviceId);
+      expect(none).toEqual([]);
+      expect(closedOf(closed).accountId).toBe(owner.session.accountId);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'serves two revokes of one device one after the other: one 200, one 404, one set of rows',
+    async () => {
+      const owner = await signedUp(identity);
+      const { deviceId } = owner.session;
+
+      const revokes = await holding(
+        (manager) => manager.query('SELECT id FROM device WHERE id = $1 FOR UPDATE', [deviceId]),
+        () =>
+          Promise.all([
+            revokeDevice(identity, clock, callerOf(owner), deviceId),
+            revokeDevice(identity, clock, callerOf(owner), deviceId),
+          ]),
+        2,
+      );
+
+      expect(revokes.map(({ statusCode }) => statusCode).sort()).toEqual([200, 404]);
+      expect(await revokedAt(deviceId)).toEqual(new Date(clock.nowMs()));
+      const [closed, revoked, ...rest] = await deviceEventsOf(identity, deviceId);
+      expect(rest).toEqual([]);
+      expect(closedOf(closed).accountId).toBe(owner.session.accountId);
+      expect(revokedOf(revoked).accountId).toBe(owner.session.accountId);
+    },
+    CASE_MS,
+  );
+});
+
+describe('signing out', () => {
+  it(
+    'writes one self-initiated close, and none once the session is gone',
+    async () => {
+      const viewer = await signedUp(identity);
+      const { deviceId } = viewer.session;
+
+      expect((await signOut(identity, viewer.session.token)).statusCode).toBe(200);
+      expect((await signOut(identity, viewer.session.token)).statusCode).toBe(200);
+
+      const [row, ...others] = await deviceEventsOf(identity, deviceId);
+      expect(others).toEqual([]);
+      expect(row).toMatchObject({ tracecontext: TRACEPARENT, actor_id: viewer.session.accountId });
+      expect(closedOf(row)).toMatchObject({
+        deviceId,
+        accountId: viewer.session.accountId,
+        profileId: viewer.session.profile.id,
+        selfInitiated: true,
+        closedBy: { accountId: viewer.session.accountId, surface: WireSurface.STOREFRONT_WEB },
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'writes nothing when the same profile signs in again on the same device',
+    async () => {
+      const viewer = await signedUp(identity);
+      const again = await signedIn(identity, viewer.email, presenting(viewer.device.token));
+
+      expect(again.session.deviceId).toBe(viewer.session.deviceId);
+      expect(await resolved(identity, viewer.session.token)).toBeNull();
+      expect(await deviceEventsOf(identity, viewer.session.deviceId)).toEqual([]);
+    },
+    CASE_MS,
+  );
+});

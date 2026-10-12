@@ -11,6 +11,8 @@ import {
 } from '@arthome-platform/http-edge';
 import { Body, Controller, Get, Header, Headers, HttpCode, Inject, Post } from '@nestjs/common';
 
+import { ActorSurfaceParameter } from '@arthome/contracts/http';
+
 import { FINGERPRINT_KEY } from './auth.tokens.js';
 import { EmailVerificationsService } from './email-verifications.service.js';
 import { SessionsService, type ResolvedViewer } from './sessions.service.js';
@@ -27,6 +29,7 @@ import {
 } from './sign-up.schema.js';
 import { SignUpService, type SignedUp } from './sign-up.service.js';
 import { ViewerService, type Viewer } from './viewer.service.js';
+import { wireSurfaceOf } from '../devices/device-events.js';
 import { UNDESCRIBED_DEVICE } from '../devices/presented-device.schema.js';
 
 const SIGN_UP_PATH = '/v1/auth/sign-up';
@@ -98,8 +101,13 @@ export class AuthController {
   @Header('cache-control', 'no-store')
   public async revoke(
     @Body({ schema: SessionTokenSchema }) body: SessionTokenBody,
+    @Headers(ActorSurfaceParameter.name) surface?: string,
+    @Headers('traceparent') traceparent?: string,
   ): Promise<{ readonly signedOut: true }> {
-    await this.sessions.revoke(body.token);
+    await this.sessions.revoke(body.token, {
+      surface: wireSurfaceOf(surface),
+      traceparent: parseTraceparent(traceparent)?.traceparent ?? null,
+    });
     return { signedOut: true };
   }
 
