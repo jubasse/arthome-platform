@@ -250,9 +250,7 @@ export class RecordingCalls {
     for (let attempt = 1; attempt <= ORPHAN_DELETE_ATTEMPTS; attempt += 1) {
       try {
         await withinTimeout(this.provider.delete(ref));
-        this.logger.error(
-          `date ${dateId}: a recording started that the asset did not keep, deleted`,
-        );
+        this.logger.log(`date ${dateId}: a recording started that the asset did not keep, deleted`);
         return;
       } catch (error) {
         this.logger.warn(
@@ -263,6 +261,22 @@ export class RecordingCalls {
     this.logger.error(
       `date ${dateId}: a recording started that the asset did not keep is left at the provider`,
     );
+    await this.recordOrphan(dateId, ref);
+  }
+
+  /** Outside any transaction; a repeat of the same reference leaves the one row. */
+  private async recordOrphan(dateId: string, ref: RecordingRef): Promise<void> {
+    try {
+      await this.dataSource.query(
+        `INSERT INTO orphan_recording (date_id, recording_ref, attempts)
+         VALUES ($1, $2, $3) ON CONFLICT (recording_ref) DO NOTHING`,
+        [dateId, ref, ORPHAN_DELETE_ATTEMPTS],
+      );
+    } catch (error) {
+      this.logger.error(
+        `date ${dateId}: the recording left at the provider could not be recorded: ${nameOf(error)}`,
+      );
+    }
   }
 
   private async settleStatus(
