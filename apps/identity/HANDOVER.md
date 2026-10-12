@@ -38,8 +38,8 @@ then be held to far less.
 | --- | --- |
 | `POST /v1/auth/sign-up` | the account, its two events and the first link, then the credential; `Idempotency-Key` required |
 | `POST /v1/auth/sign-in` | the password checked by better-auth, then the account's status; never idempotent (the contract's prohibition) |
-| `POST /v1/sessions/resolve` | `{ session }` with its `account` (handle, verified), so the viewer context costs the BFF one call; null for a token that opens nothing; a 401 from here only ever means the BFF's own token |
-| `POST /v1/sessions/revoke` | this session alone; succeeds on a session already gone |
+| `POST /v1/sessions/resolve` | `{ session }` with its device, binding, profile and `account` (handle, verified), so the viewer context costs the BFF one call; null for a token that opens nothing, or whose binding is closed or device revoked (§0b); a 401 from here only ever means the BFF's own token |
+| `POST /v1/sessions/revoke` | this session alone, and its binding; succeeds on a session already gone |
 | `GET /v1/accounts/me` | the handle and whether the address is verified, for the token's `sub`; no BFF route calls it since `resolve` answers the same |
 | `POST /v1/accounts/me/email-verification` | a fresh link, the earlier ones spent: `queued`, since `notifications` owns the sending; `queued: false` once verified |
 | `POST /v1/email-verifications/confirm` | spends the token and verifies the address |
@@ -93,15 +93,18 @@ the link. The race between the two is a suite case.
 **The public handle** is generated and neutral (`generatedPublicHandle`, D-101), changeable
 later through `updateProfile` (not yet served). **The country** is the one the BFF sends: the
 gateway's geolocation, or `ZZ`, CLDR's unknown region. **The device id** the BFF puts in the token
-is the session's own id until devices register (auth slice C).
+is the registered device since PI1 (§0b), no longer the session's own id.
 
 ### What later slices inherit
 
 - **B (studio)**: the studio BFF's issuer is already in `INTERNAL_TOKEN_ISSUERS`; the claims schema
   is loose for its `chn` and `rol`; Q4's invitation sign-up reuses `SignUpService`'s order. What B
   must do first, identity's CQRS shape included, is in `apps/bff-storefront/HANDOVER.md` §4.
-- **C (devices)**: `deviceId` becomes the registered device; the bearer plugin is in place;
-  `multi-session` and `device-authorization` are not installed yet.
+- **C (devices)**: PI1 made `deviceId` the registered device and bound every session to a
+  (device, profile) pair (§0b); PI2 adds `revokeDevice`, `signOutProfile` and their two events.
+  Still owed: the native device (`registerDevice`, the ES256 `device_token`, pairing), more than
+  one profile and the picker. The bearer plugin is in place; `multi-session` and
+  `device-authorization` are not installed.
 - **D**: password reset, two-factor, social sign-in. A reset token must not take the verification
   token's path: its delivery is D's decision. **Linking a social sign-in to an existing address**
   (D-106) must also require identity's own `email_verified_at`, or drop the password and revoke the
@@ -114,6 +117,59 @@ is the session's own id until devices register (auth slice C).
   topic's only one (`verification-topic.spec.ts` fails on any other app naming it), and production
   enforces it with the ACLs `infra/kafka/README.md` requires.
 
+## 0b. Profiles and devices (PI1)
+
+Every storefront session belongs to a registered device and a profile (`data-model.md` §1.2-1.3,
+`adr-auth.md` §4/Q3 and D-126). Three tables, migration `1791800000000`: `profile` (one default
+`adult` profile per account, created in sign-up's transaction, backfilled for older accounts by
+an `up` that may run twice), `device` (the browser, known by its token's digest alone) and
+`device_session`, the (device, profile) pair a better-auth session is bound to, at most one open
+per pair. Their uniques are indexes, not inline `UNIQUE`: no request can collide on them, so they
+map to no refusal code.
+
+**The seam PB1 and PB2 code against** (PI1's PRD §6; changing it needs the lead):
+
+| Call | What changed |
+| --- | --- |
+| `POST /v1/auth/sign-up`, `/v1/auth/sign-in` | optional `device: { token: string \| null, kind, label }` (`kind` one of core's `DEVICE_KINDS`, `label` 1 to 80 characters); absent means `{ token: null, kind: 'desktop', label: 'unknown' }`. The answer adds `session.deviceSessionId`, `session.profile { id, name, kind }` and `device: { token }`, the token the BFF sets now |
+| `POST /v1/sessions/resolve` | the session adds `deviceSessionId` and `profile`; `deviceId` is the registered device (UUIDv7) |
+| `POST /v1/sessions/revoke` | also closes the session's binding |
+| `POST /v1/devices/{deviceId}/revoke`, `/v1/device-sessions/{sessionId}/close` | declared for PI2, not served yet |
+
+**The token's life.** 256 random bits in base64url (`devices/device-token.ts`), SHA-256 hex at
+rest; the raw token appears in the sign-up and sign-in answer only, never in a row, a log or the
+idempotency record. It lives `DEVICE_TOKEN_LIFETIME_SECONDS` from its last rotation, and rotates
+**at sign-in only**, in one conditional `UPDATE ... WHERE token_hash = $old AND revoked_at IS
+NULL AND token_expires_at > now`: of two sign-ins presenting one token, one rotates it and the
+other registers a new device. An absent, unknown, expired or revoked token registers a new device
+and never refuses the sign-in. Registration and rotation run only after better-auth accepted the
+password and identity the account, inside one transaction with the binding; a failure there
+revokes the fresh session. A session renewed daily is not a sign-in (D-126, accepted): a viewer who
+does not sign in for the token's lifetime loses the cookie and gets a new device next time.
+
+**The binding.** `DevicesService.bind` closes the pair's open binding, then inserts the new one
+with `ON CONFLICT ... DO NOTHING` on the partial index: a second sign-in of one profile on one
+device replaces the first, and a racing bind is retried once. The replaced better-auth session is
+deleted after commit, best effort; its closed binding already resolves to nothing.
+
+**Resolve fails closed.** After `getSession`, one statement reads the open binding by
+`auth_session_id`, its unrevoked device, its profile and the account's sign-in status: still two
+round trips (transport.md §5.9). No binding, a closed one or a revoked device resolves to null,
+never to a fallback device. **Sessions opened before this migration have no binding: they resolve
+to null, and the viewer signs in again.** Nothing writes on resolve: `last_seen_at` moves at
+sign-in only.
+
+**A replayed sign-up** answers `device.token: null`: nothing is re-set, and the fingerprint leaves
+`device` out, so a browser that never got the first cookie still replays. While the recorded
+session resolves, the replay answers the same ids; once it is gone, `reissue` opens a fresh session
+bound to the recorded device (a new one if it was revoked) and the default profile, so the answer
+keeps `deviceId` and `profile` with a new `deviceSessionId`.
+
+**What proves it**: `devices/device-binding.http.itest.ts` (the seam's shapes, rotation, the
+fail-closed resolve, the replay, the two races, a log capture holding neither token),
+`profiles/default-profile.itest.ts` (the backfill, `up` twice, the race on a missing default),
+`devices/device-token.spec.ts`, and the BFF's `auth/auth.e2e.itest.ts` unchanged.
+
 ## 1. What is here
 
 | File | What it is |
@@ -123,7 +179,9 @@ is the session's own id until devices register (auth slice C).
 | `src/auth/better-auth.ts`, `password-hashing.ts`, `auth-migrations.ts`, `src/migrate-auth.ts` | better-auth's instance, its hashing, its migrator and the command running it |
 | `src/auth/sign-up.service.ts`, `sign-in.service.ts`, `sessions.service.ts`, `email-verifications.service.ts`, `viewer.service.ts` | the routes' work |
 | `src/auth/auth.controller.ts`, `sign-up.schema.ts`, `refusals.ts`, `auth.module.ts` | the routes, their bodies, their refusals, the wiring (better-auth's own pool, closed on shutdown) |
-| `src/migrations/1758700000000-initial.ts`, `1758700200000-outbox-guards.ts`, `1790500000000-storefront-session.ts` | the account and the outbox; the outbox CHECKs; slice A's columns, the links and the idempotency store |
+| `src/profiles/` | `Profile`, its kinds, `defaultProfileOf` (§0b) |
+| `src/devices/` | `Device`, `DeviceSession`, the token and its digest, the presented device's schema, `DevicesService` (registration, rotation, binding) (§0b) |
+| `src/migrations/1758700000000-initial.ts`, `1758700200000-outbox-guards.ts`, `1790500000000-storefront-session.ts`, `1791800000000-profiles-and-devices.ts` | the account and the outbox; the outbox CHECKs; slice A's columns, the links and the idempotency store; the profile, the device and the binding, with the default profile's backfill |
 | `src/edge-providers.ts`, `src/app.module.ts`, `src/main.ts`, `src/data-source.ts` | the wiring: `edgeProviders`, so the internal token's guard comes first |
 
 The shared HTTP edge — the exception filter, the internal token's guard, the production guard, the
@@ -132,7 +190,8 @@ not a file in this service. §3.
 
 Tests: `sign-up.schema.spec.ts`, `password-hashing.spec.ts`, `unique-violations.spec.ts`, and the
 container suites `auth-schema.itest.ts` (S1), `auth.http.itest.ts` (the routes, the refusals, the
-link's single use and expiry, two sign-ups racing, an orphaned credential replaced) and
+link's single use and expiry, two sign-ups racing, an orphaned credential replaced),
+`devices/device-binding.http.itest.ts` and `profiles/default-profile.itest.ts` (§0b) and
 `boot.itest.ts` (`AppModule` itself). The BFF's `auth.e2e.itest.ts` runs this service behind the
 storefront BFF. `src/itest/` holds the harness both use.
 
@@ -450,3 +509,12 @@ Owed, in rough order of consequence:
 5. **The nine other code names `transport.md` §5.5 promised** are mostly emittable now
    (`api.token_expired`, the idempotency pair, the deadline and upstream codes); `pairing.expired`
    and `api.gateway_unavailable` wait for their surfaces.
+6. **Device rows grow without a bound** (PI1). Every sign-in without a device cookie, and every
+   bearer sign-in, inserts a `device` row; nothing caps or reaps them. The account slice owes a
+   reaper of devices with no open binding and an expired token, or a per-account cap.
+7. **A bearer session gets a device whose token nobody keeps** (PI1): a native shell has no device
+   carrier yet, so the BFF sends `token: null`. Harmless, it binds the session; the native slice
+   replaces it with the ES256 `device_token`.
+8. **`device` is optional on sign-up and sign-in** only for the window between PI1 and PB1
+   merging; making it required is a one-line follow-up in `devices/presented-device.schema.ts`'s
+   callers.

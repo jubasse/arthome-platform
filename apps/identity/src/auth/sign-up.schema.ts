@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { CountryCodeSchema, LocaleIn } from '@arthome/core/schema';
 
 import { PASSWORD_LENGTH } from './better-auth.js';
+import { PresentedDeviceSchema } from '../devices/presented-device.schema.js';
 
 /** The BFF's call, not the contract's `signUp`: the BFF has resolved the country by then. */
 export const SignUpSchema = z.strictObject({
@@ -14,6 +15,7 @@ export const SignUpSchema = z.strictObject({
   /** Shape-checked only: `ZZ`, the unknown region, when the edge could not place the visitor. */
   country: CountryCodeSchema,
   acceptedTermsVersion: z.number().int().min(1),
+  device: PresentedDeviceSchema.optional(),
 });
 
 export type SignUpBody = z.infer<typeof SignUpSchema>;
@@ -21,6 +23,7 @@ export type SignUpBody = z.infer<typeof SignUpSchema>;
 export const SignInSchema = z.strictObject({
   email: z.email(),
   password: z.string().min(1).max(PASSWORD_LENGTH.max),
+  device: PresentedDeviceSchema.optional(),
 });
 
 export type SignInBody = z.infer<typeof SignInSchema>;
