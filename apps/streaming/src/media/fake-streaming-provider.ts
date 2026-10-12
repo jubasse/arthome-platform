@@ -11,6 +11,7 @@ import {
   IngestProtocol,
   MediaCodec,
   MonitorPath,
+  PLAYBACK_COOKIE,
   PlaybackSigningUnavailable,
   RecordingNotFound,
   type FeedSample,
@@ -69,7 +70,6 @@ export const FAKE_RECORDING_CAPABILITIES: RecordingCapabilities = {
   masterAtIngest: true,
 };
 
-const PLAYBACK_COOKIE = 'arthome_playback';
 const EDGE_ORIGIN = 'https://edge.fake-streaming.invalid';
 const INGEST_HOST = 'ingest.fake-streaming.invalid';
 const MONITOR_ORIGIN = 'https://monitor.fake-streaming.invalid';

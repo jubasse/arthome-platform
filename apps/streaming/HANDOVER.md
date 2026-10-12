@@ -759,12 +759,35 @@ back later gets a restarted worker and the manifest starts over; an edge path of
 as `workerFailed({ attempts: 3, final: true })` once. Edge routes are per replica: a date signed on
 two replicas is removed by the first to reach ten minutes idle and rewritten by the other.
 
-**Playback.** `query_token` only (`signed_cookie` throws `PlaybackSigningUnavailable`): ES256 with
-PS3's claims and `prefix: /watch/<dateId>/`, `aud` `arthome.cdn`, `exp` the grant's;
-`manifestUrl` `<envoy>/watch/<dateId>/index.m3u8`, the same across renewals. The player appends the
-current token as `?token=` to every request: a simple request, no CORS preflight. Envoy strips it
-before the edge and keeps no access log. `checksEveryRequest: true`: a refused renewal stops
-playback at `exp` plus Envoy's 5 s clock skew.
+**Playback.** One ES256 token by two mechanisms (adr §3.2): PS3's claims with
+`prefix: /watch/<dateId>/`, `aud` `arthome.cdn`, `exp` the grant's; `manifestUrl`
+`<envoy>/watch/<dateId>/index.m3u8` either way, the same across renewals.
+
+- `storefront_web` gets `signed_cookie`: the `arthome_playback` cookie (`PLAYBACK_COOKIE`,
+  `media-ports.ts`), `Path=/watch/<dateId>/`, `Expires` the token's `exp`, `Secure; HttpOnly;
+  SameSite=None`, no `Domain`, re-set on open and on each renewal (the BFF relays it). hls.js sends
+  it with `withCredentials` (`xhrSetup`): a simple GET, no preflight.
+- Every other surface gets `query_token`: the player appends the current token as `?token=` to
+  every request.
+
+Envoy's `jwt_authn` reads both (`from_params: [token]`, `from_cookies: [arthome_playback]`) and
+`lua` binds the verified `prefix` to the path whichever it came from. A request carrying both is
+served only when both verify, and then the query's claims bind the path (R0). Envoy strips the
+query token (`forward: false`) and the whole `cookie` header (`request_headers_to_remove`) before
+the edge, and keeps no access log. `checksEveryRequest: true`: a refused renewal stops playback at
+`exp` plus Envoy's 5 s clock skew, by cookie as by query.
+
+**The edge URL's host.** `MEDIAMTX_PLAYBACK_EDGE_URL=http://localhost:58888`, never `127.0.0.1`:
+cookies ignore ports, so the host-only cookie set for the storefront on `localhost:3000` reaches
+`localhost:58888` and no other host. The compose binding stays on `127.0.0.1`.
+
+**CORS.** One origin, with credentials: `http://localhost:3000`, the storefront's `next dev`. Every
+answer to it carries `Access-Control-Allow-Origin: <origin>` and `-Allow-Credentials: true`, 401s
+included, so the player reads a refusal; any other origin gets neither. The edge reflects any
+origin (`hlsAllowOrigins`), so Envoy removes its CORS headers and only its own filter answers.
+Envoy reads no environment: to change the origin, edit the one `exact:` literal in
+`infra/envoy/edge.yaml` and restart `playback-edge`; a suite passes
+`startMediaStack({ storefrontOrigin })`. A deployed edge is the CDN's configuration, not this file.
 
 **The key set.** `tools/playback-jwks.mjs` writes `infra/mediamtx/playback-jwks.json` from
 `readPlaybackSigningKey` (committed for the development key). Envoy reads it at start only: after
@@ -782,14 +805,18 @@ reload cut by the 10 s route timeout.
 | `media/media.module.spec.ts` | the fake by default, MediaMTX on config, either refused in production, a missing URL or an unknown provider fails the boot |
 | `media/mediamtx/path-watcher.spec.ts` | online once at `onlineTime` with the protocol of its source, offline at the read with the onset it ends, a publisher back while a slow tick reports not refused, a report the listener failed repeated, an unreachable origin reporting nothing, a stop that waits no extra period |
 | `media/mediamtx/edge-routes.spec.ts` | AAC pulled as it is, Opus through the worker, a worker restarted once it exited, its failure reported once, a date removed ten minutes after its last signature |
-| `media/mediamtx/mediamtx-playback.spec.ts`, `mediamtx-metrics.spec.ts`, `recording-ref.spec.ts` | cookie refused, claims, prefix, `exp`, a stable manifest; codecs, rate, WHIP jitter and loss; an opaque reference |
+| `media/mediamtx/mediamtx-playback.spec.ts`, `mediamtx-metrics.spec.ts`, `recording-ref.spec.ts` | one token by cookie or query, claims, prefix, `exp`, the same stable manifest; codecs, rate, WHIP jitter and loss; an opaque reference |
+| `media/mediamtx/edge-config.spec.ts` | `edge.yaml` reads the cookie `PLAYBACK_COOKIE` names, answers CORS with credentials to one exact origin, removes the cookie and the edge's CORS headers |
 | `run/grace-and-hold-screen.itest.ts` | a second replica's report of the same onset writes nothing; a loss naming an earlier onset leaves the return in place |
-| `media/mediamtx/*.itest.ts` (testcontainers, `startMediaStack`; the origin asks a double of MX1's route built on its `attemptOf`, no database) | ingest by key, a second publisher refused, disconnect; every token refusal on a segment and a part through Envoy, a `prefix` claim of any other shape than `/watch/<date>/` refused, AAC LL-HLS on a valid one; recording ready within 2 s and deleted; two watchers lift a lost feed once |
+| `media/mediamtx/*.itest.ts` (testcontainers, `startMediaStack`; the origin asks a double of MX1's route built on its `attemptOf`, no database) | ingest by key, a second publisher refused, disconnect; every token refusal on a segment and a part through Envoy, by cookie as by query, a `prefix` claim of any other shape than `/watch/<date>/` refused, AAC LL-HLS on a valid one; both sources on one request; CORS with credentials to the suite's origin only, on 200 and 401; recording ready within 2 s and deleted; two watchers lift a lost feed once |
 | `drills/real-live.itest.ts` (3 min) | the whole chain on a real feed: published with the run's key through MX1's route (§0g) on the app, the technical check on a real sample (D-114), on air; PS3 opens playback and Envoy serves AAC LL-HLS; the renewal refused once the seat is lost (403 `watch.seat_expired`), then 401 past `exp`; a kicked publisher back within the worker's budget keeps the media sequence; an SRT feed gets no worker; a replay recorded at ingest, ready at the end, then deleted, a date without a mode leaving nothing; the hold screen raised on a lost feed and lifted on its return (D-124); a frozen worker raising `compatibility_worker_failed` |
 
 **Proven only by R0 or by configuration**, no suite fails if they break:
 - Envoy strips the token before the edge (`forward: false` on `from_params`, Envoy 1.39): measured
   once in R0. The Lua check relies on it; an Envoy bump must measure it again.
+- Envoy removes the `cookie` header before the edge (`request_headers_to_remove`; jwt_authn's
+  cookie extractor removes nothing): measured in PM1's R0 against an echo upstream
+  (`infra/mediamtx/spike/r0.mjs probe`). No suite sees what the edge receives.
 - The edge HLS port unreachable from the host: `compose.media.yaml` binds no host port for it. The
   `edge-playback.itest.ts` case only checks that `startMediaStack` maps none.
 - An SRT feed's AAC pulled as it is and played through Envoy: the drill checks the edge path's
