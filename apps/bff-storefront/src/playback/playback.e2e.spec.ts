@@ -174,7 +174,7 @@ function streaming(request: IncomingMessage, response: ServerResponse, body: str
   } else if (path === `/v1/playback/${DATE_FULL}/open`) {
     refused(response, 403, WatchDenialReason.CONCURRENT_LIMIT_REACHED, {
       allowed: 1,
-      activeSessions: ACTIVE_SESSIONS,
+      activeSessions: ACTIVE_SESSIONS.map((session) => ({ ...session, leaseKey: 'internal' })),
     });
   } else if (path === `/v1/playback/${DATE_REPLAY_EXPIRED}/open`) {
     refused(response, 410, WatchDenialReason.REPLAY_EXPIRED);
@@ -362,16 +362,16 @@ describe('openPlayback', () => {
     expect(deadlineMs - clock.nowMs()).toBeLessThanOrEqual(1_000);
   });
 
-  it('relays the concurrent limit with one entry per active session', async () => {
+  it('relays the concurrent limit with the sessions the viewer may release, as declared', async () => {
     const response = await byBearer(`/v1/playback/${DATE_FULL}/open`, OPENING);
 
     expect(response.statusCode).toBe(403);
-    // Each entry as the contract declares it: core's params schema gives an entry no field yet.
     expect(response.json()).toMatchObject({
-      error: {
-        code: WatchDenialReason.CONCURRENT_LIMIT_REACHED,
-        params: { allowed: 1, activeSessions: [{}] },
-      },
+      error: { code: WatchDenialReason.CONCURRENT_LIMIT_REACHED },
+    });
+    expect(response.json<{ error: { params: unknown } }>().error.params).toEqual({
+      allowed: 1,
+      activeSessions: ACTIVE_SESSIONS,
     });
     expect(response.headers['set-cookie']).toBeUndefined();
   });

@@ -179,8 +179,8 @@ importers:
         specifier: workspace:*
         version: link:libs/messaging
       '@arthome/tooling':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-tooling-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-tooling-0.4.0-rc.2.tgz(@eslint/js@10.0.1(eslint@10.11.0))(@typescript-eslint/utils@8.70.0(eslint@10.11.0)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.11.0))(eslint@10.11.0)(prettier@3.9.8)(typescript@6.0.3)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-tooling-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-tooling-0.4.0-rc.3.tgz(@eslint/js@10.0.1(eslint@10.11.0))(@typescript-eslint/utils@8.70.0(eslint@10.11.0)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.11.0))(eslint@10.11.0)(prettier@3.9.8)(typescript@6.0.3)
       '@bufbuild/buf':
         specifier: 1.73.0
         version: 1.73.0
@@ -224,11 +224,11 @@ importers:
         specifier: workspace:*
         version: link:../../libs/http-edge
       '@arthome/contracts':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5))(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       '@fastify/cookie':
         specifier: 11.1.2
         version: 11.1.2
@@ -312,11 +312,11 @@ importers:
         specifier: workspace:*
         version: link:../../libs/transactions
       '@arthome/contracts':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5))(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       '@bufbuild/protobuf':
         specifier: 2.15.0
         version: 2.15.0
@@ -382,11 +382,11 @@ importers:
         specifier: workspace:*
         version: link:../../libs/transactions
       '@arthome/contracts':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5))(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       '@bufbuild/protobuf':
         specifier: 2.15.0
         version: 2.15.0
@@ -455,8 +455,8 @@ importers:
         specifier: workspace:*
         version: link:../../libs/messaging
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       '@bufbuild/protobuf':
         specifier: 2.15.0
         version: 2.15.0
@@ -488,8 +488,8 @@ importers:
         specifier: workspace:*
         version: link:../../libs/search-index
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       '@bufbuild/protobuf':
         specifier: 2.15.0
         version: 2.15.0
@@ -531,11 +531,11 @@ importers:
         specifier: workspace:*
         version: link:../../libs/transactions
       '@arthome/contracts':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5))(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       '@bufbuild/protobuf':
         specifier: 2.15.0
         version: 2.15.0
@@ -604,11 +604,11 @@ importers:
         specifier: workspace:*
         version: link:../../libs/transactions
       '@arthome/contracts':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5))(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       '@bufbuild/protobuf':
         specifier: 2.15.0
         version: 2.15.0
@@ -665,11 +665,11 @@ importers:
   libs/config:
     dependencies:
       '@arthome/contracts':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5))(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -689,11 +689,11 @@ importers:
         specifier: workspace:*
         version: link:../messaging
       '@arthome/contracts':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5))(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       jose:
         specifier: 6.2.12
         version: 6.2.12
@@ -741,8 +741,8 @@ importers:
         specifier: workspace:*
         version: link:../transactions
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       kafkajs:
         specifier: 2.2.4
         version: 2.2.4
@@ -775,8 +775,8 @@ importers:
   libs/search-index:
     dependencies:
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       '@opensearch-project/opensearch':
         specifier: 3.6.0
         version: 3.6.0
@@ -790,11 +790,11 @@ importers:
         specifier: workspace:*
         version: link:../messaging
       '@arthome/contracts':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5))(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5))(zod@4.6.5)
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       ioredis:
         specifier: 6.0.0
         version: 6.0.0
@@ -848,8 +848,8 @@ importers:
   libs/transactions:
     dependencies:
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
     devDependencies:
       '@nestjs/common':
         specifier: 12.0.3
@@ -879,8 +879,8 @@ importers:
         specifier: 22.1.8
         version: 22.1.8
       '@arthome/core':
-        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz
-        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+        specifier: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz
+        version: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       prettier:
         specifier: 3.9.8
         version: 3.9.8
@@ -908,17 +908,17 @@ packages:
     resolution: {integrity: sha512-Pv3cPa/44kvEwYcqwx4Ns5dhIDmcFNSHhbpheqiEG1Z/u4e2t4zHKDtE3eHZB+8o+IcC7xJj+d+AqGR44RoZDA==}
     engines: {node: ^22.22.3 || ^24.15.0 || >=26.0.0, npm: ^6.11.0 || ^7.5.6 || >=8.0.0, yarn: '>= 1.13.0'}
 
-  '@arthome/contracts@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz':
-    resolution: {integrity: sha512-zPibaGCi72e3O1GizknyoHMeurys/GzPYn2eMCaktUuPKv/Rt1Vs/Cr21W68ilA+xgUioFb2eo6AVEW+PKkVyQ==, tarball: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz}
-    version: 0.4.0-rc.2
+  '@arthome/contracts@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz':
+    resolution: {integrity: sha512-Subxoqw7BIhkXg+k24wi/tkczg49eLsr/j4xHymMI0tAhMOqex4Cofo+jpxQi2NfpCqegLREuaFr7UaqEUllAg==, tarball: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz}
+    version: 0.4.0-rc.3
     engines: {node: ^22.22.3 || ^24.15.0 || >=26}
     peerDependencies:
-      '@arthome/core': 0.4.0-rc.2
+      '@arthome/core': 0.4.0-rc.3
       zod: 4.6.5
 
-  '@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz':
-    resolution: {integrity: sha512-MNTslwEOfoEiwIOWMcH1jCjxPib56V/NH8lJstiwoSbBlG0/CXtk3vg42thtVCy/nNccMu4rDoKGNAEoJb/k6g==, tarball: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz}
-    version: 0.4.0-rc.2
+  '@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz':
+    resolution: {integrity: sha512-qbrcMWnPSkZZQE2INvGxY5Sp17CoRPesGaC+7BiiZ43/CmsV0jek44oKvdVloBkOEHZk8+dgY6QKdqYezBUUYw==, tarball: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz}
+    version: 0.4.0-rc.3
     engines: {node: ^22.22.3 || ^24.15.0 || >=26}
     peerDependencies:
       zod: 4.6.5
@@ -926,9 +926,9 @@ packages:
       zod:
         optional: true
 
-  '@arthome/tooling@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-tooling-0.4.0-rc.2.tgz':
-    resolution: {integrity: sha512-snf9bnnOLuwOli48QsUIlstGEYhDfbjtQfWvYpJ8hNOFPR8xdGx8vP3gg/wxL6MPeHLIjPPW1KWHq44E2P7EWg==, tarball: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-tooling-0.4.0-rc.2.tgz}
-    version: 0.4.0-rc.2
+  '@arthome/tooling@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-tooling-0.4.0-rc.3.tgz':
+    resolution: {integrity: sha512-/6IntrHPmYLNrq5HvVxjy0GF8G6uq3aje5a6jC8aoidESAFNd//ioT0MqWlisO0dn3t5SbdMa2jNR4bDjo6EAg==, tarball: https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-tooling-0.4.0-rc.3.tgz}
+    version: 0.4.0-rc.3
     engines: {node: ^22.22.3 || ^24.15.0 || >=26}
     hasBin: true
     peerDependencies:
@@ -3745,16 +3745,16 @@ snapshots:
     transitivePeerDependencies:
       - chokidar
 
-  '@arthome/contracts@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-contracts-0.4.0-rc.2.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5))(zod@4.6.5)':
+  '@arthome/contracts@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-contracts-0.4.0-rc.3.tgz(@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5))(zod@4.6.5)':
     dependencies:
-      '@arthome/core': https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)
+      '@arthome/core': https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)
       zod: 4.6.5
 
-  '@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-core-0.4.0-rc.2.tgz(zod@4.6.5)':
+  '@arthome/core@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-core-0.4.0-rc.3.tgz(zod@4.6.5)':
     optionalDependencies:
       zod: 4.6.5
 
-  '@arthome/tooling@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.2/arthome-tooling-0.4.0-rc.2.tgz(@eslint/js@10.0.1(eslint@10.11.0))(@typescript-eslint/utils@8.70.0(eslint@10.11.0)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.11.0))(eslint@10.11.0)(prettier@3.9.8)(typescript@6.0.3)':
+  '@arthome/tooling@https://github.com/jubasse/arthome-core/releases/download/v0.4.0-rc.3/arthome-tooling-0.4.0-rc.3.tgz(@eslint/js@10.0.1(eslint@10.11.0))(@typescript-eslint/utils@8.70.0(eslint@10.11.0)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.11.0))(eslint@10.11.0)(prettier@3.9.8)(typescript@6.0.3)':
     dependencies:
       '@eslint/js': 10.0.1(eslint@10.11.0)
       eslint: 10.11.0

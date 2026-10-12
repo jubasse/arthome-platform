@@ -268,8 +268,9 @@ The player's three routes (`playback/playback.controller.ts`), relayed to stream
 from `callerOf`), the body of `openPlayback` sent as the browser wrote it, the request's
 `x-arthome-surface` on the opening and the gateway's country (`viewerCountryOf`) on the opening and
 the renewal. Every answer is `no-store`; the routes' declared refusals are relayed
-(`watch.concurrent_limit_reached`, `watch.replay_expired`, `identity.signed_out_elsewhere` on the
-renewal) and anything else is `api.upstream_unavailable`, `api.upstream_timeout` past the budget,
+(`watch.concurrent_limit_reached` with the `activeSessions` a viewer may release, typed by core's
+`ActivePlaybackSessionSchema` since 0.4.0-rc.3, `watch.replay_expired`,
+`identity.signed_out_elsewhere` on the renewal) and anything else is `api.upstream_unavailable`, `api.upstream_timeout` past the budget,
 never retried. All three are cookie writes: a cookie call without its CSRF token is a 403 before
 streaming is asked; a bearer call needs none. The BFF never fills `deviceId` or `profileId`:
 streaming refuses a body that disagrees with the token.
@@ -293,10 +294,6 @@ streaming refuses a body that disagrees with the token.
 - **The budget**: `transport.md` §5.9 lists `streaming.openPlayback` (1 s) alone; renewal and
   release take the same `OPEN_PLAYBACK_BUDGET_MS` until a core row gives them their own.
 - **Release** answers streaming's 204 with no body and relays no cookie.
-- **Known gap (core)**: core's params schema for `watch.concurrent_limit_reached` types each
-  `activeSessions` entry as an empty object, so the relay, which keeps the contract's params only,
-  hands the browser one empty entry per session. Typing the entries with `ActivePlaybackSessionSchema`
-  in core fixes it with no change here.
 - **What proves it**: `playback/playback-cookies.spec.ts` (each relay rule, the `Domain`, the append),
   `upstream/service-client.spec.ts` (the `Set-Cookie` lines in order, none on a refusal, a 204),
   `libs/config/src/env.spec.ts` (both readers), and `playback/playback.e2e.spec.ts` (the whole app
