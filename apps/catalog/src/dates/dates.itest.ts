@@ -857,6 +857,8 @@ describe('the public date page', () => {
       const scheduledBefore = (await outboxRowsFor('01a0e100-0000-7000-8000-0000000004a1')).filter(
         (row) => row.type === 'catalog.date.scheduled.v1',
       );
+      // The replay's migration, then the public slugs' one under test.
+      await dataSource.undoLastMigration();
       await dataSource.undoLastMigration();
       await dataSource.runMigrations();
       const rebuilt = await dataSource
