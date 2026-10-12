@@ -187,7 +187,8 @@ function streaming(request: IncomingMessage, response: ServerResponse, body: str
   } else if (path === `/v1/playback/sessions/${SIGNED_OUT_SESSION}/renew`) {
     refused(response, 403, IdentityErrorCode.SIGNED_OUT_ELSEWHERE);
   } else if (path === `/v1/playback/sessions/${PLAYBACK_SESSION}/release`) {
-    response.writeHead(204).end();
+    // A ticket cookie the BFF must not relay: the release sends the browser none.
+    response.writeHead(204, { 'set-cookie': ticketCookie(RENEWED_VALUE) }).end();
   } else {
     refused(response, 404, ApiErrorCode.NOT_FOUND);
   }
@@ -414,19 +415,26 @@ describe('openPlayback', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('is refused without the CSRF token before streaming hears of it', async () => {
-    const { cookie } = await browser();
-    const response = await app.inject({
-      method: 'POST',
-      url: `/v1/playback/${DATE}/open`,
-      headers: { ...WEB, cookie },
-      payload: OPENING,
-    });
+  it.each([
+    ['openPlayback', `/v1/playback/${DATE}/open`, OPENING],
+    ['renewPlaybackTicket', `/v1/playback/sessions/${PLAYBACK_SESSION}/renew`, undefined],
+    ['releasePlayback', `/v1/playback/sessions/${PLAYBACK_SESSION}/release`, undefined],
+  ])(
+    'is refused without the CSRF token on %s before streaming hears of it',
+    async (_, url, payload) => {
+      const { cookie } = await browser();
+      const response = await app.inject({
+        method: 'POST',
+        url,
+        headers: { ...WEB, cookie },
+        ...(payload !== undefined && { payload }),
+      });
 
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toMatchObject({ error: { code: ApiErrorCode.FORBIDDEN } });
-    expect(calls).toEqual([]);
-  });
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toMatchObject({ error: { code: ApiErrorCode.FORBIDDEN } });
+      expect(calls).toEqual([]);
+    },
+  );
 
   it('is refused without a session', async () => {
     const response = await app.inject({
@@ -465,14 +473,12 @@ describe('renewPlaybackTicket', () => {
 });
 
 describe('releasePlayback', () => {
-  it('answers streaming’s no content and relays no cookie', async () => {
+  it('answers streaming’s no content and relays no cookie, though streaming sent one', async () => {
     const response = await byCookie(`/v1/playback/sessions/${PLAYBACK_SESSION}/release`);
 
     expect(response.statusCode).toBe(204);
     expect(response.body).toBe('');
-    expect(setCookieLines(response).some((line) => line.startsWith('arthome_playback='))).toBe(
-      false,
-    );
+    expect(setCookieLines(response).some((line) => line.includes('arthome_playback='))).toBe(false);
     expect(calls.map((call) => call.path)).toEqual([
       `/v1/playback/sessions/${PLAYBACK_SESSION}/release`,
     ]);
@@ -480,7 +486,10 @@ describe('releasePlayback', () => {
 });
 
 describe('the logs', () => {
-  it('hold no cookie value, token or Set-Cookie line from any call above', () => {
+  it('hold no cookie value, token or Set-Cookie line from a call that logs a dropped cookie', async () => {
+    logged.length = 0;
+    const response = await byCookie(`/v1/playback/${DATE}/open`, OPENING);
+    expect(response.statusCode).toBe(200);
     const lines = JSON.stringify(logged);
 
     expect(lines).toContain('stray');

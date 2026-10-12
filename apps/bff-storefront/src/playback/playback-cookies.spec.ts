@@ -7,6 +7,17 @@ import {
   type SetCookieReply,
 } from './playback-cookies.js';
 import { SESSION_COOKIE } from '../session/session-carriers.js';
+import type * as SessionCarriers from '../session/session-carriers.js';
+
+// The real names all carry `__Host-`, which the prefix rule catches first: one without it
+//   reaches the own-names rule.
+vi.mock(
+  '../session/session-carriers.js',
+  async (importOriginal): Promise<Record<string, unknown>> => {
+    const original = await importOriginal<typeof SessionCarriers>();
+    return { ...original, SESSION_COOKIE: 'arthome_session' };
+  },
+);
 
 const VALUE = 'signed-ticket-value';
 const EXPIRES = 'Expires=Mon, 12 Oct 2026 10:02:00 GMT';
@@ -64,7 +75,9 @@ describe('a cookie that is not a playback ticket', () => {
     ['no Secure', ticket('/playback/d1/full/', 'HttpOnly; SameSite=None'), /Secure/],
     ['a __Host- name', ticket('/playback/d1/full/', undefined, '__Host-ticket'), /prefix/],
     ['a __Secure- name', ticket('/playback/d1/full/', undefined, '__secure-ticket'), /prefix/],
-    ['the BFF’s session name', ticket('/playback/d1/full/', undefined, SESSION_COOKIE), /prefix/],
+    ['the BFF’s session name', ticket('/playback/d1/full/', undefined, SESSION_COOKIE), /BFF/],
+    ['no name', '__Host-x; Path=/playback/d1/full/; Secure; HttpOnly', /no name/],
+    ['an empty name', '=__Host-x=v; Path=/playback/d1/full/; Secure; HttpOnly', /no name/],
     ['its own Domain', ticket('/playback/d1/full/', 'Secure; HttpOnly; Domain=evil.tv'), /Domain/],
   ])('is dropped with %s, logged by name and never by value', (_, line, reason) => {
     expect(relayedPlaybackCookies([line], 'arthome.tv')).toEqual([]);
