@@ -17,7 +17,6 @@ import type {
   DateDrafted,
   DateOutcomeDeclared,
   DateRescheduled,
-  PerformanceDateEvent,
   PublicationEngaged,
   PublicationStateChanged,
   PublicDateFacts,
@@ -26,6 +25,8 @@ import { assertNever } from '../assert-never.js';
 import type { Show } from '../catalog/show.entity.js';
 import { writeCatalogEvent, type CatalogEvent } from '../catalog-events.js';
 import { dateUrl } from '../public/links.js';
+import { replayStateChanged } from '../replays/replay-integration-events.js';
+import type { DateKeyedEvent } from '../replays/replay.events.js';
 import { venueClockAt } from '../venues/venue-clock.js';
 import type { Venue } from '../venues/venue.entity.js';
 import {
@@ -44,10 +45,10 @@ export interface DateWireContext {
   readonly traceparent: string | null;
 }
 
-/** One outbox row per event, all keyed by the date, in the order the aggregate applied them. */
+/** One outbox row per event, all keyed by the date, in the order the aggregates applied them. */
 export async function writeDateIntegrationEvents(
   manager: EntityManager,
-  events: readonly PerformanceDateEvent[],
+  events: readonly DateKeyedEvent[],
   context: DateWireContext,
 ): Promise<void> {
   for (const event of events) {
@@ -72,7 +73,7 @@ export async function writeDateScheduled(
   await writeCatalogEvent(manager, scheduled(facts, occurredAt, context), new Date(occurredAt));
 }
 
-function integrationEventOf(event: PerformanceDateEvent, context: DateWireContext): CatalogEvent {
+function integrationEventOf(event: DateKeyedEvent, context: DateWireContext): CatalogEvent {
   switch (event.kind) {
     case 'DateDrafted':
       return drafted(event, context);
@@ -86,6 +87,8 @@ function integrationEventOf(event: PerformanceDateEvent, context: DateWireContex
       return stateChanged(event, context);
     case 'PublicationEngaged':
       return engaged(event, context);
+    case 'ReplayStateChanged':
+      return replayStateChanged(event, context.traceparent);
     default:
       return assertNever(event);
   }

@@ -617,7 +617,8 @@ facts only from a feed its in-process fake receives, which no development route 
 development send the facts by hand on `arthome.ticketing.date_sales`,
 `arthome.streaming.run` and `arthome.chat.date`, keyed by the date id, with a `message-id` and a
 `type` header. A `streaming.run.started.v1` sent the same way on a date under technical check makes
-its card `live`; `streaming.run.ended.v1` ends it.
+its card `live`; `streaming.run.ended.v1` ends it and opens its `Replay`, which
+`streaming.replay.asset_ready.v1` makes ready for the studio's `ended -> replay_online` (HANDOVER §0h).
 
 Proven on the running stack on 2026-09-26:
 

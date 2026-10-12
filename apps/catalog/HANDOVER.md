@@ -401,7 +401,9 @@ Decided here, and each could have gone the other way:
   `loadDate`), and a checklist fact takes the publication's `FOR SHARE`: a second command on the
   date, a fact the publication decides on, a show update and another date of the show picking a slug
   wait for it. Two shows of one title published at once answer the loser 409 `show.slug_taken`, where
-  it answered 500.
+  it answered 500. **The lock order** is the publication's row, the show's, then the `Replay`'s
+  (§0h), then `date_detail_public`; the file and expiry facts lock the `Replay`'s row alone, then
+  `date_detail_public`, and never the publication's.
 
 Known and left as they are:
 
@@ -452,8 +454,65 @@ publication records exactly them, so deriving reaches the date page, the artist 
 and the search cards at once (both sources carry `publication_state`), with no column, no index field
 and no search-indexer change. Core's `displayStateOf` does the rest: an on-air date shows `live` before
 `startsAt`; a known idle run keeps its date `room_open` past `startsAt` until it moves; a null run
-keeps the clock. An ended run shows `ended` at once, so no card shows `replay` until the replay slice
-learns the asset.
+keeps the clock. An ended run shows `ended` at once; a card shows `replay` only from its `Replay`
+(§0h).
+
+## 0h. The `Replay`: opened by the live's end, online by the studio, closed or withdrawn (2026-10-12, RC1)
+
+`replays/replay.aggregate.ts` is data-model.md §2.2's `Replay`, an aggregate of its own keyed by its
+date (adr-replay.md §4, §5): it carries the one closing, `closesAt = replayClosesAt(live_ended_at,
+window)`, computed once at the opening, and the card, ticketing's accesses and the index read it,
+never the scheduled timing. Its row is `replay` (`1790421000000-replay.ts`), version-conditional
+like the publication's; its repository is `CatalogTransaction.replays` (`findByDate`, under the row
+lock to the commit).
+
+| Fact or command | What the `Replay` does | Published |
+| --- | --- | --- |
+| `streaming.run.ended.v1` (`LearnRunFact`) | opened `pending` when the end moved the date and `createsReplayOnLiveEnd` holds; `live_ended_at` is the message's `ended_at`, absent dead-lettered | `none -> pending` |
+| `streaming.replay.asset_ready.v1` (`LearnReplayAssetFact`) | records the file once on `pending` or `online`, one more version; an `expires_at` other than `closesAt` is logged, `closesAt` stays | nothing |
+| studio `ended -> replay_online` (`TransitionPublication`) | `goOnline`: core's `assertReplayGoesOnline` (no `Replay`, not `pending`, past `closesAt`: `date.replay_unavailable`; no file: `date.replay_asset_not_ready`) | `pending -> online` |
+| `streaming.replay.expired.v1` (`LearnReplayAssetFact`) | `close` from `pending` or `online`; ignored after | `-> closed` |
+| an outcome where `outcomeWithdrawsReplay` (`DeclareOutcome`) | `withdraw` from `pending` or `online`, even online (D-092); ignored after | `-> withdrawn` |
+
+- **Two aggregates, one transaction, by decision** (`nestjs-ddd` rule 7's exception): the live's
+  end moves the publication and opens the `Replay`; `replay_online` moves both; a withdrawing outcome
+  withdraws it with the declaration. Each is one fact with two consequences that must not diverge: an
+  `ended` date without the `Replay` its promise made, an online publication over a pending `Replay`.
+  The handler saves the date, then the `Replay`, and passes both aggregates' events to
+  `recordDateEvents`, the date's first.
+- **The transition's own rules run first**: `transitionPublication` (stale version, the pair rule,
+  `replay_sold` acknowledged), then `goOnline`, so a stale screen still reads `state.conflict`. A date
+  with no `Replay` is refused by `assertReplayGoesOnline(null)` (`replayState: null`).
+- **The seam** (RS1 and RT1 read it). Each `ReplayStateChanged` is one outbox row
+  `catalog.replay.state_changed.v1` on `arthome.catalog.date`, key `date_id`, after the date's rows
+  of the transaction (`live -> ended` precedes `pending` on the partition). `from_state` is
+  UNSPECIFIED at the opening; `version` is the `Replay`'s after the change, 1 at the opening, gaps
+  allowed (the file counts one and is not published); `policy`, `live_ended_at`, `closes_at` on every
+  message; `online_at` and `duration_sec` once it went online, kept on a later `closed` or
+  `withdrawn`; `occurred_at` at catalog's clock; the inbound `traceparent`. `date_detail_public`
+  gains `replay_state`, `replay_closes_at`, `replay_online_at`, `replay_duration_sec`, each exactly
+  what the transition's event carries (`projectDateEvents`, or `projectReplayEvents` when the
+  `Replay` moved alone), and `PublicDate` the same four names, optional, so the index document fills
+  them.
+- **The card** (`dateCardOf`) passes `replay: { state, closesAt }` to `publicDisplayStateOf` when
+  both are present, and serves `availableFrom`, `expiresAt`, `durationSec` only for an `online` or
+  `closed` `Replay`: `pending` shows `ended` with no window, `online` shows `replay` until
+  `closes_at` (`displayStateValidUntil`), then `ended`; `withdrawn` shows the outcome. No `expiresAt`
+  from `replayEndsAt` any more.
+- **A file with no `Replay`**: an unknown date is dead-lettered ("unknown here"); a date whose
+  publication is not yet `ended` or `replay_online` is retried (`ReplayFactBeforeRunEnded`: a retry
+  topic holds its `run.ended`); otherwise ignored (no replay promised, withdrawn before the end, or a
+  date ended before this release, which the studio is refused on). The publication is read first,
+  without a lock, so a `run.ended` committing between the two reads shows its `Replay` to the second.
+- **Exactly once**: `claimMessage` in each fact's transaction, the `replay` primary key, and a second
+  `run.ended` finds the date ended and opens nothing. A `state.conflict` on the `Replay`'s save is
+  transient, as for run facts; consumers never call `goOnline`, so the guard never refuses one.
+- **Not built**: a sweeper closing a `Replay` at `closesAt` when no `expired` arrives (a `Replay`
+  whose file never got ready stays `pending`; the card is right anyway, and `REPLAY` ends at
+  `closesAt` by `validUntil`); unit sales, playback, chapters; streaming reading `closes_at` from the
+  event.
+- `replays/replay-facts.itest.ts` proves the table above against Postgres, the order on the topic,
+  the card and the retried early file included.
 
 ## 1. What was built
 

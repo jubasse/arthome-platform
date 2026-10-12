@@ -4,7 +4,8 @@ import { DomainConstant, type Instant } from '@arthome/core';
 
 import { LinkKind } from './resolve-query.schema.js';
 import { SlugAlias } from './slug-alias.entity.js';
-import { DateRescheduled, type PerformanceDateEvent } from '../dates/performance-date.events.js';
+import { DateRescheduled } from '../dates/performance-date.events.js';
+import type { DateKeyedEvent } from '../replays/replay.events.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -36,7 +37,7 @@ export async function retireSlug(
 /** The slug a move replaced keeps leading to its date, like any retired slug. */
 export async function retireSlugsMovedFrom(
   manager: EntityManager,
-  events: readonly PerformanceDateEvent[],
+  events: readonly DateKeyedEvent[],
 ): Promise<void> {
   for (const event of events) {
     if (!(event instanceof DateRescheduled) || event.newSlug === event.previousSlug) continue;

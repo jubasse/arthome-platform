@@ -10,13 +10,20 @@ import { DataSource, type EntityManager } from 'typeorm';
 
 import type { PerformanceDateRepository } from './dates/performance-date.repository.js';
 import { TypeOrmPerformanceDateRepository } from './dates/performance-date.typeorm-repository.js';
+import type { ReplayRepository } from './replays/replay.repository.js';
+import { TypeOrmReplayRepository } from './replays/replay.typeorm-repository.js';
 
 export interface CatalogTransaction extends TransactionScope {
   readonly dates: PerformanceDateRepository;
+  readonly replays: ReplayRepository;
 }
 
 function catalogTransactionOf(manager: EntityManager, track: Track): CatalogTransaction {
-  return { dates: new TypeOrmPerformanceDateRepository(manager, track), manager };
+  return {
+    dates: new TypeOrmPerformanceDateRepository(manager, track),
+    replays: new TypeOrmReplayRepository(manager, track),
+    manager,
+  };
 }
 
 @Injectable()

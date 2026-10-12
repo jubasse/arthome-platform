@@ -1,7 +1,13 @@
-import { RunEndedSchema, RunStartedSchema } from '@arthome-platform/events';
+import {
+  ReplayAssetReadySchema,
+  ReplayExpiredSchema,
+  RunEndedSchema,
+  RunStartedSchema,
+} from '@arthome-platform/events';
 import { RefusalException, notFound } from '@arthome-platform/http-edge';
 import { PermanentError } from '@arthome-platform/messaging';
 import { create, toBinary } from '@bufbuild/protobuf';
+import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import type { CommandBus } from '@nestjs/cqrs';
 import type { EachMessagePayload } from 'kafkajs';
 import { describe, expect, it } from 'vitest';
@@ -10,6 +16,7 @@ import { DomainError, DomainErrorCode, PublicationState, RunState } from '@artho
 
 import { LearnRunFact } from './learn-run-fact.command.js';
 import { applyRunMessage } from './run-consumer.js';
+import { LearnReplayAssetFact } from '../replays/learn-replay-asset-fact.command.js';
 
 const DATE_ID = '01a0e5bb-0000-7000-8000-0000000000d1';
 const MESSAGE_ID = '01a0e5bb-0000-7000-8000-000000000001';
@@ -41,21 +48,81 @@ function busAnswering(answer: () => Promise<unknown>): { bus: CommandBus; sent: 
   return { bus, sent };
 }
 
+const ENDED_AT = '2026-11-04T21:10:00.000Z';
+const timestampOf = (instant: string) => timestampFromDate(new Date(instant));
+
 const started = toBinary(RunStartedSchema, create(RunStartedSchema, { dateId: DATE_ID }));
-const ended = toBinary(RunEndedSchema, create(RunEndedSchema, { dateId: DATE_ID }));
+const ended = toBinary(
+  RunEndedSchema,
+  create(RunEndedSchema, { dateId: DATE_ID, endedAt: timestampOf(ENDED_AT) }),
+);
+const assetReady = toBinary(
+  ReplayAssetReadySchema,
+  create(ReplayAssetReadySchema, {
+    dateId: DATE_ID,
+    durationSec: 5520,
+    availableFrom: timestampOf('2026-11-04T21:40:00.000Z'),
+    expiresAt: timestampOf('2026-11-07T21:10:00.000Z'),
+  }),
+);
+const expired = toBinary(ReplayExpiredSchema, create(ReplayExpiredSchema, { dateId: DATE_ID }));
 
 describe('applyRunMessage', () => {
   it.each([
-    ['streaming.run.started.v1', started, RunState.ON_AIR],
-    ['streaming.run.ended.v1', ended, RunState.ENDED],
-  ] as const)('reads %s into a fact about its date', async (type, value, run) => {
+    ['streaming.run.started.v1', started, { run: RunState.ON_AIR, endedAt: null }],
+    ['streaming.run.ended.v1', ended, { run: RunState.ENDED, endedAt: ENDED_AT }],
+  ] as const)('reads %s into a fact about its date', async (type, value, fact) => {
     const { bus, sent } = busAnswering(() => Promise.resolve('applied'));
 
     await expect(applyRunMessage(bus, message(type, value))).resolves.toBe('applied');
 
     expect(sent).toEqual([
-      new LearnRunFact(MESSAGE_ID, 'arthome.streaming.run', { dateId: DATE_ID, run }, null),
+      new LearnRunFact(MESSAGE_ID, 'arthome.streaming.run', { dateId: DATE_ID, ...fact }, null),
     ]);
+  });
+
+  it('refuses a run end without its ended_at as permanent: the replay closes from it', () => {
+    const { bus, sent } = busAnswering(() => Promise.resolve('applied'));
+    const withoutEnd = toBinary(RunEndedSchema, create(RunEndedSchema, { dateId: DATE_ID }));
+
+    expect(() => applyRunMessage(bus, message('streaming.run.ended.v1', withoutEnd))).toThrow(
+      PermanentError,
+    );
+    expect(sent).toEqual([]);
+  });
+
+  it.each([
+    [
+      'streaming.replay.asset_ready.v1',
+      assetReady,
+      {
+        durationSec: 5520,
+        availableFrom: '2026-11-04T21:40:00.000Z',
+        expiresAt: '2026-11-07T21:10:00.000Z',
+      },
+    ],
+    ['streaming.replay.expired.v1', expired, null],
+  ] as const)('reads %s into a fact about its replay', async (type, value, ready) => {
+    const { bus, sent } = busAnswering(() => Promise.resolve('applied'));
+
+    await expect(applyRunMessage(bus, message(type, value))).resolves.toBe('applied');
+
+    expect(sent).toEqual([
+      new LearnReplayAssetFact(
+        MESSAGE_ID,
+        'arthome.streaming.run',
+        { dateId: DATE_ID, ready },
+        null,
+      ),
+    ]);
+  });
+
+  it('dead-letters a replay fact about a date catalog does not know', async () => {
+    const { bus } = busAnswering(() => Promise.reject(notFound()));
+
+    await expect(
+      applyRunMessage(bus, message('streaming.replay.expired.v1', expired)),
+    ).rejects.toThrow(new RegExp(`${DATE_ID}, unknown here`));
   });
 
   it('hands every other type to the checklist consumer, which ignores this one', async () => {
@@ -93,7 +160,7 @@ describe('applyRunMessage', () => {
       new LearnRunFact(
         MESSAGE_ID,
         'arthome.streaming.run',
-        { dateId: DATE_ID, run: RunState.ON_AIR },
+        { dateId: DATE_ID, run: RunState.ON_AIR, endedAt: null },
         traceparent,
       ),
     ]);

@@ -26,6 +26,8 @@ export function publicDateOfRow(row: DateDetailPublic, origin: string): PublicDa
     ...row,
     starts_at: row.starts_at.toISOString(),
     rescheduled_to: row.rescheduled_to?.toISOString() ?? null,
+    replay_closes_at: row.replay_closes_at?.toISOString() ?? null,
+    replay_online_at: row.replay_online_at?.toISOString() ?? null,
     rights_scope: row.rights.scope,
     blackout_countries: row.rights.blackoutCountries,
     canonical_url: dateUrl(origin, row.show_slug, row.slug),

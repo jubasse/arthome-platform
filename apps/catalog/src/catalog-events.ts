@@ -1,9 +1,10 @@
 import { outboxWriter, type OutboxWriter, type ServiceEvent } from '@arthome-platform/messaging';
 
 /**
- * The topic of every event catalog publishes, named by its aggregate type. The publication's
- * events travel on the date's topic, keyed by `date_id`: on a topic of their own, `engaged` would
- * lose its order with `date.scheduled` (events.md §3.1). A caller names the type, never the topic.
+ * The topic of every event catalog publishes, named by its aggregate type. The publication's and
+ * the `Replay`'s events travel on the date's topic, keyed by `date_id`: on a topic of their own,
+ * `engaged` would lose its order with `date.scheduled`, and `pending` with `ended` (events.md §3.1).
+ * A caller names the type, never the topic.
  */
 export const CATALOG_EVENT_TOPICS = {
   'catalog.show.published.v1': 'catalog.show',
@@ -14,6 +15,7 @@ export const CATALOG_EVENT_TOPICS = {
   'catalog.publication.engaged.v1': 'catalog.date',
   'catalog.date.outcome_declared.v1': 'catalog.date',
   'catalog.date.rescheduled.v1': 'catalog.date',
+  'catalog.replay.state_changed.v1': 'catalog.date',
   'catalog.artist.updated.v1': 'catalog.artist',
 } as const;
 
