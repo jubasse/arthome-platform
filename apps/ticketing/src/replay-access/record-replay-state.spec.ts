@@ -28,6 +28,7 @@ import {
 const DATE_ID = '01a0f400-0000-7000-8000-000000000001';
 const NOW = '2026-10-11T08:00:00.000Z';
 const ONLINE_AT = '2026-10-11T06:00:00.000Z';
+const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 
 function fact(
   toState: ReplayState,
@@ -162,18 +163,19 @@ describe('reading catalog.replay.state_changed.v1', () => {
     return { commands: { execute } as unknown as CommandBus, execute };
   }
 
-  it('dispatches RecordReplayState with the fact', async () => {
+  it('dispatches RecordReplayState with the fact and its traceparent', async () => {
     const { commands, execute } = commandsAnswering(() => Promise.resolve(Outcome.APPLIED));
     const message = replayStateChanged(DATE_ID, {
       toState: WireReplayState.ONLINE,
       version: 2n,
       onlineAt: ONLINE_AT,
     });
+    const traced = { ...message, headers: { ...message.headers, traceparent: TRACEPARENT } };
 
-    expect(await applyCatalogDateMessage(commands, delivered(message))).toBe(Outcome.APPLIED);
+    expect(await applyCatalogDateMessage(commands, delivered(traced))).toBe(Outcome.APPLIED);
     const command = execute.mock.calls[0]?.[0];
     expect(command).toBeInstanceOf(RecordReplayState);
-    expect((command as RecordReplayState).fact).toEqual(fact(ReplayState.ONLINE, 2));
+    expect(command).toMatchObject({ traceparent: TRACEPARENT, fact: fact(ReplayState.ONLINE, 2) });
   });
 
   it('ignores a state or a policy this build does not know', async () => {
@@ -195,20 +197,27 @@ describe('reading catalog.replay.state_changed.v1', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('dead-letters a message with no closing, and retries a date not opened here', async () => {
-    const { commands } = commandsAnswering(() =>
+  it('dead-letters a message with no closing, no version, or online with no online_at, and retries a date not opened here', async () => {
+    const { commands, execute } = commandsAnswering(() =>
       Promise.reject(new DomainError({ code: ApiErrorCode.NOT_FOUND })),
     );
-    const noClosing = replayStateChanged(DATE_ID, {
-      toState: WireReplayState.PENDING,
-      version: 1n,
-      closesAt: null,
-    });
+    const malformed = [
+      replayStateChanged(DATE_ID, {
+        toState: WireReplayState.PENDING,
+        version: 1n,
+        closesAt: null,
+      }),
+      replayStateChanged(DATE_ID, { toState: WireReplayState.PENDING, version: 0n }),
+      replayStateChanged(DATE_ID, { toState: WireReplayState.ONLINE, version: 2n }),
+    ];
     const pending = replayStateChanged(DATE_ID, { toState: WireReplayState.PENDING, version: 1n });
 
-    await expect(applyCatalogDateMessage(commands, delivered(noClosing))).rejects.toBeInstanceOf(
-      PermanentError,
-    );
+    for (const message of malformed) {
+      await expect(applyCatalogDateMessage(commands, delivered(message))).rejects.toBeInstanceOf(
+        PermanentError,
+      );
+    }
+    expect(execute).not.toHaveBeenCalled();
     const retried = applyCatalogDateMessage(commands, delivered(pending));
     await expect(retried).rejects.toThrow(/not opened here yet/);
     await expect(retried).rejects.not.toBeInstanceOf(PermanentError);

@@ -45,7 +45,13 @@ import {
   replayStateChanged,
   type CatalogMessage,
 } from '../itest/catalog-messages.js';
-import { withoutRowLockWait } from '../itest/locks.js';
+import {
+  gateInserts,
+  holdAdvisoryLock,
+  untilWaitingOnAdvisoryLock,
+  untilWaitingOnRowLock,
+  withoutRowLockWait,
+} from '../itest/locks.js';
 import { seedPaidOrders } from '../itest/paid-orders.js';
 import { TICKETING_SCHEMA } from '../itest/schema.js';
 import { TicketingTransactions } from '../ticketing-transactions.js';
@@ -63,6 +69,8 @@ const BOUND_CASE_MS = 120_000;
  *   under load measures the machine; the shape is proved by counting statements.
  */
 const SMOKE_BOUND_MS = 5_000;
+
+const GRANT_GATE = 4_242_301;
 
 const CHANNEL = 'channel-replay-itest';
 const NOW = '2026-10-11T08:00:00.000Z';
@@ -152,6 +160,44 @@ function windowOf(dateId: string): Promise<ReplayWindowRow | null> {
 
 const pending = (dateId: string, version = 1n, policy = WireReplayPolicy.INCLUDED) =>
   replayStateChanged(dateId, { toState: WireReplayState.PENDING, version, policy });
+
+const ONLINE_AT = '2026-10-11T06:00:00.000Z';
+
+const online = (dateId: string, version: bigint) =>
+  replayStateChanged(dateId, { toState: WireReplayState.ONLINE, version, onlineAt: ONLINE_AT });
+
+/**
+ * `first`'s transaction held open in its grant, the window's row inserted and uncommitted, until
+ *   `second`, as a retry topic's consumer would send it beside the main topic's, waits on that row.
+ */
+async function raced(
+  dateId: string,
+  first: CatalogMessage,
+  second: CatalogMessage,
+): Promise<[Outcome, Outcome]> {
+  const ungate = await gateInserts(dataSource, {
+    name: 'itest_replay_grant_gate',
+    table: dataSource.getMetadata(ReplayAccessRow).tableName,
+    when: `NEW.date_id = '${dateId}'`,
+    key: GRANT_GATE,
+  });
+  try {
+    const release = await holdAdvisoryLock(dataSource, GRANT_GATE);
+    let firstApplied: Promise<Outcome>;
+    let secondApplied: Promise<Outcome>;
+    try {
+      firstApplied = applyCatalogDateMessage(commands, delivered(first));
+      await untilWaitingOnAdvisoryLock(dataSource);
+      secondApplied = applyCatalogDateMessage(commands, delivered(second));
+      await untilWaitingOnRowLock(dataSource);
+    } finally {
+      await release();
+    }
+    return await Promise.all([firstApplied, secondApplied]);
+  } finally {
+    await ungate();
+  }
+}
 
 beforeAll(async () => {
   stack = await startStack({ postgres: true, kafka: true, startupTimeoutMs: STARTUP_MS });
@@ -363,6 +409,40 @@ describe('the included replay accesses', () => {
         [refunding],
       );
       expect(seat?.state).toBe(SeatState.REFUNDED);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'two facts of one date at the same time grant once, and the higher version is kept',
+    async () => {
+      const overtaken = '01a0f500-0000-7000-8000-000000000009';
+      const overtaking = '01a0f500-0000-7000-8000-000000000010';
+      const overtakenSeats = await dateWithSeats(overtaken, '01a0f509', [2, 1]);
+      const overtakingSeats = await dateWithSeats(overtaking, '01a0f510', [2, 1]);
+
+      expect(await raced(overtaken, pending(overtaken, 1n), online(overtaken, 2n))).toEqual([
+        Outcome.APPLIED,
+        Outcome.APPLIED,
+      ]);
+      expect(await raced(overtaking, online(overtaking, 2n), pending(overtaking, 1n))).toEqual([
+        Outcome.APPLIED,
+        Outcome.SUPERSEDED,
+      ]);
+
+      for (const [dateId, seats] of [
+        [overtaken, overtakenSeats],
+        [overtaking, overtakingSeats],
+      ] as const) {
+        expect((await accessesOf(dateId)).map(({ seat_id }) => seat_id)).toEqual(seats);
+        expect(await windowOf(dateId)).toMatchObject({
+          state: ReplayState.ONLINE,
+          version: '2',
+          online_at: new Date(ONLINE_AT),
+          granted_at: new Date(NOW),
+          revoked_at: null,
+        });
+      }
     },
     CASE_MS,
   );

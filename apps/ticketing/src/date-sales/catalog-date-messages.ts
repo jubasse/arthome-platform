@@ -13,7 +13,7 @@ import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
 import type { CommandBus } from '@nestjs/cqrs';
 import type { EachMessagePayload } from 'kafkajs';
 
-import { ApiErrorCode, isDomainError, type Instant } from '@arthome/core';
+import { ApiErrorCode, ReplayState, isDomainError, type Instant } from '@arthome/core';
 
 import { ApplyCatalogDateFact, type CatalogDateFact } from './apply-catalog-date-fact.command.js';
 import {
@@ -83,6 +83,10 @@ const READERS: Readonly<
     const toState = replayStateOf(event.toState);
     const policy = replayPolicyOf(event.policy);
     if (toState === null || policy === null) return null;
+    if (event.version === 0n) throw new Error('no version');
+    if (toState === ReplayState.ONLINE && event.onlineAt === undefined) {
+      throw new Error('online with no online_at');
+    }
     return {
       kind: 'replay_state',
       dateId: event.dateId,
@@ -126,7 +130,7 @@ export async function applyCatalogDateMessage(
   try {
     return await commands.execute(
       fact.kind === 'replay_state'
-        ? new RecordReplayState(messageId, payload.topic, fact)
+        ? new RecordReplayState(messageId, payload.topic, header(payload, 'traceparent'), fact)
         : new ApplyCatalogDateFact(messageId, payload.topic, header(payload, 'traceparent'), fact),
     );
   } catch (error) {

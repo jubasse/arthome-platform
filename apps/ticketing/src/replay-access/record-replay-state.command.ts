@@ -22,6 +22,7 @@ export class RecordReplayState extends Command<Outcome> {
   public constructor(
     public readonly messageId: string,
     public readonly topic: string,
+    public readonly traceparent: string | null,
     public readonly fact: ReplayStateFact,
   ) {
     super();
