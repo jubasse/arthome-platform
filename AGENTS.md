@@ -162,6 +162,7 @@ update the SHA and the comment together. Python dependencies of the workflows ar
 | `pnpm run test:affected` | Vitest limited to what changed against `origin/develop` — the agent's working loop, not the gate |
 | `pnpm run test:integration` | the container suites (`*.itest.ts`) that `verify` skips; needs Docker. Run it after touching a consumer, the outbox or `libs/testing` |
 | `pnpm run test:integration:affected` | the same suites, limited to packages changed against `origin/develop` and their dependents |
+| `PE1_HOLD_MINUTES=<n> pnpm --filter @arthome-platform/streaming exec vitest run --config vitest.integration.config.mjs src/drills/viewer-playback.itest.ts` | the viewer-playback drill held up for a browser run: it prints the BFF and edge URLs, the date and a drill account (`apps/streaming/HANDOVER.md` §0h) |
 | `pnpm run purge:retention <service>` | what the retention job would delete; `--apply` to do it |
 | `pnpm run ops:check <service>` | the operational checks (streaming adds failed assets, orphan recordings, idle rooms, `apps/streaming/HANDOVER.md` §0i); exits 1 when anything is degraded |
 | `pnpm run republish:outbox <service>` | outbox rows never published to their topic; `--apply` republishes them |

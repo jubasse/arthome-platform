@@ -37,7 +37,10 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@arthome-platform/bff-storefront": "workspace:*",
+    "@arthome-platform/identity": "workspace:*",
     "@arthome-platform/testing": "workspace:*",
-    "@nestjs/testing": "12.0.3"
+    "@nestjs/testing": "12.0.3",
+    "@types/pg": "8.23.1"
   }
 }
