@@ -369,7 +369,7 @@ not deferred by anything, and critical-rules #5 forbids the argument that would 
 'only the BFF calls me'".
 
 `DenyInProductionGuard` is bound globally and refuses every request when `NODE_ENV` is neither
-`development` nor `test`. `AGENTS.md`'s walkthrough and the test suite both still reach the handler.
+`development` nor `test`. `docs/agents/event-path.md`'s walkthrough and the test suite both still reach the handler.
 
 Since auth slice A, the internal token's guard runs first on every route but the probes, and
 `DenyInProductionGuard` behind it refuses what no slice has authorised yet; identity's slice A
@@ -554,7 +554,7 @@ Owed, in rough order of consequence:
 2. **Rate limiting** is the storefront BFF's (core's `AuthRateLimit`); identity has none of its own,
    and is reachable only with a BFF's token. A body-size limit is still Fastify's default.
 3. **The success envelope** is served (`edgeProviders`' interceptor) on the slice A routes.
-4. **`AGENTS.md`'s walkthrough** registers through the storefront BFF's sign-up now; it has not
+4. **`docs/agents/event-path.md`'s walkthrough** registers through the storefront BFF's sign-up now; it has not
    been run on the full stack in this pass (the container suites have).
 5. **The nine other code names `transport.md` §5.5 promised** are mostly emittable now
    (`api.token_expired`, the idempotency pair, the deadline and upstream codes); `pairing.expired`

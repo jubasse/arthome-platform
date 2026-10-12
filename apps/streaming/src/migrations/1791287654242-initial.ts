@@ -14,7 +14,7 @@ export class Initial1791287654242 implements MigrationInterface {
     await queryRunner.query(idempotencyRecordTableDdl());
 
     await queryRunner.query(outboxTableDdl());
-    // Not part of `outboxTableDdl()`: the retention purge's scan (AGENTS.md).
+    // Not part of `outboxTableDdl()`: the retention purge's scan (docs/agents/event-path.md).
     await queryRunner.query(
       'CREATE INDEX idx_outbox_event_created_at ON outbox_event (created_at)',
     );

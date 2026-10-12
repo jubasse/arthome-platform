@@ -32,10 +32,9 @@ Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10
 Proven by `src/catalog/catalog.client.spec.ts` (a stand-in catalog over HTTP), the two
 `*.e2e.spec.ts` (the whole app through Fastify), `src/conditional-get.spec.ts`,
 `src/auth/auth.e2e.itest.ts` (this BFF against the real identity, Postgres and Redis), and on the
-running stack (`AGENTS.md`, "Search, the date page and link resolution, from the storefront BFF").
+running stack (`docs/agents/storefront-search-and-date-page.md`).
 
-Every route here is bound by `@Endpoint(route)` to its `storefrontApi` declaration (`AGENTS.md`,
-"Binding a route to its contract operation"): there is no hand copy of a query, a body or a
+Every route here is bound by `@Endpoint(route)` to its `storefrontApi` declaration (`docs/agents/binding-a-route.md`): there is no hand copy of a query, a body or a
 response left, and the upstream answers are validated against `successSchemaOf(route)`. The
 development Swagger UI is at `http://localhost:3003/docs`, mounted by `main.ts` from the
 contract's docs module (`storefront-docs.ts`) and absent in production.

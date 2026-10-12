@@ -297,7 +297,7 @@ into `RecordChecklistFact`; both handlers claim `processed_message` in the comma
 `onApplicationBootstrap` and stops it in `onApplicationShutdown`, which Nest runs for the modules the
 root imports before the global TypeORM module closes the pool; `enableShutdownHooks` on SIGTERM and
 SIGINT with `useProcessExit` exits 0 once closed, as before. The routing of a failure stays
-AGENTS.md's ("When a message cannot be applied"): the handler refuses a date catalog does not hold
+that of docs/agents/message-cannot-be-applied.md ("When a message cannot be applied"): the handler refuses a date catalog does not hold
 with core's `DomainError`, which the consumer rethrows as `PermanentError`, dead-lettered at once
 ("unknown here" for `api.not_found`, the code for any other refusal); anything else is retried as
 transient. Its `TypeOrmModule.forRoot` keeps `@nestjs/typeorm`'s startup retries (9, 3 s apart), so
