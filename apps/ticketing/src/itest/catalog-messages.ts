@@ -5,7 +5,10 @@ import {
   DateScheduledSchema,
   PublicationEngagedSchema,
   PublicationEngagement,
+  ReplayPolicy as WireReplayPolicy,
+  ReplayStateChangedSchema,
   type DateOutcome as WireDateOutcome,
+  type ReplayState as WireReplayState,
 } from '@arthome-platform/events';
 import { create, toBinary, type DescMessage, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
@@ -105,5 +108,35 @@ export function outcomeDeclared(
     dateId,
     outcome,
     declaredAt: at(statedAt),
+  });
+}
+
+export interface ReplayStateChange {
+  readonly toState: WireReplayState;
+  readonly version: bigint;
+  readonly policy?: WireReplayPolicy;
+  readonly liveEndedAt?: Instant;
+  readonly closesAt?: Instant | null;
+  readonly onlineAt?: Instant;
+  readonly occurredAt?: Instant;
+}
+
+export const REPLAY_LIVE_ENDED_AT = '2026-10-10T21:00:00.000Z';
+/** Forty-eight hours after the live's end, as `replayClosesAt` computes it. */
+export const REPLAY_CLOSES_AT = '2026-10-12T21:00:00.000Z';
+
+/** Absent `closesAt` stands for the one above; `null` leaves the field unset. */
+export function replayStateChanged(dateId: string, change: ReplayStateChange): CatalogMessage {
+  const closesAt = change.closesAt === undefined ? REPLAY_CLOSES_AT : change.closesAt;
+  return catalogMessage('catalog.replay.state_changed.v1', ReplayStateChangedSchema, {
+    dateId,
+    channelId: 'channel-replay',
+    toState: change.toState,
+    version: change.version,
+    policy: change.policy ?? WireReplayPolicy.INCLUDED,
+    liveEndedAt: at(change.liveEndedAt ?? REPLAY_LIVE_ENDED_AT),
+    ...(closesAt !== null && { closesAt: at(closesAt) }),
+    ...(change.onlineAt !== undefined && { onlineAt: at(change.onlineAt) }),
+    occurredAt: at(change.occurredAt ?? REPLAY_LIVE_ENDED_AT),
   });
 }
