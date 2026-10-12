@@ -68,6 +68,7 @@ interface Credentials {
   readonly query?: string;
   readonly cookie?: string;
   readonly origin?: string;
+  readonly preflight?: boolean;
 }
 
 interface Answer {
@@ -81,23 +82,36 @@ function by(source: Source, token: string): Credentials {
 }
 
 /** The path sent as written: `fetch` would resolve `..` before Envoy sees it. */
-function get(path: string, { query, cookie, origin }: Credentials = {}): Promise<Answer> {
+function get(
+  path: string,
+  { query, cookie, origin, preflight }: Credentials = {},
+): Promise<Answer> {
   const target = query === undefined ? path : `${path}?token=${query}`;
   const headers: Record<string, string> = {};
   if (cookie !== undefined) headers.cookie = `${PLAYBACK_COOKIE}=${cookie}`;
   if (origin !== undefined) headers.origin = origin;
+  if (preflight === true) headers['access-control-request-method'] = 'GET';
   return new Promise((resolve, reject) => {
-    request({ host: edge.hostname, port: edge.port, path: target, headers }, (response) => {
-      const chunks: Buffer[] = [];
-      response.on('data', (chunk: Buffer) => chunks.push(chunk));
-      response.on('end', () => {
-        resolve({
-          status: response.statusCode ?? 0,
-          headers: response.headers,
-          body: Buffer.concat(chunks).toString(),
+    request(
+      {
+        host: edge.hostname,
+        port: edge.port,
+        path: target,
+        method: preflight === true ? 'OPTIONS' : 'GET',
+        headers,
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          resolve({
+            status: response.statusCode ?? 0,
+            headers: response.headers,
+            body: Buffer.concat(chunks).toString(),
+          });
         });
-      });
-    })
+      },
+    )
       .on('error', reject)
       .end();
   });
@@ -270,6 +284,16 @@ describe('playback through Envoy', () => {
         expect(refused.status).toBe(401);
         expect(corsOf(served)).toEqual([STOREFRONT, 'true']);
         expect(corsOf(refused)).toEqual([STOREFRONT, 'true']);
+
+        // Lua's own refusal (a valid token for another date) stays readable too.
+        const luaRefused = await get(path, { cookie: await tokenFor(DATE_B), origin: STOREFRONT });
+        expect(luaRefused.status).toBe(401);
+        expect(corsOf(luaRefused)).toEqual([STOREFRONT, 'true']);
+
+        // The preflight carries no token and is answered by the CORS filter.
+        const preflight = await get(path, { origin: STOREFRONT, preflight: true });
+        expect(preflight.status).toBe(200);
+        expect(corsOf(preflight)).toEqual([STOREFRONT, 'true']);
 
         // `edge.yaml`'s own literal included: the suite's origin replaced it.
         for (const origin of ['http://localhost:3000', 'https://elsewhere.example']) {

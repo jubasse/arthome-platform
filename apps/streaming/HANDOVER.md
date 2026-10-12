@@ -775,7 +775,7 @@ Envoy's `jwt_authn` reads both (`from_params: [token]`, `from_cookies: [arthome_
 served only when both verify, and then the query's claims bind the path (R0). Envoy strips the
 query token (`forward: false`) and the whole `cookie` header (`request_headers_to_remove`) before
 the edge, and keeps no access log. `checksEveryRequest: true`: a refused renewal stops playback at
-`exp` plus Envoy's 5 s clock skew, by cookie as by query.
+`exp` by cookie (the browser drops it) and at `exp` plus Envoy's 5 s clock skew by query.
 
 **The edge URL's host.** `MEDIAMTX_PLAYBACK_EDGE_URL=http://localhost:58888`, never `127.0.0.1`:
 cookies ignore ports, so the host-only cookie set for the storefront on `localhost:3000` reaches
@@ -826,6 +826,12 @@ the same run; glass-to-glass p50 about 1 s on the cookie, query and direct playe
   configuration (no worker), no suite plays it.
 - `audio-worker.sh`'s own budget (5 s grace, then 1, 2 and 4 s, then exit): measured in R0. The
   drill freezes the script and kills FFmpeg, which proves the provider's 15 s detection only.
+
+**For the CDN slice**, two R0 findings with no effect on this uncached edge:
+- jwt_authn's `www-authenticate` on a refused query token echoes the full URL, token included, back
+  to the sender (R0 finding 6): a CDN or a log in front must not keep it.
+- Envoy's CORS filter adds no `Vary: Origin`, so its local 401s carry none (R0 finding 4), against
+  PRD R4: MediaMTX's own header covers the 200s only. A cache in front must add it.
 
 **Gaps.** The studio monitor is not authenticated on the origin (read excluded, bound to
 127.0.0.1): fine on a laptop, not on a shared host (the sandbox slice). After an abrupt loss the
