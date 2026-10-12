@@ -1,4 +1,4 @@
-## Generating a service, an aggregate, a command, a consumer handler
+# Generating a service, an aggregate, a command, a consumer handler
 
 `tools/schematics` is this repository's own collection on `@angular-devkit/schematics`, run with the
 `schematics` CLI from the repository root. Not `nest g`: it passes a fixed option list, swallows a

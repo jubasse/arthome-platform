@@ -1,4 +1,4 @@
-### When a message cannot be applied
+# When a message cannot be applied
 
 Two reject paths, and they answer different questions.
 

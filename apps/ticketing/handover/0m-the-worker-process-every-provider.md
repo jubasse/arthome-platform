@@ -8,7 +8,7 @@ and an alert." The fact stays in Postgres, written in the business transaction; 
 to the queue.
 
 - **A fourth process, not the API** (T4's to decide, decided here). It alone holds Redis and calls
-  the provider: the API stays ready on the database alone (AGENTS.md), a drain of refunds shares
+  the provider: the API stays ready on the database alone (docs/agents/event-path.md), a drain of refunds shares
   neither its event loop nor its replicas, and the sweeper stays on Postgres alone (§0e).
   `createApplicationContext(WorkerModule)`, warn and error logs, SIGTERM and SIGINT with
   `useProcessExit`; `BullModule.forRootAsync` on `readRedisUrl()`.

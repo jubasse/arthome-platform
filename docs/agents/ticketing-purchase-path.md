@@ -1,4 +1,4 @@
-### The ticketing purchase path
+# The ticketing purchase path
 
 The storefront's seat operations run on ticketing's API, the BFF routes being T7's; the payment
 provider is the fake adapter, bound by default (`adr-payments.md` §4), which confirms every intent

@@ -211,7 +211,7 @@ pick it up. It is `.mjs` and not `.ts` on purpose: a `.ts` file at a package roo
 
 ### 2.8 Smaller decisions worth a line each
 
-- **`@nestjs/*` are peers, pinned in `devDependencies`** (AGENTS.md's one-copy rule, no `injected`),
+- **`@nestjs/*` are peers, pinned in `devDependencies`** (the one-copy rule of docs/agents/before-you-write.md, no `injected`),
   for `httpApp` alone. The index exports it, so every suite importing this package loads them, a
   suite of a service that runs no Nest included; they resolve from this package's own install.
   `httpApp` knows no service token: the clock is one of `overrides`, and the providers are the

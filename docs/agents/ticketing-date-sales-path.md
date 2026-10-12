@@ -1,4 +1,4 @@
-### The ticketing date sales path
+# The ticketing date sales path
 
 `ticketing` runs four processes from `apps/ticketing`, all on its own database `ticketing`: the API
 (`node dist/main.js`, `PORT=3004` in `.env.example`), the catalog consumer (`node dist/consumer.js`),

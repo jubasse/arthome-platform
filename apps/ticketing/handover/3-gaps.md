@@ -66,9 +66,8 @@ Known and left, each judged:
   unlikely, and catalog does the same: a platform pattern, not T2's alone.
 - Proven on the development stack on 2026-09-27 at 630dbd5, at e0967b4, and at 70307cb after the
   re-review's three fixes and their migration `1790440400000`: the interval, the 10 s retry of an
-  unpublishable date, and a closing published through `closing_due` (AGENTS.md).
-- T3 proven on the development stack on 2026-09-29 at 040190f (AGENTS.md, "The ticketing purchase
-  path"): a purchase paid at once and replayed byte for byte, sold out past the seats, `order.paid`
+  unpublishable date, and a closing published through `closing_due` (docs/agents/ticketing-date-sales-path.md).
+- T3 proven on the development stack on 2026-09-29 at 040190f (docs/agents/ticketing-purchase-path.md): a purchase paid at once and replayed byte for byte, sold out past the seats, `order.paid`
   routed to `arthome.ticketing.order` on the order's key, the seats' events and the next
   availability on the date's, and a forged, a genuine and a duplicate webhook. A 202, the expiry and
   a late payment were not played there: the running fake confirms every intent, and the suites play

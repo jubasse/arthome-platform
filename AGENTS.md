@@ -121,6 +121,7 @@ for c in identity catalog ticketing streaming; do
   curl -s -X POST -H 'Content-Type: application/json' \
     --data @infra/debezium/$c-outbox.json http://localhost:8083/connectors
 done
+```
 
 The environment variables, the first run and the walkthroughs: [`docs/agents/event-path.md`](docs/agents/event-path.md).
 

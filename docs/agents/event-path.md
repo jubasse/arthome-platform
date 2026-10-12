@@ -1,7 +1,5 @@
 # Running the event path, after the first run
 
-```
-
 **`NODE_ENV` is required and deliberately has no default**, which is why it is exported before
 anything else here. Every other variable a service reads — `DATABASE_URL`, `KAFKA_BROKERS`, `PUBLIC_WEB_ORIGIN`,
 `OPENSEARCH_URL`, `REDIS_URL`, `PAYMENT_WEBHOOK_SECRET`, `IDENTITY_URL`, `STREAMING_URL`, `JWKS_URL`,

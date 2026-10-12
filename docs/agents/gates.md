@@ -1,4 +1,4 @@
-## Gates: three levels
+# Gates: three levels
 
 Three different amounts of checking, for three different moments, so that the checking that must
 never be skipped (before a PR) is never confused with the checking that only has to be honest about

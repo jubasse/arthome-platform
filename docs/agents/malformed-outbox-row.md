@@ -1,4 +1,4 @@
-### One malformed outbox row kills the connector, and recovery is not obvious
+# One malformed outbox row kills the connector, and recovery is not obvious
 
 Measured, not feared. A row whose `aggregatetype` contained a space produced
 `InvalidTopicException`, and Connect's answer was *"Task is being killed and will not recover until

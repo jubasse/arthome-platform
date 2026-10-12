@@ -1,4 +1,4 @@
-## What this repository is
+# What this repository is
 
 The seven NestJS microservices and their infrastructure. Two services first — `identity` and
 `catalog` — but the whole event path end to end: the outbox inside the transaction, a versioned

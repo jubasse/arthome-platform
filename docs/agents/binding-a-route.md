@@ -1,4 +1,4 @@
-## Binding a route to its contract operation
+# Binding a route to its contract operation
 
 A route that implements an operation of `@arthome/contracts/storefront-api` or `/studio-api` is
 declared once, in core, and bound here by `@Endpoint(route)` from `@arthome-platform/http-edge`.

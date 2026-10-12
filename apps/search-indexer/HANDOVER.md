@@ -234,9 +234,9 @@ the ordering stops being correct. That is written above `projectShow`.
 
 ## 4. What only I know — the other judgement calls
 
-### The out-of-order guard, which AGENTS.md says is owed
+### The out-of-order guard, which docs/agents/message-cannot-be-applied.md says is owed
 
-AGENTS.md: *"A retry topic reorders one key's events … the guard is an aggregate version on the
+docs/agents/message-cannot-be-applied.md: *"A retry topic reorders one key's events … the guard is an aggregate version on the
 consumer's side, and it is owed the day a consumer applies two events whose order matters."*
 
 This service has one: every write carries `version = occurred_at` in epoch milliseconds with
@@ -429,7 +429,7 @@ the group leader assigns only its own topics and the others go unconsumed, silen
    Either `readEnv` should grow a variant for services with no HTTP port, or both manifests should
    drop the dependency.
 
-6. **AGENTS.md's "Running the event path" runbook does not mention this service.** It needs a
+6. **The "Running the event path" runbook (`docs/agents/event-path.md`) does not mention this service.** It needs a
    `pnpm --filter @arthome-platform/search-indexer run migration:run` beside the other two, and a
    note that OpenSearch must be healthy before the indexer starts. Not my file.
 

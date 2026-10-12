@@ -1,4 +1,4 @@
-### The media plane, in development (MediaMTX)
+# The media plane, in development (MediaMTX)
 
 `compose.media.yaml` is its own compose project, `arthome-media`, never the infrastructure's: a
 MediaMTX origin (ingest), a MediaMTX edge (the CDN's twin) and Envoy checking the playback token on

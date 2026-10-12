@@ -1,4 +1,4 @@
-## Before you write anything
+# Before you write anything
 
 - **Name it first.** A function named for exactly what it does and a variable named for exactly
   what it holds remove the paragraph above them, and a long name is the cheap side of that

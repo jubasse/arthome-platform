@@ -1,4 +1,4 @@
-### Search, the date page and link resolution, from the storefront BFF
+# Search, the date page and link resolution, from the storefront BFF
 
 `GET /v1/search` crosses three processes: `bff-storefront` (on `PORT`, `CATALOG_URL` pointing at
 catalog, `http://localhost:3002` by default), catalog's API, which reads `arthome-catalog-date` at

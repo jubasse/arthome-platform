@@ -1,4 +1,4 @@
-### The catalog date path
+# The catalog date path
 
 `catalog` runs two processes from `apps/catalog`: the API (`node dist/main.js`, on `PORT`) and the
 consumer (`node dist/consumer.js`), which projects the checklist facts and, from `streaming.run.started.v1`
