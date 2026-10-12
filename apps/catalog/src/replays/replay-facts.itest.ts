@@ -103,6 +103,7 @@ let stack: StartedStack;
 let dataSource: DataSource;
 let cqrs: TestingModule;
 let commands: CommandBus;
+const clock = new FixedClock(NOW);
 let keys = 0;
 let messages = 0;
 
@@ -375,7 +376,7 @@ beforeAll(async () => {
       RecordChecklistFactHandler,
       TransitionPublicationHandler,
       { provide: DataSource, useValue: dataSource },
-      { provide: CLOCK, useValue: new FixedClock(NOW) },
+      { provide: CLOCK, useValue: clock },
       { provide: PUBLIC_WEB_ORIGIN, useValue: ORIGIN },
     ],
   }).compile();
@@ -491,6 +492,32 @@ describe('putting a replay online', () => {
   );
 
   it(
+    'is refused once the replay’s window has closed, whatever its file',
+    async () => {
+      const dateId = dateIdOf(13);
+      await ended(dateId);
+      await consumed(assetReady(dateId)).disposition;
+
+      const shift = Date.parse(CLOSES_AT) - clock.nowMs();
+      clock.advance(shift);
+      let refusal: unknown;
+      try {
+        refusal = await refusalOf(move(dateId, PublicationState.REPLAY_ONLINE, 5));
+      } finally {
+        clock.advance(-shift);
+      }
+
+      expect(isDomainError(refusal) && [refusal.code, refusal.params]).toEqual([
+        CatalogErrorCode.REPLAY_UNAVAILABLE,
+        { replayState: ReplayState.CLOSED },
+      ]);
+      expect(await publicationOf(dateId)).toEqual({ state: PublicationState.ENDED, version: 5 });
+      expect(await replayOf(dateId)).toMatchObject({ state: ReplayState.PENDING, online_at: null });
+    },
+    CASE_MS,
+  );
+
+  it(
     'is allowed once its file is ready: the card shows replay, its duration and its real closing, and the event carries them',
     async () => {
       const dateId = dateIdOf(12);
@@ -561,6 +588,24 @@ describe('the replay’s end', () => {
         displayState: DisplayState.ENDED,
         replay: { availableFrom: NOW, expiresAt: CLOSES_AT, durationSec: 5520 },
       });
+
+      const interrupted = dateIdOf(22);
+      await ended(interrupted);
+      await consumed(assetReady(interrupted)).disposition;
+      await move(interrupted, PublicationState.REPLAY_ONLINE, 5);
+      await declare(interrupted, DateOutcome.INTERRUPTED, 6);
+
+      expect(await replayOf(interrupted)).toMatchObject({
+        state: ReplayState.WITHDRAWN,
+        online_at: new Date(NOW),
+        withdrawn_at: new Date(NOW),
+      });
+      expect((await replayChangesOf(interrupted)).at(-1)).toMatchObject({
+        fromState: WireReplayState.ONLINE,
+        toState: WireReplayState.WITHDRAWN,
+        durationSec: 5520,
+      });
+      expect(await cardOf(interrupted)).toMatchObject({ displayState: DisplayState.INTERRUPTED });
 
       const cancelled = dateIdOf(21);
       await ended(cancelled);

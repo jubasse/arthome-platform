@@ -857,9 +857,17 @@ describe('the public date page', () => {
       const scheduledBefore = (await outboxRowsFor('01a0e100-0000-7000-8000-0000000004a1')).filter(
         (row) => row.type === 'catalog.date.scheduled.v1',
       );
-      // The replay's migration, then the public slugs' one under test.
-      await dataSource.undoLastMigration();
-      await dataSource.undoLastMigration();
+      // Back to the migration before the public slugs' one under test, whatever follows it.
+      const [publicSlugs] = dataSource.migrations.filter((migration) =>
+        (migration.name ?? migration.constructor.name).startsWith('PublicSlugs'),
+      );
+      const executed = (): Promise<string[]> =>
+        dataSource
+          .query<{ name: string }[]>('SELECT name FROM migrations')
+          .then((rows) => rows.map((row) => row.name));
+      while ((await executed()).includes(publicSlugs?.name ?? '')) {
+        await dataSource.undoLastMigration();
+      }
       await dataSource.runMigrations();
       const rebuilt = await dataSource
         .getRepository(DateDetailPublic)
