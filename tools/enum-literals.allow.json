@@ -70,6 +70,16 @@
       "file": "apps/ticketing/src/payments/provider-call-checks.ts",
       "value": "ready",
       "reason": "ioredis's connection status, the word its client reports once it answers commands. REPLAY_ASSET_STATES' `ready` is a replay that can be watched; importing ReplayAssetState.READY to read a Redis connection would be the NavigationEntry.JOURNAL mistake again."
+    },
+    {
+      "file": "apps/streaming/src/replay-asset/replay-asset.ts",
+      "value": "withdrawn",
+      "reason": "`Readiness`'s tag for a ready file streaming will not announce: an outcome took the replay away, or its window had already closed. REPLAY_STATES' `withdrawn` is catalog's `Replay` after an outcome; a closed window is not that state, so importing ReplayState.WITHDRAWN would name the wrong thing."
+    },
+    {
+      "file": "apps/streaming/src/replay-asset/recording-calls.ts",
+      "value": "withdrawn",
+      "reason": "Reads `Readiness`'s tag, the same local discriminant as in replay-asset.ts, not catalog's `Replay` state."
     }
   ]
 }
