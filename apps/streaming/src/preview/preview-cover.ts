@@ -3,9 +3,9 @@ import {
   isAfter,
   isBefore,
   latest,
+  previewMsSpent,
   previewSecondsLeft,
   previewTokenExpiresAt,
-  toEpochMs,
   windowOf,
   type Instant,
   type Window,
@@ -38,24 +38,9 @@ function unsettledWindow(budget: BudgetState, now: Instant): Window | null {
   return isBefore(settledUntil, end) ? windowOf(settledUntil, end) : null;
 }
 
-/**
- * The milliseconds of `window` inside the disjoint on-air spans. Core's `previewSecondsSpent`
- *   floors to whole seconds, which a client renewing faster than once a second would never pay.
- */
-function onAirMsWithin(window: Window, onAir: readonly Window[]): number {
-  const start = toEpochMs(window.start);
-  const end = toEpochMs(window.end);
-  return onAir.reduce(
-    (sum, span) =>
-      sum +
-      Math.max(0, Math.min(end, toEpochMs(span.end)) - Math.max(start, toEpochMs(span.start))),
-    0,
-  );
-}
-
 function settledMsAt(budget: BudgetState, now: Instant, onAir: readonly Window[]): number {
   const window = unsettledWindow(budget, now);
-  return budget.settledMs + (window === null ? 0 : onAirMsWithin(window, onAir));
+  return budget.settledMs + (window === null ? 0 : previewMsSpent(window, onAir));
 }
 
 /** A started second counts whole, so a token never reaches past the milliseconds left. */

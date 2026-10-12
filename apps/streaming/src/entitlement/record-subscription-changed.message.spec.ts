@@ -83,10 +83,39 @@ describe(TYPE, () => {
         state: State.PAST_DUE,
         openings: [Opening.ALL_LIVES, Opening.MULTI_SCREEN],
         paidThrough: PAID_THROUGH,
+        version: null,
         statedAt: OCCURRED_AT,
       }),
     ]);
   });
+
+  it.each([
+    { wire: 0n, version: null },
+    { wire: 7n, version: 7n },
+  ])(
+    'reads version $wire as $version, a 0 being the field left unset',
+    async ({ wire, version }) => {
+      const { executed } = await dispatched(
+        toBinary(
+          SubscriptionChangedSchema,
+          create(SubscriptionChangedSchema, { ...event, version: wire }),
+        ),
+      );
+
+      expect(executed).toEqual([
+        new RecordSubscriptionFact(DELIVERY, {
+          type: TYPE,
+          accountId: KEY,
+          plan: Tier.PREMIUM,
+          state: State.PAST_DUE,
+          openings: [Opening.ALL_LIVES, Opening.MULTI_SCREEN],
+          paidThrough: PAID_THROUGH,
+          version,
+          statedAt: OCCURRED_AT,
+        }),
+      ]);
+    },
+  );
 
   it('keeps out what this build does not know: an opening dropped, a state and a plan null', async () => {
     const { executed } = await dispatched(
@@ -110,6 +139,7 @@ describe(TYPE, () => {
         state: null,
         openings: [Opening.ALL_LIVES],
         paidThrough: null,
+        version: null,
         statedAt: OCCURRED_AT,
       }),
     ]);

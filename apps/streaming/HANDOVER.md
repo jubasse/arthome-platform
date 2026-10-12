@@ -279,7 +279,7 @@ three commands, three handlers. Every other type on the three topics is `ignored
 | --- | --- | --- |
 | `ticketing.seat.activated.v1` | `arthome.ticketing.date_sales`, `date_id` | `entitlement_seat`: an active seat, `ON CONFLICT (seat_id) DO NOTHING` |
 | `ticketing.seat.cancelled.v1` | same | the seat cancelled, final, any reason (an unknown one too, D-095: a refund alone stops nothing) |
-| `ticketing.subscription.changed.v1` | `arthome.ticketing.account`, `account_id` | `entitlement_subscription`: plan, state, openings, `paid_through`, guarded by `occurred_at` |
+| `ticketing.subscription.changed.v1` | `arthome.ticketing.account`, `account_id` | `entitlement_subscription`: plan, state, openings, `paid_through`, guarded by `version`, else `occurred_at` |
 | `catalog.date.scheduled.v1` | `arthome.catalog.date`, `date_id` | `entitlement_date`'s timing, replay and rights groups, one transaction, applied when any group is |
 | `catalog.date.rescheduled.v1` | same | the timing's `starts_at` |
 | `catalog.date.replay_policy_set.v1` | same | the replay group |
@@ -297,9 +297,12 @@ reschedule overtaking its schedule leaves `timing` null until both arrive, the n
 No lock across rows (§0's lock order).
 
 **Ties.** Two facts of one group stamped with the same instant resolve by arrival (`>=`: the last
-applied wins), so a retried older copy can re-apply over a newer one of the same millisecond. Open
-with ticketing: a per-subscription version on `subscription.changed`, guarded like the publication
-(`>`). The outcome is final once `cancelled` or `interrupted` (catalog's rule), whatever the
+applied wins), so a retried older copy can re-apply over a newer one of the same millisecond. The
+subscription is ordered by ticketing's `version` instead when both the fact and the kept row carry
+one (`>`: an equal version is a redelivery, superseded); when either is unversioned (`0` on the wire,
+`NULL` kept) it falls back to `occurred_at >=`. An update keeps `COALESCE(new, kept)` for the version
+and `GREATEST` for the instant, so a higher version stated earlier never lowers the instant a later
+unversioned fact is compared with (SD1; rows kept before it are unversioned). The outcome is final once `cancelled` or `interrupted` (catalog's rule), whatever the
 instants. A `seat.cancelled` needs only its `seat_id`: without an account, a date or an instant it
 cancels the kept row by seat, and is dead-lettered only when no row exists.
 
