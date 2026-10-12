@@ -9,8 +9,14 @@ export interface ProfileSummary {
   readonly kind: ProfileKind;
 }
 
+function nonBlank(name: string | undefined): string | null {
+  const trimmed = name?.trim();
+  return trimmed === undefined || trimmed === '' ? null : trimmed;
+}
+
 /**
- * The account's default profile, created when missing: named `name`, else after the public handle.
+ * The account's default profile, created when missing: named `name` unless blank, else after the
+ *   public handle.
  *   Two callers racing both get the one row the partial unique index lets through.
  */
 export async function defaultProfileOf(
@@ -24,7 +30,7 @@ export async function defaultProfileOf(
        FROM account a
       WHERE a.id = $2
      ON CONFLICT (account_id) WHERE is_default DO NOTHING`,
-    [uuidv7(), accountId, name ?? null, ProfileKind.ADULT],
+    [uuidv7(), accountId, nonBlank(name), ProfileKind.ADULT],
   );
   const [profile] = await manager.query<ProfileSummary[]>(
     'SELECT id, name, kind FROM profile WHERE account_id = $1 AND is_default',

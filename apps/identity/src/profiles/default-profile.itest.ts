@@ -121,6 +121,49 @@ describe('the default profile', () => {
     CASE_MS,
   );
 
+  it.each(['', '   ', '\t\n'])(
+    'is named after the handle when the name given is blank (%j)',
+    async (blank) => {
+      await runProfilesMigration();
+      const handle = `@viewer.blank${randomUUID().slice(0, 8)}`;
+      const accountId = await insertAccount(handle);
+      const created = await dataSource.transaction((manager) =>
+        defaultProfileOf(manager, accountId, blank),
+      );
+      expect(created.name).toBe(handle);
+    },
+    CASE_MS,
+  );
+
+  it(
+    'trims the name given',
+    async () => {
+      await runProfilesMigration();
+      const accountId = await insertAccount(`@viewer.trim${randomUUID().slice(0, 8)}`);
+      const created = await dataSource.transaction((manager) =>
+        defaultProfileOf(manager, accountId, '  Marie J. '),
+      );
+      expect(created.name).toBe('Marie J.');
+    },
+    CASE_MS,
+  );
+
+  it.each(['', '   ', '\t', 'x'.repeat(81)])(
+    'refuses a stored name that is blank or over 80 characters (%j)',
+    async (name) => {
+      await runProfilesMigration();
+      const accountId = await insertAccount(`@viewer.check${randomUUID().slice(0, 8)}`);
+      await expect(
+        dataSource.query(
+          `INSERT INTO profile (id, account_id, name, kind, is_default)
+           VALUES ($1, $2, $3, 'adult', false)`,
+          [uuidv7(), accountId, name],
+        ),
+      ).rejects.toThrow(/profile_name_check/);
+    },
+    CASE_MS,
+  );
+
   it(
     'is read back, never renamed, once it exists',
     async () => {

@@ -18,12 +18,11 @@ export class ProfilesAndDevices1791800000000 implements MigrationInterface {
   name = 'ProfilesAndDevices1791800000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Random ids, not UUIDv7: a profile's id is served, and a creation instant is no one's business.
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS profile (
         id         uuid        PRIMARY KEY,
         account_id uuid        NOT NULL REFERENCES account (id),
-        name       text        NOT NULL,
+        name       text        NOT NULL CHECK (char_length(name) <= 80 AND name ~ '\\S'),
         kind       text        NOT NULL CHECK (kind IN (${sqlList(PROFILE_KINDS)})),
         is_default boolean     NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now()
