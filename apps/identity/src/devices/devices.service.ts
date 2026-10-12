@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { updateReturning } from '@arthome-platform/transactions';
 import { Inject, Injectable } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
@@ -93,7 +95,7 @@ export class DevicesService {
         [request.deviceId, request.profileId, now],
       );
       replaced.push(...closed.map(({ auth_session_id }) => auth_session_id));
-      const deviceSessionId = uuidv7();
+      const deviceSessionId = randomUUID();
       const inserted = await manager.query<unknown[]>(
         `INSERT INTO device_session
            (id, device_id, account_id, profile_id, auth_session_id, opened_at)

@@ -4,6 +4,7 @@ import { readJwksSource } from '@arthome-platform/config';
 import { InternalTokenVerifier } from '@arthome-platform/http-edge';
 import { mintInternalToken } from '@arthome-platform/testing';
 import { Logger } from '@nestjs/common';
+import type { EntityManager } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -18,10 +19,12 @@ import {
 import { DeviceIdSchema, ProfileIdSchema } from '@arthome/core/schema';
 
 import { digestOf } from './device-token.js';
-import { DevicesService } from './devices.service.js';
+import { DevicesService, type BindingRequest } from './devices.service.js';
+import { UNDESCRIBED_DEVICE } from './presented-device.schema.js';
 import { BETTER_AUTH } from '../auth/auth.tokens.js';
 import { AUTH_SCHEMA, type Auth } from '../auth/better-auth.js';
 import { startIdentity, type IdentityHarness } from '../itest/identity-app.js';
+import { untilWaitingOnLock } from '../itest/lock-waits.js';
 
 /**
  * PI1 over HTTP as the storefront BFF calls it: every session bound to a registered device and the
@@ -32,6 +35,7 @@ import { startIdentity, type IdentityHarness } from '../itest/identity-app.js';
 const STARTUP_MS = 240_000;
 const CASE_MS = 60_000;
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const PASSWORD = 'a-long-password';
 
 const clock = new FixedClock('2026-10-12T12:00:00.000Z');
@@ -138,6 +142,40 @@ function presenting(token: string | null): Presented {
   return { ...BROWSER, token };
 }
 
+interface HeldOpen<T> {
+  readonly done: Promise<T>;
+  readonly commit: () => void;
+}
+
+/** Runs `work` in a transaction left open, its row locks held, until `commit` is called. */
+async function heldOpen<T>(work: (manager: EntityManager) => Promise<T>): Promise<HeldOpen<T>> {
+  let commit!: () => void;
+  const committable = new Promise<void>((resolve) => {
+    commit = resolve;
+  });
+  let worked!: () => void;
+  const working = new Promise<void>((resolve) => {
+    worked = resolve;
+  });
+  const done = identity.dataSource.transaction(async (manager) => {
+    const result = await work(manager);
+    worked();
+    await committable;
+    return result;
+  });
+  await Promise.race([working, done]);
+  return { done, commit };
+}
+
+/** Commits `held` once a statement containing `statement` waits on its locks. */
+async function commitOnceWaitedOn(held: HeldOpen<unknown>, statement: string): Promise<void> {
+  try {
+    await untilWaitingOnLock(identity.dataSource, statement);
+  } finally {
+    held.commit();
+  }
+}
+
 describe('sign-up', () => {
   it(
     'answers the registered device, its binding, the default profile and a token kept as a digest',
@@ -145,7 +183,7 @@ describe('sign-up', () => {
       const { session, device } = await signedUp();
 
       expect(DeviceIdSchema.safeParse(session.deviceId).success).toBe(true);
-      expect(session.deviceSessionId).toMatch(UUID_V7);
+      expect(session.deviceSessionId).toMatch(UUID_V4);
       expect(session.profile).toEqual({
         id: expect.any(String) as unknown,
         name: 'Marie J.',
@@ -422,26 +460,31 @@ describe('sign-in', () => {
   );
 
   it(
-    'lets two sign-ins presenting one token through: one rotates it, the other registers a new device',
+    'lets two sign-ins presenting one token through: the one waiting on the rotation gets a new device',
     async () => {
-      const email = nextEmail();
-      const { session, device } = await signedUp(email);
-      const answers = await Promise.all([
-        signIn(email, presenting(device.token)),
-        signIn(email, presenting(device.token)),
-      ]);
+      const { session, device } = await signedUp();
+      const devices = identity.app.get(DevicesService);
+      const presented = { ...UNDESCRIBED_DEVICE, token: device.token };
 
-      expect(answers.map(({ statusCode }) => statusCode)).toEqual([200, 200]);
-      const [one, other] = answers.map((answer) => answer.json<{ data: Answer }>().data);
-      const deviceIds = [one?.session.deviceId, other?.session.deviceId];
-      expect(deviceIds.filter((id) => id === session.deviceId)).toHaveLength(1);
-      expect(one?.device.token).not.toBe(other?.device.token);
-      const [row] = await identity.dataSource.query<{ token_hash: string }[]>(
-        'SELECT token_hash FROM device WHERE id = $1',
-        [session.deviceId],
+      const first = await heldOpen((manager) => devices.deviceFor(manager, presented));
+      const second = identity.dataSource.transaction((manager) =>
+        devices.deviceFor(manager, presented),
       );
-      const keeper = one?.session.deviceId === session.deviceId ? one : other;
-      expect(row?.token_hash).toBe(digestOf(keeper?.device.token ?? ''));
+      await commitOnceWaitedOn(first, 'SET token_hash');
+      const [rotated, registered] = await Promise.all([first.done, second]);
+
+      expect(rotated.deviceId).toBe(session.deviceId);
+      expect(registered.deviceId).not.toBe(session.deviceId);
+      const rows = await identity.dataSource.query<{ id: string; token_hash: string }[]>(
+        'SELECT id, token_hash FROM device WHERE id = ANY($1)',
+        [[rotated.deviceId, registered.deviceId]],
+      );
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          { id: rotated.deviceId, token_hash: digestOf(rotated.token) },
+          { id: registered.deviceId, token_hash: digestOf(registered.token) },
+        ]),
+      );
     },
     CASE_MS,
   );
@@ -514,30 +557,37 @@ describe('a session', () => {
 
 describe('the binding of one (device, profile)', () => {
   it(
-    'stays single when two binds race: the later one replaces the earlier',
+    'stays single when two binds race: the one waiting retries and replaces the other',
     async () => {
       const { session } = await signedUp();
       const devices = identity.app.get(DevicesService);
-      const binds = await Promise.all(
-        ['racing-session-a', 'racing-session-b'].map((authSessionId) =>
-          identity.dataSource.transaction((manager) =>
-            devices.bind(manager, {
-              authSessionId: `${authSessionId}-${session.deviceSessionId}`,
-              deviceId: session.deviceId,
-              accountId: session.accountId,
-              profileId: session.profile.id,
-            }),
-          ),
-        ),
-      );
+      const binding = (authSessionId: string): BindingRequest => ({
+        authSessionId: `${authSessionId}-${session.deviceSessionId}`,
+        deviceId: session.deviceId,
+        accountId: session.accountId,
+        profileId: session.profile.id,
+      });
 
-      expect(binds).toHaveLength(2);
+      const first = await heldOpen((manager) => devices.bind(manager, binding('racing-session-a')));
+      const second = identity.dataSource.transaction(async (manager) => {
+        const query = vi.spyOn(manager, 'query');
+        const bound = await devices.bind(manager, binding('racing-session-b'));
+        const inserts = query.mock.calls.filter(([sql]) =>
+          sql.includes('INSERT INTO device_session'),
+        );
+        return { bound, attempts: inserts.length };
+      });
+      await commitOnceWaitedOn(first, 'UPDATE device_session');
+      const [winner, { bound: loser, attempts }] = await Promise.all([first.done, second]);
+
+      expect(attempts).toBe(2);
+      expect(loser.replacedAuthSessionIds).toEqual([binding('racing-session-a').authSessionId]);
       const open = await identity.dataSource.query<{ id: string }[]>(
         'SELECT id FROM device_session WHERE device_id = $1 AND closed_at IS NULL',
         [session.deviceId],
       );
-      expect(open).toHaveLength(1);
-      expect(binds.map(({ deviceSessionId }) => deviceSessionId)).toContain(open[0]?.id);
+      expect(open).toEqual([{ id: loser.deviceSessionId }]);
+      expect(winner.deviceSessionId).not.toBe(loser.deviceSessionId);
     },
     CASE_MS,
   );
