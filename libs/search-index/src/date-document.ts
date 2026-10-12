@@ -5,6 +5,7 @@ import type {
   LanguageDependency,
   PublicationState,
   ReplayPolicy,
+  ReplayState,
   RightsScope,
 } from '@arthome/core';
 
@@ -44,6 +45,14 @@ export interface DateDocument {
    */
   readonly ends_at: string;
   readonly over_at: string;
+  /**
+   * The `Replay`'s facts as `catalog.replay.state_changed.v1` stated them, null before the
+   * first one; the names `PublicDate` carries.
+   */
+  readonly replay_state: ReplayState | null;
+  readonly replay_closes_at: string | null;
+  readonly replay_online_at: string | null;
+  readonly replay_duration_sec: number | null;
 
   readonly artist_id: string | null;
   /** `ArtistUpdated`'s public name, by the date's channel; null until the channel has a face. */
@@ -89,6 +98,10 @@ export const DATE_INDEX_PROPERTIES: Record<string, Types.Common_Mapping.Property
   rescheduled_to: { type: 'date' },
   ends_at: { type: 'date' },
   over_at: { type: 'date' },
+  replay_state: { type: 'keyword' },
+  replay_closes_at: { type: 'date' },
+  replay_online_at: { type: 'date' },
+  replay_duration_sec: { type: 'integer' },
 
   artist_id: { type: 'keyword' },
   artist_name: { type: 'text', analyzer: 'standard' },

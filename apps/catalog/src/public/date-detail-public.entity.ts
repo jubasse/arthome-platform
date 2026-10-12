@@ -7,6 +7,7 @@ import type {
   MediaSet,
   PublicationState,
   ReplayPolicy,
+  ReplayState,
   TerritoryRights,
 } from '@arthome/core';
 
@@ -76,6 +77,19 @@ export class DateDetailPublic {
 
   @Column('timestamptz', { nullable: true })
   rescheduled_to!: Date | null;
+
+  /** The date's `Replay` as its last `state_changed` carried it; null before its live ended. */
+  @Column('text', { nullable: true })
+  replay_state!: ReplayState | null;
+
+  @Column('timestamptz', { nullable: true })
+  replay_closes_at!: Date | null;
+
+  @Column('timestamptz', { nullable: true })
+  replay_online_at!: Date | null;
+
+  @Column('integer', { nullable: true })
+  replay_duration_sec!: number | null;
 
   @Column('text')
   artist_id!: string;

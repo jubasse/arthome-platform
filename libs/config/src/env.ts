@@ -80,6 +80,8 @@ const DEVELOPMENT_REDIS_URL = 'redis://localhost:56379';
 const DEVELOPMENT_CATALOG_URL = 'http://localhost:3002';
 /** `apps/identity/.env.example`'s port. */
 const DEVELOPMENT_IDENTITY_URL = 'http://localhost:3001';
+/** `apps/streaming/.env.example`'s port. */
+const DEVELOPMENT_STREAMING_URL = 'http://localhost:3005';
 
 function developmentDefaults(databaseName: string): {
   DATABASE_URL: string;
@@ -211,6 +213,33 @@ export function readIdentityUrl(source: Record<string, string | undefined> = pro
       ? source
       : { IDENTITY_URL: DEVELOPMENT_IDENTITY_URL, ...stripEmpty(source) };
   return z.object({ IDENTITY_URL: httpUrl }).parse(withDefault).IDENTITY_URL;
+}
+
+/** Where the storefront BFF reaches streaming, for the player's three routes. */
+export function readStreamingUrl(source: Record<string, string | undefined> = process.env): string {
+  const withDefault =
+    readNodeEnv(source) === 'production'
+      ? source
+      : { STREAMING_URL: DEVELOPMENT_STREAMING_URL, ...stripEmpty(source) };
+  return z.object({ STREAMING_URL: httpUrl }).parse(withDefault).STREAMING_URL;
+}
+
+/** A bare domain, an optional leading dot as RFC 6265 allows: no scheme, port or path. */
+const cookieDomain = z.string().regex(/^\.?[a-z0-9-]+(\.[a-z0-9-]+)+$/);
+
+/**
+ * `PLAYBACK_COOKIE_DOMAIN`: the `Domain` the storefront BFF gives the playback ticket's cookie, so
+ * the media edge receives it. A browser keeps it only when it is the host it called or a parent of
+ * it, so production's is a common parent of the storefront host and the edge host. Required in
+ * production; outside it, unset means host-only, and `localhost` covers every port.
+ */
+export function readPlaybackCookieDomain(
+  source: Record<string, string | undefined> = process.env,
+): string | null {
+  const raw = stripEmpty(source).PLAYBACK_COOKIE_DOMAIN;
+  if (raw === undefined && readNodeEnv(source) !== 'production') return null;
+  return z.object({ PLAYBACK_COOKIE_DOMAIN: cookieDomain }).parse({ PLAYBACK_COOKIE_DOMAIN: raw })
+    .PLAYBACK_COOKIE_DOMAIN;
 }
 
 /** The storefront's own port in development, where Next.js listens by default. */

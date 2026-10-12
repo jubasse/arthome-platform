@@ -25,10 +25,13 @@ import { OneUnseatedRefundPerOrder1790441300000 } from './migrations/17904413000
 import { SeatStates1790441350000 } from './migrations/1790441350000-seat-states.js';
 import { DateOutcomes1790441400000 } from './migrations/1790441400000-date-outcomes.js';
 import { Waitlist1791636734134 } from './migrations/1791636734134-waitlist.js';
+import { ReplayAccess1791700000000 } from './migrations/1791700000000-replay-access.js';
 import { OrderRefundRow } from './orders/order-refund.entity.js';
 import { SeatHoldRow } from './orders/seat-hold.entity.js';
 import { SeatOrderRow } from './orders/seat-order.entity.js';
 import { SeatRow } from './orders/seat.entity.js';
+import { ReplayAccessRow } from './replay-access/replay-access.entity.js';
+import { ReplayWindowRow } from './replay-access/replay-window.entity.js';
 import { WaitlistEntryRow } from './waitlist/waitlist-entry.entity.js';
 
 /**
@@ -51,6 +54,8 @@ export const dataSource: DataSource = new DataSource({
     ProcessedMessage,
     OutboxEvent,
     WaitlistEntryRow,
+    ReplayWindowRow,
+    ReplayAccessRow,
   ],
   migrations: [
     Initial1790440000000,
@@ -70,6 +75,7 @@ export const dataSource: DataSource = new DataSource({
     SeatStates1790441350000,
     DateOutcomes1790441400000,
     Waitlist1791636734134,
+    ReplayAccess1791700000000,
   ],
   applicationName: Service.TICKETING,
 

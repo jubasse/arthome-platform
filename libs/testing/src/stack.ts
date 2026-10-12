@@ -226,6 +226,34 @@ export function composeImage(service: string, file: URL = COMPOSE_FILE): string 
   throw new Error(`${file.pathname.split('/').at(-1) ?? ''} pins no image for \`${service}\`.`);
 }
 
+/** The value `key` has in `service`'s `environment:` in compose.yaml, undefined when unset. */
+export function composeEnvironmentValue(
+  service: string,
+  key: string,
+  file: URL = COMPOSE_FILE,
+): string | undefined {
+  for (const line of composeBlock(service, file)) {
+    const value = new RegExp(`^ {6}${key}:\\s*(\\S+)\\s*$`).exec(line)?.[1];
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+/** The Connect worker's environment as the harness starts it; compose.yaml's `connect` agrees. */
+export function connectEnvironment(groupId: string): Record<string, string> {
+  return {
+    BOOTSTRAP_SERVERS: `${KAFKA_ALIAS}:${KAFKA_INTERNAL_PORT}`,
+    GROUP_ID: groupId,
+    CONFIG_STORAGE_TOPIC: '_connect_configs',
+    OFFSET_STORAGE_TOPIC: '_connect_offsets',
+    STATUS_STORAGE_TOPIC: '_connect_status',
+    CONFIG_STORAGE_REPLICATION_FACTOR: '1',
+    OFFSET_STORAGE_REPLICATION_FACTOR: '1',
+    STATUS_STORAGE_REPLICATION_FACTOR: '1',
+    CONNECT_SCHEDULED_REBALANCE_MAX_DELAY_MS: '20000',
+  };
+}
+
 function composeCommand(service: string): string[] {
   const block = composeBlock(service);
   const at = block.indexOf('    command:');
@@ -383,16 +411,7 @@ export async function startConnect(
   const container = await new GenericContainer(composeImage(CONNECT_SERVICE))
     .withNetwork(network)
     .withNetworkAliases(CONNECT_SERVICE)
-    .withEnvironment({
-      BOOTSTRAP_SERVERS: `${KAFKA_ALIAS}:${KAFKA_INTERNAL_PORT}`,
-      GROUP_ID: `arthome-harness-${randomUUID().slice(0, 8)}`,
-      CONFIG_STORAGE_TOPIC: '_connect_configs',
-      OFFSET_STORAGE_TOPIC: '_connect_offsets',
-      STATUS_STORAGE_TOPIC: '_connect_status',
-      CONFIG_STORAGE_REPLICATION_FACTOR: '1',
-      OFFSET_STORAGE_REPLICATION_FACTOR: '1',
-      STATUS_STORAGE_REPLICATION_FACTOR: '1',
-    })
+    .withEnvironment(connectEnvironment(`arthome-harness-${randomUUID().slice(0, 8)}`))
     .withExposedPorts(CONNECT_PORT)
     .withWaitStrategy(
       Wait.forHttp('/connectors', CONNECT_PORT).forStatusCodeMatching((code) => code === 200),

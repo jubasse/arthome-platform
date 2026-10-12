@@ -4,6 +4,7 @@
  * are read out of `compose.media.yaml`, as `startStack` reads `compose.yaml`.
  */
 
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -20,6 +21,8 @@ const INFRA = new URL('../../../infra/', import.meta.url);
 const ORIGIN_ALIAS = 'mediamtx-origin';
 const EDGE_ALIAS = 'mediamtx-edge';
 const STARTUP_MS = 120_000;
+/** `infra/envoy/edge.yaml`'s one CORS origin: the storefront's `next dev`. */
+const EDGE_STOREFRONT_ORIGIN = 'http://localhost:3000';
 
 /** A suite's `afterAll` timeout for `stop()`: four containers under a parallel run's load overran Vitest's 10 s. */
 export const MEDIA_STACK_STOP_MS = 60_000;
@@ -30,6 +33,8 @@ export interface MediaStackRequest {
    *   the secret in the userinfo. `host.docker.internal` is the host.
    */
   readonly authorizeUrl: string;
+  /** The one origin Envoy answers CORS to, in place of `edge.yaml`'s development origin. */
+  readonly storefrontOrigin?: string;
 }
 
 export type EncoderProtocol = 'whip' | 'srt';
@@ -67,6 +72,18 @@ function urlOf(container: StartedTestContainer, port: number, scheme = 'http'): 
 
 function apiReady(): ReturnType<typeof Wait.forHttp> {
   return Wait.forHttp('/v3/paths/list', 9997).forStatusCode(200);
+}
+
+function edgeConfiguration(storefrontOrigin: string = EDGE_STOREFRONT_ORIGIN): string {
+  if (new URL(storefrontOrigin).origin !== storefrontOrigin) {
+    throw new Error(`storefrontOrigin must be an origin, got "${storefrontOrigin}"`);
+  }
+  const edge = readFileSync(infraFile('envoy/edge.yaml'), 'utf8');
+  const literal = `exact: ${EDGE_STOREFRONT_ORIGIN}`;
+  if (edge.split(literal).length !== 2) {
+    throw new Error(`infra/envoy/edge.yaml: not exactly one "${literal}"`);
+  }
+  return edge.replace(literal, `exact: ${storefrontOrigin}`);
 }
 
 function encoderConfiguration({ streamPath, key, audio = 'opus' }: EncoderRequest): string {
@@ -153,8 +170,10 @@ export async function startMediaStack(request: MediaStackRequest): Promise<Start
 
     const envoy = await new GenericContainer(composeImage('playback-edge', MEDIA_COMPOSE_FILE))
       .withNetwork(network)
+      .withCopyContentToContainer([
+        { content: edgeConfiguration(request.storefrontOrigin), target: '/etc/envoy/edge.yaml' },
+      ])
       .withCopyFilesToContainer([
-        { source: infraFile('envoy/edge.yaml'), target: '/etc/envoy/edge.yaml' },
         {
           source: infraFile('mediamtx/playback-jwks.json'),
           target: '/etc/envoy/playback-jwks.json',

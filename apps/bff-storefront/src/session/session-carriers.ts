@@ -1,6 +1,7 @@
 import { unauthenticated } from '@arthome-platform/http-edge';
 
 import { SessionMode } from '@arthome/contracts/identity';
+import { DEVICE_TOKEN_LIFETIME_SECONDS } from '@arthome/core';
 
 /**
  * `storefront.yaml`'s `sessionCookie`. `__Host-`, as the other two: a sibling subdomain cannot plant
@@ -12,6 +13,15 @@ export const CSRF_COOKIE = '__Host-arthome_csrf';
 /** `@fastify/csrf-protection`'s secret, out of the page's reach. */
 export const CSRF_SECRET_COOKIE = '__Host-arthome_csrf_secret';
 export const CSRF_HEADER = 'x-arthome-csrf';
+/**
+ * The browser's registered device (`adr-auth.md` §4/Q3, D-126): set by sign-up and sign-in, kept by
+ *   sign-out, cleared when the browser's own device is revoked. It opens nothing: it names the
+ *   device a new session binds to.
+ */
+export const DEVICE_COOKIE = '__Host-arthome_device';
+
+/** Identity's bound on a presented token: a longer cookie is not one it issued. */
+const DEVICE_TOKEN_MAX_LENGTH = 512;
 
 /** A session the request carries, in the one place it may. */
 export interface PresentedSession {
@@ -75,6 +85,28 @@ export function presentedSession(request: CookieCarrier): PresentedSession | nul
 }
 
 /**
+ * The device token the browser holds, or null: a cookie identity cannot have issued counts as none,
+ *   so the sign-in registers a new device rather than failing.
+ */
+export function presentedDeviceToken(request: CookieCarrier): string | null {
+  const token = request.cookies?.[DEVICE_COOKIE];
+  if (token === undefined || token === '' || token.length > DEVICE_TOKEN_MAX_LENGTH) return null;
+  return token;
+}
+
+export function setDeviceCookie(reply: CookieReply, token: string): void {
+  reply.setCookie(DEVICE_COOKIE, token, {
+    ...SESSION_ATTRIBUTES,
+    maxAge: DEVICE_TOKEN_LIFETIME_SECONDS,
+  });
+}
+
+/** With the attributes that set it, or the browser keeps it. */
+export function clearDeviceCookie(reply: CookieReply): void {
+  reply.clearCookie(DEVICE_COOKIE, SESSION_ATTRIBUTES);
+}
+
+/**
  * The session, the CSRF token bound to it and the secret behind that token, all three living as long
  *   as the session: a secret that ended with the browser left every later write a 403.
  */
@@ -95,7 +127,10 @@ export function setSessionCookies(
   reply.setCookie(CSRF_COOKIE, csrfToken, { ...CSRF_ATTRIBUTES, maxAge });
 }
 
-/** With exactly the attributes that set them, or a browser keeps them (storefront.yaml `signOut`). */
+/**
+ * With exactly the attributes that set them, or a browser keeps them (storefront.yaml `signOut`).
+ *   The device cookie stays: the browser keeps its device across sign-outs.
+ */
 export function clearSessionCookies(reply: CookieReply): void {
   reply.clearCookie(SESSION_COOKIE, SESSION_ATTRIBUTES);
   reply.clearCookie(CSRF_COOKIE, CSRF_ATTRIBUTES);

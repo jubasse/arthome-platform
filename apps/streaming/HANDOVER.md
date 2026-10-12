@@ -279,7 +279,7 @@ three commands, three handlers. Every other type on the three topics is `ignored
 | --- | --- | --- |
 | `ticketing.seat.activated.v1` | `arthome.ticketing.date_sales`, `date_id` | `entitlement_seat`: an active seat, `ON CONFLICT (seat_id) DO NOTHING` |
 | `ticketing.seat.cancelled.v1` | same | the seat cancelled, final, any reason (an unknown one too, D-095: a refund alone stops nothing) |
-| `ticketing.subscription.changed.v1` | `arthome.ticketing.account`, `account_id` | `entitlement_subscription`: plan, state, openings, `paid_through`, guarded by `occurred_at` |
+| `ticketing.subscription.changed.v1` | `arthome.ticketing.account`, `account_id` | `entitlement_subscription`: plan, state, openings, `paid_through`, guarded by `version`, else `occurred_at` |
 | `catalog.date.scheduled.v1` | `arthome.catalog.date`, `date_id` | `entitlement_date`'s timing, replay and rights groups, one transaction, applied when any group is |
 | `catalog.date.rescheduled.v1` | same | the timing's `starts_at` |
 | `catalog.date.replay_policy_set.v1` | same | the replay group |
@@ -297,9 +297,12 @@ reschedule overtaking its schedule leaves `timing` null until both arrive, the n
 No lock across rows (§0's lock order).
 
 **Ties.** Two facts of one group stamped with the same instant resolve by arrival (`>=`: the last
-applied wins), so a retried older copy can re-apply over a newer one of the same millisecond. Open
-with ticketing: a per-subscription version on `subscription.changed`, guarded like the publication
-(`>`). The outcome is final once `cancelled` or `interrupted` (catalog's rule), whatever the
+applied wins), so a retried older copy can re-apply over a newer one of the same millisecond. The
+subscription is ordered by ticketing's `version` instead when both the fact and the kept row carry
+one (`>`: an equal version is a redelivery, superseded); when either is unversioned (`0` on the wire,
+`NULL` kept) it falls back to `occurred_at >=`. An update keeps `COALESCE(new, kept)` for the version
+and `GREATEST` for the instant, so a higher version stated earlier never lowers the instant a later
+unversioned fact is compared with (SD1; rows kept before it are unversioned). The outcome is final once `cancelled` or `interrupted` (catalog's rule), whatever the
 instants. A `seat.cancelled` needs only its `seat_id`: without an account, a date or an instant it
 cancels the kept row by seat, and is dead-lettered only when no row exists.
 
@@ -759,12 +762,35 @@ back later gets a restarted worker and the manifest starts over; an edge path of
 as `workerFailed({ attempts: 3, final: true })` once. Edge routes are per replica: a date signed on
 two replicas is removed by the first to reach ten minutes idle and rewritten by the other.
 
-**Playback.** `query_token` only (`signed_cookie` throws `PlaybackSigningUnavailable`): ES256 with
-PS3's claims and `prefix: /watch/<dateId>/`, `aud` `arthome.cdn`, `exp` the grant's;
-`manifestUrl` `<envoy>/watch/<dateId>/index.m3u8`, the same across renewals. The player appends the
-current token as `?token=` to every request: a simple request, no CORS preflight. Envoy strips it
-before the edge and keeps no access log. `checksEveryRequest: true`: a refused renewal stops
-playback at `exp` plus Envoy's 5 s clock skew.
+**Playback.** One ES256 token by two mechanisms (adr §3.2): PS3's claims with
+`prefix: /watch/<dateId>/`, `aud` `arthome.cdn`, `exp` the grant's; `manifestUrl`
+`<envoy>/watch/<dateId>/index.m3u8` either way, the same across renewals.
+
+- `storefront_web` gets `signed_cookie`: the `arthome_playback` cookie (`PLAYBACK_COOKIE`,
+  `media-ports.ts`), `Path=/watch/<dateId>/`, `Expires` the token's `exp`, `Secure; HttpOnly;
+  SameSite=None`, no `Domain`, re-set on open and on each renewal (the BFF relays it). hls.js sends
+  it with `withCredentials` (`xhrSetup`): a simple GET, no preflight.
+- Every other surface gets `query_token`: the player appends the current token as `?token=` to
+  every request.
+
+Envoy's `jwt_authn` reads both (`from_params: [token]`, `from_cookies: [arthome_playback]`) and
+`lua` binds the verified `prefix` to the path whichever it came from. A request carrying both is
+served only when both verify, and then the query's claims bind the path (R0). Envoy strips the
+query token (`forward: false`) and the whole `cookie` header (`request_headers_to_remove`) before
+the edge, and keeps no access log. `checksEveryRequest: true`: a refused renewal stops playback at
+`exp` by cookie (the browser drops it) and at `exp` plus Envoy's 5 s clock skew by query.
+
+**The edge URL's host.** `MEDIAMTX_PLAYBACK_EDGE_URL=http://localhost:58888`, never `127.0.0.1`:
+cookies ignore ports, so the host-only cookie set for the storefront on `localhost:3000` reaches
+`localhost:58888` and no other host. The compose binding stays on `127.0.0.1`.
+
+**CORS.** One origin, with credentials: `http://localhost:3000`, the storefront's `next dev`. Every
+answer to it carries `Access-Control-Allow-Origin: <origin>` and `-Allow-Credentials: true`, 401s
+included, so the player reads a refusal; any other origin gets neither. The edge reflects any
+origin (`hlsAllowOrigins`), so Envoy removes its CORS headers and only its own filter answers.
+Envoy reads no environment: to change the origin, edit the one `exact:` literal in
+`infra/envoy/edge.yaml` and restart `playback-edge`; a suite passes
+`startMediaStack({ storefrontOrigin })`. A deployed edge is the CDN's configuration, not this file.
 
 **The key set.** `tools/playback-jwks.mjs` writes `infra/mediamtx/playback-jwks.json` from
 `readPlaybackSigningKey` (committed for the development key). Envoy reads it at start only: after
@@ -773,7 +799,10 @@ serves it (D-121).
 
 **Envoy's measured cost** (R0, 10 min of LL-HLS in headless Chrome, 13,674 requests): its own time
 per request p50 0.58 ms, p99 1.53 ms; glass-to-glass +13 ms against direct edge access; no blocking
-reload cut by the 10 s route timeout.
+reload cut by the 10 s route timeout. By cookie (PM1's R0, 10 min, three players at once, 23,855
+requests): its own time p50 0.26 ms, p99 0.72 ms by cookie and p50 0.27 ms, p99 0.75 ms by query on
+the same run; glass-to-glass p50 about 1 s on the cookie, query and direct players alike, within
+3 ms of each other; the cookie on every request, no preflight.
 
 **What proves it**
 
@@ -782,14 +811,19 @@ reload cut by the 10 s route timeout.
 | `media/media.module.spec.ts` | the fake by default, MediaMTX on config, either refused in production, a missing URL or an unknown provider fails the boot |
 | `media/mediamtx/path-watcher.spec.ts` | online once at `onlineTime` with the protocol of its source, offline at the read with the onset it ends, a publisher back while a slow tick reports not refused, a report the listener failed repeated, an unreachable origin reporting nothing, a stop that waits no extra period |
 | `media/mediamtx/edge-routes.spec.ts` | AAC pulled as it is, Opus through the worker, a worker restarted once it exited, its failure reported once, a date removed ten minutes after its last signature |
-| `media/mediamtx/mediamtx-playback.spec.ts`, `mediamtx-metrics.spec.ts`, `recording-ref.spec.ts` | cookie refused, claims, prefix, `exp`, a stable manifest; codecs, rate, WHIP jitter and loss; an opaque reference |
+| `media/mediamtx/mediamtx-playback.spec.ts`, `mediamtx-metrics.spec.ts`, `recording-ref.spec.ts` | one token by cookie or query, claims, prefix, `exp`, the same stable manifest; codecs, rate, WHIP jitter and loss; an opaque reference |
+| `media/mediamtx/edge-config.spec.ts` | `edge.yaml` reads the cookie `PLAYBACK_COOKIE` names, answers CORS with credentials to one exact origin, removes the cookie and the edge's CORS headers |
 | `run/grace-and-hold-screen.itest.ts` | a second replica's report of the same onset writes nothing; a loss naming an earlier onset leaves the return in place |
-| `media/mediamtx/*.itest.ts` (testcontainers, `startMediaStack`; the origin asks a double of MX1's route built on its `attemptOf`, no database) | ingest by key, a second publisher refused, disconnect; every token refusal on a segment and a part through Envoy, a `prefix` claim of any other shape than `/watch/<date>/` refused, AAC LL-HLS on a valid one; recording ready within 2 s and deleted; two watchers lift a lost feed once |
+| `media/mediamtx/*.itest.ts` (testcontainers, `startMediaStack`; the origin asks a double of MX1's route built on its `attemptOf`, no database) | ingest by key, a second publisher refused, disconnect; every token refusal on a segment and a part through Envoy, by cookie as by query, a `prefix` claim of any other shape than `/watch/<date>/` refused, AAC LL-HLS on a valid one; both sources on one request; CORS with credentials to the suite's origin only, on 200 and 401; recording ready within 2 s and deleted; two watchers lift a lost feed once |
 | `drills/real-live.itest.ts` (3 min) | the whole chain on a real feed: published with the run's key through MX1's route (§0g) on the app, the technical check on a real sample (D-114), on air; PS3 opens playback and Envoy serves AAC LL-HLS; the renewal refused once the seat is lost (403 `watch.seat_expired`), then 401 past `exp`; a kicked publisher back within the worker's budget keeps the media sequence; an SRT feed gets no worker; a replay recorded at ingest, ready at the end, then deleted, a date without a mode leaving nothing; the hold screen raised on a lost feed and lifted on its return (D-124); a frozen worker raising `compatibility_worker_failed` |
+| `drills/viewer-playback.itest.ts` (2 min 40 s; PE1) | a viewer from sign-up to a cut device on real processes: the BFF signs up at identity (default profile, registered browser device), opens playback at streaming on a WHIP feed, and relays the ticket cookie (host-only, on `/watch/<dateId>/`); Envoy serves LL-HLS by that cookie and by `?token=`, a renewal sets a new cookie; a second sign-in revokes the first device, identity's outbox, Debezium and Kafka carry `identity.device.revoked.v1` to streaming within 30 s, the lease is revoked, the revoked device's renewal is a 401, and the edge refuses the old token with CORS headers once it expires. `PE1_HOLD_MINUTES=<n>` keeps the stack up after the renewal for a browser run: the lease is released first, the drill prints the BFF URL (`127.0.0.1:3003` when free), the edge URL, the date and a drill account, then reopens playback after the hold |
 
 **Proven only by R0 or by configuration**, no suite fails if they break:
 - Envoy strips the token before the edge (`forward: false` on `from_params`, Envoy 1.39): measured
   once in R0. The Lua check relies on it; an Envoy bump must measure it again.
+- Envoy removes the `cookie` header before the edge (`request_headers_to_remove`; jwt_authn's
+  cookie extractor removes nothing): measured in PM1's R0 against an echo upstream
+  (`infra/mediamtx/spike/r0.mjs probe`). No suite sees what the edge receives.
 - The edge HLS port unreachable from the host: `compose.media.yaml` binds no host port for it. The
   `edge-playback.itest.ts` case only checks that `startMediaStack` maps none.
 - An SRT feed's AAC pulled as it is and played through Envoy: the drill checks the edge path's
@@ -797,7 +831,45 @@ reload cut by the 10 s route timeout.
 - `audio-worker.sh`'s own budget (5 s grace, then 1, 2 and 4 s, then exit): measured in R0. The
   drill freezes the script and kills FFmpeg, which proves the provider's 15 s detection only.
 
+**For the CDN slice**, two R0 findings with no effect on this uncached edge:
+- jwt_authn's `www-authenticate` on a refused query token echoes the full URL, token included, back
+  to the sender (R0 finding 6): a CDN or a log in front must not keep it.
+- Envoy's CORS filter adds no `Vary: Origin`, so its local 401s carry none (R0 finding 4), against
+  PRD R4: MediaMTX's own header covers the 200s only. A cache in front must add it.
+
 **Gaps.** The studio monitor is not authenticated on the origin (read excluded, bound to
 127.0.0.1): fine on a laptop, not on a shared host (the sandbox slice). After an abrupt loss the
 origin refuses a reconnecting encoder until it times the dead session out (about 8 s for SRT).
 
+
+## 0i. Streaming ops checks (SO1)
+
+Three checks, built on `boundedCheck(..., 'degraded', ...)` in `replay-asset/replay-asset-checks.ts`.
+They are in `AppModule`'s readiness list and in `ops:check streaming`: any of them degraded leaves
+`/health/readiness` at 200 with the detail in the body, never `down`. Each logs one `warn` line
+(`name degraded key=value ...`) on its first degraded evaluation, then at most every 10 minutes while
+it stays so (`loggedWhenDegraded`); it starts over after a recovery.
+
+| Check | Degraded when | Detail |
+| --- | --- | --- |
+| `replay_assets_failed` | any `replay_asset` is `failed` (a call given up) | `{ failed, oldestDateId }` |
+| `orphan_recordings` | any `orphan_recording` row exists | `{ orphans, oldestDateId }`, never the reference |
+| `rooms_idle` | a run `idle` or `rehearsal` whose date began more than `ROOM_IDLE_AFTER_MS` (30 min, an alerting floor with no product meaning) ago, with no outcome or `postponed` | `{ rooms, oldestDateId }` |
+
+**An orphan row.** `RecordingCalls.deleteOrphan` gives a recording the asset did not keep three
+attempts. After the third failure it writes one `orphan_recording` row (`ON CONFLICT (recording_ref)
+DO NOTHING`, outside any transaction) and logs the date id only. The recording is still at the
+provider. The operator finds the reference in the column (`SELECT recording_ref FROM orphan_recording`,
+never pasted into a log or ticket), deletes the recording at the provider, then deletes the row. The
+service neither retries nor reaps it. A successful orphan deletion now logs at info, not error.
+
+A `failed` asset is the operator's too (§0f): read its `failed_call` and `call_dead_at`, fix the
+cause at the provider, and set it back by hand. A partial index `replay_asset_failed` serves its count.
+
+**What proves it.** `replay-asset-checks.spec.ts` (up on none, degraded with the detail, never down
+when the query throws, the threshold read from the clock, the log throttle), `recording-calls.spec.ts`
+(the log level, the orphan row written once with the conflict clause, the date id only when the row
+cannot be written), `ops-checks.itest.ts` (each fault on a real Postgres turns the API's readiness
+degraded at 200, the orphan insert repeated leaves one row), `asset-ready-kafka.itest.ts` (the
+`asset_ready` fact through Debezium: key the date id, `type` and `message-id` headers, the committed
+row's duration and dates, no `rec_` in the bytes).

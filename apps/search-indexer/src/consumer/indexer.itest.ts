@@ -7,13 +7,20 @@ import {
   LanguageDependency as WireLanguageDependency,
   PublicationState as WirePublicationState,
   PublicationStateChangedSchema,
+  ReplayState as WireReplayState,
+  ReplayStateChangedSchema,
   ReplayPolicy as WireReplayPolicy,
   RightsScope as WireRightsScope,
   ShowPublishedSchema,
   ShowUpdatedSchema,
 } from '@arthome-platform/events';
 import { Outcome, ProcessedMessage } from '@arthome-platform/messaging';
-import { DATE_INDEX_ALIAS, SHOW_INDEX_ALIAS } from '@arthome-platform/search-index';
+import {
+  DATE_INDEX_ALIAS,
+  DATE_INDEX_CONCRETE,
+  DATE_INDEX_PROPERTIES,
+  SHOW_INDEX_ALIAS,
+} from '@arthome-platform/search-index';
 import {
   applyMigrations,
   createDatabase,
@@ -26,7 +33,7 @@ import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { DateOutcome, Locale, PublicationState } from '@arthome/core';
+import { DateOutcome, Locale, PublicationState, ReplayState } from '@arthome/core';
 
 import { applyArtistMessage } from './artist-consumer.js';
 import { ArtistProjection } from './artist-projection.entity.js';
@@ -45,6 +52,7 @@ import { ReadModel1790430000000 } from '../migrations/1790430000000-read-model.j
 import { DateOutcome1790430100000 } from '../migrations/1790430100000-date-outcome.js';
 import { ArtistProjection1790430200000 } from '../migrations/1790430200000-artist-projection.js';
 import { MovedSlug1790430300000 } from '../migrations/1790430300000-moved-slug.js';
+import { Replay1790430400000 } from '../migrations/1790430400000-replay.js';
 
 /**
  * The indexer against a real OpenSearch and a real Postgres. What is proved here and nowhere
@@ -188,6 +196,29 @@ function stateChanged(dateId: string, to: WirePublicationState, version: number)
   );
 }
 
+function replayChanged(
+  dateId: string,
+  to: WireReplayState,
+  version: number,
+  facts: { onlineAt?: string; durationSec?: number } = {},
+) {
+  return message(
+    'arthome.catalog.date',
+    'catalog.replay.state_changed.v1',
+    ReplayStateChangedSchema,
+    {
+      dateId,
+      toState: to,
+      version: BigInt(version),
+      liveEndedAt: at('2026-11-04T21:10:00.000Z'),
+      closesAt: at('2026-11-07T21:10:00.000Z'),
+      onlineAt: facts.onlineAt === undefined ? undefined : at(facts.onlineAt),
+      durationSec: facts.durationSec,
+      occurredAt: at('2026-11-04T21:10:00.000Z'),
+    },
+  );
+}
+
 async function documentIn(alias: string, id: string): Promise<Record<string, unknown> | null> {
   const response = await fetch(`${openSearchUrl}/${alias}/_doc/${id}`);
   if (response.status === 404) return null;
@@ -221,6 +252,7 @@ beforeAll(async () => {
       DateOutcome1790430100000,
       ArtistProjection1790430200000,
       MovedSlug1790430300000,
+      Replay1790430400000,
     ],
   });
   openSearchUrl = stack.opensearch.url;
@@ -463,6 +495,108 @@ describe('a postponed date in the index', () => {
 
       expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toMatchObject({
         starts_at: '2026-11-20T19:30:00.000Z',
+      });
+    },
+    CASE_MS,
+  );
+});
+
+describe('a replay in the index', () => {
+  const ONLINE = { onlineAt: '2026-11-05T09:00:00.000Z', durationSec: 5400 };
+
+  it(
+    'indexes a pending replay with its real closing as over_at',
+    async () => {
+      const showId = nextId('d1');
+      const dateId = nextId('d2');
+      await applyShow(showPublished(showId));
+      await applyDate(dateScheduled(dateId, showId));
+
+      expect(await applyDate(replayChanged(dateId, WireReplayState.PENDING, 1))).toBe('applied');
+
+      expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toMatchObject({
+        replay_state: ReplayState.PENDING,
+        replay_closes_at: '2026-11-07T21:10:00.000Z',
+        replay_online_at: null,
+        replay_duration_sec: null,
+        over_at: '2026-11-07T21:10:00.000Z',
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'an online replay carries its window and duration, and keeps them when a reordered pending arrives',
+    async () => {
+      const showId = nextId('d3');
+      const dateId = nextId('d4');
+      await applyShow(showPublished(showId));
+      await applyDate(dateScheduled(dateId, showId));
+
+      await applyDate(replayChanged(dateId, WireReplayState.ONLINE, 2, ONLINE));
+      expect(await applyDate(replayChanged(dateId, WireReplayState.PENDING, 1))).toBe('superseded');
+
+      expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toMatchObject({
+        replay_state: ReplayState.ONLINE,
+        replay_online_at: '2026-11-05T09:00:00.000Z',
+        replay_duration_sec: 5400,
+        over_at: '2026-11-07T21:10:00.000Z',
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'a withdrawn replay leaves search at the live’s end',
+    async () => {
+      const showId = nextId('d5');
+      const dateId = nextId('d6');
+      await applyShow(showPublished(showId));
+      await applyDate(dateScheduled(dateId, showId));
+
+      await applyDate(replayChanged(dateId, WireReplayState.PENDING, 1));
+      await applyDate(replayChanged(dateId, WireReplayState.WITHDRAWN, 2));
+
+      expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toMatchObject({
+        replay_state: ReplayState.WITHDRAWN,
+        over_at: '2026-11-04T21:10:00.000Z',
+      });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'a mapping created before the release takes the replay fields on boot',
+    async () => {
+      const replayFields = [
+        'replay_state',
+        'replay_closes_at',
+        'replay_online_at',
+        'replay_duration_sec',
+      ];
+      const earlier = Object.fromEntries(
+        Object.entries(DATE_INDEX_PROPERTIES).filter(([name]) => !replayFields.includes(name)),
+      );
+      await fetch(`${openSearchUrl}/${DATE_INDEX_CONCRETE}`, { method: 'DELETE' });
+      await fetch(`${openSearchUrl}/${DATE_INDEX_CONCRETE}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mappings: { dynamic: 'strict', properties: earlier },
+          aliases: { [DATE_INDEX_ALIAS]: {} },
+        }),
+      });
+      await ensureIndices(createOpenSearchClient(openSearchUrl));
+
+      const showId = nextId('d7');
+      const dateId = nextId('d8');
+      await applyShow(showPublished(showId));
+      await applyDate(dateScheduled(dateId, showId));
+      await applyDate(replayChanged(dateId, WireReplayState.ONLINE, 1, ONLINE));
+
+      expect(await documentIn(DATE_INDEX_ALIAS, dateId)).toMatchObject({
+        replay_state: ReplayState.ONLINE,
+        replay_duration_sec: 5400,
       });
     },
     CASE_MS,

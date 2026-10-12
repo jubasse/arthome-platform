@@ -1,6 +1,6 @@
 {
   "name": "@arthome-platform/messaging",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "The messaging contract every service shares: the outbox, failure classification, retry and dead-lettering, and the host a consumer process runs its consumers in.",
@@ -27,7 +27,7 @@
   "dependencies": {
     "@arthome-platform/config": "workspace:*",
     "@arthome-platform/transactions": "workspace:*",
-    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.3.0/arthome-core-0.3.0.tgz",
+    "@arthome/core": "https://github.com/jubasse/arthome-core/releases/download/v0.4.0/arthome-core-0.4.0.tgz",
     "kafkajs": "2.2.4",
     "typeorm": "1.1.1",
     "uuid": "14.0.2"

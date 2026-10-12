@@ -39,8 +39,10 @@ import {
 import { CLOCK } from './clock.js';
 import { ContractRoutesOnly } from './contract-routes-only.js';
 import { DatesModule } from './dates/dates.module.js';
+import { DevicesModule } from './devices/devices.module.js';
 import { authEnv } from './env.js';
 import { IdentityModule } from './identity/identity.module.js';
+import { PlaybackModule } from './playback/playback.module.js';
 import { SearchModule } from './search/search.module.js';
 import { CsrfGuard } from './session/csrf.guard.js';
 import { CSRF_SECRET, EdgePlugins } from './session/edge-plugins.js';
@@ -56,6 +58,8 @@ import { TraceparentMiddleware } from './traceparent.middleware.js';
     DatesModule,
     IdentityModule,
     AuthModule,
+    DevicesModule,
+    PlaybackModule,
     ThrottlerModule.forRootAsync({
       imports: [ThrottlerRedisModule],
       inject: [Reflector, THROTTLER_REDIS],

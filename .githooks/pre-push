@@ -1,6 +1,6 @@
 #!/bin/sh
-# Closes the gap the commit hook's cache leaves open (AGENTS.md's "Gates:
-# three levels", level 2): a cross-file lint result the ESLint cache never
+# Closes the gap the commit hook's cache leaves open ("Gates: three levels" in
+# docs/agents/gates.md, level 2): a cross-file lint result the ESLint cache never
 # re-examines. Every commit that reaches `develop` goes through a pushed
 # branch and a PR, so this is where the full, uncached `verify:full` always
 # runs — no `--cache`, no `--incremental`, everything re-checked.

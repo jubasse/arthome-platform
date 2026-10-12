@@ -5,6 +5,8 @@ import {
   DateScheduledSchema,
   PublicationState as WirePublicationState,
   PublicationStateChangedSchema,
+  ReplayStateChangedSchema,
+  ReplayState as WireReplayState,
   ReplayPolicy as WireReplayPolicy,
   RightsScope as WireRightsScope,
 } from '@arthome-platform/events';
@@ -12,7 +14,13 @@ import { create, toBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { describe, expect, it } from 'vitest';
 
-import { DateOutcome, PublicationState, ReplayPolicy, RightsScope } from '@arthome/core';
+import {
+  DateOutcome,
+  PublicationState,
+  ReplayPolicy,
+  ReplayState,
+  RightsScope,
+} from '@arthome/core';
 
 import { dateAfter, dateFactOf } from './date-consumer.js';
 import type { DateProjection } from './date-projection.entity.js';
@@ -54,6 +62,27 @@ function stateChanged(to: WirePublicationState, version: number): Uint8Array {
   );
 }
 
+function replayChanged(
+  to: WireReplayState,
+  version: number,
+  facts: { closesAt?: string; onlineAt?: string; durationSec?: number } = {},
+): Uint8Array {
+  return toBinary(
+    ReplayStateChangedSchema,
+    create(ReplayStateChangedSchema, {
+      dateId: DATE_ID,
+      toState: to,
+      version: BigInt(version),
+      liveEndedAt: timestampFromDate(new Date('2026-11-04T21:10:00.000Z')),
+      closesAt:
+        facts.closesAt === undefined ? undefined : timestampFromDate(new Date(facts.closesAt)),
+      onlineAt:
+        facts.onlineAt === undefined ? undefined : timestampFromDate(new Date(facts.onlineAt)),
+      durationSec: facts.durationSec,
+    }),
+  );
+}
+
 function emptyRow(): DateProjection {
   return {
     date_id: DATE_ID,
@@ -69,6 +98,12 @@ function emptyRow(): DateProjection {
     moved_slug: null,
     moved_canonical_url: null,
     moved_version: null,
+    replay_state: null,
+    replay_live_ended_at: null,
+    replay_closes_at: null,
+    replay_online_at: null,
+    replay_duration_sec: null,
+    replay_version: null,
     doc_version: '0',
     indexed_at: new Date(),
   };
@@ -103,6 +138,7 @@ const SCHEDULED = 'catalog.date.scheduled.v1';
 const OUTCOME_DECLARED = 'catalog.date.outcome_declared.v1';
 const RESCHEDULED = 'catalog.date.rescheduled.v1';
 const STATE_CHANGED = 'catalog.publication.state_changed.v1';
+const REPLAY_CHANGED = 'catalog.replay.state_changed.v1';
 
 describe('dateFactOf', () => {
   it('reads what DateScheduled makes public, in the domain’s vocabulary', () => {
@@ -200,5 +236,74 @@ describe('an outcome and a move', () => {
       rescheduled('2026-09-27T10:00:00.000Z', '2026-11-20T19:30:00.000Z'),
     );
     expect(fact).toMatchObject({ slug: null, canonicalUrl: null });
+  });
+});
+
+describe('a replay', () => {
+  const CLOSES = '2026-11-07T21:10:00.000Z';
+  const pending = dateFactOf(
+    REPLAY_CHANGED,
+    replayChanged(WireReplayState.PENDING, 1, { closesAt: CLOSES }),
+  );
+  const online = dateFactOf(
+    REPLAY_CHANGED,
+    replayChanged(WireReplayState.ONLINE, 2, {
+      closesAt: CLOSES,
+      onlineAt: '2026-11-05T09:00:00.000Z',
+      durationSec: 5400,
+    }),
+  );
+
+  it('reads the Replay’s facts, versioned by its own version', () => {
+    expect(online).toEqual({
+      type: REPLAY_CHANGED,
+      dateId: DATE_ID,
+      version: 2,
+      state: ReplayState.ONLINE,
+      liveEndedAt: new Date('2026-11-04T21:10:00.000Z'),
+      closesAt: new Date(CLOSES),
+      onlineAt: new Date('2026-11-05T09:00:00.000Z'),
+      durationSec: 5400,
+    });
+    expect(pending).toMatchObject({
+      state: ReplayState.PENDING,
+      onlineAt: null,
+      durationSec: null,
+    });
+  });
+
+  it('refuses a replay state it does not know, and a closing it is not told', () => {
+    expect(() =>
+      dateFactOf(
+        REPLAY_CHANGED,
+        replayChanged(WireReplayState.UNSPECIFIED, 3, { closesAt: CLOSES }),
+      ),
+    ).toThrow(/does not know/);
+    expect(() => dateFactOf(REPLAY_CHANGED, replayChanged(WireReplayState.PENDING, 1))).toThrow(
+      /closes_at/,
+    );
+  });
+
+  it('keeps online when a reordered pending arrives after it', () => {
+    const onlineRow = dateAfter(emptyRow(), online);
+    expect(onlineRow).toMatchObject({ replay_state: ReplayState.ONLINE, replay_version: '2' });
+    expect(onlineRow && dateAfter(onlineRow, pending)).toBeNull();
+  });
+
+  it('replaces all its columns at once on a newer version', () => {
+    const pendingRow = dateAfter(emptyRow(), pending);
+    expect(pendingRow && dateAfter(pendingRow, online)).toMatchObject({
+      replay_state: ReplayState.ONLINE,
+      replay_online_at: new Date('2026-11-05T09:00:00.000Z'),
+      replay_duration_sec: 5400,
+      replay_closes_at: new Date(CLOSES),
+    });
+  });
+
+  it('is held before DateScheduled, and does not publish the date', () => {
+    expect(dateAfter(emptyRow(), pending)).toMatchObject({
+      scheduled: null,
+      replay_state: ReplayState.PENDING,
+    });
   });
 });

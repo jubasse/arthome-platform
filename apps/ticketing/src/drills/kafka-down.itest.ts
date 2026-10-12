@@ -68,10 +68,11 @@ const CASE_MS = 600_000;
 const OUTAGE_MS = 30_000;
 /**
  * Past its session the Connect worker may be evicted from its group as the broker resumes, and
- *   its lost connector waits `scheduled.rebalance.max.delay.ms`, five minutes by default, before
- *   it is assigned again: measured, 1.5 s, 300.9 s and 302.5 s from the resume to the last row.
+ *   its lost connector waits `scheduled.rebalance.max.delay.ms` before it is assigned again: 20 s
+ *   here and in compose.yaml, plus 120 s of margin. It was five minutes by default, measured at
+ *   1.5 s, 300.9 s and 302.5 s from the resume to the last row.
  */
-const DELIVERY_MS = 420_000;
+const DELIVERY_MS = 140_000;
 
 const NOW = '2026-10-08T10:00:00.000Z';
 const STARTS_AT = '2026-12-12T19:00:00.000Z';

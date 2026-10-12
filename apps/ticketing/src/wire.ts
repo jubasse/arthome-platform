@@ -5,6 +5,8 @@ import {
   DateOutcome as WireDateOutcome,
   PriceTier as WirePriceTier,
   RefundReason as WireRefundReason,
+  ReplayPolicy as WireReplayPolicy,
+  ReplayState as WireReplayState,
   SeatCancelReason as WireSeatCancelReason,
 } from '@arthome-platform/events';
 
@@ -13,7 +15,11 @@ import {
   DATE_OUTCOMES,
   DateOutcome,
   PriceTier,
+  REPLAY_POLICIES,
+  REPLAY_STATES,
   RefundReason,
+  ReplayPolicy,
+  ReplayState,
   SeatCancelReason,
 } from '@arthome/core';
 
@@ -58,4 +64,28 @@ const WIRE_DATE_OUTCOME = {
 /** Null for `UNSPECIFIED` and for a member this build does not know: neutral, never refused. */
 export function dateOutcomeOf(wire: WireDateOutcome): DateOutcome | null {
   return DATE_OUTCOMES.find((outcome) => WIRE_DATE_OUTCOME[outcome] === wire) ?? null;
+}
+
+const WIRE_REPLAY_STATE = {
+  [ReplayState.PENDING]: WireReplayState.PENDING,
+  [ReplayState.ONLINE]: WireReplayState.ONLINE,
+  [ReplayState.CLOSED]: WireReplayState.CLOSED,
+  [ReplayState.WITHDRAWN]: WireReplayState.WITHDRAWN,
+} satisfies Record<ReplayState, WireReplayState>;
+
+/** Null for `UNSPECIFIED` and for a member this build does not know: neutral, never refused. */
+export function replayStateOf(wire: WireReplayState): ReplayState | null {
+  return REPLAY_STATES.find((state) => WIRE_REPLAY_STATE[state] === wire) ?? null;
+}
+
+const WIRE_REPLAY_POLICY = {
+  [ReplayPolicy.INCLUDED]: WireReplayPolicy.INCLUDED,
+  [ReplayPolicy.SUBSCRIPTION]: WireReplayPolicy.SUBSCRIPTION,
+  [ReplayPolicy.UNIT]: WireReplayPolicy.UNIT,
+  [ReplayPolicy.NONE]: WireReplayPolicy.NONE,
+} satisfies Record<ReplayPolicy, WireReplayPolicy>;
+
+/** Null for `UNSPECIFIED` and for a member this build does not know: neutral, never refused. */
+export function replayPolicyOf(wire: WireReplayPolicy): ReplayPolicy | null {
+  return REPLAY_POLICIES.find((policy) => WIRE_REPLAY_POLICY[policy] === wire) ?? null;
 }

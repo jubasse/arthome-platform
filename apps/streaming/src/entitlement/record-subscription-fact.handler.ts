@@ -9,15 +9,26 @@ import { RecordSubscriptionFact } from './record-subscription-fact.command.js';
 import { CLOCK } from '../clock.js';
 import { StreamingTransactions } from '../streaming-transactions.js';
 
+/**
+ * Ticketing's version decides when both facts carry one, an equal one being a redelivery;
+ *   otherwise the instant does. The kept instant never goes back, so a higher version stated
+ *   earlier leaves a later unversioned fact compared with the latest instant seen.
+ */
 export const RECORD_SUBSCRIPTION = `
   INSERT INTO entitlement_subscription AS kept
-              (account_id, plan, state, openings, paid_through, occurred_at, applied_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+              (account_id, plan, state, openings, paid_through, version, occurred_at, applied_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
   ON CONFLICT (account_id) DO UPDATE
           SET plan = excluded.plan, state = excluded.state, openings = excluded.openings,
-              paid_through = excluded.paid_through, occurred_at = excluded.occurred_at,
+              paid_through = excluded.paid_through,
+              version = COALESCE(excluded.version, kept.version),
+              occurred_at = GREATEST(excluded.occurred_at, kept.occurred_at),
               applied_at = excluded.applied_at
-        WHERE excluded.occurred_at >= kept.occurred_at
+        WHERE CASE
+                WHEN excluded.version IS NOT NULL AND kept.version IS NOT NULL
+                  THEN excluded.version > kept.version
+                ELSE excluded.occurred_at >= kept.occurred_at
+              END
     RETURNING account_id`;
 
 @CommandHandler(RecordSubscriptionFact)
@@ -41,6 +52,7 @@ export class RecordSubscriptionFactHandler implements ICommandHandler<RecordSubs
         fact.state,
         fact.openings,
         fact.paidThrough,
+        fact.version?.toString() ?? null,
         fact.statedAt,
         new Date(appliedAtMs),
       ]);

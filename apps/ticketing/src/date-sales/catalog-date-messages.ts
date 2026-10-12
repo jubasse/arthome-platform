@@ -5,6 +5,7 @@ import {
   DateScheduledSchema,
   PublicationEngagedSchema,
   PublicationEngagement,
+  ReplayStateChangedSchema,
 } from '@arthome-platform/events';
 import { Outcome, PermanentError, header, messageIdOf } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
@@ -12,10 +13,14 @@ import { timestampDate, type Timestamp } from '@bufbuild/protobuf/wkt';
 import type { CommandBus } from '@nestjs/cqrs';
 import type { EachMessagePayload } from 'kafkajs';
 
-import { ApiErrorCode, isDomainError, type Instant } from '@arthome/core';
+import { ApiErrorCode, ReplayState, isDomainError, type Instant } from '@arthome/core';
 
 import { ApplyCatalogDateFact, type CatalogDateFact } from './apply-catalog-date-fact.command.js';
-import { dateOutcomeOf } from '../wire.js';
+import {
+  RecordReplayState,
+  type ReplayStateFact,
+} from '../replay-access/record-replay-state.command.js';
+import { dateOutcomeOf, replayPolicyOf, replayStateOf } from '../wire.js';
 
 function stated(timestamp: Timestamp | undefined, field: string): Instant {
   if (timestamp === undefined) throw new Error(`no ${field}`);
@@ -23,7 +28,9 @@ function stated(timestamp: Timestamp | undefined, field: string): Instant {
 }
 
 /** What each consumed type says to ticketing; null when it says nothing ticketing keeps. */
-const READERS: Readonly<Record<string, (value: Uint8Array) => CatalogDateFact | null>> = {
+const READERS: Readonly<
+  Record<string, (value: Uint8Array) => CatalogDateFact | ReplayStateFact | null>
+> = {
   'catalog.date.drafted.v1': (value) => {
     const event = fromBinary(DateDraftedSchema, value);
     return {
@@ -71,6 +78,26 @@ const READERS: Readonly<Record<string, (value: Uint8Array) => CatalogDateFact | 
       statedAt: stated(event.declaredAt, 'declared_at'),
     };
   },
+  'catalog.replay.state_changed.v1': (value) => {
+    const event = fromBinary(ReplayStateChangedSchema, value);
+    const toState = replayStateOf(event.toState);
+    const policy = replayPolicyOf(event.policy);
+    if (toState === null || policy === null) return null;
+    if (event.version === 0n) throw new Error('no version');
+    if (toState === ReplayState.ONLINE && event.onlineAt === undefined) {
+      throw new Error('online with no online_at');
+    }
+    return {
+      kind: 'replay_state',
+      dateId: event.dateId,
+      version: event.version,
+      toState,
+      policy,
+      liveEndedAt: stated(event.liveEndedAt, 'live_ended_at'),
+      closesAt: stated(event.closesAt, 'closes_at'),
+      onlineAt: event.onlineAt === undefined ? null : stated(event.onlineAt, 'online_at'),
+    };
+  },
 };
 
 /**
@@ -90,7 +117,7 @@ export async function applyCatalogDateMessage(
 
   const value = payload.message.value;
   if (value === null) throw new PermanentError(`message ${messageId} has no value`);
-  let fact: CatalogDateFact | null;
+  let fact: CatalogDateFact | ReplayStateFact | null;
   try {
     fact = read(new Uint8Array(value));
   } catch (cause) {
@@ -102,7 +129,9 @@ export async function applyCatalogDateMessage(
 
   try {
     return await commands.execute(
-      new ApplyCatalogDateFact(messageId, payload.topic, header(payload, 'traceparent'), fact),
+      fact.kind === 'replay_state'
+        ? new RecordReplayState(messageId, payload.topic, header(payload, 'traceparent'), fact)
+        : new ApplyCatalogDateFact(messageId, payload.topic, header(payload, 'traceparent'), fact),
     );
   } catch (error) {
     if (!isDomainError(error)) throw error;

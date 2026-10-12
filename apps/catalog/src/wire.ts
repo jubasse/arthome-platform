@@ -6,6 +6,7 @@ import {
   LanguageDependency as WireLanguageDependency,
   PublicationState as WirePublicationState,
   ReplayPolicy as WireReplayPolicy,
+  ReplayState as WireReplayState,
   RightsScope as WireRightsScope,
 } from '@arthome-platform/events';
 
@@ -16,6 +17,7 @@ import {
   Locale,
   PublicationState,
   ReplayPolicy,
+  ReplayState,
   RightsScope,
   type Bilingual,
 } from '@arthome/core';
@@ -40,6 +42,13 @@ export const WIRE_REPLAY_POLICY = {
   [ReplayPolicy.UNIT]: WireReplayPolicy.UNIT,
   [ReplayPolicy.NONE]: WireReplayPolicy.NONE,
 } satisfies Record<ReplayPolicy, WireReplayPolicy>;
+
+export const WIRE_REPLAY_STATE = {
+  [ReplayState.PENDING]: WireReplayState.PENDING,
+  [ReplayState.ONLINE]: WireReplayState.ONLINE,
+  [ReplayState.CLOSED]: WireReplayState.CLOSED,
+  [ReplayState.WITHDRAWN]: WireReplayState.WITHDRAWN,
+} satisfies Record<ReplayState, WireReplayState>;
 
 export const WIRE_RIGHTS_SCOPE = {
   [RightsScope.WORLDWIDE]: WireRightsScope.WORLDWIDE,

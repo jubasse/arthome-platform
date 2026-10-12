@@ -28,12 +28,16 @@ import { EmailVerificationsService } from './email-verifications.service.js';
 import { emailTaken } from './refusals.js';
 import {
   SessionsService,
-  withoutToken,
+  storedOf,
+  type Established,
   type EstablishedSession,
-  type ResolvedSession,
+  type StoredSession,
 } from './sessions.service.js';
 import type { SignUpBody } from './sign-up.schema.js';
 import { CLOCK } from '../clock.js';
+import { DevicesService } from '../devices/devices.service.js';
+import type { PresentedDevice } from '../devices/presented-device.schema.js';
+import { defaultProfileOf } from '../profiles/default-profile.js';
 
 /** 2^40 handles: a fifth collision in a row is a broken generator, not bad luck. */
 const HANDLE_ATTEMPTS = 5;
@@ -41,11 +45,17 @@ const HANDLE_ATTEMPTS = 5;
 export interface SignedUp {
   readonly session: EstablishedSession;
   readonly account: { readonly publicHandle: string; readonly emailVerified: boolean };
+  /** The token the BFF sets now; null on a replayed sign-up, which sets nothing again. */
+  readonly device: { readonly token: string | null };
 }
 
-/** What the idempotency record keeps of a sign-up: the session by its id, never its token. */
+interface Issued extends Established {
+  readonly deviceToken: string;
+}
+
+/** What the idempotency record keeps of a sign-up: the session by its ids, never a token. */
 interface SignUpRecord {
-  readonly session: ResolvedSession;
+  readonly session: StoredSession;
   readonly account: SignedUp['account'];
 }
 
@@ -56,7 +66,9 @@ interface SignUpRecord {
  *   back, and a commit that fails after the credential exists removes the credential. Only a crash
  *   between the two commits leaves a credential with no account, which the next sign-up of that
  *   address finds and replaces (`replaceOrphanCredential`). The idempotency record keeps the
- *   session by its id, never its token; a replay re-signs it (`SessionsService.reissue`).
+ *   session by its ids, never a token; a replay re-signs it (`SessionsService.reissue`). The
+ *   session is bound to the default profile, created here, and to the presented device, inside the
+ *   same transaction.
  */
 @Injectable()
 export class SignUpService {
@@ -68,15 +80,18 @@ export class SignUpService {
     @Inject(CLOCK) private readonly clock: Clock,
     private readonly verifications: EmailVerificationsService,
     private readonly sessions: SessionsService,
+    private readonly devices: DevicesService,
   ) {}
 
   public async signUp(
     body: SignUpBody,
+    presented: PresentedDevice,
     request: IdempotentRequest,
     traceparent: string | null,
   ): Promise<MemorisedResponse<SignedUp>> {
     let credentialOf: string | null = null;
-    let issued: EstablishedSession | null = null;
+    // Set inside the callback, which control-flow analysis does not follow.
+    let issued = null as Issued | null;
     try {
       const memorised = await this.dataSource.transaction((manager) =>
         runIdempotently(manager, request, this.clock, async (): Promise<SignUpRecord> => {
@@ -90,17 +105,35 @@ export class SignUpService {
           );
           const token = await this.createCredential(accountId, body);
           credentialOf = accountId;
-          issued = await this.sessions.established(token);
+          const opened = await this.sessions.opened(token);
+          const profile = await defaultProfileOf(manager, accountId, body.displayName);
+          const device = await this.devices.deviceFor(manager, presented);
+          const established = await this.sessions.establish(
+            manager,
+            opened,
+            device.deviceId,
+            profile,
+          );
+          issued = { ...established, deviceToken: device.token };
           return {
-            session: withoutToken(issued),
+            session: storedOf(established),
             account: { publicHandle, emailVerified: false },
           };
         }),
       );
       const { envelope } = memorised;
-      const session = issued ?? (await this.sessions.reissue(envelope.data.session));
+      const { account } = envelope.data;
+      if (issued === null) {
+        const session = await this.sessions.reissue(envelope.data.session, presented);
+        return new MemorisedResponse(
+          { ...envelope, data: { session, account, device: { token: null } } },
+          memorised.replayed,
+        );
+      }
+      const { session, deviceToken, replacedAuthSessionIds } = issued;
+      await this.sessions.forget(session.accountId, replacedAuthSessionIds);
       return new MemorisedResponse(
-        { ...envelope, data: { ...envelope.data, session } },
+        { ...envelope, data: { session, account, device: { token: deviceToken } } },
         memorised.replayed,
       );
     } catch (error) {

@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import { Endpoint, EndpointInput, serveEndpoints } from '@arthome-platform/http-edge';
-import { Controller, Module } from '@nestjs/common';
+import { Controller, Module, Req } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -19,6 +19,7 @@ import { ApiErrorCode, FixedClock, Surface } from '@arthome/core';
 
 import { PairedDeviceVerifier } from './paired-device.verifier.js';
 import { SESSION_COOKIE } from './session-carriers.js';
+import { viewerOf } from './viewer.js';
 import { AppModule } from '../app.module.js';
 import { CLOCK } from '../clock.js';
 import { IDENTITY_URL } from '../identity/identity.client.js';
@@ -30,6 +31,8 @@ import { IDENTITY_URL } from '../identity/identity.client.js';
 
 const ACCOUNT = '01a0e700-0000-7000-8000-0000000000c1';
 const DEVICE = '01a0e700-0000-7000-8000-0000000000d1';
+const DEVICE_SESSION = '01a0e700-0000-7000-8000-0000000000e1';
+const PROFILE = { id: '01a0e700-0000-7000-8000-0000000000f1', name: 'Marie', kind: 'adult' };
 const GOOD_TOKEN = 'sess_good';
 
 const viewer = identity('viewer', {
@@ -69,6 +72,13 @@ const noteDown = viewers.defineRoute({
   operationId: 'fixtureNoteDown',
   requestBody: { content: { 'application/json': { schema: z.object({ note: z.string() }) } } },
   responses: answered(z.object({ note: z.string() })),
+});
+
+const whoWatches = viewers.defineRoute({
+  method: 'get',
+  path: '/fixture/watching',
+  operationId: 'fixtureWhoWatches',
+  responses: answered(z.object({ viewer: z.string() })),
 });
 
 const browse = viewers.optionalAuth().defineRoute({
@@ -123,6 +133,20 @@ class FixtureController {
     return Promise.resolve({ data: { principal: JSON.stringify(principal) } });
   }
 
+  @Endpoint(whoWatches)
+  public async whoWatches(@Req() request: object): Promise<HandlerOutput<typeof whoWatches>> {
+    const viewer = viewerOf(request);
+    return Promise.resolve({
+      data: {
+        viewer: JSON.stringify({
+          deviceId: viewer?.deviceId,
+          deviceSessionId: viewer?.deviceSessionId,
+          profile: viewer?.profile,
+        }),
+      },
+    });
+  }
+
   @Endpoint(noteDown)
   public async noteDown(
     @EndpointInput(noteDown) { body }: HandlerInput<typeof noteDown>,
@@ -171,7 +195,9 @@ beforeAll(async () => {
           ? {
               accountId: ACCOUNT,
               deviceId: DEVICE,
+              deviceSessionId: DEVICE_SESSION,
               expiresAt: '2026-11-05T10:00:00.000Z',
+              profile: PROFILE,
               account: { publicHandle: '@marie', emailVerified: true },
             }
           : null;
@@ -235,6 +261,21 @@ describe('the viewer identity, applied by Endpoint', () => {
     expect(JSON.parse(response.json<{ data: { principal: string } }>().data.principal)).toEqual({
       accountId: ACCOUNT,
       deviceId: DEVICE,
+    });
+  });
+
+  it('leaves the registered device, its device session and its profile to the route', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/fixture/watching',
+      headers: { ...WEB, authorization: `Bearer ${GOOD_TOKEN}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.json<{ data: { viewer: string } }>().data.viewer)).toEqual({
+      deviceId: DEVICE,
+      deviceSessionId: DEVICE_SESSION,
+      profile: PROFILE,
     });
   });
 

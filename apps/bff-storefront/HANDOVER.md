@@ -4,7 +4,10 @@ The storefront's BFF (`context-map.md`: one BFF per product, owned by its surfac
 `openapi/storefront.yaml` from the services behind it and holds no domain rule. From catalog:
 `GET /v1/search`, `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`. From
 identity (auth slice A, D-107, 2026-10-03): `/v1/auth/sign-up`, `sign-in`, `sign-out`, `verify-email`,
-`verify-email/resend` and `GET /v1/viewer-context`.
+`verify-email/resend` and `GET /v1/viewer-context`; with PB1 (2026-10-12), `DELETE
+/v1/me/devices/:deviceId` and `DELETE /v1/me/device-sessions/:sessionId`. From streaming, with
+PB2 (2026-10-12): `POST /v1/playback/:dateId/open` and `POST
+/v1/playback/sessions/:sessionId/renew` and `/release`.
 Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10-03.
 
 ## 1. What was built
@@ -18,7 +21,9 @@ Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10
 | `src/identity/identity.client.ts` | identity's adapter: the relayed authentication calls and the session's resolution |
 | `src/auth/auth.controller.ts` | `/v1/auth/*`, bound to the contract's routes: its bodies and headers, the delivery mode |
 | `src/auth/auth-rate-limits.ts`, `throttler-storage.ts` | the caps of core's `AuthRateLimit`, counted in Redis, refused as `api.rate_limited` |
-| `src/session/` | the session's two carriers, the viewer, `ViewerIdentity`, `CsrfGuard` and the plugins they rely on |
+| `src/session/` | the session's two carriers, the browser's device cookie and descriptor, the viewer, `ViewerIdentity`, `CsrfGuard` and the plugins they rely on |
+| `src/devices/` | `revokeDevice` and `signOutProfile`, relayed to identity (§5) |
+| `src/playback/` | `openPlayback`, `renewPlaybackTicket` and `releasePlayback`, relayed to streaming, and the ticket cookie's relay (§6) |
 | `src/viewer-context/` | `getViewerContext` and the composition `SessionEstablished` reuses |
 | `src/dates/dates.controller.ts` | `GET /v1/dates/:dateId`, `GET /v1/artists/:artistId` and `GET /v1/resolve`, relayed from catalog |
 | `src/conditional-get.ts` | the `ETag` and the `onSend` hook that answers a matching `If-None-Match` with 304 |
@@ -27,10 +32,9 @@ Written 2026-09-26, the date routes 2026-09-27, the authentication relay 2026-10
 Proven by `src/catalog/catalog.client.spec.ts` (a stand-in catalog over HTTP), the two
 `*.e2e.spec.ts` (the whole app through Fastify), `src/conditional-get.spec.ts`,
 `src/auth/auth.e2e.itest.ts` (this BFF against the real identity, Postgres and Redis), and on the
-running stack (`AGENTS.md`, "Search, the date page and link resolution, from the storefront BFF").
+running stack (`docs/agents/storefront-search-and-date-page.md`).
 
-Every route here is bound by `@Endpoint(route)` to its `storefrontApi` declaration (`AGENTS.md`,
-"Binding a route to its contract operation"): there is no hand copy of a query, a body or a
+Every route here is bound by `@Endpoint(route)` to its `storefrontApi` declaration (`docs/agents/binding-a-route.md`): there is no hand copy of a query, a body or a
 response left, and the upstream answers are validated against `successSchemaOf(route)`. The
 development Swagger UI is at `http://localhost:3003/docs`, mounted by `main.ts` from the
 contract's docs module (`storefront-docs.ts`) and absent in production.
@@ -55,7 +59,8 @@ contract's docs module (`storefront-docs.ts`) and absent in production.
   signed-in viewer is answered `private, max-age=60` (core's `cacheControlOf` takes the caller),
   so no shared cache keeps a page served to them once a session adds overlays.
 - **Every call to a service carries an internal token** (`adr-auth.md` §8): minted per call, never
-  forwarded, naming the viewer's account and device, or no account for an anonymous visitor.
+  forwarded, naming the viewer's account, its registered device and its profile (§5), or no
+  account for an anonymous visitor.
   `DenyInProductionGuard` stays bound behind the others, and every route here is allowed in
   production now that the services can verify who calls them.
 - **The signing key** comes from `INTERNAL_TOKEN_SIGNING_KEY`, required in production. Outside it,
@@ -159,8 +164,9 @@ contract's docs module (`storefront-docs.ts`) and absent in production.
   is outside it.
 - **The JWKS document has no publisher**: infrastructure's (`definition-of-done.md` §7.6, J1 to
   J3). The key ceremony publishes `bff-sf-<date>` before this BFF signs with it.
-- The `deviceId` a sign-up or sign-in body asserts is ignored until devices register: the viewer's
-  device is the session's own id.
+- The `deviceId` a sign-up or sign-in body asserts stays ignored: no credential backs it. A browser's
+  device is the one its `__Host-arthome_device` cookie names (§5); a native surface's waits for
+  `registerDevice` and its own carrier.
 - No drain window on shutdown, like the services.
 
 ## 4. What slice B must do first
@@ -204,3 +210,93 @@ Also open for B: the claims `chn` and `rol` (and `scope`) in `InternalTokenClaim
 A's services keep working; studio.yaml's `bearerToken`, which describes a device-bound refresh token
 against the storefront's sliding session; `CHANNEL_ACCESS_REVOKED`, the studio's reset confirmation
 and Q4's invitation sign-up, not in core yet.
+
+## 5. Devices and profiles (PB1)
+
+Identity binds every session to a registered device and a profile (its PI1 seam, S1 to S6); this
+BFF carries both into every internal token, `did` the registered device and `pro` the profile
+(`callerOf`), and into the viewer context: `deviceId` the registered device, `currentProfileId` the
+session's profile, `profiles` that one profile until a picker lists the account's others.
+
+- **The cookie's life** (`adr-auth.md` §4/Q3, D-126): `__Host-arthome_device`, `HttpOnly`,
+  `Secure`, `SameSite=Lax`, path `/`, `Max-Age` core's `DEVICE_TOKEN_LIFETIME_SECONDS`. Sign-up and
+  sign-in in cookie mode send identity the token it holds, or none, and set the token identity
+  answers: a new device's, or the presented one rotated. A replayed sign-up answers none, and the
+  browser keeps what it holds. Sign-out sends no `Set-Cookie` for it, so the browser keeps its device;
+  revoking the browser's own device clears it with the session's three cookies. A cookie longer
+  than identity issues counts as none, so the sign-in registers a new device rather than failing.
+  The token never reaches a body, a header the page reads, or a log line.
+- **Why registration rides sign-in**: the browser registers inside `signUp` and `signIn`, once
+  identity accepted the credential, so registration has exactly those routes' caps
+  (`SIGN_UP_PER_ADDRESS`, `SIGN_IN_PER_ADDRESS`, `SIGN_IN_PER_EMAIL`). The public `registerDevice`
+  stays unbound: a web surface never calls it, and a native one needs its ES256 token and carrier,
+  the TV slice's.
+- **Bearer devices**: bearer and device modes present no device token, and the one identity answers
+  is dropped: a native shell gets a device per sign-in whose token nobody keeps, until the native
+  slice binds `registerDevice` (identity's HANDOVER).
+- **The descriptor** (`session/device-descriptor.ts`): the label is the `User-Agent`, trimmed and
+  cut to 80 characters, `unknown` when blank; the kind is `mobile` when `sec-ch-ua-mobile` is `?1`
+  or the agent holds `Mobi`, else `desktop`. A display label that decides nothing (D-023 still
+  holds). A same-origin proxy in front of this BFF (storefront-web's) must forward `user-agent` and
+  `sec-ch-ua-mobile`, or every browser is an `unknown` desktop.
+- **The two routes** (`devices/devices.controller.ts`), relayed to identity's
+  `/v1/devices/{deviceId}/revoke` and `/v1/device-sessions/{sessionId}/close`, the viewer named by
+  the internal token alone and the `Idempotency-Key` relayed, a replay marked replayed and
+  identity's `api.not_found` relayed. Both are cookie writes, so a cookie call without its CSRF
+  token is a 403 before identity is asked. `revokeDevice` answers `playbackCutWithinSec` core's
+  `PLAYBACK_TOKEN_LIFETIME_SECONDS` (the token in hand runs out, its renewal is refused).
+  `signOutProfile` on the viewer's own device session clears the session's cookies, keeps the device
+  cookie and answers the signed-out context; on another session it answers the viewer's context.
+  `transport.md` §5.9 lists no budget for these account writes: they take the authentication
+  write's 2 s until a core row replaces it. No surface lists device sessions yet
+  (`getAccountScreen` is unbound), so a web viewer learns only its own device's id.
+- **What proves it**: `session/session-carriers.spec.ts` (the cookie's name and attributes),
+  `session/device-descriptor.spec.ts`, `internal-token.minter.spec.ts` (`did` and `pro` from
+  `callerOf`), `session/viewer.identity.e2e.spec.ts` (the resolved device, device session and
+  profile), `viewer-context/viewer-context.spec.ts`, `devices/devices.e2e.spec.ts` (each branch of
+  the two routes, against a stand-in identity) and `auth/auth.e2e.itest.ts` against the real
+  identity (the cookie set, rotated, kept across sign-out, never given to a bearer surface, never
+  logged).
+- **Later**: the device cookie can key the sign-in caps (OWASP's device cookies, §2 "No lockout per
+  email").
+
+## 6. Playback (PB2)
+
+The player's three routes (`playback/playback.controller.ts`), relayed to streaming's C3 routes by
+`playback/streaming.client.ts`: the viewer named by the internal token alone (`sub`, `did`, `pro`
+from `callerOf`), the body of `openPlayback` sent as the browser wrote it, the request's
+`x-arthome-surface` on the opening and the gateway's country (`viewerCountryOf`) on the opening and
+the renewal. Every answer is `no-store`; the routes' declared refusals are relayed
+(`watch.concurrent_limit_reached` with the `activeSessions` a viewer may release, typed by core's
+`ActivePlaybackSessionSchema` since 0.4.0-rc.3, `watch.replay_expired`,
+`identity.signed_out_elsewhere` on the renewal) and anything else is `api.upstream_unavailable`, `api.upstream_timeout` past the budget,
+never retried. All three are cookie writes: a cookie call without its CSRF token is a 403 before
+streaming is asked; a bearer call needs none. The BFF never fills `deviceId` or `profileId`:
+streaming refuses a body that disagrees with the token.
+
+- **The ticket cookie** (`adr-stream-entitlement.md` §3.2): for a web surface streaming signs the
+  ticket as a cookie (`arthome_playback`, `Secure; HttpOnly; SameSite=None`, on the date's path), and
+  a renewal re-sets it by a same-origin call with no URL change. `ServiceClient` hands back a
+  success's `Set-Cookie` lines in order (`setCookies`); `playback/playback-cookies.ts` relays a line
+  only when its `Path` starts with one of `PLAYBACK_COOKIE_PATH_PREFIXES` (`/playback/` for the fake
+  and CDN providers, `/watch/` for MediaMTX's edge, PM1), it is `Secure` and `HttpOnly`, it names no
+  `Domain` of its own, and its name is neither `__Host-`/`__Secure-` prefixed nor one of this BFF's
+  cookies. Why: the relay writes on the browser's behalf, so a service must not be able to plant or
+  overwrite the session, its CSRF pair or the device cookie, nor widen a cookie past the domain this
+  BFF chose. A dropped line is logged once by name and reason, never its value. The relayed lines
+  are appended after any `Set-Cookie` the reply already holds.
+- **`PLAYBACK_COOKIE_DOMAIN`**: appended as `; Domain=<domain>`, so the media edge receives the
+  cookie. A browser keeps it only when it is the host it called (storefront-web's same-origin proxy,
+  W2) or a parent of it, so production's must be a common parent of the storefront host and the
+  edge host (`arthome.tv` for `www.` and `edge.`); required there, and a scheme, port or path is
+  refused at boot. Unset outside production: host-only, and `localhost` covers every port.
+- **The budget**: `transport.md` §5.9 lists `streaming.openPlayback` (1 s) alone; renewal and
+  release take the same `OPEN_PLAYBACK_BUDGET_MS` until a core row gives them their own.
+- **Release** answers streaming's 204 with no body and relays no cookie.
+- **What proves it**: `playback/playback-cookies.spec.ts` (each relay rule, the `Domain`, the append),
+  `upstream/service-client.spec.ts` (the `Set-Cookie` lines in order, none on a refusal, a 204),
+  `libs/config/src/env.spec.ts` (both readers), and `playback/playback.e2e.spec.ts` (the whole app
+  against a stand-in identity and streaming: the ticket and its cookie, the token's claims, the
+  surface, the country and the deadline, each relayed refusal, the 502 and the 504, CSRF, 401,
+  bearer, and no cookie value or token in a log). PE1 proves it end to end: the browser's cookie
+  reaching the media edge through the same-origin proxy, and the edge serving on it.

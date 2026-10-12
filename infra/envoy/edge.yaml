@@ -1,10 +1,13 @@
 # The playback edge: the only door to the edge MediaMTX's HLS port, checking PS3's playback token on
 # every request as a CDN does (adr-stream-entitlement.md §3.2). It checks the token and nothing
-# else: no buffer, compressor, cache, CORS or ext_authz filter, so responses stream.
+# else: no buffer, compressor, cache or ext_authz filter, so responses stream.
 #
-# The token travels as `?token=` (a simple request, no CORS preflight). No access log: the query
-# would land in it. The key set is read from disk at start only: after regenerating it
-# (tools/playback-jwks.mjs), restart `playback-edge`.
+# The token travels as `?token=` (native players) or as the `arthome_playback` cookie on the date's
+# prefix (browsers, hls.js with `withCredentials`): both simple requests, no CORS preflight. CORS
+# answers one origin with credentials, the storefront's `next dev`: a reviewed literal, since Envoy
+# reads no environment (`startMediaStack` replaces it for a suite; a deployed edge is the CDN's
+# configuration). No access log: the query would land in it. The key set is read from disk at start
+# only: after regenerating it (tools/playback-jwks.mjs), restart `playback-edge`.
 
 static_resources:
   listeners:
@@ -47,7 +50,25 @@ static_resources:
                                 key: authorization
                                 value: Bearer arthome-playback-edge-development
                               append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                          # jwt_authn leaves the ticket cookie in place (R0): the edge never sees it.
+                          request_headers_to_remove: [cookie]
+                          # The edge reflects any origin (`hlsAllowOrigins`): only the CORS filter answers.
+                          response_headers_to_remove:
+                            - access-control-allow-origin
+                            - access-control-allow-credentials
+                          typed_per_filter_config:
+                            envoy.filters.http.cors:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
+                              allow_origin_string_match:
+                                - exact: http://localhost:3000
+                              allow_methods: GET
+                              allow_credentials: true
+                              max_age: "600"
                 http_filters:
+                  # First, so its headers ride on jwt_authn's and lua's 401s: the player reads the refusal.
+                  - name: envoy.filters.http.cors
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
                   - name: envoy.filters.http.jwt_authn
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
@@ -60,19 +81,23 @@ static_resources:
                           local_jwks:
                             filename: /etc/envoy/playback-jwks.json
                           from_params: [token]
+                          from_cookies: [arthome_playback]
                           payload_in_metadata: playback
                           jwt_cache_config:
                             jwt_cache_size: 1024
                       rules:
                         - match: { prefix: /watch/ }
                           requires: { provider_name: playback }
+                      # A preflight, should one come, is the CORS filter's to answer.
+                      bypass_cors_preflight: true
                   - name: envoy.filters.http.lua
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                       default_source_code:
                         # jwt_authn has no claim-to-path match: the token's `prefix` binds it to one
-                        # date, and only in the shape the API signs (`/watch/<date>/`). jwt_authn
-                        # already dropped the token from the query (`forward: false`).
+                        # date, and only in the shape the API signs (`/watch/<date>/`), whether it came
+                        # from `?token=` or the cookie. Given both, both must verify and the query's
+                        # claims are the ones read here (PM1 R0).
                         inline_string: |
                           function envoy_on_request(handle)
                             local path = handle:headers():get(":path")

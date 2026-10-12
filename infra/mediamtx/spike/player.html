@@ -6,9 +6,11 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.3/dist/hls.min.js"></script>
   </head>
   <body>
-    <!-- Two players on the same edge path: through Envoy with the token, and direct. Each reads the
-         epoch milliseconds burned into the frame (test-encoder.sh) and compares them with its clock. -->
-    <video id="envoy" muted playsinline></video>
+    <!-- Players on the same edge path: through Envoy by the ticket cookie (`withCredentials`, the
+         page's host), through Envoy with `?token=`, and direct. Each reads the epoch milliseconds
+         burned into the frame (test-encoder.sh) and compares them with its clock. -->
+    <video id="cookie" muted playsinline></video>
+    <video id="query" muted playsinline></video>
     <video id="direct" muted playsinline></video>
     <script>
       const params = new URLSearchParams(location.search);
@@ -18,6 +20,7 @@
       let token = '';
       const players = {};
 
+      // Same-origin: the answer also re-sets the `arthome_playback` cookie on the date's prefix.
       async function renew() {
         token = await (await fetch('/token')).text();
       }
@@ -98,6 +101,16 @@
         return { n: sorted.length, p50: at(0.5), p95: at(0.95), p99: at(0.99), max: sorted.at(-1) };
       }
 
+      // A refusal the cookie player must be able to read: outside the cookie's prefix, so no cookie.
+      window.r0Refusal = async () => {
+        try {
+          const url = `${params.get('cookieEnvoy')}/watch/${dateId}-other/index.m3u8`;
+          return { status: (await fetch(url, { credentials: 'include' })).status };
+        } catch (error) {
+          return { error: String(error) };
+        }
+      };
+
       window.r0Report = () =>
         Object.fromEntries(
           Object.entries(players).map(([name, { latencies, ...rest }]) => [
@@ -108,8 +121,16 @@
 
       renew().then(() => {
         setInterval(renew, 60_000);
-        start('envoy', params.get('envoy'), (xhr, url) => xhr.open('GET', withToken(url), true));
-        start('direct', params.get('direct'), undefined);
+        const chosen = (params.get('players') ?? 'cookie,query,direct').split(',');
+        if (chosen.includes('cookie')) {
+          start('cookie', params.get('cookieEnvoy'), (xhr) => {
+            xhr.withCredentials = true;
+          });
+        }
+        if (chosen.includes('query')) {
+          start('query', params.get('envoy'), (xhr, url) => xhr.open('GET', withToken(url), true));
+        }
+        if (chosen.includes('direct')) start('direct', params.get('direct'), undefined);
       });
     </script>
   </body>

@@ -1,7 +1,7 @@
 import type { DateDocument } from '@arthome-platform/search-index';
 import type { API, Types } from '@opensearch-project/opensearch';
 
-import { DomainConstant, PublicationState, type Instant } from '@arthome/core';
+import { DomainConstant, PublicationState, ReplayState, type Instant } from '@arthome/core';
 
 import { MAX_RESULT_WINDOW } from './search-cursor.js';
 import { SearchSort, SearchTab, type SearchQuery } from './search-query.schema.js';
@@ -47,7 +47,10 @@ function tabFilter(tab: SearchTab, now: Instant): Query[] {
     case SearchTab.LIVES:
       return [{ range: { ends_at: { gt: now } } }];
     case SearchTab.REPLAYS:
-      return [{ range: { ends_at: { lte: now } } }];
+      return [
+        { term: { replay_state: ReplayState.ONLINE } },
+        { range: { replay_closes_at: { gt: now } } },
+      ];
   }
 }
 

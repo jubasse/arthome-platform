@@ -70,6 +70,26 @@
       "file": "apps/ticketing/src/payments/provider-call-checks.ts",
       "value": "ready",
       "reason": "ioredis's connection status, the word its client reports once it answers commands. REPLAY_ASSET_STATES' `ready` is a replay that can be watched; importing ReplayAssetState.READY to read a Redis connection would be the NavigationEntry.JOURNAL mistake again."
+    },
+    {
+      "file": "apps/streaming/src/replay-asset/replay-asset.ts",
+      "value": "withdrawn",
+      "reason": "`Readiness`'s tag for a ready file streaming will not announce: an outcome took the replay away, or its window had already closed. REPLAY_STATES' `withdrawn` is catalog's `Replay` after an outcome; a closed window is not that state, so importing ReplayState.WITHDRAWN would name the wrong thing."
+    },
+    {
+      "file": "apps/streaming/src/replay-asset/recording-calls.ts",
+      "value": "withdrawn",
+      "reason": "Reads `Readiness`'s tag, the same local discriminant as in replay-asset.ts, not catalog's `Replay` state."
+    },
+    {
+      "file": "apps/catalog/src/replays/replay.entity.ts",
+      "value": "replay",
+      "reason": "The `Replay` aggregate's table name (`@Entity('replay')`, data-model.md §2.2). DISPLAY_STATES' `replay` is what a card shows and DATE_PANES' a studio pane; neither names a table."
+    },
+    {
+      "file": "apps/ticketing/src/replay-access/replay-access.entity.ts",
+      "value": "replay_access",
+      "reason": "The table's name (RT1 §8), one row per ReplayAccess. TAX_SUPPLY_KINDS' `replay_access` is what a unit purchase is taxed as; importing TaxSupplyKind.REPLAY_ACCESS to name a table would tie a schema to a tax vocabulary."
     }
   ]
 }

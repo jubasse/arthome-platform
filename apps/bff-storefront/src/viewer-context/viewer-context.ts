@@ -41,23 +41,41 @@ export function domainConstantsFor(surface: StorefrontSurface): DomainConstants 
 }
 
 /**
- * The bootstrap a signed-in viewer receives (`getViewerContext`, and `SessionEstablished`'s
- *   `viewerContext`). Profiles come with the slice that creates them: none is current yet. The
- *   displayed plan comes with subscriptions, so it is absent, not null. No label catalogue or
- *   taxonomy is published yet, so both are null: the surface uses its embedded snapshot
- *   (context-map §1.8).
+ * The bootstrap a signed-in viewer receives (`getViewerContext`, `SessionEstablished`'s
+ *   `viewerContext` and `signOutProfile`): the registered device, and the session's profile as the
+ *   current one and the only one listed, until a picker lists the account's others. The displayed
+ *   plan comes with subscriptions, so it is absent, not null. No label catalogue or taxonomy is
+ *   published yet, so both are null: the surface uses its embedded snapshot (context-map §1.8).
  */
 export function viewerContextOf(
-  session: Pick<ResolvedSession, 'deviceId'>,
+  session: Pick<ResolvedSession, 'deviceId' | 'profile'>,
   account: ViewerAccount,
   surface: StorefrontSurface,
 ): ServedViewerContext {
+  const { id, name, kind } = session.profile;
   return {
     deviceId: session.deviceId,
     signedIn: true,
+    currentProfileId: id,
+    profiles: [{ id, name, kind }],
+    account: { publicHandle: account.publicHandle, emailVerified: account.emailVerified },
+    constants: domainConstantsFor(surface),
+    labelCatalog: null,
+    taxonomyArtifact: null,
+  };
+}
+
+/** What a device holds once its own profile signed out: the device, and nobody on it. */
+export function signedOutViewerContextOf(
+  deviceId: string,
+  surface: StorefrontSurface,
+): ServedViewerContext {
+  return {
+    deviceId,
+    signedIn: false,
     currentProfileId: null,
     profiles: [],
-    account: { publicHandle: account.publicHandle, emailVerified: account.emailVerified },
+    account: null,
     constants: domainConstantsFor(surface),
     labelCatalog: null,
     taxonomyArtifact: null,

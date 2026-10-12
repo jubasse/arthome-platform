@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { FixedClock, Service } from '@arthome/core';
 
 import { InternalTokenMinter } from './internal-token.minter.js';
+import { callerOf, type Viewer } from './session/viewer.js';
 
 const ACCOUNT = '01a0e700-0000-7000-8000-0000000000c1';
 const DEVICE = '01a0e700-0000-7000-8000-0000000000e1';
@@ -24,6 +25,23 @@ describe('the internal token minter', () => {
         profileId: PROFILE,
       }),
     );
+
+    expect(claims).toMatchObject({ sub: ACCOUNT, did: DEVICE, pro: PROFILE });
+  });
+
+  it('mints the viewer’s registered device as did and its profile as pro', async () => {
+    const viewer: Viewer = {
+      accountId: ACCOUNT,
+      deviceId: DEVICE,
+      deviceSessionId: '01a0e700-0000-7000-8000-0000000000f1',
+      expiresAt: '2026-10-13T10:00:00.000Z',
+      profile: { id: PROFILE, name: 'Marie', kind: 'adult' },
+      account: { publicHandle: '@marie', emailVerified: true },
+      token: 'session-token',
+      carrier: 'cookie',
+    };
+
+    const claims = decodeJwt(await minter.mint(Service.STREAMING, callerOf(viewer)));
 
     expect(claims).toMatchObject({ sub: ACCOUNT, did: DEVICE, pro: PROFILE });
   });

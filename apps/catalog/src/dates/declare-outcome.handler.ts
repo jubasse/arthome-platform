@@ -2,7 +2,12 @@ import { runIdempotently, type MemorisedResponse } from '@arthome-platform/http-
 import { Inject } from '@nestjs/common';
 import { CommandHandler, type ICommandHandler } from '@nestjs/cqrs';
 
-import { DateOutcome, type Clock, type OutcomeDeclaration } from '@arthome/core';
+import {
+  DateOutcome,
+  outcomeWithdrawsReplay,
+  type Clock,
+  type OutcomeDeclaration,
+} from '@arthome/core';
 
 import { DeclareOutcome, type DeclaredOutcome } from './declare-outcome.command.js';
 import type { DeclareOutcomeBody } from './declare-outcome.schema.js';
@@ -44,7 +49,7 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
     transaction: CatalogTransaction,
     { dateId, body, traceparent }: DeclareOutcome,
   ): Promise<DeclaredOutcome> {
-    const { manager, dates } = transaction;
+    const { manager, dates, replays } = transaction;
     const { date, show, venue } = await loadDate(transaction, dateId);
 
     const now = this.clock.now();
@@ -61,9 +66,17 @@ export class DeclareOutcomeHandler implements ICommandHandler<DeclareOutcome> {
             now,
           );
     date.declareOutcome(body.expectedVersion, declaration, body.message, { slugAtNewStart, now });
+    // D-092: no replay, partial or not, even one already online. Before the live's end there is
+    //   none yet, and the end opens none for this outcome.
+    const replay = outcomeWithdrawsReplay(declaration.outcome)
+      ? await replays.findByDate(dateId)
+      : null;
+    const withdrawn = replay?.withdraw(now) === true ? replay : null;
 
     await dates.save(date);
-    await recordDateEvents(manager, date.getUncommittedEvents(), {
+    if (withdrawn !== null) await replays.save(withdrawn);
+    const events = [...date.getUncommittedEvents(), ...(withdrawn?.getUncommittedEvents() ?? [])];
+    await recordDateEvents(manager, events, {
       origin: this.publicWebOrigin,
       show,
       venue,

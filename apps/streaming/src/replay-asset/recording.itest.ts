@@ -227,7 +227,7 @@ describe('a recording started that the asset cannot keep', () => {
       expect(started).toHaveLength(1);
       expect(await isGone(started[0])).toBe(true);
       const messages = messagesOf(errors).filter((message) => message.includes(date.dateId));
-      expect(messages).toHaveLength(2);
+      expect(messages).toHaveLength(1);
       expect(messages.join()).not.toContain('rec_');
 
       desk.clock.advance(RECORDING_RETRY_DELAYS_MS.at(-1) ?? 0);

@@ -43,8 +43,19 @@ function errorEnvelope(
 }
 
 /** A stand-in service: the path picks the answer, and the headers it received are kept. */
-const ANSWERS: Record<string, { status: number; body: string }> = {
+const ANSWERS: Record<string, { status: number; body: string; setCookies?: string[] }> = {
   '/ok': { status: 200, body: JSON.stringify({ data: {} }) },
+  '/cookies': {
+    status: 200,
+    body: JSON.stringify({ data: {} }),
+    setCookies: ['first=1; Path=/a/; Secure; HttpOnly', 'second=2; Path=/b/; Secure; HttpOnly'],
+  },
+  '/no-content': { status: 204, body: '' },
+  '/not-found-with-cookie': {
+    status: 404,
+    body: errorEnvelope(ApiErrorCode.NOT_FOUND),
+    setCookies: ['first=1; Path=/a/; Secure; HttpOnly'],
+  },
   '/price-stale': {
     status: 409,
     body: errorEnvelope(OrderErrorCode.PRICE_STALE, PRICE_STALE_PARAMS),
@@ -93,7 +104,10 @@ beforeAll(async () => {
   server = createServer((request, response) => {
     received = request.headers;
     const answer = ANSWERS[new URL(request.url ?? '/', 'http://service').pathname];
-    response.writeHead(answer?.status ?? 404, { 'content-type': 'application/json' });
+    response.writeHead(answer?.status ?? 404, {
+      'content-type': 'application/json',
+      ...(answer?.setCookies !== undefined && { 'set-cookie': answer.setCookies }),
+    });
     response.end(answer?.body ?? '{}');
   });
   await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -150,6 +164,49 @@ describe('a call to a service', () => {
     expect(received.authorization).not.toBe('Bearer forged');
     expect(received.authorization).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
     expect(received[DEADLINE_HEADER]).toBe(deadline.toISOString());
+  });
+});
+
+describe('a service’s Set-Cookie lines', () => {
+  it('come back in order on a success', async () => {
+    const answer = await client.request(
+      { method: 'POST', path: '/cookies' },
+      callFor(),
+      z.looseObject({}),
+    );
+
+    expect(answer.setCookies).toEqual([
+      'first=1; Path=/a/; Secure; HttpOnly',
+      'second=2; Path=/b/; Secure; HttpOnly',
+    ]);
+  });
+
+  it('are none on a success that sets none', async () => {
+    const answer = await client.request(
+      { method: 'POST', path: '/ok' },
+      callFor(),
+      z.looseObject({}),
+    );
+
+    expect(answer.setCookies).toEqual([]);
+  });
+
+  it('are none on a refusal: it throws, and carries no answer to relay them with', async () => {
+    const refusal = await refusalFrom('/not-found-with-cookie', placeOrder);
+
+    expect(refusal.getStatus()).toBe(404);
+  });
+});
+
+describe('a success with no content', () => {
+  it('answers no body, which the schema reads', async () => {
+    const answer = await client.request(
+      { method: 'POST', path: '/no-content' },
+      callFor(),
+      z.undefined(),
+    );
+
+    expect(answer.body).toBeUndefined();
   });
 });
 

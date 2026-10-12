@@ -11,6 +11,8 @@ import {
 } from '@arthome-platform/http-edge';
 import { Body, Controller, Get, Header, Headers, HttpCode, Inject, Post } from '@nestjs/common';
 
+import { ActorSurfaceParameter } from '@arthome/contracts/http';
+
 import { FINGERPRINT_KEY } from './auth.tokens.js';
 import { EmailVerificationsService } from './email-verifications.service.js';
 import { SessionsService, type ResolvedViewer } from './sessions.service.js';
@@ -27,6 +29,8 @@ import {
 } from './sign-up.schema.js';
 import { SignUpService, type SignedUp } from './sign-up.service.js';
 import { ViewerService, type Viewer } from './viewer.service.js';
+import { wireSurfaceOf } from '../devices/device-events.js';
+import { UNDESCRIBED_DEVICE } from '../devices/presented-device.schema.js';
 
 const SIGN_UP_PATH = '/v1/auth/sign-up';
 
@@ -47,17 +51,21 @@ export class AuthController {
     @Inject(FINGERPRINT_KEY) private readonly fingerprintKey: string,
   ) {}
 
-  /** The fingerprint is keyed: the body carries a password, and the record keeps it for a day. */
+  /**
+   * The fingerprint is keyed: the body carries a password, and the record keeps it for a day. It
+   *   leaves `device` out, so a browser that never got the first answer's cookie still replays.
+   */
   @Post('auth/sign-up')
   @HttpCode(201)
   @Header('cache-control', 'no-store')
   public signUp(
-    @Body({ schema: SignUpSchema }) body: SignUpBody,
+    @Body({ schema: SignUpSchema }) { device, ...body }: SignUpBody,
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('traceparent') traceparent?: string,
   ): Promise<MemorisedResponse<SignedUp>> {
     return this.signUps.signUp(
       body,
+      device ?? UNDESCRIBED_DEVICE,
       {
         key: idempotencyKeyOf(idempotencyKey),
         accountId: null,
@@ -72,8 +80,10 @@ export class AuthController {
   @Post('auth/sign-in')
   @HttpCode(200)
   @Header('cache-control', 'no-store')
-  public signIn(@Body({ schema: SignInSchema }) body: SignInBody): Promise<SignedUp> {
-    return this.signIns.signIn(body);
+  public signIn(
+    @Body({ schema: SignInSchema }) { device, ...body }: SignInBody,
+  ): Promise<SignedUp> {
+    return this.signIns.signIn(body, device ?? UNDESCRIBED_DEVICE);
   }
 
   @Post('sessions/resolve')
@@ -91,8 +101,13 @@ export class AuthController {
   @Header('cache-control', 'no-store')
   public async revoke(
     @Body({ schema: SessionTokenSchema }) body: SessionTokenBody,
+    @Headers(ActorSurfaceParameter.name) surface?: string,
+    @Headers('traceparent') traceparent?: string,
   ): Promise<{ readonly signedOut: true }> {
-    await this.sessions.revoke(body.token);
+    await this.sessions.revoke(body.token, {
+      surface: wireSurfaceOf(surface),
+      traceparent: parseTraceparent(traceparent)?.traceparent ?? null,
+    });
     return { signedOut: true };
   }
 
