@@ -3,6 +3,7 @@ import {
   DateRescheduledSchema,
   DateScheduledSchema,
   PublicationStateChangedSchema,
+  ReplayStateChangedSchema,
 } from '@arthome-platform/events';
 import { Outcome, claimMessage } from '@arthome-platform/messaging';
 import { fromBinary } from '@bufbuild/protobuf';
@@ -10,7 +11,7 @@ import { timestampDate } from '@bufbuild/protobuf/wkt';
 import type { EachMessagePayload } from 'kafkajs';
 import type { DataSource, EntityManager } from 'typeorm';
 
-import { PublicationState, type DateOutcome } from '@arthome/core';
+import { PublicationState, type DateOutcome, type ReplayState } from '@arthome/core';
 
 import { ArtistProjection } from './artist-projection.entity.js';
 import { DateProjection, type ScheduledDateFields } from './date-projection.entity.js';
@@ -20,6 +21,7 @@ import {
   dateOutcomeOf,
   publicationStateOf,
   replayPolicyOf,
+  replayStateOf,
   rightsScopeOf,
   stated,
 } from './wire.js';
@@ -30,11 +32,13 @@ const DATE_SCHEDULED = 'catalog.date.scheduled.v1';
 const STATE_CHANGED = 'catalog.publication.state_changed.v1';
 const OUTCOME_DECLARED = 'catalog.date.outcome_declared.v1';
 const RESCHEDULED = 'catalog.date.rescheduled.v1';
+const REPLAY_STATE_CHANGED = 'catalog.replay.state_changed.v1';
 const DATE_TYPES: readonly string[] = [
   DATE_SCHEDULED,
   STATE_CHANGED,
   OUTCOME_DECLARED,
   RESCHEDULED,
+  REPLAY_STATE_CHANGED,
 ];
 
 export type DateFact =
@@ -68,6 +72,17 @@ export type DateFact =
       readonly startsAt: Date;
       readonly slug: string | null;
       readonly canonicalUrl: string | null;
+    }
+  | {
+      readonly type: typeof REPLAY_STATE_CHANGED;
+      readonly dateId: string;
+      /** The Replay's own version after the transition. */
+      readonly version: number;
+      readonly state: ReplayState | null;
+      readonly liveEndedAt: Date;
+      readonly closesAt: Date;
+      readonly onlineAt: Date | null;
+      readonly durationSec: number | null;
     };
 
 export function dateFactOf(type: string, value: Uint8Array): DateFact {
@@ -121,6 +136,19 @@ export function dateFactOf(type: string, value: Uint8Array): DateFact {
       canonicalUrl: event.newCanonicalUrl === '' ? null : event.newCanonicalUrl,
     };
   }
+  if (type === REPLAY_STATE_CHANGED) {
+    const event = fromBinary(ReplayStateChangedSchema, value);
+    return {
+      type: REPLAY_STATE_CHANGED,
+      dateId: event.dateId,
+      version: Number(event.version),
+      state: replayStateOf(event.toState),
+      liveEndedAt: stated(event.liveEndedAt, `the replay of date ${event.dateId} live_ended_at`),
+      closesAt: stated(event.closesAt, `the replay of date ${event.dateId} closes_at`),
+      onlineAt: event.onlineAt === undefined ? null : timestampDate(event.onlineAt),
+      durationSec: event.durationSec ?? null,
+    };
+  }
   const event = fromBinary(PublicationStateChangedSchema, value);
   return {
     type: STATE_CHANGED,
@@ -160,6 +188,17 @@ export function dateAfter(row: DateProjection, fact: DateFact): DateProjection |
         outcome: fact.outcome,
         outcome_rescheduled_to: fact.rescheduledTo,
         outcome_version: String(fact.version),
+      };
+    case REPLAY_STATE_CHANGED:
+      if (!takes(row.replay_version)) return null;
+      return {
+        ...row,
+        replay_state: fact.state,
+        replay_live_ended_at: fact.liveEndedAt,
+        replay_closes_at: fact.closesAt,
+        replay_online_at: fact.onlineAt,
+        replay_duration_sec: fact.durationSec,
+        replay_version: String(fact.version),
       };
     case RESCHEDULED:
       if (!takes(row.moved_version)) return null;

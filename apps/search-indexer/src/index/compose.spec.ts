@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { DateOutcome, PublicationState, ReplayPolicy, RightsScope } from '@arthome/core';
+import {
+  DateOutcome,
+  PublicationState,
+  ReplayPolicy,
+  ReplayState,
+  RightsScope,
+} from '@arthome/core';
 
 import { dateDocumentOf } from './compose.js';
 import type { DateProjection, ScheduledDateFields } from '../consumer/date-projection.entity.js';
@@ -33,6 +39,11 @@ function documentFor(
       | 'moved_starts_at'
       | 'moved_slug'
       | 'moved_canonical_url'
+      | 'replay_state'
+      | 'replay_live_ended_at'
+      | 'replay_closes_at'
+      | 'replay_online_at'
+      | 'replay_duration_sec'
     >
   > = {},
 ) {
@@ -51,6 +62,12 @@ function documentFor(
       moved_slug: null,
       moved_canonical_url: null,
       moved_version: null,
+      replay_state: null,
+      replay_live_ended_at: null,
+      replay_closes_at: null,
+      replay_online_at: null,
+      replay_duration_sec: null,
+      replay_version: null,
       doc_version: '1',
       indexed_at: new Date(),
       ...moved,
@@ -98,6 +115,62 @@ describe('dateDocumentOf — a postponed date', () => {
       over_at: '2026-11-15T21:05:00.000Z',
       outcome: DateOutcome.POSTPONED,
       rescheduled_to: '2026-11-12T19:30:00.000Z',
+    });
+  });
+
+  describe('with the replay stated', () => {
+    const liveEndedAt = new Date('2026-11-04T21:10:00.000Z');
+    const closesAt = new Date('2026-11-07T21:10:00.000Z');
+    const onlineAt = new Date('2026-11-05T09:00:00.000Z');
+    const stated = {
+      replay_live_ended_at: liveEndedAt,
+      replay_closes_at: closesAt,
+      replay_online_at: null,
+      replay_duration_sec: null,
+    };
+
+    it('keeps a pending replay searchable until its real closing', () => {
+      expect(
+        documentFor(scheduled, { ...stated, replay_state: ReplayState.PENDING }),
+      ).toMatchObject({
+        over_at: closesAt.toISOString(),
+        replay_state: ReplayState.PENDING,
+        replay_closes_at: closesAt.toISOString(),
+        replay_online_at: null,
+        replay_duration_sec: null,
+      });
+    });
+
+    it('carries the window and duration of an online replay, and bounds a closed one', () => {
+      const online = { ...stated, replay_online_at: onlineAt, replay_duration_sec: 5400 };
+      expect(documentFor(scheduled, { ...online, replay_state: ReplayState.ONLINE })).toMatchObject(
+        {
+          over_at: closesAt.toISOString(),
+          replay_online_at: onlineAt.toISOString(),
+          replay_duration_sec: 5400,
+        },
+      );
+      expect(documentFor(scheduled, { ...online, replay_state: ReplayState.CLOSED })).toMatchObject(
+        {
+          over_at: closesAt.toISOString(),
+          replay_state: ReplayState.CLOSED,
+        },
+      );
+    });
+
+    it('takes a withdrawn date out of search at the end of its live', () => {
+      expect(
+        documentFor(scheduled, { ...stated, replay_state: ReplayState.WITHDRAWN }),
+      ).toMatchObject({
+        over_at: liveEndedAt.toISOString(),
+      });
+    });
+
+    it('keeps the scheduled bound for a replay state it does not know', () => {
+      expect(documentFor(scheduled, { ...stated, replay_state: null })).toMatchObject({
+        over_at: '2026-11-07T21:05:00.000Z',
+        replay_state: null,
+      });
     });
   });
 });

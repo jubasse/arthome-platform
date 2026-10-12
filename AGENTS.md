@@ -895,6 +895,7 @@ commands, the indexer, catalog and the BFF running:
 | Check | Result |
 | --- | --- |
 | the index's `-v1` at the indexer's start | `slug_fr`, `slug_en`, `ends_at`, `over_at` added in place, no reindex |
+| the index's `-v1` at the indexer's start (RS1) | `replay_state`, `replay_closes_at`, `replay_online_at`, `replay_duration_sec` added in place, no reindex; `over_at` is the replay's real closing |
 | `q=nuit&sort=soon` | one group, `Nuits blanches`, `matchingDatesCount` 2, the 12 December date first, `scheduled` until the room opens, the envelope's `validUntil` that instant; facets counted in shows; `public, max-age=60` and the `Vary` list |
 | latency through the BFF | 184 ms on the first call, cold; 18 to 38 ms over the next ten |
 | `countryCodes=BE` | no group, `emptyReason: no_match_with_filters` |

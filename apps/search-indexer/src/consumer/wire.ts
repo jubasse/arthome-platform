@@ -3,6 +3,7 @@ import {
   LanguageDependency as WireLanguageDependency,
   PublicationState as WirePublicationState,
   ReplayPolicy as WireReplayPolicy,
+  ReplayState as WireReplayState,
   RightsScope as WireRightsScope,
   type ImageRendition,
   type LocalizedText,
@@ -16,6 +17,7 @@ import {
   Locale,
   PublicationState,
   ReplayPolicy,
+  ReplayState,
   RightsScope,
   type Bilingual,
 } from '@arthome/core';
@@ -47,6 +49,13 @@ const PUBLICATION_STATE: Readonly<Partial<Record<WirePublicationState, Publicati
   [WirePublicationState.REPLAY_ONLINE]: PublicationState.REPLAY_ONLINE,
 };
 
+const REPLAY_STATE: Readonly<Partial<Record<WireReplayState, ReplayState>>> = {
+  [WireReplayState.PENDING]: ReplayState.PENDING,
+  [WireReplayState.ONLINE]: ReplayState.ONLINE,
+  [WireReplayState.CLOSED]: ReplayState.CLOSED,
+  [WireReplayState.WITHDRAWN]: ReplayState.WITHDRAWN,
+};
+
 const DATE_OUTCOME: Readonly<Partial<Record<WireDateOutcome, DateOutcome>>> = {
   [WireDateOutcome.POSTPONED]: DateOutcome.POSTPONED,
   [WireDateOutcome.CANCELLED]: DateOutcome.CANCELLED,
@@ -64,6 +73,8 @@ export const replayPolicyOf = (wire: WireReplayPolicy): ReplayPolicy | null =>
   REPLAY_POLICY[wire] ?? null;
 export const publicationStateOf = (wire: WirePublicationState): PublicationState | null =>
   PUBLICATION_STATE[wire] ?? null;
+export const replayStateOf = (wire: WireReplayState): ReplayState | null =>
+  REPLAY_STATE[wire] ?? null;
 export const dateOutcomeOf = (wire: WireDateOutcome): DateOutcome | null =>
   DATE_OUTCOME[wire] ?? null;
 export const rightsScopeOf = (wire: WireRightsScope): RightsScope | null =>
@@ -86,6 +97,6 @@ export function indexedRendition(source: ImageRendition): IndexedRendition {
  * permanent failure.
  */
 export function stated(timestamp: Timestamp | undefined, what: string): Date {
-  if (timestamp === undefined) throw new Error(`${what} carries no occurred_at`);
+  if (timestamp === undefined) throw new Error(`${what} states no instant`);
   return timestampDate(timestamp);
 }

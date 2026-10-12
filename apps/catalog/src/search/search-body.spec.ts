@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ReplayPolicy } from '@arthome/core';
+import { ReplayPolicy, ReplayState } from '@arthome/core';
 
 import { filtersOf, searchBodyOf } from './search-body.js';
 import { MAX_RESULT_WINDOW } from './search-cursor.js';
@@ -20,13 +20,14 @@ describe('searchBodyOf', () => {
     ]);
   });
 
-  it('splits lives from replays at the end of the live show', () => {
+  it('lists the replays online, and the lives not yet ended', () => {
     expect(filtersOf(query({ tab: SearchTab.LIVES }), NOW)).toContainEqual({
       range: { ends_at: { gt: NOW } },
     });
-    expect(filtersOf(query({ tab: SearchTab.REPLAYS }), NOW)).toContainEqual({
-      range: { ends_at: { lte: NOW } },
-    });
+    const replays = filtersOf(query({ tab: SearchTab.REPLAYS }), NOW);
+    expect(replays).toContainEqual({ term: { replay_state: ReplayState.ONLINE } });
+    expect(replays).toContainEqual({ range: { replay_closes_at: { gt: NOW } } });
+    expect(replays).not.toContainEqual({ range: { ends_at: { lte: NOW } } });
   });
 
   it('applies each criterion to the field the index holds it in', () => {
