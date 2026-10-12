@@ -187,7 +187,7 @@ A draft older than the topic's retention is never read: see the deployment order
   loses nothing (`nestjs-queues`' Decide: the recurring work stays in the database it reads). A pass
   reads only the sales on sale and the pending closings (above).
 - **A future publisher of `ticketing.subscription.changed.v1` must set `version`**, strictly
-  increasing per account (core's field 10): streaming orders the subscription by it and ignores a `0`.
+  increasing per account (core's field 10): streaming orders the subscription by it and treats a `0` as unversioned, ordered by `occurred_at`.
 
 ## 0f. Conventions
 

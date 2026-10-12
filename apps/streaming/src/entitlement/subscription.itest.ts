@@ -255,18 +255,27 @@ describe('the subscription in the entitlement projection', () => {
     );
 
     it(
-      'applies a versioned fact over an unversioned row and stores its version',
+      'decides a versioned fact over an unversioned row by occurred_at, and stores its version',
       async () => {
         const account = accountOf(44);
-        await projection.apply(changed(account, ACTIVE, EARLY));
+        await projection.apply(changed(account, ACTIVE, MID));
 
-        expect(await projection.apply(versioned(account, CANCELLED, MID, 3n))).toBe(
+        expect(await projection.apply(versioned(account, CANCELLED, EARLY, 3n))).toBe(
+          Outcome.SUPERSEDED,
+        );
+        expect(await keptOf(account)).toEqual({
+          state: SubscriptionState.ACTIVE,
+          version: null,
+          occurredAt: MID,
+        });
+
+        expect(await projection.apply(versioned(account, CANCELLED, LATE, 3n))).toBe(
           Outcome.APPLIED,
         );
         expect(await keptOf(account)).toEqual({
           state: SubscriptionState.CANCELLED,
           version: '3',
-          occurredAt: MID,
+          occurredAt: LATE,
         });
       },
       CASE_MS,
