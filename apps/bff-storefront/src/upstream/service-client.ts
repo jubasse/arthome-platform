@@ -54,6 +54,11 @@ export interface ServiceAnswer<T> {
   readonly replayed: boolean;
 }
 
+/** The answer, with the `Set-Cookie` lines of the success, in order: a refusal throws instead. */
+export interface ServiceResponse<T> extends ServiceAnswer<T> {
+  readonly setCookies: readonly string[];
+}
+
 const DERIVED_REFUSALS: ReadonlySet<string> = new Set(
   Object.entries(DERIVED_ERROR_CODES)
     .filter(([status]) => Number(status) < Number(HttpStatus.INTERNAL_SERVER_ERROR))
@@ -111,7 +116,7 @@ export class ServiceClient {
     request: ServiceRequest,
     call: ServiceCall,
     schema: T,
-  ): Promise<ServiceAnswer<z.output<T>>> {
+  ): Promise<ServiceResponse<z.output<T>>> {
     const query = request.query?.toString() ?? '';
     const url = `${this.baseUrl}${request.path}${query === '' ? '' : `?${query}`}`;
     // Giving up locally and remotely are the same instant (transport.md §5.3).
@@ -123,6 +128,7 @@ export class ServiceClient {
     let status: number;
     let body: unknown;
     let replayed: boolean;
+    let setCookies: readonly string[];
     try {
       const response = await fetch(url, {
         method: request.method,
@@ -141,7 +147,8 @@ export class ServiceClient {
       });
       status = response.status;
       replayed = response.headers.get('idempotency-replayed') === 'true';
-      body = await response.json();
+      setCookies = response.headers.getSetCookie();
+      body = status === Number(HttpStatus.NO_CONTENT) ? undefined : await response.json();
     } catch (error) {
       // The surface hanging up lands here too, and then nobody reads the answer.
       if (isOwnTimeout(error) || call.callerLeft.aborted) throw this.upstreamTimeout();
@@ -151,7 +158,7 @@ export class ServiceClient {
 
     if (status >= 200 && status < 300) {
       const served = schema.safeParse(body);
-      if (served.success) return { body: served.data, replayed };
+      if (served.success) return { body: served.data, replayed, setCookies };
       this.logger.warn(
         `answered ${request.path} outside the contract (${call.traceparent})`,
         served.error.issues,

@@ -3,7 +3,9 @@ import {
   readCsrfSecret,
   readIdentityUrl,
   readInternalTokenSigningKey,
+  readPlaybackCookieDomain,
   readRedisUrl,
+  readStreamingUrl,
   readTrustedProxies,
   readViewerCountryHeader,
   type BffEnv,
@@ -27,4 +29,13 @@ export const authEnv: {
   csrfSecret: readCsrfSecret(),
   trustedProxies: readTrustedProxies(),
   viewerCountryHeader: readViewerCountryHeader(),
+};
+
+/** The player's routes: where streaming answers, and the `Domain` its ticket cookie is relayed on. */
+export const playbackEnv: {
+  readonly streamingUrl: string;
+  readonly cookieDomain: string | null;
+} = {
+  streamingUrl: readStreamingUrl(),
+  cookieDomain: readPlaybackCookieDomain(),
 };
