@@ -1,11 +1,12 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-import { ReplayAssetState } from '@arthome/core';
+import { ReplayAssetState, RunState } from '@arthome/core';
 
 /**
  * What the operational checks read (SO1). `orphan_recording` is a recording the provider keeps
  *   that no asset owns, its deletion given up; the reference stays in its column and in no log.
- *   The partial index serves the count of `failed` assets, a handful among every date's row.
+ *   The partial indexes serve the count of `failed` assets and the runs not yet on air, a handful
+ *   among every date's row.
  */
 export class OpsChecks1791900000000 implements MigrationInterface {
   name = 'OpsChecks1791900000000';
@@ -24,9 +25,14 @@ export class OpsChecks1791900000000 implements MigrationInterface {
       CREATE INDEX replay_asset_failed ON replay_asset (call_dead_at)
        WHERE state = '${ReplayAssetState.FAILED}'
     `);
+    await queryRunner.query(`
+      CREATE INDEX run_not_started ON run (date_id)
+       WHERE state IN ('${RunState.IDLE}', '${RunState.REHEARSAL}')
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query('DROP INDEX run_not_started');
     await queryRunner.query('DROP INDEX replay_asset_failed');
     await queryRunner.query('DROP TABLE orphan_recording');
   }

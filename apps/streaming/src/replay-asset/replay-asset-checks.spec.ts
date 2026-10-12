@@ -118,7 +118,7 @@ describe('the degraded log', () => {
     expect(logger.warn).toHaveBeenCalledTimes(2);
   });
 
-  it('logs nothing while up, and again at once when it degrades after recovering', async () => {
+  it('logs nothing while up, and a flap inside the window stays silent', async () => {
     const clock = new FixedClock(NOW);
     const logger = { warn: vi.fn() };
     let current: () => Promise<CheckResult> = degraded;
@@ -129,7 +129,24 @@ describe('the degraded log', () => {
     await check();
     current = degraded;
     await check();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+
+    clock.advance(DEGRADED_LOG_EVERY_MS);
+    await check();
     expect(logger.warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('never logs the driver message of a failed query', async () => {
+    const logger = { warn: vi.fn() };
+    const check = loggedWhenDegraded(
+      () => checkOrphanRecordings(failing()),
+      new FixedClock(NOW),
+      logger,
+    );
+    await check();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const line = String(logger.warn.mock.calls[0]?.[0]);
+    expect(line).toBe('orphan_recordings degraded error=query failed');
   });
 
   it('returns the result untouched', async () => {

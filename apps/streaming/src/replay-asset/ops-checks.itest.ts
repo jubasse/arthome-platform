@@ -150,18 +150,35 @@ describe('the replay ops checks', () => {
     async () => {
       const longAgo = new Date(clock.nowMs() - ROOM_IDLE_AFTER_MS - 1_000).toISOString();
       const recent = new Date(clock.nowMs() - ROOM_IDLE_AFTER_MS + 60_000).toISOString();
-      const idle = await seedDate(longAgo);
-      await seedRun(idle, RunState.IDLE);
+      await seedRun(await seedDate(longAgo), RunState.IDLE);
       await seedRun(await seedDate(recent), RunState.IDLE);
       await seedRun(await seedDate(longAgo), RunState.ON_AIR);
       await seedRun(await seedDate(longAgo, DateOutcome.CANCELLED), RunState.REHEARSAL);
+      await seedRun(await seedDate(longAgo, DateOutcome.INTERRUPTED), RunState.IDLE);
+      await seedRun(await seedDate(longAgo, DateOutcome.POSTPONED), RunState.IDLE);
 
       const { status, checks } = await readiness();
       expect(status).toBe(200);
       expect(checks.rooms_idle).toMatchObject({
         status: 'degraded',
-        detail: { rooms: 1, oldestDateId: idle },
+        detail: { rooms: 2, oldestDateId: expect.any(String) as string },
       });
+    },
+    CASE_MS,
+  );
+
+  it(
+    'serve the idle rooms query from the partial index, not a scan of every run',
+    async () => {
+      const plan = await dataSource.transaction(async (manager) => {
+        await manager.query('SET LOCAL enable_seqscan = off');
+        const rows = await manager.query<Record<'QUERY PLAN', string>[]>(
+          `EXPLAIN SELECT date_id FROM run WHERE state IN ($1, $2)`,
+          [RunState.IDLE, RunState.REHEARSAL],
+        );
+        return rows.map((row) => row['QUERY PLAN']).join('\n');
+      });
+      expect(plan).toContain('run_not_started');
     },
     CASE_MS,
   );

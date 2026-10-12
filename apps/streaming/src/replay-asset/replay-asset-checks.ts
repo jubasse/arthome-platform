@@ -10,6 +10,8 @@ export const ROOM_IDLE_AFTER_MS = 30 * MINUTE_MS;
 /** A degraded check is logged on its first evaluation, then at most this often while it stays so. */
 export const DEGRADED_LOG_EVERY_MS = 10 * MINUTE_MS;
 
+const QUERY_FAILED = 'query failed';
+
 type Check = () => Promise<CheckResult>;
 
 /** A replay asset given up on: an operator reads it (HANDOVER §0f). */
@@ -72,8 +74,8 @@ export function checkRoomsIdle(dataSource: DataSource, clock: Clock): Promise<Ch
 
 /**
  * The check, plus one `warn` line when it answers `degraded`: on the first evaluation, then at most
- *   every `everyMs` while it stays so. A probe polled every few seconds must not flood the log; a
- *   check that recovers starts over.
+ *   every `everyMs`, flapping or not. A probe polled every few seconds must not flood the log. A
+ *   failed query is logged with a fixed text, never the driver message.
  */
 export function loggedWhenDegraded(
   check: Check,
@@ -84,15 +86,12 @@ export function loggedWhenDegraded(
   let lastLoggedMs: number | null = null;
   return async () => {
     const result = await check();
-    if (result.status !== 'degraded') {
-      lastLoggedMs = null;
-      return result;
-    }
+    if (result.status !== 'degraded') return result;
     const nowMs = clock.nowMs();
     if (lastLoggedMs === null || nowMs - lastLoggedMs >= everyMs) {
       lastLoggedMs = nowMs;
       const detail = Object.entries(result.detail)
-        .map(([key, value]) => `${key}=${String(value)}`)
+        .map(([key, value]) => `${key}=${key === 'error' ? QUERY_FAILED : String(value)}`)
         .join(' ');
       logger.warn(`${result.name} degraded ${detail}`);
     }
